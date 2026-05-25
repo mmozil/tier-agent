@@ -11,7 +11,7 @@ Fluxo:
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +59,7 @@ async def ensure_conversation(
     )
     conv = result.scalar_one_or_none()
     if conv:
-        conv.last_message_at = datetime.now(timezone.utc)
+        conv.last_message_at = datetime.utcnow()
         conv.msg_count += 1
         await db.commit()
         return conv
@@ -101,7 +101,7 @@ async def log_message(
     db.add(log)
 
     # Atualiza usage daily (upsert)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.utcnow().strftime("%Y-%m-%d")
     result = await db.execute(
         select(TaUsageDaily).where(TaUsageDaily.tenant_id == tenant_id, TaUsageDaily.day == today)
     )

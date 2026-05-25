@@ -16,7 +16,7 @@ import logging
 import secrets
 import shlex
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import paramiko
 import redis.asyncio as redis_async
@@ -265,7 +265,7 @@ async def health_check(tenant_id: int, db: AsyncSession) -> bool:
         ok = False
 
     record.status = "running" if ok else "unhealthy"
-    record.last_health_check_at = datetime.now(timezone.utc)
+    record.last_health_check_at = datetime.utcnow()  # coluna é tz-naive
     await db.commit()
     return ok
 
