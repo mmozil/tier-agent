@@ -32,3 +32,6 @@ EXPOSE 8000
 # Mantém /init do s6-overlay como PID 1 mas precede com nosso script
 # que monta config a partir das envs Tier
 ENTRYPOINT ["/usr/local/bin/tier-entrypoint.sh"]
+
+# Default: gateway run (mantém processo vivo + ativa messaging + API server)
+CMD ["gateway", "run"]
