@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     hermes_port_range_start: int = 7100
     hermes_port_range_end: int = 9100
 
+    # SSH para orchestrar Docker no host (em vez de mountar /var/run/docker.sock)
+    tier_agent_ssh_host: str = "46.224.220.223"
+    tier_agent_ssh_user: str = "root"
+    tier_agent_ssh_port: int = 22
+    tier_agent_ssh_privkey_b64: str = ""
+
     tier_whatsapp_engine_url: str = "https://whats.tier.finance"
     tier_whatsapp_engine_admin_key: str = ""
     tier_whatsapp_webhook_secret: str = ""

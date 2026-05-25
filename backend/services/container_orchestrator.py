@@ -1,34 +1,33 @@
-"""Orquestra containers Hermes — 1 por tenant.
+"""Orquestra containers Hermes — 1 por tenant — via SSH no host Docker daemon.
+
+Por que SSH e não Docker SDK direto:
+- Coolify não mounta /var/run/docker.sock no container backend
+- SSH é portável (funciona em qualquer host Docker)
+- Backend tem chave SSH com authorized_keys no host
 
 Isolamento total via Docker volume + HERMES_HOME por tenant. Cada container
-expõe REST API OpenAI-compatible numa porta dinâmica do range configurado.
+expõe REST API OpenAI-compatible (porta 8642 interna) numa porta dinâmica.
 """
 
+import base64
+import io
 import json
 import logging
+import secrets
+import shlex
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import docker
+import paramiko
 import redis.asyncio as redis_async
-from docker.errors import APIError, NotFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import get_settings
-from core.encryption import decrypt
-from models import TaContainer, TaLlmProvider
+from core.encryption import decrypt, encrypt
+from models import TaContainer, TaFeatureFlag, TaLlmProvider
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
-
-_client: docker.DockerClient | None = None
-
-
-def docker_client() -> docker.DockerClient:
-    global _client
-    if _client is None:
-        _client = docker.DockerClient(base_url=settings.docker_host)
-    return _client
 
 
 @dataclass
@@ -42,7 +41,54 @@ class ContainerSpec:
 
 
 # ============================================================
-# Port pool — Redis-based (evita conflito multi-instância)
+# SSH client (cacheado)
+# ============================================================
+_ssh_client: paramiko.SSHClient | None = None
+
+
+def _get_ssh() -> paramiko.SSHClient:
+    global _ssh_client
+    if _ssh_client is not None:
+        try:
+            _ssh_client.exec_command("true", timeout=3)
+            return _ssh_client
+        except Exception:
+            _ssh_client = None
+
+    if not settings.tier_agent_ssh_privkey_b64:
+        raise RuntimeError("TIER_AGENT_SSH_PRIVKEY_B64 não configurada")
+
+    privkey_pem = base64.b64decode(settings.tier_agent_ssh_privkey_b64).decode()
+    pkey = paramiko.Ed25519Key.from_private_key(io.StringIO(privkey_pem))
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(
+        hostname=settings.tier_agent_ssh_host,
+        port=settings.tier_agent_ssh_port,
+        username=settings.tier_agent_ssh_user,
+        pkey=pkey,
+        timeout=10,
+        banner_timeout=10,
+    )
+    _ssh_client = client
+    return client
+
+
+def _ssh_run(cmd: str, *, timeout: int = 30) -> tuple[int, str, str]:
+    """Executa comando no host via SSH. Retorna (exit_code, stdout, stderr)."""
+    client = _get_ssh()
+    stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout)
+    out = stdout.read().decode(errors="replace")
+    err = stderr.read().decode(errors="replace")
+    rc = stdout.channel.recv_exit_status()
+    if rc != 0:
+        logger.warning("ssh_run rc=%s cmd=%s err=%s", rc, cmd[:120], err[:300])
+    return rc, out, err
+
+
+# ============================================================
+# Port pool — Redis SETNX
 # ============================================================
 _PORT_POOL_KEY = "tier_agent:port_pool"
 
@@ -52,7 +98,6 @@ async def _redis() -> redis_async.Redis:
 
 
 async def acquire_port() -> int:
-    """Acquire a port from the configured range using Redis SETNX."""
     r = await _redis()
     for port in range(settings.hermes_port_range_start, settings.hermes_port_range_end + 1):
         key = f"{_PORT_POOL_KEY}:{port}"
@@ -67,7 +112,7 @@ async def release_port(port: int) -> None:
 
 
 # ============================================================
-# Container lifecycle
+# Naming helpers
 # ============================================================
 def container_name(tenant_id: int) -> str:
     return f"tier-hermes-tenant-{tenant_id}"
@@ -77,36 +122,24 @@ def volume_name(tenant_id: int) -> str:
     return f"tier-hermes-vol-{tenant_id}"
 
 
+# ============================================================
+# Container lifecycle (via SSH)
+# ============================================================
 async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer:
     """Cria volume + container Hermes pra um tenant. Idempotente."""
-    cli = docker_client()
     name = container_name(spec.tenant_id)
     vol = volume_name(spec.tenant_id)
 
-    # Volume (mesmo nome = mesmo volume = persistência entre recreates)
-    try:
-        cli.volumes.get(vol)
-        logger.info("volume %s já existe (reuso)", vol)
-    except NotFound:
-        cli.volumes.create(name=vol, labels={"tier.tenant_id": str(spec.tenant_id)})
+    # Volume
+    _ssh_run(f"docker volume create {shlex.quote(vol)} --label tier.tenant_id={spec.tenant_id} >/dev/null")
 
-    # Container
-    try:
-        existing = cli.containers.get(name)
-        logger.warning("container %s já existe — removendo pra recriar", name)
-        existing.remove(force=True)
-    except NotFound:
-        pass
+    # Remove container antigo se existir
+    _ssh_run(f"docker rm -f {shlex.quote(name)} >/dev/null 2>&1 || true")
 
     port = await acquire_port()
-
-    # API key forte aleatória pro REST API server do Hermes (Bearer auth interno)
-    # Cada tenant tem sua própria — o control plane guarda e usa pra proxy
-    import secrets
-
     api_server_key = secrets.token_hex(32)
 
-    env = {
+    env_pairs = {
         "HERMES_UID": "10000",
         "HERMES_GID": "10000",
         "TIER_LLM_PROVIDER": spec.llm_provider,
@@ -114,51 +147,51 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
         "TIER_LLM_API_KEY": spec.llm_api_key,
         "TIER_FEATURE_FLAGS": json.dumps(spec.feature_flags),
         "TIER_STATEMENT_DESCRIPTOR": spec.statement_descriptor,
-        # REST API server Hermes (escuta 8642)
         "API_SERVER_HOST": "0.0.0.0",
         "API_SERVER_PORT": "8642",
         "API_SERVER_KEY": api_server_key,
-        "GATEWAY_ALLOW_ALL_USERS": "true",  # control plane Tier media tudo, sem allowlist na Engine
-        # Provider-specific aliases (entrypoint resolve)
+        "GATEWAY_ALLOW_ALL_USERS": "true",
         f"{spec.llm_provider.upper()}_API_KEY": spec.llm_api_key,
     }
+    env_args = " ".join(f"-e {shlex.quote(f'{k}={v}')}" for k, v in env_pairs.items())
 
-    container = cli.containers.run(
-        image=settings.hermes_image,
-        name=name,
-        detach=True,
-        restart_policy={"Name": "unless-stopped"},
-        volumes={vol: {"bind": "/opt/data", "mode": "rw"}},
-        ports={"8642/tcp": port},  # Hermes API server escuta em 8642 (default DEFAULT_PORT)
-        environment=env,
-        labels={
-            "tier.tenant_id": str(spec.tenant_id),
-            "tier.image_version": settings.hermes_image,
-            "tier.created_at": datetime.now(timezone.utc).isoformat(),
-        },
+    cmd = (
+        f"docker run -d --name {shlex.quote(name)} "
+        f"--restart unless-stopped "
+        f"-v {shlex.quote(vol)}:/opt/data "
+        f"-p {port}:8642 "
+        f"--label tier.tenant_id={spec.tenant_id} "
+        f"--label tier.image_version={shlex.quote(settings.hermes_image)} "
+        f"{env_args} "
+        f"{shlex.quote(settings.hermes_image)}"
+    )
+    rc, out, err = _ssh_run(cmd, timeout=60)
+    if rc != 0:
+        await release_port(port)
+        raise RuntimeError(f"docker run falhou: {err.strip()[:400]}")
+    container_id = out.strip()
+
+    # Persiste API key no Redis pra hermes_proxy ler
+    r = await _redis()
+    await r.set(
+        f"tier_agent:hermes_key:{spec.tenant_id}", encrypt(api_server_key), ex=86400 * 90
     )
 
-    # Persist API server key encriptado no Redis (control plane usa pra proxy)
-    r = await _redis()
-    from core.encryption import encrypt as _enc
-
-    await r.set(f"tier_agent:hermes_key:{spec.tenant_id}", _enc(api_server_key), ex=86400 * 90)
-
     # Upsert TaContainer
-    existing_row = await db.get(TaContainer, spec.tenant_id)
-    if existing_row:
-        existing_row.docker_container_id = container.id
-        existing_row.status = "starting"
-        existing_row.port = port
-        existing_row.image_version = settings.hermes_image
-        existing_row.restart_count = 0
-        record = existing_row
+    existing = await db.get(TaContainer, spec.tenant_id)
+    if existing:
+        existing.docker_container_id = container_id
+        existing.status = "starting"
+        existing.port = port
+        existing.image_version = settings.hermes_image
+        existing.restart_count = 0
+        record = existing
     else:
         record = TaContainer(
             tenant_id=spec.tenant_id,
-            docker_container_id=container.id,
+            docker_container_id=container_id,
             status="starting",
-            host="localhost",
+            host=settings.tier_agent_ssh_host,
             port=port,
             image_version=settings.hermes_image,
         )
@@ -166,17 +199,15 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
     await db.commit()
     await db.refresh(record)
 
-    logger.info("container criado tenant=%s container=%s port=%s", spec.tenant_id, container.id[:12], port)
+    logger.info(
+        "container criado tenant=%s id=%s port=%s", spec.tenant_id, container_id[:12], port
+    )
     return record
 
 
 async def stop_container(tenant_id: int, db: AsyncSession) -> None:
-    cli = docker_client()
-    try:
-        c = cli.containers.get(container_name(tenant_id))
-        c.stop(timeout=10)
-    except NotFound:
-        pass
+    name = container_name(tenant_id)
+    _ssh_run(f"docker stop {shlex.quote(name)} >/dev/null 2>&1 || true", timeout=30)
 
     record = await db.get(TaContainer, tenant_id)
     if record:
@@ -187,20 +218,14 @@ async def stop_container(tenant_id: int, db: AsyncSession) -> None:
         await db.commit()
 
 
-async def remove_container(tenant_id: int, db: AsyncSession, drop_volume: bool = False) -> None:
-    cli = docker_client()
-    try:
-        c = cli.containers.get(container_name(tenant_id))
-        c.remove(force=True)
-    except NotFound:
-        pass
+async def remove_container(
+    tenant_id: int, db: AsyncSession, drop_volume: bool = False
+) -> None:
+    name = container_name(tenant_id)
+    _ssh_run(f"docker rm -f {shlex.quote(name)} >/dev/null 2>&1 || true")
 
     if drop_volume:
-        try:
-            v = cli.volumes.get(volume_name(tenant_id))
-            v.remove()
-        except (NotFound, APIError) as e:
-            logger.warning("volume drop falhou: %s", e)
+        _ssh_run(f"docker volume rm {shlex.quote(volume_name(tenant_id))} >/dev/null 2>&1 || true")
 
     record = await db.get(TaContainer, tenant_id)
     if record:
@@ -211,34 +236,32 @@ async def remove_container(tenant_id: int, db: AsyncSession, drop_volume: bool =
 
 
 async def restart_container(tenant_id: int, db: AsyncSession) -> None:
-    cli = docker_client()
-    try:
-        c = cli.containers.get(container_name(tenant_id))
-        c.restart(timeout=10)
-        record = await db.get(TaContainer, tenant_id)
-        if record:
-            record.restart_count += 1
-            record.status = "starting"
-            await db.commit()
-    except NotFound as e:
-        raise RuntimeError(f"Container tenant {tenant_id} não existe") from e
+    name = container_name(tenant_id)
+    rc, _, err = _ssh_run(f"docker restart {shlex.quote(name)}", timeout=30)
+    if rc != 0:
+        raise RuntimeError(f"restart falhou: {err[:200]}")
+    record = await db.get(TaContainer, tenant_id)
+    if record:
+        record.restart_count += 1
+        record.status = "starting"
+        await db.commit()
 
 
 async def health_check(tenant_id: int, db: AsyncSession) -> bool:
-    """Verifica se container está respondendo."""
+    """Health via REST do container Hermes."""
     import httpx
 
     record = await db.get(TaContainer, tenant_id)
     if not record or not record.port:
         return False
 
-    url = f"http://{record.host}:{record.port}/v1/health"
+    url = f"http://{record.host}:{record.port}/health"
     try:
-        async with httpx.AsyncClient(timeout=3) as cli:
+        async with httpx.AsyncClient(timeout=5) as cli:
             r = await cli.get(url)
-            ok = r.status_code < 500
+            ok = r.status_code == 200
     except Exception as e:
-        logger.warning("health check tenant=%s falhou: %s", tenant_id, e)
+        logger.warning("health tenant=%s falhou: %s", tenant_id, e)
         ok = False
 
     record.status = "running" if ok else "unhealthy"
@@ -248,15 +271,11 @@ async def health_check(tenant_id: int, db: AsyncSession) -> bool:
 
 
 # ============================================================
-# Helpers — resolver LLM config do DB pra spec
+# Build spec from DB (LLM config + feature flags)
 # ============================================================
 async def build_spec_from_db(tenant_id: int, db: AsyncSession) -> ContainerSpec:
-    """Lê config LLM ativa do tenant (ou global fallback) + feature flags."""
     from sqlalchemy import select
 
-    from models import TaFeatureFlag
-
-    # LLM: prefere tenant-specific; senão pega global (tenant_id NULL)
     stmt_llm = (
         select(TaLlmProvider)
         .where(TaLlmProvider.active.is_(True))
@@ -269,7 +288,6 @@ async def build_spec_from_db(tenant_id: int, db: AsyncSession) -> ContainerSpec:
     if not llm:
         raise RuntimeError(f"Nenhum LLM provider ativo pra tenant {tenant_id}")
 
-    # Feature flags: global + tenant-scoped
     stmt_flags = select(TaFeatureFlag).where(
         TaFeatureFlag.enabled.is_(True),
         (TaFeatureFlag.escopo == "global")

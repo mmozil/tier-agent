@@ -21,8 +21,9 @@ cryptography==44.0.0
 # HTTP
 httpx==0.28.1
 
-# Container orchestration
+# Container orchestration (SSH para host Docker daemon)
 docker==7.1.0
+paramiko==3.5.0
 
 # LLM providers (apenas SDK leve — agent_runtime usa via REST)
 # Pins frouxos pra evitar release-cadence breaks
