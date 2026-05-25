@@ -49,10 +49,13 @@ case "$PROVIDER" in
         ;;
 esac
 
-# Allowlist + REST API obrigatórios pro control plane Tier conversar
-echo "GATEWAY_ALLOW_ALL_USERS=false" >> "$ENV_FILE"
-echo "API_SERVER_HOST=0.0.0.0" >> "$ENV_FILE"
-echo "API_SERVER_KEY=tier-control-plane-internal" >> "$ENV_FILE"
+# REST API server + gateway settings (vem das envs Docker, não hardcoded)
+echo "API_SERVER_HOST=${API_SERVER_HOST:-0.0.0.0}" >> "$ENV_FILE"
+echo "API_SERVER_PORT=${API_SERVER_PORT:-8642}" >> "$ENV_FILE"
+if [ -n "$API_SERVER_KEY" ]; then
+    echo "API_SERVER_KEY=$API_SERVER_KEY" >> "$ENV_FILE"
+fi
+echo "GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-false}" >> "$ENV_FILE"
 echo "# === END TIER ===" >> "$ENV_FILE"
 
 chown 10000:10000 "$ENV_FILE"
