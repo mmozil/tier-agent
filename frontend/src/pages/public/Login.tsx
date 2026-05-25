@@ -1,74 +1,174 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [senha, setSenha] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!email || !senha) {
+      toast.error("Preencha email e senha");
+      return;
+    }
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/login", { email, password });
+      const { data } = await api.post("/auth/login", { email, password: senha });
       toast.success("Bem-vindo");
-      // is_admin → vai pro admin; senão pro dashboard
       window.location.href = data.is_admin ? "/admin/agentes" : "/admin/agentes";
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || "Credenciais inválidas";
-      toast.error(typeof msg === "string" ? msg : "Erro");
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Email ou senha inválidos");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-[420px] bg-white rounded-xl border border-slate-200 p-8 shadow-sm"
+    <div className="min-h-screen relative overflow-hidden" style={{ backgroundColor: "#0a0a0a" }}>
+      {/* Vídeo de fundo */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+        className="absolute inset-0 w-full h-full object-cover opacity-50"
       >
-        <div className="text-center mb-6">
-          <img src="/tier-agent-escuro.png" alt="Tier Agent" className="h-8 w-auto mx-auto" />
-          <p className="mt-3 text-[13px] text-slate-500">Entrar na sua conta</p>
+        <source src="/images/tier-empresas-720p.mp4" type="video/mp4" />
+      </video>
+      <div className="absolute inset-0 bg-gradient-to-br from-black/60 via-black/30 to-transparent" />
+
+      {/* Logo Tier Agent (variante clara sobre fundo escuro) */}
+      <div className="relative z-10 px-10 py-8">
+        <Link to="/" className="inline-block">
+          <img
+            src="/tier-agent-claro.png"
+            alt="Tier Agent"
+            style={{ height: 38, width: "auto", display: "block" }}
+            draggable={false}
+          />
+        </Link>
+      </div>
+
+      {/* Card centralizado dark */}
+      <div
+        className="relative z-10 flex items-center justify-center"
+        style={{ minHeight: "calc(100vh - 100px)" }}
+      >
+        <div className="w-full max-w-[480px] mx-auto px-4">
+          <div
+            className="rounded-[10px] px-12 pt-10 pb-0"
+            style={{
+              backgroundColor: "rgba(18,18,18,0.85)",
+              backdropFilter: "blur(20px)",
+              boxShadow: "0 15px 35px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)",
+            }}
+          >
+            <h1 className="text-[20px] font-normal tracking-[-0.2px] text-white" style={{ lineHeight: "28px" }}>
+              Acesse seu Tier Agent
+            </h1>
+            <p className="text-[13px] text-slate-400 mt-1 mb-7">Seu funcionário digital em qualquer canal.</p>
+
+            <form onSubmit={onSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[13px] font-normal mb-1.5 text-slate-300">E-mail</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  autoFocus
+                  className="w-full h-[40px] px-3 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
+                  style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
+                  onFocus={(e) => {
+                    e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.boxShadow = "0 0 0 1px #333";
+                  }}
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[13px] font-normal text-slate-300">Senha</label>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={senha}
+                    onChange={(e) => setSenha(e.target.value)}
+                    autoComplete="current-password"
+                    className="w-full h-[40px] px-3 pr-9 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
+                    style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
+                    onFocus={(e) => {
+                      e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)";
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.boxShadow = "0 0 0 1px #333";
+                    }}
+                    required
+                    disabled={loading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#555] hover:text-slate-400 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-[15px] h-[15px]" /> : <Eye className="w-[15px] h-[15px]" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full h-[40px] rounded-[6px] text-[13px] font-medium flex items-center justify-center gap-2 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300 hover:text-white"
+                style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Entrar"}
+              </button>
+            </form>
+
+            {/* Footer do card */}
+            <div
+              className="mt-6 -mx-12 rounded-b-[10px] py-4 text-center"
+              style={{
+                backgroundColor: "rgba(255,255,255,0.03)",
+                borderTop: "1px solid rgba(255,255,255,0.06)",
+              }}
+            >
+              <p className="text-[13px] text-slate-500">
+                Ainda não tem conta?{" "}
+                <Link to="/signup" className="text-slate-300 hover:text-white font-medium transition-colors">
+                  Criar conta gratuita
+                </Link>
+              </p>
+            </div>
+          </div>
+
+          <p className="text-[12px] text-slate-500 text-center mt-5">
+            Já usa Tier Empresas?{" "}
+            <a href="https://erp.tier.finance" className="text-slate-300 hover:text-white transition-colors">
+              Entre pelo painel completo
+            </a>
+          </p>
         </div>
+      </div>
 
-        <label className="block text-[13px] text-slate-700 mb-1">E-mail</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="w-full h-10 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
-        />
-
-        <label className="block text-[13px] text-slate-700 mb-1 mt-4">Senha</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="w-full h-10 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
-        />
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full mt-6 h-10 bg-tier hover:bg-tier-dark text-white rounded-md text-[14px] font-medium disabled:opacity-50"
-        >
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
-
-        <p className="text-center mt-5 text-[13px] text-slate-500">
-          Não tem conta?{" "}
-          <Link to="/signup" className="text-tier hover:underline">
-            Criar agora
-          </Link>
-        </p>
-      </form>
+      <div className="relative z-10 px-5 pb-4 flex gap-6 text-[13px] text-slate-400">
+        <span>© Tier Finance</span>
+      </div>
     </div>
   );
 }
