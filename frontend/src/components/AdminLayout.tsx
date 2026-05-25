@@ -14,7 +14,6 @@ import {
   BookOpen,
 } from "lucide-react";
 
-import ProductSwitcher from "./ProductSwitcher";
 import UserMenu from "./UserMenu";
 
 interface NavItem {
@@ -99,10 +98,9 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-slate-50 flex">
       <aside className="w-[240px] bg-white border-r border-slate-200 flex flex-col">
-        {/* Header com logo + switcher */}
-        <div className="h-14 px-4 flex items-center justify-between border-b border-slate-100">
+        {/* Header com logo */}
+        <div className="h-14 px-5 flex items-center border-b border-slate-100">
           <img src="/tier-agent-escuro.png" alt="Tier Agent" className="h-6 w-auto" />
-          <ProductSwitcher current="agent" />
         </div>
 
         {/* Nav sections */}
