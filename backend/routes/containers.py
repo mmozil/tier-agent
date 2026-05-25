@@ -1,5 +1,7 @@
 """Routes admin pra gerenciar containers Hermes (provision/restart/health)."""
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +22,7 @@ class ContainerOut(BaseModel):
     host: str
     port: int | None
     image_version: str | None
-    last_health_check_at: str | None
+    last_health_check_at: datetime | None
     restart_count: int
 
     model_config = {"from_attributes": True}
