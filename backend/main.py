@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import agents, features, health, llm, tenants
+from routes import agents, containers, features, health, llm, tenants, webhooks
 
 settings = get_settings()
 
@@ -53,6 +53,8 @@ app.include_router(tenants.router, prefix="/api/v1")
 app.include_router(agents.router, prefix="/api/v1")
 app.include_router(llm.router, prefix="/api/v1")
 app.include_router(features.router, prefix="/api/v1")
+app.include_router(containers.router, prefix="/api/v1")
+app.include_router(webhooks.router, prefix="/api/v1")
 
 
 @app.on_event("startup")

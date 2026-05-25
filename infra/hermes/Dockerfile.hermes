@@ -1,0 +1,34 @@
+# Tier Agent — imagem Hermes customizada
+#
+# Estende a imagem oficial v0.14.0 do Hermes Agent (NousResearch).
+# Adiciona entrypoint que traduz envs Tier (TIER_*) → config Hermes
+# antes de iniciar o gateway. Permite hot-swap de LLM/feature flags
+# sem editar config dentro do container.
+#
+# Build:
+#   docker build -t tier/hermes:0.14.0-tier1 -f infra/hermes/Dockerfile.hermes infra/hermes/
+#
+# Run (control plane orquestra):
+#   docker run -d --name tier-hermes-tenant-{id} \
+#     -v tier-hermes-vol-{id}:/opt/data \
+#     -p {dyn_port}:8000 \
+#     -e TIER_LLM_PROVIDER=minimax \
+#     -e TIER_LLM_MODEL=MiniMax-M2 \
+#     -e TIER_LLM_API_KEY=sk-... \
+#     -e TIER_FEATURE_FLAGS='{"enable_voice_in":"true"}' \
+#     tier/hermes:0.14.0-tier1
+
+FROM nousresearch/hermes-agent:latest
+
+USER root
+
+# Entrypoint custom
+COPY tier-entrypoint.sh /usr/local/bin/tier-entrypoint.sh
+RUN chmod +x /usr/local/bin/tier-entrypoint.sh
+
+# REST API server por padrão (porta 8000)
+EXPOSE 8000
+
+# Mantém /init do s6-overlay como PID 1 mas precede com nosso script
+# que monta config a partir das envs Tier
+ENTRYPOINT ["/usr/local/bin/tier-entrypoint.sh"]
