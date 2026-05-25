@@ -25,9 +25,10 @@ httpx==0.28.1
 docker==7.1.0
 
 # LLM providers (apenas SDK leve — agent_runtime usa via REST)
-google-genai==1.0.0
-anthropic==0.42.0
-openai==1.59.0
+# Pins frouxos pra evitar release-cadence breaks
+google-genai>=0.8.0,<2
+anthropic>=0.40,<1
+openai>=1.50,<2
 
 # Storage
 boto3==1.35.78
