@@ -7,20 +7,24 @@ import { api } from "@/lib/api";
 export default function Signup() {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [cnpj, setCnpj] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (password.length < 8) {
+      toast.error("Senha precisa de pelo menos 8 caracteres");
+      return;
+    }
     setLoading(true);
     try {
-      // TODO endpoint /signup público (próxima fase)
-      await api.post("/signup", { nome, email, cnpj });
-      toast.success("Conta criada — verifique seu e-mail");
-      window.location.href = "/login";
-    } catch (err) {
-      toast.error("Endpoint /signup ainda não implementado");
-      console.error(err);
+      await api.post("/auth/signup", { nome, email, password, cnpj: cnpj || null });
+      toast.success("Conta criada");
+      window.location.href = "/admin/agentes";
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || "Erro ao criar conta";
+      toast.error(typeof msg === "string" ? msg : "Erro");
     } finally {
       setLoading(false);
     }
@@ -52,6 +56,17 @@ export default function Signup() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          className="w-full h-10 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
+        />
+
+        <label className="block text-[13px] text-slate-700 mb-1 mt-4">Senha</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          minLength={8}
+          placeholder="mínimo 8 caracteres"
           className="w-full h-10 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
         />
 

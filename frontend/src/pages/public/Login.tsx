@@ -13,12 +13,13 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     try {
-      // TODO endpoint /auth/login no backend (próxima fase)
-      await api.post("/auth/login", { email, password });
-      window.location.href = "/dashboard";
-    } catch (err) {
-      toast.error("Endpoint /auth/login ainda não implementado");
-      console.error(err);
+      const { data } = await api.post("/auth/login", { email, password });
+      toast.success("Bem-vindo");
+      // is_admin → vai pro admin; senão pro dashboard
+      window.location.href = data.is_admin ? "/admin/agentes" : "/admin/agentes";
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || "Credenciais inválidas";
+      toast.error(typeof msg === "string" ? msg : "Erro");
     } finally {
       setLoading(false);
     }
