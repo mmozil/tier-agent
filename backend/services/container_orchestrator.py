@@ -100,6 +100,12 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
 
     port = await acquire_port()
 
+    # API key forte aleatória pro REST API server do Hermes (Bearer auth interno)
+    # Cada tenant tem sua própria — o control plane guarda e usa pra proxy
+    import secrets
+
+    api_server_key = secrets.token_hex(32)
+
     env = {
         "HERMES_UID": "10000",
         "HERMES_GID": "10000",
@@ -108,6 +114,11 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
         "TIER_LLM_API_KEY": spec.llm_api_key,
         "TIER_FEATURE_FLAGS": json.dumps(spec.feature_flags),
         "TIER_STATEMENT_DESCRIPTOR": spec.statement_descriptor,
+        # REST API server Hermes (escuta 8642)
+        "API_SERVER_HOST": "0.0.0.0",
+        "API_SERVER_PORT": "8642",
+        "API_SERVER_KEY": api_server_key,
+        "GATEWAY_ALLOW_ALL_USERS": "true",  # control plane Tier media tudo, sem allowlist na Engine
         # Provider-specific aliases (entrypoint resolve)
         f"{spec.llm_provider.upper()}_API_KEY": spec.llm_api_key,
     }
@@ -118,7 +129,7 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
         detach=True,
         restart_policy={"Name": "unless-stopped"},
         volumes={vol: {"bind": "/opt/data", "mode": "rw"}},
-        ports={"8000/tcp": port},
+        ports={"8642/tcp": port},  # Hermes API server escuta em 8642 (default DEFAULT_PORT)
         environment=env,
         labels={
             "tier.tenant_id": str(spec.tenant_id),
@@ -126,6 +137,12 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
             "tier.created_at": datetime.now(timezone.utc).isoformat(),
         },
     )
+
+    # Persist API server key encriptado no Redis (control plane usa pra proxy)
+    r = await _redis()
+    from core.encryption import encrypt as _enc
+
+    await r.set(f"tier_agent:hermes_key:{spec.tenant_id}", _enc(api_server_key), ex=86400 * 90)
 
     # Upsert TaContainer
     existing_row = await db.get(TaContainer, spec.tenant_id)
