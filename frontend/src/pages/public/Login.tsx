@@ -31,11 +31,8 @@ export default function Login() {
         className="w-full max-w-[420px] bg-white rounded-xl border border-slate-200 p-8 shadow-sm"
       >
         <div className="text-center mb-6">
-          <div className="text-[20px] font-medium text-slate-900">
-            tier<span className="text-tier">.</span>
-            <span className="text-slate-500 ml-1 text-[13px]">agent</span>
-          </div>
-          <p className="mt-1 text-[13px] text-slate-500">Entrar na sua conta</p>
+          <img src="/tier-agent-escuro.png" alt="Tier Agent" className="h-8 w-auto mx-auto" />
+          <p className="mt-3 text-[13px] text-slate-500">Entrar na sua conta</p>
         </div>
 
         <label className="block text-[13px] text-slate-700 mb-1">E-mail</label>

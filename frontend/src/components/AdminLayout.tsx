@@ -14,11 +14,9 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-slate-50 flex">
       <aside className="w-[240px] bg-white border-r border-slate-200 flex flex-col">
-        <div className="h-14 px-5 flex items-center border-b border-slate-100">
-          <span className="text-[17px] font-medium text-slate-800">
-            tier<span className="text-tier">.</span>
-            <span className="text-slate-500 ml-1 text-[12px]">agent · admin</span>
-          </span>
+        <div className="h-14 px-5 flex items-center justify-between border-b border-slate-100">
+          <img src="/tier-agent-escuro.png" alt="Tier Agent" className="h-6 w-auto" />
+          <span className="text-[10px] text-slate-400 uppercase tracking-wide">admin</span>
         </div>
         <nav className="flex-1 py-3">
           {items.map((it) => (
