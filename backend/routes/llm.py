@@ -5,7 +5,7 @@ API key é Fernet-encrypted no DB.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,7 +47,7 @@ class LlmProviderOut(BaseModel):
     id: int
     provider: str
     default_model: str
-    fallback_chain: list[dict]
+    fallback_chain: list[dict] = Field(default_factory=list, validation_alias="fallback_chain_json")
     temperature: float
     max_tokens: int
     timeout_s: int
@@ -58,7 +58,7 @@ class LlmProviderOut(BaseModel):
     active: bool
     has_api_key: bool = True
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 @router.get("/supported")
