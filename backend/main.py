@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import agents, containers, features, health, llm, tenants, webhooks
+from routes import agents, auth, containers, features, health, llm, tenants, webhooks
 
 settings = get_settings()
 
@@ -49,6 +49,7 @@ async def root():
 
 # Routers
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
 app.include_router(tenants.router, prefix="/api/v1")
 app.include_router(agents.router, prefix="/api/v1")
 app.include_router(llm.router, prefix="/api/v1")

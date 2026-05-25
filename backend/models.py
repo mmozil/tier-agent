@@ -42,6 +42,10 @@ class TaTenant(Base):
     # sku: trial | ta-starter | ta-pro | ta-business
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     # status: active | suspended | cancelled
+    # Login (MVP: tenant_email + password vira JWT). V2 split em ta_user.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
