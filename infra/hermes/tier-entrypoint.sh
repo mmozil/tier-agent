@@ -71,7 +71,7 @@ if [ -n "$TIER_FEATURE_FLAGS" ]; then
 fi
 
 echo "[tier-entrypoint] config aplicada: provider=$PROVIDER model=$MODEL"
-echo "[tier-entrypoint] iniciando /init (s6-overlay) com comando: $*"
+echo "[tier-entrypoint] delegando pro entrypoint original Hermes"
 
-# Delega pro /init original (s6-overlay)
-exec /init /opt/hermes/docker/main-wrapper.sh "$@"
+# Delega pro entrypoint oficial: tini -g -- /opt/hermes/docker/entrypoint.sh
+exec /usr/bin/tini -g -- /opt/hermes/docker/entrypoint.sh "$@"
