@@ -75,27 +75,27 @@ async def whatsapp_engine_webhook(
     event = data.get("event")
     payload = data.get("payload", {})
 
-    # Resolve agente vinculado à instance_id
-    result = await db.execute(
-        select(TaConnector).where(
-            TaConnector.kind == "whatsapp",
-            TaConnector.enabled.is_(True),
-            TaConnector.config_json_enc.contains(instance_id),  # heurística leve
-        )
-    )
-    connector = result.scalars().first()
-    if not connector:
-        logger.warning("webhook WhatsApp pra instance %s sem connector mapeado", instance_id)
-        return {"status": "no_agent_mapped"}
+    # Só processa eventos de mensagem text (image/audio próxima fase)
+    if event not in {"message.text", "message"}:
+        logger.debug("ignorando event %s", event)
+        return {"status": "ignored", "event": event}
 
-    # Encaminhar pra agent_runtime (próxima fase)
-    # Por enquanto só loga + responde 200
-    logger.info(
-        "WhatsApp event=%s agent=%s instance=%s payload_keys=%s",
-        event,
-        connector.agent_id,
-        instance_id,
-        list(payload.keys()),
-    )
+    from services import agent_runtime
 
-    return {"status": "received", "agent_id": connector.agent_id, "event": event}
+    text_content = payload.get("text") or payload.get("body") or ""
+    external_chat_id = payload.get("from") or payload.get("chat_id") or ""
+    sender_name = payload.get("sender_name") or payload.get("pushName")
+
+    if not text_content or not external_chat_id:
+        return {"status": "missing_fields", "event": event}
+
+    result = await agent_runtime.handle_inbound_message(
+        db,
+        connector_kind="whatsapp",
+        instance_id=instance_id,
+        external_chat_id=external_chat_id,
+        sender_name=sender_name,
+        text_content=text_content,
+    )
+    logger.info("webhook WhatsApp processed: %s", result)
+    return result
