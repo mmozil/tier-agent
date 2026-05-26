@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -7,16 +7,12 @@ import {
   ReactFlow,
   ReactFlowProvider,
   addEdge,
-  applyEdgeChanges,
-  applyNodeChanges,
+  useEdgesState,
+  useNodesState,
   useReactFlow,
   type Connection,
   type Edge,
-  type EdgeChange,
   type Node,
-  type NodeChange,
-  type OnEdgesChange,
-  type OnNodesChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -38,7 +34,13 @@ interface Props {
   selectedNodeId: string | null;
 }
 
+// ESTÁVEL — única instância, evita warning React Flow + re-render
 const NODE_TYPES = Object.fromEntries(NODE_CATALOG.map((m) => [m.kind, PlaybookNode]));
+
+const DEFAULT_EDGE_OPTS = {
+  type: "smoothstep" as const,
+  style: { stroke: "#94a3b8", strokeWidth: 2 },
+};
 
 export default function PlaybookCanvasWrapper(props: Props) {
   return (
@@ -52,89 +54,127 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
   const flowRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
 
-  // Map canvas → @xyflow types (são compatíveis estruturalmente, só rotular)
-  const nodes: Node[] = useMemo(
-    () =>
+  // ─── State INTERNO do React Flow (gerenciado pelos hooks oficiais)
+  //     Drag/move atualiza só aqui → zero latência, sem re-render no parent
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  // Ref pra evitar loop sync: marca "ack" quando sincronizamos externo → interno
+  const lastSyncedSig = useRef<string>("");
+  // Ref pra ignorar mudanças durante drag (não comita até dragStop)
+  const isDraggingRef = useRef(false);
+
+  // ─── Sync EXTERNO → INTERNO
+  //     Só ativa quando estrutura/data muda externamente (ex: drop novo nó, painel direito edita data,
+  //     deleção via menu). Não dispara durante drag (porque o externo só atualiza em dragStop).
+  useEffect(() => {
+    const sig = JSON.stringify({
+      n: canvas.nodes.map((n) => ({ id: n.id, type: n.type, data: n.data })),
+      e: canvas.edges.map((e) => ({ id: e.id, s: e.source, t: e.target, h: e.sourceHandle })),
+    });
+    if (sig === lastSyncedSig.current) return;
+    lastSyncedSig.current = sig;
+
+    // Preserva posições do state interno se nó já existe (evita pular durante undo/redo)
+    const positionsMap = new Map(nodes.map((n) => [n.id, n.position]));
+
+    setNodes(
       canvas.nodes.map((n) => ({
         id: n.id,
         type: n.type,
-        position: n.position,
+        position: positionsMap.get(n.id) || n.position,
         data: n.data,
-        selected: n.id === selectedNodeId,
       })),
-    [canvas.nodes, selectedNodeId],
-  );
-
-  const edges: Edge[] = useMemo(
-    () =>
+    );
+    setEdges(
       canvas.edges.map((e) => ({
         id: e.id,
         source: e.source,
         target: e.target,
         sourceHandle: e.sourceHandle || undefined,
-        type: "smoothstep",
-        animated: false,
-        style: { stroke: "#94a3b8", strokeWidth: 2 },
+        ...DEFAULT_EDGE_OPTS,
       })),
-    [canvas.edges],
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvas]);
+
+  // ─── Aplica seleção visual (sem mexer em data/position — não comita)
+  const nodesWithSelection = useMemo(
+    () => nodes.map((n) => (n.selected !== (n.id === selectedNodeId) ? { ...n, selected: n.id === selectedNodeId } : n)),
+    [nodes, selectedNodeId],
   );
 
-  const onNodesChange: OnNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      const updated = applyNodeChanges(changes, nodes);
-      onChange({
-        ...canvas,
-        nodes: updated.map((n) => ({
+  // ─── COMMIT pro parent (chamado só em eventos "finais")
+  const commitToParent = useCallback(
+    (nextNodes?: Node[], nextEdges?: Edge[]) => {
+      const finalNodes = nextNodes ?? nodes;
+      const finalEdges = nextEdges ?? edges;
+
+      const out: CanvasShape = {
+        version: canvas.version || 1,
+        nodes: finalNodes.map((n) => ({
           id: n.id,
           type: n.type as PlaybookNodeKind,
           position: n.position,
           data: (n.data as Record<string, unknown>) || {},
         })),
-      });
-    },
-    [canvas, nodes, onChange],
-  );
-
-  const onEdgesChange: OnEdgesChange = useCallback(
-    (changes: EdgeChange[]) => {
-      const updated = applyEdgeChanges(changes, edges);
-      onChange({
-        ...canvas,
-        edges: updated.map((e) => ({
+        edges: finalEdges.map((e) => ({
           id: e.id,
           source: e.source,
           target: e.target,
           sourceHandle: e.sourceHandle,
         })),
+      };
+      // Marca como já sincronizado pra evitar bounce no useEffect
+      lastSyncedSig.current = JSON.stringify({
+        n: out.nodes.map((n) => ({ id: n.id, type: n.type, data: n.data })),
+        e: out.edges.map((e) => ({ id: e.id, s: e.source, t: e.target, h: e.sourceHandle })),
       });
+      onChange(out);
     },
-    [canvas, edges, onChange],
+    [canvas.version, edges, nodes, onChange],
   );
 
+  // ─── Eventos do React Flow
   const onConnect = useCallback(
     (connection: Connection) => {
       const newEdge: Edge = {
-        ...connection,
         id: genEdgeId(),
         source: connection.source!,
         target: connection.target!,
-        type: "smoothstep",
-        style: { stroke: "#94a3b8", strokeWidth: 2 },
+        sourceHandle: connection.sourceHandle || undefined,
+        ...DEFAULT_EDGE_OPTS,
       };
-      const updated = addEdge(newEdge, edges);
-      onChange({
-        ...canvas,
-        edges: updated.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.sourceHandle,
-        })),
-      });
+      const next = addEdge(newEdge, edges);
+      setEdges(next);
+      commitToParent(undefined, next);
     },
-    [canvas, edges, onChange],
+    [commitToParent, edges, setEdges],
   );
 
+  // Drag: durante move só atualiza state interno (zero latência)
+  // No dragStop, comita position pro parent
+  const onNodeDragStart = useCallback(() => {
+    isDraggingRef.current = true;
+  }, []);
+
+  const onNodeDragStop = useCallback(() => {
+    isDraggingRef.current = false;
+    commitToParent();
+  }, [commitToParent]);
+
+  // Deletes (Backspace/Delete key) — React Flow já remove do state interno via onNodesChange,
+  // só precisamos comitar depois.
+  const onNodesDelete = useCallback(() => {
+    // Roda DEPOIS de onNodesChange aplicar a remoção — usa setTimeout pra pegar state atualizado
+    setTimeout(commitToParent, 0);
+  }, [commitToParent]);
+
+  const onEdgesDelete = useCallback(() => {
+    setTimeout(commitToParent, 0);
+  }, [commitToParent]);
+
+  // ─── Drag & drop da paleta
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
@@ -151,39 +191,57 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
       } catch {
         return;
       }
-      const position = screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-      const newNode: PbNode = {
+      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const newPbNode: PbNode = {
         id: genNodeId(),
         type: meta.kind,
         position,
         data: { ...(meta.defaultData || {}) },
       };
-      onChange({
-        ...canvas,
-        nodes: [...canvas.nodes, newNode],
-      });
+      // Cria diretamente no state interno + comita
+      const newRfNode: Node = {
+        id: newPbNode.id,
+        type: newPbNode.type,
+        position: newPbNode.position,
+        data: newPbNode.data,
+      };
+      const nextNodes = [...nodes, newRfNode];
+      setNodes(nextNodes);
+      commitToParent(nextNodes, undefined);
     },
-    [canvas, onChange, screenToFlowPosition],
+    [commitToParent, nodes, screenToFlowPosition, setNodes],
   );
 
   return (
     <div ref={flowRef} className="w-full h-full" onDragOver={onDragOver} onDrop={onDrop}>
       <ReactFlow
-        nodes={nodes}
+        nodes={nodesWithSelection}
         edges={edges}
         nodeTypes={NODE_TYPES}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
+        onNodesDelete={onNodesDelete}
+        onEdgesDelete={onEdgesDelete}
         onNodeClick={(_, node) => onSelectNode(node.id)}
         onPaneClick={() => onSelectNode(null)}
         fitView
         fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: "smoothstep", style: { stroke: "#94a3b8", strokeWidth: 2 } }}
+        defaultEdgeOptions={DEFAULT_EDGE_OPTS}
+        nodeOrigin={[0, 0]}
+        minZoom={0.2}
+        maxZoom={2}
+        snapToGrid={false}
+        elevateNodesOnSelect
+        nodesDraggable
+        nodesConnectable
+        elementsSelectable
+        deleteKeyCode={["Delete", "Backspace"]}
+        multiSelectionKeyCode={["Meta", "Control"]}
+        selectionKeyCode={["Shift"]}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#cbd5e1" />
         <Controls
