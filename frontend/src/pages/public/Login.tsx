@@ -32,12 +32,13 @@ function GoogleCredentialButton({
       callback: (resp: { credential: string }) => onCredential(resp.credential),
     });
     g.accounts.id.renderButton(ref.current, {
-      theme: "filled_black",
+      theme: "outline",
       size: "large",
       type: "standard",
       shape: "rectangular",
       text: "continue_with",
-      logo_alignment: "center",
+      logo_alignment: "left",
+      locale: "pt-BR",
       width: 360,
     });
   }, [onCredential]);
@@ -142,6 +143,7 @@ export default function Login() {
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
                   autoFocus
+                  data-dark
                   className="w-full h-[40px] px-3 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
                   style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
                   onFocus={(e) => {
@@ -165,6 +167,7 @@ export default function Login() {
                     value={senha}
                     onChange={(e) => setSenha(e.target.value)}
                     autoComplete="current-password"
+                    data-dark
                     className="w-full h-[40px] px-3 pr-9 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
                     style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
                     onFocus={(e) => {

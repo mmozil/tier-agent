@@ -85,6 +85,7 @@ export default function Signup() {
                   onChange={(e) => setNomePessoa(e.target.value)}
                   autoFocus
                   placeholder="Ex: Marcelo Morais"
+                  data-dark
                   className="w-full h-[40px] px-3 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
                   style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
                   onFocus={(e) => { e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)"; }}
@@ -101,6 +102,7 @@ export default function Signup() {
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
                   placeholder="Ex: Out Group Comercial"
+                  data-dark
                   className="w-full h-[40px] px-3 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
                   style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
                   onFocus={(e) => { e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)"; }}
@@ -117,6 +119,7 @@ export default function Signup() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
+                  data-dark
                   className="w-full h-[40px] px-3 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
                   style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
                   onFocus={(e) => { e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)"; }}
@@ -136,6 +139,7 @@ export default function Signup() {
                     autoComplete="new-password"
                     minLength={8}
                     placeholder="mínimo 8 caracteres"
+                    data-dark
                     className="w-full h-[40px] px-3 pr-9 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
                     style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
                     onFocus={(e) => { e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)"; }}
@@ -163,6 +167,7 @@ export default function Signup() {
                   value={cnpj}
                   onChange={(e) => setCnpj(e.target.value)}
                   placeholder="00.000.000/0000-00"
+                  data-dark
                   className="w-full h-[40px] px-3 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
                   style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
                   onFocus={(e) => { e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)"; }}

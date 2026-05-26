@@ -12,4 +12,23 @@
     @apply bg-tier-bg-page text-tier-text-body antialiased;
     font-feature-settings: "cv11", "ss03", "ss02";
   }
+
+  /* Autofill override pra inputs em fundo escuro (Login/Signup dark) */
+  input[data-dark]:-webkit-autofill,
+  input[data-dark]:-webkit-autofill:hover,
+  input[data-dark]:-webkit-autofill:focus,
+  input[data-dark]:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #1e1e1e inset !important;
+    -webkit-text-fill-color: #ffffff !important;
+    caret-color: #ffffff !important;
+    transition: background-color 9999s ease-in-out 0s;
+  }
+
+  /* Google Identity Services button — força font system (sem fallback estranho) */
+  .gsi-material-button,
+  .gsi-material-button * {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+  }
 }
