@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Plug,
   BookOpen,
+  Workflow,
   Search,
   HelpCircle,
   Bell,
@@ -35,6 +36,7 @@ const SECTIONS: NavGroup[] = [
     items: [
       { to: "/admin/agentes", label: "Agentes", icon: Bot },
       { to: "/admin/conversas", label: "Conversas", icon: MessageSquare },
+      { to: "/admin/playbooks", label: "Playbooks", icon: Workflow },
       { to: "/admin/canais", label: "Canais", icon: Plug },
       { to: "/admin/knowledge", label: "Knowledge", icon: BookOpen },
     ],

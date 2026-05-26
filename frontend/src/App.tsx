@@ -14,6 +14,8 @@ import CobrancaPage from "./pages/admin/CobrancaPage";
 import PerfilPage from "./pages/admin/PerfilPage";
 import ConfiguracoesPage from "./pages/admin/ConfiguracoesPage";
 import SuportePage from "./pages/admin/SuportePage";
+import PlaybooksPage from "./pages/admin/PlaybooksPage";
+import PlaybookEditorPage from "./pages/admin/PlaybookEditorPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
@@ -44,6 +46,8 @@ export default function App() {
         <Route path="metricas" element={<Placeholder title="Métricas" desc="Custo, mensagens/dia, deflection rate (em breve)." />} />
         <Route path="cobranca" element={<CobrancaPage />} />
         <Route path="equipe" element={<Placeholder title="Equipe" desc="Convidar membros pro tenant (em breve)." />} />
+        <Route path="playbooks" element={<PlaybooksPage />} />
+        <Route path="playbooks/:id" element={<PlaybookEditorPage />} />
         <Route path="perfil" element={<PerfilPage />} />
         <Route path="configuracoes" element={<ConfiguracoesPage />} />
         <Route path="suporte" element={<SuportePage />} />

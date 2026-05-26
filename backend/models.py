@@ -322,3 +322,105 @@ class TaContainer(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ============================================================
+# 14. Playbook — canvas visual estilo N8N + ManyChat híbrido
+# ============================================================
+class TaPlaybook(Base):
+    """Fluxo de atendimento desenhado em canvas drag-and-drop.
+
+    Quando publicado, popula ta_playbook_trigger_index e passa a
+    interceptar mensagens antes do Hermes via agent_runtime.
+    """
+    __tablename__ = "ta_playbook"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("ta_agent.id", ondelete="CASCADE"), nullable=False, index=True)
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    descricao: Mapped[str | None] = mapped_column(Text, nullable=True)
+    canvas_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # {version, nodes:[{id,type,position,data}], edges:[{id,source,target,sourceHandle?}]}
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    # status: draft | published | archived
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ============================================================
+# 15. Trigger index — denormalização pra match rápido na mensagem
+# ============================================================
+class TaPlaybookTriggerIndex(Base):
+    """Snapshot dos nós trigger de cada playbook publicado.
+
+    Atualizada em POST /playbooks/{id}/publish. Permite query única
+    por agent_id+trigger_type sem ter que parsear canvas_json em runtime.
+    """
+    __tablename__ = "ta_playbook_trigger_index"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    playbook_id: Mapped[int] = mapped_column(ForeignKey("ta_playbook.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("ta_agent.id", ondelete="CASCADE"), nullable=False)
+    node_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    trigger_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # trigger_keyword | trigger_intent | trigger_manual | trigger_cron | trigger_event
+    trigger_data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        # índice composto pra lookup rápido por agent+trigger ativo
+        # criado via Index() em migration (Alembic gera melhor que aqui)
+    )
+
+
+# ============================================================
+# 16. Playbook execution — 1 row por run
+# ============================================================
+class TaPlaybookExecution(Base):
+    __tablename__ = "ta_playbook_execution"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    playbook_id: Mapped[int] = mapped_column(ForeignKey("ta_playbook.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("ta_agent.id", ondelete="CASCADE"), nullable=False)
+    conversation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ta_conversation.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    trigger_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    trigger_node_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
+    # status: running | completed | failed | waiting | handed_off
+    vars_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    resume_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    # pra nó wait — scheduler.resume_waiting_playbooks job
+
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# ============================================================
+# 17. Playbook step log — log de cada nó executado
+# ============================================================
+class TaPlaybookStepLog(Base):
+    __tablename__ = "ta_playbook_step_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    execution_id: Mapped[int] = mapped_column(
+        ForeignKey("ta_playbook_execution.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    node_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    node_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    input_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    output_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ok")
+    # status: ok | error | skipped
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

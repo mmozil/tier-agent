@@ -1,0 +1,378 @@
+"""Playbooks — workflow visual estilo N8N + ManyChat híbrido.
+
+CRUD + publish + test-run. Sprint 0 entrega skeleton com CRUD;
+Sprint 1 implementa publish (popula trigger_index) + integração no
+agent_runtime via playbook_router/executor.
+"""
+
+from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.auth import CurrentUser, get_current_user
+from core.db import get_db
+from models import (
+    TaAgent,
+    TaPlaybook,
+    TaPlaybookExecution,
+    TaPlaybookStepLog,
+    TaPlaybookTriggerIndex,
+)
+
+router = APIRouter(prefix="/playbooks", tags=["playbooks"])
+
+
+# ============================================================
+# Schemas
+# ============================================================
+class PlaybookCreate(BaseModel):
+    agent_id: int
+    nome: str = Field(min_length=2, max_length=120)
+    descricao: str | None = None
+    canvas_json: dict[str, Any] = Field(default_factory=lambda: {"version": 1, "nodes": [], "edges": []})
+
+
+class PlaybookUpdate(BaseModel):
+    nome: str | None = Field(default=None, min_length=2, max_length=120)
+    descricao: str | None = None
+    canvas_json: dict[str, Any] | None = None
+
+
+class PlaybookOut(BaseModel):
+    id: int
+    agent_id: int
+    nome: str
+    descricao: str | None
+    canvas_json: dict[str, Any]
+    status: str
+    published_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PlaybookListItem(BaseModel):
+    """Versão enxuta pra listagem (sem canvas_json — pesado)."""
+    id: int
+    agent_id: int
+    nome: str
+    descricao: str | None
+    status: str
+    nodes_count: int
+    published_at: datetime | None
+    updated_at: datetime
+
+
+class PublishResult(BaseModel):
+    playbook_id: int
+    status: str
+    triggers_indexed: int
+    published_at: datetime
+
+
+# ============================================================
+# Helpers
+# ============================================================
+async def _ensure_tenant(user: CurrentUser) -> int:
+    if not user.tenant_id:
+        raise HTTPException(403, "Usuário sem tenant — finalize signup")
+    return user.tenant_id
+
+
+async def _get_playbook_for_tenant(
+    db: AsyncSession, playbook_id: int, tenant_id: int
+) -> TaPlaybook:
+    pb = await db.get(TaPlaybook, playbook_id)
+    if pb is None:
+        raise HTTPException(404, "Playbook não encontrado")
+    agent = await db.get(TaAgent, pb.agent_id)
+    if agent is None or agent.tenant_id != tenant_id:
+        raise HTTPException(404, "Playbook não encontrado")
+    return pb
+
+
+async def _validate_agent(db: AsyncSession, agent_id: int, tenant_id: int) -> TaAgent:
+    agent = await db.get(TaAgent, agent_id)
+    if agent is None or agent.tenant_id != tenant_id:
+        raise HTTPException(404, "Agente não encontrado")
+    return agent
+
+
+def _nodes_count(canvas_json: dict | None) -> int:
+    if not canvas_json:
+        return 0
+    nodes = canvas_json.get("nodes") or []
+    return len(nodes) if isinstance(nodes, list) else 0
+
+
+_TRIGGER_TYPES = {
+    "trigger_keyword",
+    "trigger_intent",
+    "trigger_manual",
+    "trigger_cron",
+    "trigger_event",
+}
+
+
+# ============================================================
+# Routes
+# ============================================================
+@router.get("", response_model=list[PlaybookListItem])
+async def list_playbooks(
+    agent_id: int | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = await _ensure_tenant(user)
+
+    # join via agent_id pra garantir tenant scope
+    stmt = (
+        select(TaPlaybook, TaAgent)
+        .join(TaAgent, TaAgent.id == TaPlaybook.agent_id)
+        .where(TaAgent.tenant_id == tenant_id)
+        .order_by(TaPlaybook.updated_at.desc())
+    )
+    if agent_id is not None:
+        stmt = stmt.where(TaPlaybook.agent_id == agent_id)
+
+    rows = (await db.execute(stmt)).all()
+    return [
+        PlaybookListItem(
+            id=pb.id,
+            agent_id=pb.agent_id,
+            nome=pb.nome,
+            descricao=pb.descricao,
+            status=pb.status,
+            nodes_count=_nodes_count(pb.canvas_json),
+            published_at=pb.published_at,
+            updated_at=pb.updated_at,
+        )
+        for pb, _agent in rows
+    ]
+
+
+@router.post("", response_model=PlaybookOut, status_code=201)
+async def create_playbook(
+    payload: PlaybookCreate,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = await _ensure_tenant(user)
+    await _validate_agent(db, payload.agent_id, tenant_id)
+
+    pb = TaPlaybook(
+        agent_id=payload.agent_id,
+        nome=payload.nome,
+        descricao=payload.descricao,
+        canvas_json=payload.canvas_json,
+        status="draft",
+    )
+    db.add(pb)
+    await db.commit()
+    await db.refresh(pb)
+    return pb
+
+
+@router.get("/{playbook_id}", response_model=PlaybookOut)
+async def get_playbook(
+    playbook_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = await _ensure_tenant(user)
+    return await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+
+
+@router.put("/{playbook_id}", response_model=PlaybookOut)
+async def update_playbook(
+    playbook_id: int,
+    payload: PlaybookUpdate,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = await _ensure_tenant(user)
+    pb = await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+
+    if payload.nome is not None:
+        pb.nome = payload.nome
+    if payload.descricao is not None:
+        pb.descricao = payload.descricao
+    if payload.canvas_json is not None:
+        pb.canvas_json = payload.canvas_json
+        # edição põe de volta em draft se estava publicado
+        if pb.status == "published":
+            pb.status = "draft"
+
+    await db.commit()
+    await db.refresh(pb)
+    return pb
+
+
+@router.delete("/{playbook_id}", status_code=204)
+async def delete_playbook(
+    playbook_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = await _ensure_tenant(user)
+    pb = await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+    await db.delete(pb)
+    await db.commit()
+
+
+@router.post("/{playbook_id}/publish", response_model=PublishResult)
+async def publish_playbook(
+    playbook_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Marca como publicado + rebuilds ta_playbook_trigger_index.
+
+    Sprint 0: rebuild síncrono dos triggers. Sprint 1 plugará no router.
+    """
+    tenant_id = await _ensure_tenant(user)
+    pb = await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+
+    canvas = pb.canvas_json or {}
+    nodes = canvas.get("nodes") or []
+    if not isinstance(nodes, list):
+        raise HTTPException(400, "canvas_json.nodes inválido")
+
+    # apaga triggers antigos do playbook
+    await db.execute(
+        delete(TaPlaybookTriggerIndex).where(TaPlaybookTriggerIndex.playbook_id == pb.id)
+    )
+
+    triggers_indexed = 0
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        ntype = node.get("type") or ""
+        if ntype not in _TRIGGER_TYPES:
+            continue
+        node_id = str(node.get("id") or "")[:64]
+        node_data = node.get("data") or {}
+        if not node_id:
+            continue
+        idx = TaPlaybookTriggerIndex(
+            playbook_id=pb.id,
+            agent_id=pb.agent_id,
+            node_id=node_id,
+            trigger_type=ntype,
+            trigger_data=node_data,
+            enabled=True,
+        )
+        db.add(idx)
+        triggers_indexed += 1
+
+    pb.status = "published"
+    pb.published_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(pb)
+
+    return PublishResult(
+        playbook_id=pb.id,
+        status=pb.status,
+        triggers_indexed=triggers_indexed,
+        published_at=pb.published_at,
+    )
+
+
+@router.post("/{playbook_id}/archive", response_model=PlaybookOut)
+async def archive_playbook(
+    playbook_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tira do ar: remove triggers do índice e marca status=archived."""
+    tenant_id = await _ensure_tenant(user)
+    pb = await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+    await db.execute(
+        delete(TaPlaybookTriggerIndex).where(TaPlaybookTriggerIndex.playbook_id == pb.id)
+    )
+    pb.status = "archived"
+    await db.commit()
+    await db.refresh(pb)
+    return pb
+
+
+# ============================================================
+# Executions (read-only no Sprint 0)
+# ============================================================
+class StepLogOut(BaseModel):
+    id: int
+    node_id: str
+    node_type: str
+    status: str
+    latency_ms: int | None
+    cost_cents: int
+    input_json: dict | None
+    output_json: dict | None
+    error: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ExecutionOut(BaseModel):
+    id: int
+    playbook_id: int
+    agent_id: int
+    conversation_id: int | None
+    trigger_type: str | None
+    status: str
+    vars_json: dict
+    started_at: datetime
+    completed_at: datetime | None
+    error: str | None
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/{playbook_id}/executions", response_model=list[ExecutionOut])
+async def list_executions(
+    playbook_id: int,
+    limit: int = 50,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = await _ensure_tenant(user)
+    await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+
+    rows = (
+        await db.execute(
+            select(TaPlaybookExecution)
+            .where(TaPlaybookExecution.playbook_id == playbook_id)
+            .order_by(TaPlaybookExecution.id.desc())
+            .limit(max(1, min(limit, 200)))
+        )
+    ).scalars().all()
+    return list(rows)
+
+
+@router.get("/executions/{execution_id}/steps", response_model=list[StepLogOut])
+async def list_execution_steps(
+    execution_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = await _ensure_tenant(user)
+    exe = await db.get(TaPlaybookExecution, execution_id)
+    if exe is None:
+        raise HTTPException(404, "Execução não encontrada")
+    # valida tenant via playbook → agent
+    await _get_playbook_for_tenant(db, exe.playbook_id, tenant_id)
+
+    rows = (
+        await db.execute(
+            select(TaPlaybookStepLog)
+            .where(TaPlaybookStepLog.execution_id == execution_id)
+            .order_by(TaPlaybookStepLog.id.asc())
+        )
+    ).scalars().all()
+    return list(rows)
