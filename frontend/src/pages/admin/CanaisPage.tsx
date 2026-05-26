@@ -247,7 +247,7 @@ export default function CanaisPage() {
               <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Agente</th>
               <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Telefone</th>
               <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Status</th>
-              <th className="w-32"></th>
+              <th className="text-right text-[12px] font-medium text-slate-600 px-4 py-2.5 w-[180px]">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -300,9 +300,9 @@ export default function CanaisPage() {
                       {status !== "connected" ? (
                         <button
                           onClick={() => openQR(c.id)}
-                          className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1"
+                          className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1 whitespace-nowrap"
                         >
-                          <QrCode className="w-3 h-3" /> Escanear QR
+                          <QrCode className="w-3 h-3 shrink-0" /> Escanear QR
                         </button>
                       ) : (
                         <button
@@ -316,10 +316,10 @@ export default function CanaisPage() {
                               toast.error("Erro ao desconectar");
                             }
                           }}
-                          className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1"
+                          className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1 whitespace-nowrap"
                           title="Desconectar"
                         >
-                          <Unplug className="w-3 h-3" /> Desconectar
+                          <Unplug className="w-3 h-3 shrink-0" /> Desconectar
                         </button>
                       )}
                       <button
