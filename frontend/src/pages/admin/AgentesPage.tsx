@@ -61,8 +61,8 @@ export default function AgentesPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-[22px] font-medium text-slate-900">Agentes</h1>
-          <p className="text-[13px] text-slate-500 mt-0.5">Crie e gerencie agentes do seu tenant.</p>
+          <h1 className="text-[28px] font-medium tracking-tight text-slate-900">Agentes</h1>
+          <p className="text-[13px] text-slate-500 mt-1">Crie e gerencie agentes do seu tenant.</p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}

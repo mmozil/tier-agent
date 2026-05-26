@@ -12,7 +12,7 @@ import FeaturesPage from "./pages/admin/FeaturesPage";
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
     <div>
-      <h1 className="text-[22px] font-medium text-slate-900 mb-1">{title}</h1>
+      <h1 className="text-[28px] font-medium tracking-tight text-slate-900 mb-1">{title}</h1>
       <p className="text-[13px] text-slate-500">{desc}</p>
     </div>
   );
