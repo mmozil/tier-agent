@@ -87,10 +87,19 @@ async def get_agent(
     return agent
 
 
+class AgentUpdate(BaseModel):
+    """Patch parcial — todos campos opcionais (PATCH semantic)."""
+    nome: str | None = None
+    persona: str | None = None
+    system_prompt: str | None = None
+    template_kind: str | None = None
+    active: bool | None = None
+
+
 @router.patch("/{agent_id}", response_model=AgentOut)
 async def update_agent(
     agent_id: int,
-    payload: AgentCreate,
+    payload: AgentUpdate,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -98,8 +107,118 @@ async def update_agent(
     agent = await db.get(TaAgent, agent_id)
     if not agent or agent.tenant_id != tenant_id:
         raise HTTPException(404, "Agente não encontrado")
-    for k, v in payload.model_dump(exclude_unset=True).items():
-        setattr(agent, k, v)
+    data = payload.model_dump(exclude_unset=True)
+    if "nome" in data and data["nome"] is not None:
+        nome = data["nome"].strip()
+        if not nome:
+            raise HTTPException(400, "Nome não pode ser vazio")
+        agent.nome = nome
+    for k in ("persona", "system_prompt", "template_kind", "active"):
+        if k in data:
+            setattr(agent, k, data[k])
     await db.commit()
     await db.refresh(agent)
     return agent
+
+
+@router.post("/{agent_id}/toggle-active", response_model=AgentOut)
+async def toggle_active(
+    agent_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Liga/desliga o agente sem afetar dados."""
+    tenant_id = await _ensure_tenant(user)
+    agent = await db.get(TaAgent, agent_id)
+    if not agent or agent.tenant_id != tenant_id:
+        raise HTTPException(404, "Agente não encontrado")
+    agent.active = not agent.active
+    await db.commit()
+    await db.refresh(agent)
+    return agent
+
+
+class AgentStats(BaseModel):
+    agent_id: int
+    playbooks_total: int
+    playbooks_published: int
+    conversations_total: int
+    conversations_active: int
+    knowledge_total: int
+    connectors_total: int
+
+
+@router.get("/{agent_id}/stats", response_model=AgentStats)
+async def agent_stats(
+    agent_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Métricas rápidas pro drawer de detalhes."""
+    from sqlalchemy import func
+    from models import (
+        TaConnector,
+        TaConversation,
+        TaKnowledge,
+        TaPlaybook,
+    )
+
+    tenant_id = await _ensure_tenant(user)
+    agent = await db.get(TaAgent, agent_id)
+    if not agent or agent.tenant_id != tenant_id:
+        raise HTTPException(404, "Agente não encontrado")
+
+    async def _count(stmt):
+        return (await db.execute(stmt)).scalar_one() or 0
+
+    pb_total = await _count(
+        select(func.count(TaPlaybook.id)).where(TaPlaybook.agent_id == agent_id)
+    )
+    pb_pub = await _count(
+        select(func.count(TaPlaybook.id)).where(
+            TaPlaybook.agent_id == agent_id, TaPlaybook.status == "published"
+        )
+    )
+    conv_total = await _count(
+        select(func.count(TaConversation.id)).where(TaConversation.agent_id == agent_id)
+    )
+    conv_active = await _count(
+        select(func.count(TaConversation.id)).where(
+            TaConversation.agent_id == agent_id, TaConversation.status == "active"
+        )
+    )
+    kn_total = await _count(
+        select(func.count(TaKnowledge.id)).where(TaKnowledge.agent_id == agent_id)
+    )
+    conn_total = await _count(
+        select(func.count(TaConnector.id)).where(TaConnector.agent_id == agent_id)
+    )
+
+    return AgentStats(
+        agent_id=agent_id,
+        playbooks_total=pb_total,
+        playbooks_published=pb_pub,
+        conversations_total=conv_total,
+        conversations_active=conv_active,
+        knowledge_total=kn_total,
+        connectors_total=conn_total,
+    )
+
+
+@router.delete("/{agent_id}", status_code=204)
+async def delete_agent(
+    agent_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove o agente + cascade (playbooks, conversations, knowledge, connectors,
+    notifications, executions, triggers — tudo via ondelete=CASCADE nos FKs).
+
+    OPERAÇÃO DESTRUTIVA — sem recuperação.
+    """
+    tenant_id = await _ensure_tenant(user)
+    agent = await db.get(TaAgent, agent_id)
+    if not agent or agent.tenant_id != tenant_id:
+        raise HTTPException(404, "Agente não encontrado")
+    await db.delete(agent)
+    await db.commit()
