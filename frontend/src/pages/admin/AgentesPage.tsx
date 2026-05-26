@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus } from "lucide-react";
+import { Plus, ShoppingBag, Target, LifeBuoy, DollarSign } from "lucide-react";
 
 import { api } from "@/lib/api";
 
@@ -13,15 +13,25 @@ interface Agent {
   active: boolean;
 }
 
-const TEMPLATES = [
-  { key: "atendente_loja", label: "Atendente de Loja", desc: "Catálogo, preço, estoque, Pix" },
-  { key: "sdr", label: "SDR / Pré-vendas", desc: "Qualifica lead + agenda" },
-  { key: "suporte", label: "Suporte técnico", desc: "FAQ + escalation humano" },
-  { key: "cobranca", label: "Cobrança", desc: "Lembretes + 2ª via + negociação" },
-];
+interface Template {
+  key: string;
+  label: string;
+  description: string;
+  icon: string;
+  suggested_channels: string[];
+  skills_count: number;
+}
+
+const ICONS: Record<string, typeof ShoppingBag> = {
+  ShoppingBag,
+  Target,
+  LifeBuoy,
+  DollarSign,
+};
 
 export default function AgentesPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ nome: "", persona: "", template_kind: "atendente_loja" });
@@ -29,8 +39,12 @@ export default function AgentesPage() {
   async function load() {
     setLoading(true);
     try {
-      const { data } = await api.get<Agent[]>("/agents");
-      setAgents(data);
+      const [a, t] = await Promise.all([
+        api.get<Agent[]>("/agents"),
+        api.get<{ templates: Template[] }>("/templates"),
+      ]);
+      setAgents(a.data);
+      setTemplates(t.data.templates);
     } catch (e) {
       console.error(e);
       toast.error("Falha ao carregar");
@@ -42,6 +56,8 @@ export default function AgentesPage() {
   useEffect(() => {
     load();
   }, []);
+
+  const selectedTemplate = templates.find((t) => t.key === form.template_kind);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -90,26 +106,53 @@ export default function AgentesPage() {
           <div>
             <span className="text-[12px] text-slate-700 block mb-2">Template inicial</span>
             <div className="grid grid-cols-2 gap-2">
-              {TEMPLATES.map((t) => (
-                <label
-                  key={t.key}
-                  className={`block cursor-pointer rounded-md border p-3 ${
-                    form.template_kind === t.key ? "border-tier bg-tier/5" : "border-slate-200"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="template"
-                    value={t.key}
-                    checked={form.template_kind === t.key}
-                    onChange={(e) => setForm({ ...form, template_kind: e.target.value })}
-                    className="sr-only"
-                  />
-                  <div className="text-[13px] font-medium text-slate-900">{t.label}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">{t.desc}</div>
-                </label>
-              ))}
+              {templates.map((t) => {
+                const Icon = ICONS[t.icon] || ShoppingBag;
+                const active = form.template_kind === t.key;
+                return (
+                  <label
+                    key={t.key}
+                    className={`block cursor-pointer rounded-md border p-3 transition-colors ${
+                      active ? "border-tier bg-tier/5" : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="template"
+                      value={t.key}
+                      checked={active}
+                      onChange={(e) => setForm({ ...form, template_kind: e.target.value })}
+                      className="sr-only"
+                    />
+                    <div className="flex items-start gap-2.5">
+                      <div className={`p-1.5 rounded ${active ? "bg-tier text-white" : "bg-slate-100 text-slate-500"}`}>
+                        <Icon className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-medium text-slate-900">{t.label}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{t.description}</div>
+                        <div className="mt-1.5 flex gap-1 flex-wrap">
+                          {t.suggested_channels.map((c) => (
+                            <span
+                              key={c}
+                              className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[10px] rounded uppercase tracking-wide"
+                            >
+                              {c}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
+            {selectedTemplate && (
+              <p className="mt-2 text-[11px] text-slate-500">
+                💡 A persona e prompt deste template serão aplicados automaticamente (você pode
+                sobrescrever editando depois).
+              </p>
+            )}
           </div>
 
           <label className="block">

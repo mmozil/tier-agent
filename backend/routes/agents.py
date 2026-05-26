@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from models import TaAgent
+from services import templates as tpl
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -54,7 +55,19 @@ async def create_agent(
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = await _ensure_tenant(user)
-    agent = TaAgent(tenant_id=tenant_id, **payload.model_dump())
+    data = payload.model_dump()
+
+    # Se template_kind bate em template conhecido, aplica persona + system_prompt do template
+    # (user ainda pode sobrescrever passando os campos explicitamente)
+    if data.get("template_kind"):
+        t = tpl.get_template(data["template_kind"])
+        if t:
+            if not data.get("persona"):
+                data["persona"] = t.persona
+            if not data.get("system_prompt"):
+                data["system_prompt"] = t.system_prompt
+
+    agent = TaAgent(tenant_id=tenant_id, **data)
     db.add(agent)
     await db.commit()
     await db.refresh(agent)
