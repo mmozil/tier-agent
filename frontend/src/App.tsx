@@ -8,6 +8,7 @@ import Signup from "./pages/public/Signup";
 import AgentesPage from "./pages/admin/AgentesPage";
 import LlmProvidersPage from "./pages/admin/LlmProvidersPage";
 import FeaturesPage from "./pages/admin/FeaturesPage";
+import CanaisPage from "./pages/admin/CanaisPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
@@ -32,7 +33,7 @@ export default function App() {
         <Route path="llm" element={<LlmProvidersPage />} />
         <Route path="features" element={<FeaturesPage />} />
         <Route path="conversas" element={<Placeholder title="Conversas" desc="Histórico de conversas por agente (em breve)." />} />
-        <Route path="canais" element={<Placeholder title="Canais" desc="Vincular WhatsApp, Telegram, Email, Web Form (em breve)." />} />
+        <Route path="canais" element={<CanaisPage />} />
         <Route path="knowledge" element={<Placeholder title="Knowledge" desc="Upload de PDF/Sheets pro RAG do agente (em breve)." />} />
         <Route path="params" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
         <Route path="metricas" element={<Placeholder title="Métricas" desc="Custo, mensagens/dia, deflection rate (em breve)." />} />

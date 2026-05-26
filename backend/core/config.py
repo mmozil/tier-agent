@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     tier_whatsapp_engine_url: str = "https://whats.tier.finance"
     tier_whatsapp_engine_admin_key: str = ""
+    tier_whatsapp_engine_tenant_id: str = ""
     tier_whatsapp_webhook_secret: str = ""
 
     tier_pay_api_url: str = "https://api.tier.finance"
