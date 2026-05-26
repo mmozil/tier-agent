@@ -36,35 +36,41 @@ def _instance_headers(api_key: str) -> dict:
     return {"X-API-Key": api_key, "Content-Type": "application/json"}
 
 
-async def create_instance(tenant_id: int, label: str) -> dict:
-    """Cria nova instância WhatsApp na Engine.
+async def create_instance(tenant_id: int, name: str) -> dict:
+    """Cria nova instância WhatsApp na Engine (schema camelCase Fastify).
 
-    Retorna: { instance_id, api_key, status, webhook_url, ... }
+    Retorna: { id, apiKey, status, ... }
     """
+    if not settings.tier_whatsapp_engine_tenant_id:
+        raise EngineError("TIER_WHATSAPP_ENGINE_TENANT_ID não configurado")
+
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances"
     payload = {
-        "label": label,
-        "tenant_id": settings.tier_whatsapp_engine_tenant_id or str(tenant_id),
-        "webhook_url": f"https://api-agent.tier.finance/api/v1/webhooks/whatsapp-engine",
-        "webhook_secret": settings.tier_whatsapp_webhook_secret,
+        "tenantId": settings.tier_whatsapp_engine_tenant_id,
+        "name": name,
+        "webhookUrl": "https://api-agent.tier.finance/api/v1/webhooks/whatsapp-engine",
     }
     async with httpx.AsyncClient(timeout=30) as cli:
         r = await cli.post(url, json=payload, headers=_admin_headers())
     if r.status_code >= 400:
         raise EngineError(
-            f"create_instance falhou: {r.status_code}", status=r.status_code, body=r.text[:400]
+            f"create_instance falhou: {r.status_code} {r.text[:200]}",
+            status=r.status_code,
+            body=r.text[:400],
         )
     return r.json()
 
 
 async def connect_instance(instance_id: str, api_key: str) -> dict:
-    """Inicia conexão + gera QR code. Retorna { qr_code (base64), status }."""
+    """Inicia conexão + gera QR code. Body {} obrigatório (Fastify reject empty)."""
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/connect"
     async with httpx.AsyncClient(timeout=30) as cli:
-        r = await cli.post(url, headers=_instance_headers(api_key))
+        r = await cli.post(url, json={}, headers=_instance_headers(api_key))
     if r.status_code >= 400:
         raise EngineError(
-            f"connect falhou: {r.status_code}", status=r.status_code, body=r.text[:400]
+            f"connect falhou: {r.status_code} {r.text[:200]}",
+            status=r.status_code,
+            body=r.text[:400],
         )
     return r.json()
 
@@ -79,10 +85,20 @@ async def get_status(instance_id: str, api_key: str) -> dict:
     return r.json()
 
 
+async def get_qr(instance_id: str, api_key: str) -> dict:
+    """Pega QR code diretamente."""
+    url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/qr"
+    async with httpx.AsyncClient(timeout=10) as cli:
+        r = await cli.get(url, headers=_instance_headers(api_key))
+    if r.status_code >= 400:
+        raise EngineError(f"qr falhou: {r.status_code}", status=r.status_code, body=r.text[:200])
+    return r.json()
+
+
 async def disconnect_instance(instance_id: str, api_key: str) -> dict:
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/disconnect"
     async with httpx.AsyncClient(timeout=15) as cli:
-        r = await cli.post(url, headers=_instance_headers(api_key))
+        r = await cli.post(url, json={}, headers=_instance_headers(api_key))
     if r.status_code >= 400:
         raise EngineError(
             f"disconnect falhou: {r.status_code}", status=r.status_code, body=r.text[:200]

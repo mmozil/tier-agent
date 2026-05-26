@@ -108,8 +108,9 @@ async def provision_whatsapp(
     except engine_client.EngineError as e:
         raise HTTPException(502, f"Tier Engine: {e}")
 
-    instance_id = instance.get("instance_id") or instance.get("id")
-    api_key = instance.get("api_key") or instance.get("apiKey")
+    # Tier Engine retorna { id, apiKey } (camelCase Fastify)
+    instance_id = instance.get("id") or instance.get("instance_id")
+    api_key = instance.get("apiKey") or instance.get("api_key")
     if not instance_id or not api_key:
         raise HTTPException(502, f"Engine não retornou instance_id/api_key: {instance}")
 
@@ -154,12 +155,18 @@ async def connect(
 
     cfg = json.loads(decrypt(conn.config_json_enc))
     try:
-        result = await engine_client.connect_instance(cfg["instance_id"], cfg["api_key"])
+        await engine_client.connect_instance(cfg["instance_id"], cfg["api_key"])
+        # QR pode demorar 1-2s — busca em endpoint separado
+        qr_result = {}
+        try:
+            qr_result = await engine_client.get_qr(cfg["instance_id"], cfg["api_key"])
+        except engine_client.EngineError:
+            pass
     except engine_client.EngineError as e:
         raise HTTPException(502, f"Tier Engine: {e}")
     return {
-        "qr_code": result.get("qr_code") or result.get("qr"),
-        "status": result.get("status") or "pending",
+        "qr_code": qr_result.get("qr") or qr_result.get("qrCode") or qr_result.get("qr_code"),
+        "status": qr_result.get("status") or "pending",
     }
 
 
@@ -182,18 +189,23 @@ async def status(
 
     # Atualiza status local se mudou
     new_status = result.get("status") or "unknown"
-    new_phone = result.get("phone") or cfg.get("phone")
+    new_phone = result.get("phoneNumber") or result.get("phone") or cfg.get("phone")
     if new_status != cfg.get("status") or new_phone != cfg.get("phone"):
         cfg["status"] = new_status
         cfg["phone"] = new_phone
         conn.config_json_enc = encrypt(json.dumps(cfg))
         await db.commit()
 
-    return {
-        "status": new_status,
-        "phone": new_phone,
-        "qr_code": result.get("qr_code") or result.get("qr"),
-    }
+    qr = result.get("qr") or result.get("qrCode") or result.get("qr_code")
+    # Se status pending mas QR não veio inline, busca dedicado
+    if not qr and new_status in {"pending", "qr", "connecting"}:
+        try:
+            qr_result = await engine_client.get_qr(cfg["instance_id"], cfg["api_key"])
+            qr = qr_result.get("qr") or qr_result.get("qrCode")
+        except engine_client.EngineError:
+            pass
+
+    return {"status": new_status, "phone": new_phone, "qr_code": qr}
 
 
 @router.post("/{connector_id}/disconnect")
