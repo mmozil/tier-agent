@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Plus, QrCode, Trash2, X, Unplug } from "lucide-react";
 
 import { api } from "@/lib/api";
 
@@ -23,37 +23,37 @@ const STATUS_META: Record<
     color: "bg-emerald-500",
     bg: "bg-emerald-50",
     label: "Conectado",
-    tip: "Instância pareada e recebendo mensagens",
+    tip: "Pareado e recebendo mensagens",
   },
   qr: {
     color: "bg-amber-500",
     bg: "bg-amber-50",
-    label: "Aguardando QR",
-    tip: "Clique no botão de QR e escaneie com seu WhatsApp",
+    label: "Aguardando pareamento",
+    tip: "Escaneie o QR Code com seu WhatsApp",
   },
   pending: {
     color: "bg-amber-500",
     bg: "bg-amber-50",
     label: "Pendente",
-    tip: "Instância criada — clique no QR pra parear",
+    tip: "Instância criada, aguardando QR Code",
   },
   connecting: {
     color: "bg-amber-500",
     bg: "bg-amber-50",
     label: "Conectando",
-    tip: "Estabelecendo conexão com o WhatsApp",
+    tip: "Estabelecendo conexão",
   },
   disconnected: {
     color: "bg-slate-300",
     bg: "bg-slate-50",
     label: "Desconectado",
-    tip: "Conexão encerrada — pode reconectar",
+    tip: "Conexão encerrada",
   },
   unknown: {
     color: "bg-slate-300",
     bg: "bg-slate-50",
     label: "Desconhecido",
-    tip: "Status não retornado pela Engine",
+    tip: "Sem resposta da plataforma",
   },
 };
 
@@ -295,21 +295,37 @@ export default function CanaisPage() {
                       </span>
                     </span>
                   </td>
-                  <td className="px-2 py-2.5">
-                    <div className="flex items-center justify-end gap-0.5">
-                      {status !== "connected" && (
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-2">
+                      {status !== "connected" ? (
                         <button
                           onClick={() => openQR(c.id)}
-                          className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-tier rounded"
-                          title="Reabrir QR Code"
+                          className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1"
                         >
-                          <RefreshCw className="w-3.5 h-3.5" />
+                          <QrCode className="w-3 h-3" /> Escanear QR
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            if (!confirm("Desconectar este WhatsApp?")) return;
+                            try {
+                              await api.post(`/connectors/${c.id}/disconnect`);
+                              toast.success("Desconectado");
+                              load();
+                            } catch {
+                              toast.error("Erro ao desconectar");
+                            }
+                          }}
+                          className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1"
+                          title="Desconectar"
+                        >
+                          <Unplug className="w-3 h-3" /> Desconectar
                         </button>
                       )}
                       <button
                         onClick={() => onDelete(c.id)}
                         className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded"
-                        title="Remover canal"
+                        title="Remover canal permanentemente"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
