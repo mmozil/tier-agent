@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { LogOut, Settings, HelpCircle, User as UserIcon } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
@@ -49,8 +50,14 @@ function ExternalIcon() {
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  function go(path: string) {
+    setOpen(false);
+    navigate(path);
+  }
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -88,19 +95,19 @@ export default function UserMenu() {
               Opções
             </p>
             <button
-              onClick={() => (window.location.href = "/admin/perfil")}
+              onClick={() => go("/admin/perfil")}
               className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 rounded-md"
             >
               <UserIcon className="w-3.5 h-3.5" /> Meu perfil
             </button>
             <button
-              onClick={() => (window.location.href = "/admin/params")}
+              onClick={() => go("/admin/configuracoes")}
               className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 rounded-md"
             >
               <Settings className="w-3.5 h-3.5" /> Configurações
             </button>
             <button
-              onClick={() => window.open("https://tier.finance/contato", "_blank")}
+              onClick={() => go("/admin/suporte")}
               className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 rounded-md"
             >
               <HelpCircle className="w-3.5 h-3.5" /> Suporte

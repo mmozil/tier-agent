@@ -216,3 +216,38 @@ async def me(db: AsyncSession = Depends(get_db), user=Depends(__import__("core.a
             "status": tenant.status,
         } if tenant else None,
     }
+
+
+class UpdateMeIn(BaseModel):
+    nome_pessoa: str | None = None
+    nome: str | None = None
+
+
+@router.patch("/me")
+async def update_me(
+    payload: UpdateMeIn,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
+):
+    if not user.tenant_id:
+        raise HTTPException(404, "Tenant não encontrado")
+    tenant = await db.get(TaTenant, user.tenant_id)
+    if not tenant:
+        raise HTTPException(404, "Tenant não encontrado")
+    if payload.nome_pessoa is not None:
+        tenant.nome_pessoa = payload.nome_pessoa.strip() or None
+    if payload.nome is not None:
+        nome_limpo = payload.nome.strip()
+        if not nome_limpo:
+            raise HTTPException(400, "Nome da empresa é obrigatório")
+        tenant.nome = nome_limpo
+    await db.commit()
+    await db.refresh(tenant)
+    return {
+        "id": tenant.id,
+        "nome": tenant.nome,
+        "nome_pessoa": tenant.nome_pessoa,
+        "email": tenant.email,
+        "sku": tenant.sku,
+        "status": tenant.status,
+    }

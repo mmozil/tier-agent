@@ -11,12 +11,15 @@ import FeaturesPage from "./pages/admin/FeaturesPage";
 import CanaisPage from "./pages/admin/CanaisPage";
 import KnowledgePage from "./pages/admin/KnowledgePage";
 import CobrancaPage from "./pages/admin/CobrancaPage";
+import PerfilPage from "./pages/admin/PerfilPage";
+import ConfiguracoesPage from "./pages/admin/ConfiguracoesPage";
+import SuportePage from "./pages/admin/SuportePage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
     <div>
-      <h1 className="text-[28px] font-medium tracking-tight text-slate-900 mb-1">{title}</h1>
-      <p className="text-[13px] text-slate-500">{desc}</p>
+      <h1 className="text-[28px] font-bold text-[#30313d] mt-6 mb-2">{title}</h1>
+      <p className="text-[14px] text-[#697386]">{desc}</p>
     </div>
   );
 }
@@ -41,7 +44,9 @@ export default function App() {
         <Route path="metricas" element={<Placeholder title="Métricas" desc="Custo, mensagens/dia, deflection rate (em breve)." />} />
         <Route path="cobranca" element={<CobrancaPage />} />
         <Route path="equipe" element={<Placeholder title="Equipe" desc="Convidar membros pro tenant (em breve)." />} />
-        <Route path="perfil" element={<Placeholder title="Meu perfil" desc="Editar dados da conta (em breve)." />} />
+        <Route path="perfil" element={<PerfilPage />} />
+        <Route path="configuracoes" element={<ConfiguracoesPage />} />
+        <Route path="suporte" element={<SuportePage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
