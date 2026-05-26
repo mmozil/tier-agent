@@ -16,6 +16,7 @@ import ConfiguracoesPage from "./pages/admin/ConfiguracoesPage";
 import SuportePage from "./pages/admin/SuportePage";
 import PlaybooksPage from "./pages/admin/PlaybooksPage";
 import PlaybookEditorPage from "./pages/admin/PlaybookEditorPage";
+import PlaybookExecutionsPage from "./pages/admin/PlaybookExecutionsPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="equipe" element={<Placeholder title="Equipe" desc="Convidar membros pro tenant (em breve)." />} />
         <Route path="playbooks" element={<PlaybooksPage />} />
         <Route path="playbooks/:id" element={<PlaybookEditorPage />} />
+        <Route path="playbooks/:id/executions" element={<PlaybookExecutionsPage />} />
         <Route path="perfil" element={<PerfilPage />} />
         <Route path="configuracoes" element={<ConfiguracoesPage />} />
         <Route path="suporte" element={<SuportePage />} />

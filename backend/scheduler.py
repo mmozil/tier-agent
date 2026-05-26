@@ -31,13 +31,17 @@ def _now_utc_naive() -> datetime:
 
 
 async def resume_waiting_playbooks_job() -> None:
-    """Retoma execuções pausadas (nó wait com resume_at <= NOW)."""
+    """Retoma execuções pausadas — chama playbook_executor.resume_playbook
+    pra cada execution com status='waiting' e resume_at <= NOW.
+
+    Resume parte de execution.next_node_id (salvo no pause do nó wait).
+    """
     try:
         async with db_context() as db:
             now = _now_utc_naive()
             rows = (
                 await db.execute(
-                    select(TaPlaybookExecution)
+                    select(TaPlaybookExecution.id)
                     .where(
                         TaPlaybookExecution.status == "waiting",
                         TaPlaybookExecution.resume_at.is_not(None),
@@ -46,21 +50,22 @@ async def resume_waiting_playbooks_job() -> None:
                     .limit(50)
                 )
             ).scalars().all()
-            for exe in rows:
-                logger.info(
-                    "resume_waiting: execution=%s playbook=%s resumindo após wait",
-                    exe.id, exe.playbook_id,
-                )
-                # Marca como running pra evitar double-pickup
-                exe.status = "running"
-                exe.resume_at = None
-                await db.commit()
-                # TODO Sprint 4.1: implementar resume real — requer guardar
-                # next_node_id na execution + chamar executor de lá.
-                # MVP: marca como completed (não-bloqueante pro restante).
-                exe.status = "completed"
-                exe.completed_at = _now_utc_naive()
-                await db.commit()
+
+        if not rows:
+            return
+
+        logger.info("resume_waiting: %s execuções pra retomar", len(rows))
+        for exec_id in rows:
+            # Cada resume em sessão separada pra isolar transações
+            try:
+                async with db_context() as db:
+                    result = await playbook_executor.resume_playbook(db, exec_id)
+                    logger.info(
+                        "resume_waiting: execution=%s → %s steps=%s",
+                        exec_id, result.get("status"), result.get("steps_executed"),
+                    )
+            except Exception:
+                logger.exception("resume execution=%s falhou", exec_id)
     except Exception:
         logger.exception("resume_waiting_playbooks_job falhou")
 

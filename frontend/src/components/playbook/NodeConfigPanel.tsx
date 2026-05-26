@@ -143,6 +143,30 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
         </FieldGroup>
       );
 
+    case "trigger_event":
+      return (
+        <>
+          <FieldGroup
+            label="Event key"
+            hint="Identificador do evento. URL: POST /api/v1/webhooks/event/{key}"
+          >
+            <TextInput
+              value={(local.event_key as string) || ""}
+              onChange={(v) => set("event_key", v)}
+              placeholder="pedido_criado"
+              mono
+            />
+          </FieldGroup>
+          <div className="text-[10px] text-[#697386] bg-slate-50 px-2 py-2 rounded space-y-1">
+            <div className="font-semibold text-[#1a2c44]">Como disparar:</div>
+            <code className="block font-mono text-[10px] break-all">
+              POST https://api-agent.tier.finance/api/v1/webhooks/event/{(local.event_key as string) || "{key}"}
+            </code>
+            <div>Body JSON vira <code>{"{{event.X}}"}</code> nos nós seguintes.</div>
+          </div>
+        </>
+      );
+
     case "send_text":
       return (
         <FieldGroup

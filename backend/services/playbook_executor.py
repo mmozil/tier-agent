@@ -151,13 +151,6 @@ async def run_playbook(
     if not agent:
         return {"status": "agent_not_found", "agent_id": agent_id}
 
-    tenant = await db.get(TaTenant, agent.tenant_id)
-    conversation = await db.get(TaConversation, conversation_id) if conversation_id else None
-
-    canvas = pb.canvas_json or {}
-    nodes = _index_nodes(canvas)
-    edges_from = _index_edges_from(canvas)
-
     # Cria registro de execução
     execution = TaPlaybookExecution(
         playbook_id=pb.id,
@@ -172,12 +165,106 @@ async def run_playbook(
     await db.commit()
     await db.refresh(execution)
 
+    return await _run_from_node(
+        db,
+        pb=pb,
+        agent=agent,
+        execution=execution,
+        start_node_id=trigger_node_id,
+        inbound_text=inbound_text,
+        inbound_sender=inbound_sender,
+        connector_kind=connector_kind,
+        external_chat_id=external_chat_id,
+        initial_vars=initial_vars,
+    )
+
+
+async def resume_playbook(db: AsyncSession, execution_id: int) -> dict[str, Any]:
+    """Retoma execution status='waiting' a partir de next_node_id salvo.
+
+    Chamado pelo scheduler.resume_waiting_playbooks_job.
+    """
+    execution = await db.get(TaPlaybookExecution, execution_id)
+    if not execution:
+        return {"status": "execution_not_found", "execution_id": execution_id}
+
+    if execution.status != "waiting":
+        return {"status": "skipped_not_waiting", "current_status": execution.status}
+
+    if not execution.next_node_id:
+        # nada pra retomar — marca completed
+        execution.status = "completed"
+        execution.completed_at = _now_utc()
+        await db.commit()
+        return {"status": "completed_noop"}
+
+    pb = await db.get(TaPlaybook, execution.playbook_id)
+    agent = await db.get(TaAgent, execution.agent_id)
+    if not pb or not agent:
+        execution.status = "failed"
+        execution.error = "playbook ou agent ausente no resume"
+        await db.commit()
+        return {"status": "failed", "reason": "missing_pb_or_agent"}
+
+    # Recupera contexto inbound original — pra retomar com mesmo channel
+    conv = await db.get(TaConversation, execution.conversation_id) if execution.conversation_id else None
+    connector_kind = conv.connector_kind if conv else None
+    external_chat_id = conv.external_id if conv else None
+
+    # Marca running antes de processar (evita double-pickup)
+    next_node = execution.next_node_id
+    execution.status = "running"
+    execution.resume_at = None
+    execution.next_node_id = None
+    await db.commit()
+
+    return await _run_from_node(
+        db,
+        pb=pb,
+        agent=agent,
+        execution=execution,
+        start_node_id=next_node,
+        inbound_text=None,  # mensagem inbound não está mais disponível
+        inbound_sender=conv.contact_name if conv else None,
+        connector_kind=connector_kind,
+        external_chat_id=external_chat_id,
+        initial_vars=execution.vars_json or {},
+    )
+
+
+async def _run_from_node(
+    db: AsyncSession,
+    *,
+    pb: TaPlaybook,
+    agent: TaAgent,
+    execution: TaPlaybookExecution,
+    start_node_id: str,
+    inbound_text: str | None,
+    inbound_sender: str | None,
+    connector_kind: str | None,
+    external_chat_id: str | None,
+    initial_vars: dict | None,
+) -> dict[str, Any]:
+    """Loop principal — percorre grafo a partir de `start_node_id`.
+
+    Extraído pra ser reusado por run_playbook (start = trigger node)
+    e resume_playbook (start = next_node_id salvo no pause).
+    """
+    tenant = await db.get(TaTenant, agent.tenant_id)
+    conversation = (
+        await db.get(TaConversation, execution.conversation_id) if execution.conversation_id else None
+    )
+
+    canvas = pb.canvas_json or {}
+    nodes = _index_nodes(canvas)
+    edges_from = _index_edges_from(canvas)
+
     ctx = ExecutionContext(
         execution_id=execution.id,
         playbook_id=pb.id,
-        agent_id=agent_id,
+        agent_id=agent.id,
         tenant_id=agent.tenant_id,
-        conversation_id=conversation_id,
+        conversation_id=execution.conversation_id,
         vars=dict(initial_vars or {}),
         connector_kind=connector_kind,
         external_chat_id=external_chat_id,
@@ -199,8 +286,9 @@ async def run_playbook(
     paused = False
     final_status: str | None = None
     final_error: str | None = None
+    next_after_pause: str | None = None
 
-    current_node_id: str | None = trigger_node_id
+    current_node_id: str | None = start_node_id
 
     while current_node_id and steps_executed < MAX_STEPS_PER_EXECUTION:
         visit_count[current_node_id] = visit_count.get(current_node_id, 0) + 1
@@ -232,13 +320,11 @@ async def run_playbook(
                 error=f"tipo de nó não suportado: {ntype}",
             )
             steps_executed += 1
-            # tenta seguir mesmo assim (pega 1ª edge default)
             next_edge = _pick_next_edge(edges_from.get(current_node_id) or [], None)
             current_node_id = next_edge["target"] if next_edge else None
             continue
 
         config = dict(node.get("data") or {})
-        # atualiza template context com vars atuais
         ctx.template_context["vars"] = ctx.vars
 
         t0 = time.perf_counter()
@@ -250,7 +336,6 @@ async def run_playbook(
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
 
-        # Aplica vars_update
         if result.vars_update:
             ctx.vars.update(result.vars_update)
 
@@ -268,14 +353,19 @@ async def run_playbook(
 
         steps_executed += 1
 
-        # Final status (ex: handoff_human)
         if result.final_status:
             final_status = result.final_status
             break
 
-        # Pause (wait)
+        # Calcula próximo nó (antes de break do pause pra poder salvar)
+        next_edge = _pick_next_edge(
+            edges_from.get(current_node_id) or [], result.next_handle
+        )
+        possible_next = next_edge["target"] if next_edge else None
+
         if result.pause:
             paused = True
+            next_after_pause = possible_next
             if result.resume_at_iso:
                 try:
                     execution.resume_at = datetime.fromisoformat(
@@ -285,11 +375,7 @@ async def run_playbook(
                     pass
             break
 
-        # Próximo nó
-        next_edge = _pick_next_edge(
-            edges_from.get(current_node_id) or [], result.next_handle
-        )
-        current_node_id = next_edge["target"] if next_edge else None
+        current_node_id = possible_next
 
     # Determina status final
     if final_status:
@@ -299,6 +385,7 @@ async def run_playbook(
         execution.error = final_error
     elif paused:
         execution.status = "waiting"
+        execution.next_node_id = next_after_pause
     else:
         execution.status = "completed"
         execution.completed_at = _now_utc()
@@ -306,9 +393,9 @@ async def run_playbook(
     execution.vars_json = ctx.vars
     if execution.status in ("completed", "failed", "handed_off"):
         execution.completed_at = _now_utc()
+        execution.next_node_id = None
     await db.commit()
 
-    # Envia mensagens acumuladas pelo canal
     sent = await _flush_outbound(db, ctx)
 
     return {
@@ -317,6 +404,7 @@ async def run_playbook(
         "steps_executed": steps_executed,
         "messages_sent": sent,
         "vars": ctx.vars,
+        "paused_at_node_next": next_after_pause if paused else None,
     }
 
 

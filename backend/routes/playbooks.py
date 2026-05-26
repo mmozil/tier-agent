@@ -120,9 +120,114 @@ _TRIGGER_TYPES = {
 }
 
 
+def _validate_canvas_for_publish(canvas: dict) -> list[str]:
+    """Retorna lista de erros — vazia se OK pra publicar.
+
+    Checks:
+        1. Pelo menos 1 trigger node
+        2. Todo trigger leva a algum action (DFS)
+        3. Sem ciclos
+        4. Edges referenciam nodes existentes
+    """
+    errors: list[str] = []
+    nodes = canvas.get("nodes") or []
+    edges = canvas.get("edges") or []
+
+    if not isinstance(nodes, list) or not nodes:
+        errors.append("Canvas vazio — adicione pelo menos um nó")
+        return errors
+
+    node_ids = {n.get("id") for n in nodes if isinstance(n, dict)}
+
+    # Edges referenciam nodes existentes
+    for e in edges:
+        if not isinstance(e, dict):
+            continue
+        src = e.get("source")
+        tgt = e.get("target")
+        if src not in node_ids:
+            errors.append(f"Edge {e.get('id')} referencia source inexistente '{src}'")
+        if tgt not in node_ids:
+            errors.append(f"Edge {e.get('id')} referencia target inexistente '{tgt}'")
+
+    # Pelo menos 1 trigger
+    trigger_ids = [
+        n.get("id") for n in nodes
+        if isinstance(n, dict) and (n.get("type") or "") in _TRIGGER_TYPES
+    ]
+    if not trigger_ids:
+        errors.append("Nenhum nó de gatilho — adicione um Trigger (Palavra-chave, Manual, etc)")
+
+    # Build adjacency
+    adj: dict[str, list[str]] = {}
+    for e in edges:
+        if not isinstance(e, dict):
+            continue
+        src = e.get("source")
+        tgt = e.get("target")
+        if src in node_ids and tgt in node_ids:
+            adj.setdefault(src, []).append(tgt)
+
+    # Trigger sem saída (orfão)
+    for tid in trigger_ids:
+        if not adj.get(tid):
+            node = next((n for n in nodes if n.get("id") == tid), {})
+            ntype = node.get("type") or "?"
+            errors.append(f"Gatilho '{ntype}' não está conectado a nenhuma ação")
+
+    # Detect cycles via DFS coloring (3 colors: white/gray/black)
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color = {nid: WHITE for nid in node_ids}
+
+    def has_cycle(start: str) -> str | None:
+        stack = [(start, iter(adj.get(start, [])))]
+        color[start] = GRAY
+        while stack:
+            node_id, it = stack[-1]
+            try:
+                nxt = next(it)
+            except StopIteration:
+                color[node_id] = BLACK
+                stack.pop()
+                continue
+            if color.get(nxt) == GRAY:
+                return f"{node_id} -> {nxt}"
+            if color.get(nxt) == WHITE:
+                color[nxt] = GRAY
+                stack.append((nxt, iter(adj.get(nxt, []))))
+        return None
+
+    for tid in trigger_ids:
+        if color.get(tid) == WHITE:
+            cycle = has_cycle(tid)
+            if cycle:
+                errors.append(f"Ciclo detectado no fluxo: {cycle}")
+                break  # 1 ciclo já é suficiente pra bloquear
+
+    return errors
+
+
 # ============================================================
 # Routes
 # ============================================================
+class ValidateResult(BaseModel):
+    ok: bool
+    errors: list[str]
+
+
+@router.post("/{playbook_id}/validate", response_model=ValidateResult)
+async def validate_playbook(
+    playbook_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Roda validação sem publicar — UX pra mostrar erros no editor."""
+    tenant_id = await _ensure_tenant(user)
+    pb = await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+    errors = _validate_canvas_for_publish(pb.canvas_json or {})
+    return ValidateResult(ok=not errors, errors=errors)
+
+
 class TemplateInfo(BaseModel):
     key: str
     nome: str
@@ -290,6 +395,11 @@ async def publish_playbook(
     nodes = canvas.get("nodes") or []
     if not isinstance(nodes, list):
         raise HTTPException(400, "canvas_json.nodes inválido")
+
+    # Validação estrutural antes de publicar
+    errors = _validate_canvas_for_publish(canvas)
+    if errors:
+        raise HTTPException(400, "Playbook não pode ser publicado: " + " · ".join(errors))
 
     # apaga triggers antigos do playbook
     await db.execute(

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { ArrowLeft, CheckCircle2, Cloud, Loader2, Play, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Cloud, History, Loader2, Play, Send, Trash2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import {
@@ -197,6 +197,13 @@ export default function PlaybookEditorPage() {
         </div>
         <SaveBadge saving={saving} lastSavedAt={lastSavedAt} />
         <StatusPill status={pb.status} />
+        <Link
+          to={`/admin/playbooks/${pb.id}/executions`}
+          className="h-6 px-2 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1 bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
+        >
+          <History className="w-3 h-3" />
+          Execuções
+        </Link>
         <button
           onClick={() => setShowTest(true)}
           className="h-6 px-2 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1 bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"

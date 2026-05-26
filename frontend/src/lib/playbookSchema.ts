@@ -121,12 +121,12 @@ export const NODE_CATALOG: NodeKindMeta[] = [
   {
     kind: "trigger_event",
     label: "Evento externo",
-    description: "Webhook (ex: pedido criado, pagamento aprovado).",
+    description: "Webhook POST /webhooks/event/{key} (ex: pedido criado).",
     icon: Webhook,
     category: "trigger",
     color: "#8b5cf6",
     isTrigger: true,
-    available: false,
+    available: true,
     defaultData: { event_key: "pedido_criado" },
   },
 

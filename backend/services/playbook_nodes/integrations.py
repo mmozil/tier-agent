@@ -145,10 +145,13 @@ async def execute_handoff_human(ctx: ExecutionContext, config: dict) -> NodeResu
 
     Comportamento:
         1. Envia msg pro contato (opcional)
-        2. Salva vars[handoff_queue], vars[handoff_at]
-        3. NodeResult.final_status='handed_off' — executor encerra execução
-        4. V2: cria Notification row pra equipe ver na inbox CRM
+        2. Cria TaNotification (category=handoff) pra equipe ver no inbox
+        3. Salva vars[handoff_*]
+        4. NodeResult.final_status='handed_off' — executor encerra execução
     """
+    from core.db import db_context
+    from models import TaNotification
+
     queue = (config.get("queue") or "atendimento").strip()
     msg_raw = (config.get("msg") or "").strip()
     pause_minutes = int(config.get("pause_minutes") or 0)
@@ -158,13 +161,44 @@ async def execute_handoff_human(ctx: ExecutionContext, config: dict) -> NodeResu
         ctx.outbound_messages.append({"kind": "text", "content": msg})
 
     now = datetime.now(timezone.utc).isoformat()
+    contact_name = (ctx.template_context.get("contact") or {}).get("name") or "contato"
+    contact_from = (ctx.template_context.get("contact") or {}).get("from") or "—"
+
+    # Cria notification pra equipe (sessão isolada, não bloqueia executor)
+    try:
+        async with db_context() as ndb:
+            notif = TaNotification(
+                tenant_id=ctx.tenant_id,
+                agent_id=ctx.agent_id,
+                conversation_id=ctx.conversation_id,
+                playbook_execution_id=ctx.execution_id,
+                category="handoff",
+                title=f"Handoff — {contact_name} ({queue})",
+                body=(
+                    f"Cliente {contact_name} ({contact_from}) precisa de atendimento humano "
+                    f"na fila '{queue}'. Agente IA pausado por "
+                    f"{'permanente' if pause_minutes == 0 else f'{pause_minutes}min'}."
+                ),
+                queue=queue,
+                payload_json={
+                    "contact_name": contact_name,
+                    "contact_from": contact_from,
+                    "pause_minutes": pause_minutes,
+                    "handed_off_at": now,
+                },
+                status="unread",
+            )
+            ndb.add(notif)
+            await ndb.commit()
+    except Exception:
+        logger.exception("handoff_human: falha criando Notification — handoff continua")
+
     vars_update = {
         "handoff_queue": queue,
         "handoff_at": now,
         "handoff_pause_minutes": pause_minutes,
     }
 
-    # TODO: criar Notification em ta_notification (Sprint 4) pra equipe ver no painel
     logger.info(
         "handoff_human conv=%s agent=%s queue=%s pause=%smin",
         ctx.conversation_id, ctx.agent_id, queue, pause_minutes,

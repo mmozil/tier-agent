@@ -399,6 +399,8 @@ class TaPlaybookExecution(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     resume_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     # pra nó wait — scheduler.resume_waiting_playbooks job
+    next_node_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # quando pause=True, guarda o próximo node_id que executor deve rodar no resume
 
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -423,4 +425,37 @@ class TaPlaybookStepLog(Base):
     cost_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ============================================================
+# 18. Notification — inbox de eventos pra equipe do tenant
+# ============================================================
+class TaNotification(Base):
+    """Notificações criadas por nós de playbook (especialmente handoff_human)
+    ou eventos do sistema (erros críticos, alertas billing).
+    """
+    __tablename__ = "ta_notification"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("ta_tenant.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ta_agent.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    conversation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ta_conversation.id", ondelete="SET NULL"), nullable=True
+    )
+    playbook_execution_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ta_playbook_execution.id", ondelete="SET NULL"), nullable=True
+    )
+    category: Mapped[str] = mapped_column(String(32), default="info", nullable=False)
+    # category: handoff | error | info
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    queue: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # queue: fila de atendimento (vendas, suporte) — só usado em handoff
+    payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="unread", nullable=False)
+    # status: unread | read | archived
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
