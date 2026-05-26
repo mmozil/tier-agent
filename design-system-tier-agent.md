@@ -24,14 +24,14 @@ Modelado a partir do padrão canônico Tier Empresas (`design-system-tier-empres
 
 ## Paleta
 
-### Cor brand (consistente com ecossistema Tier)
+### Cor brand (idêntica ao Tier Empresas — design system unificado)
 
 | Token | Hex | Uso |
 |---|---|---|
 | **accent-primary** | `#003083` | Tier blue — itens ativos sidebar, links, tab underline |
 | **accent-hover** | `#002266` | Hover |
 | **accent-light** | `#0050D5` | Variação clara (botões secundários) |
-| **ai-accent** | `#7c3aed` | Violet-600 — favicon próprio Tier Agent, badges "AI" |
+| **favicon-3-quad** | `#1a1a1a` / `#4a4a4a` / `#888` | Favicon 3 quadrados — MESMA cor de Tier Empresas (unificação) |
 
 ### Light mode (padrão admin)
 
@@ -188,7 +188,7 @@ Usado nos labels dos produtos dentro do product switcher (popup avatar). Importa
 
 | Produto | URL | Favicon (3 quadrados) |
 |---|---|---|
-| **tier agent** (atual) | `agent.tier.finance` | `#1a0033` / `#4a1a7a` / `#a78bfa` (violet) |
+| **tier agent** (atual) | `agent.tier.finance` | `#1a1a1a` / `#4a4a4a` / `#888` (mesmo Empresas) |
 | **tier empresas** | `erp.tier.finance` | `#1a1a1a` / `#4a4a4a` / `#888` (gray) |
 | **tier emissor** | `emissor.tier.finance` | mesmo gray |
 | **tier pay** | `pay.tier.finance` | `#0a3520` / `#1f5e36` / `#d4f5dd` (green) |
