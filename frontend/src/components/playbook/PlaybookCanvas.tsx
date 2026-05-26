@@ -72,9 +72,9 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
         source: e.source,
         target: e.target,
         sourceHandle: e.sourceHandle || undefined,
-        type: "default",
+        type: "smoothstep",
         animated: false,
-        style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+        style: { stroke: "#94a3b8", strokeWidth: 2 },
       })),
     [canvas.edges],
   );
@@ -118,8 +118,8 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
         id: genEdgeId(),
         source: connection.source!,
         target: connection.target!,
-        type: "default",
-        style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+        type: "smoothstep",
+        style: { stroke: "#94a3b8", strokeWidth: 2 },
       };
       const updated = addEdge(newEdge, edges);
       onChange({
@@ -183,10 +183,15 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
         fitView
         fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: "default", style: { stroke: "#94a3b8", strokeWidth: 1.5 } }}
+        defaultEdgeOptions={{ type: "smoothstep", style: { stroke: "#94a3b8", strokeWidth: 2 } }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#e2e8f0" />
-        <Controls position="bottom-right" showInteractive={false} />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#cbd5e1" />
+        <Controls
+          position="bottom-right"
+          showInteractive={false}
+          className="!shadow-[0_0_0_1px_rgb(226,232,240),0_4px_12px_-4px_rgba(15,23,42,0.08)] !rounded-lg !overflow-hidden"
+          style={{ background: "white" }}
+        />
         <MiniMap
           position="bottom-left"
           pannable
@@ -195,7 +200,10 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
             const meta = NODE_CATALOG.find((m) => m.kind === n.type);
             return meta?.color || "#94a3b8";
           }}
-          maskColor="rgba(244, 247, 250, 0.6)"
+          nodeBorderRadius={8}
+          maskColor="rgba(250, 251, 253, 0.7)"
+          className="!shadow-[0_0_0_1px_rgb(226,232,240),0_4px_12px_-4px_rgba(15,23,42,0.08)] !rounded-lg !overflow-hidden"
+          style={{ background: "white" }}
         />
       </ReactFlow>
     </div>

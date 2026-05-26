@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings2, Trash2, X } from "lucide-react";
 
 import { getNodeMeta, type PlaybookNode } from "@/lib/playbookSchema";
 
@@ -8,16 +8,88 @@ interface Props {
   onChange: (data: Record<string, unknown>) => void;
   onDelete: () => void;
   onClose: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export default function NodeConfigPanel({ node, onChange, onDelete, onClose }: Props) {
+const PANEL_FONT = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif';
+
+export default function NodeConfigPanel({
+  node,
+  onChange,
+  onDelete,
+  onClose,
+  collapsed,
+  onToggleCollapse,
+}: Props) {
+  // Modo colapsado — barra fina à direita
+  if (collapsed) {
+    return (
+      <div
+        className="w-[48px] shrink-0 bg-white border-l border-slate-200 flex flex-col items-center py-2 gap-1 h-full"
+        style={{ fontFamily: PANEL_FONT }}
+      >
+        <button
+          onClick={onToggleCollapse}
+          className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          title="Expandir configuração"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        {node && (() => {
+          const m = getNodeMeta(node.type);
+          if (!m) return null;
+          const Icon = m.icon;
+          return (
+            <>
+              <div className="w-7 h-px bg-slate-200 my-1" />
+              <div
+                className="w-8 h-8 rounded-md flex items-center justify-center"
+                style={{ backgroundColor: `${m.color}14`, color: m.color }}
+                title={m.label}
+              >
+                <Icon className="w-3.5 h-3.5" />
+              </div>
+            </>
+          );
+        })()}
+      </div>
+    );
+  }
+
+  // Empty state — sem nó selecionado
   if (!node) {
     return (
       <div
-        className="w-[320px] shrink-0 bg-white border-l border-slate-200 p-6 text-center text-[13px] text-[#697386] h-full overflow-y-auto"
-        style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
+        className="w-[320px] shrink-0 bg-white border-l border-slate-200 flex flex-col h-full"
+        style={{ fontFamily: PANEL_FONT }}
       >
-        <div className="opacity-50">Selecione um nó pra editar</div>
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Settings2 className="w-3.5 h-3.5 text-[#697386]" />
+            <h3 className="text-[13px] font-semibold text-[#1a2c44]">Configuração</h3>
+          </div>
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="w-6 h-6 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              title="Recolher painel"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+        <div className="flex-1 flex items-center justify-center px-6 text-center">
+          <div>
+            <div className="inline-flex w-10 h-10 rounded-lg bg-slate-50 items-center justify-center mb-3">
+              <Settings2 className="w-5 h-5 text-slate-400" />
+            </div>
+            <div className="text-[13px] font-medium text-[#1a2c44] mb-1">Selecione um nó</div>
+            <p className="text-[12px] text-[#697386] leading-relaxed">
+              Clique num nó do canvas pra ver e editar a configuração dele aqui.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -29,27 +101,37 @@ export default function NodeConfigPanel({ node, onChange, onDelete, onClose }: P
 
   return (
     <div
-      className="w-[320px] shrink-0 bg-white border-l border-slate-200 flex flex-col h-full"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
+      className="w-[340px] shrink-0 bg-white border-l border-slate-200 flex flex-col h-full"
+      style={{ fontFamily: PANEL_FONT }}
     >
       {/* Header */}
       <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
         <div
-          className="w-6 h-6 rounded flex items-center justify-center shrink-0"
-          style={{ backgroundColor: `${meta.color}1f` }}
+          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+          style={{ backgroundColor: `${meta.color}14`, boxShadow: `0 0 0 1px ${meta.color}26` }}
         >
           <Icon className="w-3.5 h-3.5" style={{ color: meta.color }} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold text-[#1a2c44] truncate">{meta.label}</div>
-          <div className="text-[10px] text-[#697386] truncate">{node.id}</div>
+          <div className="text-[13px] font-semibold text-[#1a2c44] truncate leading-tight">{meta.label}</div>
+          <div className="text-[10px] text-[#697386] truncate leading-tight font-mono mt-0.5">{node.id}</div>
         </div>
         <button
           onClick={onClose}
-          className="w-6 h-6 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+          className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          title="Fechar"
         >
           <X className="w-3.5 h-3.5" />
         </button>
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            title="Recolher painel"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Body — form por kind */}
