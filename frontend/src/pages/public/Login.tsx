@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 
 import { api } from "@/lib/api";
 
-/**
- * Google Sign-In button via Google Identity Services nativo (One Tap-compatible).
- * Retorna ID token (não access_token) que o backend valida com google-auth.
- */
 function GoogleCredentialButton({
   onCredential,
   disabled,
@@ -17,16 +14,13 @@ function GoogleCredentialButton({
   disabled?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (!ref.current) return;
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     if (!clientId) return;
-
-    // @ts-expect-error - global google injected by GoogleOAuthProvider script
+    // @ts-expect-error window.google injected
     const g = window.google;
     if (!g?.accounts?.id) return;
-
     g.accounts.id.initialize({
       client_id: clientId,
       callback: (resp: { credential: string }) => onCredential(resp.credential),
@@ -39,10 +33,9 @@ function GoogleCredentialButton({
       text: "continue_with",
       logo_alignment: "left",
       locale: "pt-BR",
-      width: 360,
+      width: 380,
     });
   }, [onCredential]);
-
   return (
     <div className={`w-full flex justify-center ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
       <div ref={ref} />
@@ -89,153 +82,171 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden" style={{ backgroundColor: "#0a0a0a" }}>
-      {/* Vídeo de fundo */}
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="auto"
-        className="absolute inset-0 w-full h-full object-cover opacity-50"
-      >
-        <source src="/images/tier-empresas-720p.mp4" type="video/mp4" />
-      </video>
-      <div className="absolute inset-0 bg-gradient-to-br from-black/60 via-black/30 to-transparent" />
+    <div className="min-h-screen flex bg-[#F8FAFF]">
+      {/* LEFT — Form */}
+      <div className="w-full lg:w-[45%] flex flex-col justify-between py-10 px-10 lg:pl-12 lg:pr-16 relative overflow-hidden">
+        <div className="absolute bottom-[-40px] left-0 right-0 opacity-[0.08] pointer-events-none">
+          <img src="/pattern-tier-cubos.svg" alt="" className="w-full h-auto" draggable={false} />
+        </div>
 
-      {/* Logo Tier Agent (variante clara sobre fundo escuro) */}
-      <div className="relative z-10 px-10 py-8">
-        <Link to="/" className="inline-block">
-          <img
-            src="/tier-agent-claro.png"
-            alt="Tier Agent"
-            style={{ height: 38, width: "auto", display: "block" }}
-            draggable={false}
-          />
+        <Link to="/" className="inline-flex items-center">
+          <img src="/tier-agent-escuro.png" alt="Tier Agent" style={{ height: 32, width: "auto" }} />
         </Link>
-      </div>
 
-      {/* Card centralizado dark */}
-      <div
-        className="relative z-10 flex items-center justify-center"
-        style={{ minHeight: "calc(100vh - 100px)" }}
-      >
-        <div className="w-full max-w-[480px] mx-auto px-4">
-          <div
-            className="rounded-[10px] px-12 pt-10 pb-0"
-            style={{
-              backgroundColor: "rgba(18,18,18,0.85)",
-              backdropFilter: "blur(20px)",
-              boxShadow: "0 15px 35px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)",
-            }}
-          >
-            <h1 className="text-[20px] font-normal tracking-[-0.2px] text-white" style={{ lineHeight: "28px" }}>
-              Acesse seu Tier Agent
-            </h1>
-            <p className="text-[13px] text-slate-400 mt-1 mb-7">Seu funcionário digital em qualquer canal.</p>
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="w-full max-w-[420px] mx-auto"
+        >
+          <h1 className="text-[32px] font-extrabold text-[#2D2D2D] tracking-tight leading-tight">Entrar</h1>
+          <p className="text-[15px] text-[#8A94A7] mt-1 mb-8">Acesse seu Tier Agent</p>
 
-            <form onSubmit={onSubmit} className="space-y-4">
-              <div>
-                <label className="block text-[13px] font-normal mb-1.5 text-slate-300">E-mail</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                  autoFocus
-                  data-dark
-                  className="w-full h-[40px] px-3 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
-                  style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
-                  onFocus={(e) => {
-                    e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)";
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.boxShadow = "0 0 0 1px #333";
-                  }}
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[13px] font-normal text-slate-300">Senha</label>
-                </div>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={senha}
-                    onChange={(e) => setSenha(e.target.value)}
-                    autoComplete="current-password"
-                    data-dark
-                    className="w-full h-[40px] px-3 pr-9 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
-                    style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
-                    onFocus={(e) => {
-                      e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)";
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.boxShadow = "0 0 0 1px #333";
-                    }}
-                    required
-                    disabled={loading}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#555] hover:text-slate-400 transition-colors"
-                    tabIndex={-1}
-                  >
-                    {showPassword ? <EyeOff className="w-[15px] h-[15px]" /> : <Eye className="w-[15px] h-[15px]" />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#B0B8C9] pointer-events-none" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full h-[50px] pl-12 pr-4 bg-[#EEF2FF] border border-[#DBEAFE] rounded-lg text-[14px] text-[#0A1628] font-medium placeholder-[#A0A9BE] focus:outline-none focus:border-[#003083] focus:ring-2 focus:ring-[#003083]/15 focus:bg-white transition-all"
+                placeholder="E-mail"
+                autoComplete="email"
+                required
                 disabled={loading}
-                className="w-full h-[40px] rounded-[6px] text-[13px] font-medium flex items-center justify-center gap-2 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300 hover:text-white"
-                style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Entrar"}
-              </button>
-
-              <div className="flex items-center gap-3 py-1">
-                <div className="flex-1 h-px" style={{ backgroundColor: "#333" }} />
-                <span className="text-[12px] select-none text-slate-500">Ou faça login com</span>
-                <div className="flex-1 h-px" style={{ backgroundColor: "#333" }} />
-              </div>
-
-              <GoogleCredentialButton onCredential={onGoogleCredential} disabled={loading} />
-            </form>
-
-            {/* Footer do card */}
-            <div
-              className="mt-6 -mx-12 rounded-b-[10px] py-4 text-center"
-              style={{
-                backgroundColor: "rgba(255,255,255,0.03)",
-                borderTop: "1px solid rgba(255,255,255,0.06)",
-              }}
-            >
-              <p className="text-[13px] text-slate-500">
-                Ainda não tem conta?{" "}
-                <Link to="/signup" className="text-slate-300 hover:text-white font-medium transition-colors">
-                  Criar conta gratuita
-                </Link>
-              </p>
+              />
             </div>
-          </div>
 
-          <p className="text-[12px] text-slate-500 text-center mt-5">
-            Já usa Tier Empresas?{" "}
-            <a href="https://erp.tier.finance" className="text-slate-300 hover:text-white transition-colors">
-              Entre pelo painel completo
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#B0B8C9] pointer-events-none" />
+              <input
+                type={showPassword ? "text" : "password"}
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+                className="w-full h-[50px] pl-12 pr-12 bg-[#EEF2FF] border border-[#DBEAFE] rounded-lg text-[14px] text-[#0A1628] font-medium placeholder-[#A0A9BE] focus:outline-none focus:border-[#003083] focus:ring-2 focus:ring-[#003083]/15 focus:bg-white transition-all"
+                placeholder="Senha"
+                autoComplete="current-password"
+                required
+                disabled={loading}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-[#B0B8C9] hover:text-[#64748B] transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
+              </button>
+            </div>
+
+            <Link
+              to="#"
+              className="inline-block text-[13px] text-[#003083] hover:text-[#002266] font-medium transition-colors"
+            >
+              Esqueceu a senha?
+            </Link>
+
+            <div className="pt-3" />
+
+            <p className="text-center text-[14px] text-[#8A94A7]">
+              Não tem uma conta?{" "}
+              <Link
+                to="/signup"
+                className="text-[#003083] hover:text-[#002266] font-semibold transition-colors"
+              >
+                Criar conta
+              </Link>
+            </p>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full h-[50px] bg-[#003083] hover:bg-[#002266] active:scale-[0.98] text-white font-semibold rounded-lg text-[15px] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-[#003083]/20"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Entrar"}
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-[#E2E8F0]" />
+              <span className="text-[12px] text-[#B0B8C9] font-medium select-none">ou</span>
+              <div className="flex-1 h-px bg-[#E2E8F0]" />
+            </div>
+
+            <GoogleCredentialButton onCredential={onGoogleCredential} disabled={loading} />
+          </form>
+        </motion.div>
+
+        <div className="text-[12px] text-[#B0B8C9]">
+          <div className="flex gap-3 flex-wrap">
+            <a href="https://tier.finance/privacidade" className="hover:text-[#64748B] transition-colors">
+              Privacidade
             </a>
-          </p>
+            <span>·</span>
+            <a href="https://tier.finance/termos" className="hover:text-[#64748B] transition-colors">
+              Termos
+            </a>
+            <span>·</span>
+            <a href="https://erp.tier.finance" className="hover:text-[#64748B] transition-colors">
+              Já usa Tier Empresas?
+            </a>
+          </div>
+          <p className="mt-1">© 2026 Tier Finance</p>
         </div>
       </div>
 
-      <div className="relative z-10 px-5 pb-4 flex gap-6 text-[13px] text-slate-400">
-        <span>© Tier Finance</span>
+      {/* RIGHT — Visual */}
+      <div className="hidden lg:block w-[55%] p-3 pl-0">
+        <div className="relative w-full h-full rounded-[24px] overflow-hidden">
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="metadata"
+            className="absolute inset-0 w-full h-full object-cover"
+          >
+            <source src="/images/tier-empresas-720p.mp4" type="video/mp4" />
+          </video>
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0A1628]/80 via-[#0A1628]/20 to-[#0A1628]/70" />
+          <div className="relative z-10 flex flex-col justify-between h-full pt-16 pb-10 px-14">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+            >
+              <h2 className="text-[34px] font-bold text-white leading-[1.15] tracking-tight">
+                Seu funcionário digital.
+              </h2>
+              <p className="text-[15px] text-white/50 mt-2 leading-relaxed">
+                Atende clientes 24/7 em qualquer canal. Lembra, planeja, age.
+              </p>
+              <div className="w-full h-px bg-white/10 mt-6" />
+            </motion.div>
+
+            <div />
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
+            >
+              <div className="w-full h-px bg-white/10 mb-5" />
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] text-white/30 uppercase tracking-widest mb-3">
+                    Desenvolvido por
+                  </p>
+                  <img
+                    src="/tier-agent-claro.png"
+                    alt="Tier Agent"
+                    style={{ height: 22, width: "auto", opacity: 0.7 }}
+                  />
+                </div>
+                <span className="text-[11px] text-white/25 font-medium">agent.tier.finance</span>
+              </div>
+            </motion.div>
+          </div>
+        </div>
       </div>
     </div>
   );
