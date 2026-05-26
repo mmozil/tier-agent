@@ -22,6 +22,7 @@ from models import (
     TaPlaybookStepLog,
     TaPlaybookTriggerIndex,
 )
+from services import playbook_executor
 
 router = APIRouter(prefix="/playbooks", tags=["playbooks"])
 
@@ -280,6 +281,84 @@ async def publish_playbook(
         status=pb.status,
         triggers_indexed=triggers_indexed,
         published_at=pb.published_at,
+    )
+
+
+class TestRunIn(BaseModel):
+    input_message: str = Field(default="", description="Mensagem simulada (string)")
+    sender_name: str | None = "Tester"
+    trigger_node_id: str | None = Field(
+        default=None,
+        description="Se omitido, escolhe o 1º trigger do canvas",
+    )
+    initial_vars: dict[str, Any] = Field(default_factory=dict)
+
+
+class TestRunResult(BaseModel):
+    execution_id: int
+    status: str
+    steps_executed: int
+    messages_sent: int
+    vars: dict[str, Any]
+    trigger_node_id: str
+    trigger_type: str
+
+
+@router.post("/{playbook_id}/test-run", response_model=TestRunResult)
+async def test_run(
+    playbook_id: int,
+    payload: TestRunIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Roda o playbook num modo simulado — sem enviar mensagem real ao canal.
+
+    Útil pra debug no editor. Cria TaPlaybookExecution + TaPlaybookStepLog
+    igual execução real, mas connector_kind/external_chat_id ficam None
+    (executor pula `_flush_outbound` quando ausentes).
+    """
+    tenant_id = await _ensure_tenant(user)
+    pb = await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+
+    canvas = pb.canvas_json or {}
+    nodes = canvas.get("nodes") or []
+    triggers = [n for n in nodes if isinstance(n, dict) and (n.get("type") or "").startswith("trigger_")]
+    if not triggers:
+        raise HTTPException(400, "Playbook sem trigger nodes — adicione um trigger")
+
+    trigger_node_id = payload.trigger_node_id
+    if trigger_node_id:
+        match = next((n for n in triggers if n.get("id") == trigger_node_id), None)
+        if not match:
+            raise HTTPException(400, f"trigger_node_id '{trigger_node_id}' não encontrado")
+        trigger_type = match.get("type") or "trigger_keyword"
+    else:
+        first = triggers[0]
+        trigger_node_id = first.get("id")
+        trigger_type = first.get("type") or "trigger_keyword"
+
+    result = await playbook_executor.run_playbook(
+        db,
+        playbook_id=pb.id,
+        trigger_node_id=trigger_node_id,
+        trigger_type=trigger_type,
+        agent_id=pb.agent_id,
+        conversation_id=None,
+        inbound_text=payload.input_message,
+        inbound_sender=payload.sender_name,
+        connector_kind=None,  # sem canal — não envia mensagens reais
+        external_chat_id=None,
+        initial_vars=payload.initial_vars,
+    )
+
+    return TestRunResult(
+        execution_id=result["execution_id"],
+        status=result["status"],
+        steps_executed=result["steps_executed"],
+        messages_sent=result["messages_sent"],
+        vars=result.get("vars", {}),
+        trigger_node_id=trigger_node_id,
+        trigger_type=trigger_type,
     )
 
 

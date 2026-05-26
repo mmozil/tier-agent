@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.encryption import decrypt
 from models import TaAgent, TaConnector, TaConversation, TaMessageLog, TaUsageDaily
-from services import hermes_proxy
+from services import hermes_proxy, playbook_executor, playbook_router
 from services.connectors import registry
 from services.connectors.base import ConnectorConfig, OutboundMessage
 
@@ -155,6 +155,49 @@ async def handle_inbound_message(
     await log_message(
         db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", tokens_in=0
     )
+
+    # ─── Playbook router (Sprint 1) ───
+    # Intercepta antes do Hermes. Se nenhuma trigger matchou, cai pro fluxo padrão.
+    try:
+        match = await playbook_router.match_inbound_message(
+            db, agent_id=agent.id, text=text_content
+        )
+    except Exception:
+        logger.exception("playbook_router falhou agent=%s — fallback pro Hermes", agent.id)
+        match = None
+
+    if match:
+        logger.info(
+            "agent_runtime: matched playbook_id=%s trigger=%s agent=%s",
+            match.playbook_id, match.trigger_type, agent.id,
+        )
+        try:
+            result = await playbook_executor.run_playbook(
+                db,
+                playbook_id=match.playbook_id,
+                trigger_node_id=match.trigger_node_id,
+                trigger_type=match.trigger_type,
+                agent_id=agent.id,
+                conversation_id=conv.id,
+                inbound_text=text_content,
+                inbound_sender=sender_name,
+                connector_kind=connector_kind,
+                external_chat_id=external_chat_id,
+            )
+            return {
+                "status": "ok",
+                "via": "playbook",
+                "playbook_id": match.playbook_id,
+                "agent_id": agent.id,
+                "conversation_id": conv.id,
+                **result,
+            }
+        except Exception as e:
+            logger.exception(
+                "playbook_executor falhou playbook=%s agent=%s — fallback pro Hermes",
+                match.playbook_id, agent.id,
+            )
+            # cai pro Hermes free como fallback
 
     # Hermes responde
     try:
