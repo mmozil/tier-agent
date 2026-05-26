@@ -18,7 +18,8 @@ settings = get_settings()
 
 
 class SignupIn(BaseModel):
-    nome: str
+    nome_pessoa: str  # nome do user
+    nome: str  # nome da empresa
     email: EmailStr
     password: str
     cnpj: str | None = None
@@ -67,6 +68,7 @@ async def signup(payload: SignupIn, response: Response, db: AsyncSession = Depen
 
     tenant = TaTenant(
         nome=payload.nome,
+        nome_pessoa=payload.nome_pessoa,
         email=payload.email,
         cnpj=payload.cnpj,
         password_hash=pwd_ctx.hash(payload.password),
@@ -123,5 +125,11 @@ async def me(db: AsyncSession = Depends(get_db), user=Depends(__import__("core.a
         "email": user.email,
         "tenant_id": user.tenant_id,
         "is_admin": user.is_admin,
-        "tenant": {"id": tenant.id, "nome": tenant.nome, "sku": tenant.sku, "status": tenant.status} if tenant else None,
+        "tenant": {
+            "id": tenant.id,
+            "nome": tenant.nome,
+            "nome_pessoa": tenant.nome_pessoa,
+            "sku": tenant.sku,
+            "status": tenant.status,
+        } if tenant else None,
     }

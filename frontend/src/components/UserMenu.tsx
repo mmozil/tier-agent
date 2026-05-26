@@ -62,7 +62,8 @@ export default function UserMenu() {
 
   if (!user) return null;
 
-  const nome = user.tenant?.nome || user.email;
+  const nomePessoa = user.tenant?.nome_pessoa || user.tenant?.nome || user.email;
+  const nomeEmpresa = user.tenant?.nome || "";
 
   return (
     <div className="relative" ref={ref}>
@@ -71,10 +72,12 @@ export default function UserMenu() {
           {/* Cabeçalho com user info */}
           <div className="px-3 py-2.5 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
-              <Avatar nome={nome} size={32} />
+              <Avatar nome={nomePessoa} size={32} />
               <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium text-slate-900 truncate">{nome}</div>
-                <div className="text-[11px] text-slate-500 truncate">{user.email}</div>
+                <div className="text-[13px] font-medium text-slate-900 truncate">{nomePessoa}</div>
+                {nomeEmpresa && nomeEmpresa !== nomePessoa && (
+                  <div className="text-[11px] text-slate-500 truncate">{nomeEmpresa}</div>
+                )}
               </div>
             </div>
           </div>
@@ -176,10 +179,12 @@ export default function UserMenu() {
           open ? "bg-slate-100" : "hover:bg-slate-50"
         }`}
       >
-        <Avatar nome={nome} size={32} />
+        <Avatar nome={nomePessoa} size={32} />
         <div className="flex-1 min-w-0 text-left">
-          <div className="text-[12px] font-medium text-slate-900 truncate">{nome}</div>
-          <div className="text-[10px] text-slate-500 truncate">{user.email}</div>
+          <div className="text-[12px] font-medium text-slate-900 truncate">{nomePessoa}</div>
+          {nomeEmpresa && nomeEmpresa !== nomePessoa && (
+            <div className="text-[10px] text-slate-500 truncate">{nomeEmpresa}</div>
+          )}
         </div>
       </button>
     </div>

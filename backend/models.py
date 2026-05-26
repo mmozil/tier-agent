@@ -35,7 +35,8 @@ class TaTenant(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    nome: Mapped[str] = mapped_column(String(255), nullable=False)
+    nome: Mapped[str] = mapped_column(String(255), nullable=False)  # nome da empresa
+    nome_pessoa: Mapped[str | None] = mapped_column(String(255), nullable=True)  # nome do usuário responsável
     cnpj: Mapped[str | None] = mapped_column(String(14), unique=True, nullable=True, index=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     sku: Mapped[str] = mapped_column(String(32), default="trial", nullable=False)

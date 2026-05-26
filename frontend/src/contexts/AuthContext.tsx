@@ -6,7 +6,13 @@ interface User {
   email: string;
   tenant_id: number | null;
   is_admin: boolean;
-  tenant?: { id: number; nome: string; sku: string; status: string } | null;
+  tenant?: {
+    id: number;
+    nome: string;
+    nome_pessoa?: string | null;
+    sku: string;
+    status: string;
+  } | null;
 }
 
 interface AuthCtx {

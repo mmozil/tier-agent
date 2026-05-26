@@ -6,6 +6,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function Signup() {
+  const [nomePessoa, setNomePessoa] = useState("");
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -21,7 +22,7 @@ export default function Signup() {
     }
     setLoading(true);
     try {
-      await api.post("/auth/signup", { nome, email, password: senha, cnpj: cnpj || null });
+      await api.post("/auth/signup", { nome_pessoa: nomePessoa, nome, email, password: senha, cnpj: cnpj || null });
       toast.success("Conta criada");
       window.location.href = "/admin/agentes";
     } catch (err: any) {
@@ -77,12 +78,29 @@ export default function Signup() {
 
             <form onSubmit={onSubmit} className="space-y-4">
               <div>
-                <label className="block text-[13px] font-normal mb-1.5 text-slate-300">Nome ou empresa</label>
+                <label className="block text-[13px] font-normal mb-1.5 text-slate-300">Seu nome</label>
+                <input
+                  type="text"
+                  value={nomePessoa}
+                  onChange={(e) => setNomePessoa(e.target.value)}
+                  autoFocus
+                  placeholder="Ex: Marcelo Morais"
+                  className="w-full h-[40px] px-3 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
+                  style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
+                  onFocus={(e) => { e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)"; }}
+                  onBlur={(e) => { e.target.style.boxShadow = "0 0 0 1px #333"; }}
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[13px] font-normal mb-1.5 text-slate-300">Empresa</label>
                 <input
                   type="text"
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
-                  autoFocus
+                  placeholder="Ex: Out Group Comercial"
                   className="w-full h-[40px] px-3 rounded-[6px] text-[14px] outline-none transition-shadow text-white placeholder:text-[#555]"
                   style={{ backgroundColor: "#1e1e1e", boxShadow: "0 0 0 1px #333" }}
                   onFocus={(e) => { e.target.style.boxShadow = "0 0 0 1px #4d8bff, 0 0 0 4px rgba(77,139,255,0.15)"; }}
