@@ -91,9 +91,9 @@ export default function LlmProvidersPage() {
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="h-9 px-3 bg-tier hover:bg-tier-dark text-white text-[13px] rounded-md inline-flex items-center gap-1.5"
+          className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1"
         >
-          <Plus className="w-3.5 h-3.5" /> Novo provider
+          <Plus className="w-3 h-3" /> Novo provider
         </button>
       </div>
 
@@ -107,7 +107,7 @@ export default function LlmProvidersPage() {
               <select
                 value={form.provider}
                 onChange={(e) => setForm({ ...form, provider: e.target.value })}
-                className="mt-1 w-full h-9 px-3 text-[13px] border border-slate-300 rounded-md"
+                className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
               >
                 {supported.map((s) => (
                   <option key={s.key} value={s.key}>
@@ -123,7 +123,7 @@ export default function LlmProvidersPage() {
                 value={form.default_model}
                 onChange={(e) => setForm({ ...form, default_model: e.target.value })}
                 placeholder="ex: MiniMax-M2, claude-sonnet-4-6, gpt-4o-mini"
-                className="mt-1 w-full h-9 px-3 text-[13px] border border-slate-300 rounded-md"
+                className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
                 required
               />
             </label>
@@ -136,7 +136,7 @@ export default function LlmProvidersPage() {
               value={form.api_key}
               onChange={(e) => setForm({ ...form, api_key: e.target.value })}
               placeholder="sk-..."
-              className="mt-1 w-full h-9 px-3 text-[13px] border border-slate-300 rounded-md font-mono"
+              className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md font-mono focus:outline-none focus:border-tier"
               required
             />
             <span className="text-[11px] text-slate-500 mt-1 block">Encriptada com Fernet at-rest no banco.</span>
@@ -152,7 +152,7 @@ export default function LlmProvidersPage() {
                 max="2"
                 value={form.temperature}
                 onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) })}
-                className="mt-1 w-full h-9 px-3 text-[13px] border border-slate-300 rounded-md"
+                className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
               />
             </label>
             <label className="block">
@@ -162,7 +162,7 @@ export default function LlmProvidersPage() {
                 min="1"
                 value={form.max_tokens}
                 onChange={(e) => setForm({ ...form, max_tokens: parseInt(e.target.value) })}
-                className="mt-1 w-full h-9 px-3 text-[13px] border border-slate-300 rounded-md"
+                className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
               />
             </label>
           </div>
@@ -171,11 +171,11 @@ export default function LlmProvidersPage() {
             <button
               type="button"
               onClick={() => setShowForm(false)}
-              className="h-8 px-3 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md"
+              className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1"
             >
               Cancelar
             </button>
-            <button type="submit" className="h-8 px-3 text-[12px] bg-tier text-white rounded-md hover:bg-tier-dark">
+            <button type="submit" className="h-6 px-2 text-[12px] bg-tier text-white rounded-md hover:bg-tier-dark inline-flex items-center gap-1">
               Salvar
             </button>
           </div>

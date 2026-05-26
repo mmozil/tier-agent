@@ -66,9 +66,9 @@ export default function AgentesPage() {
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="h-9 px-3 bg-tier hover:bg-tier-dark text-white text-[13px] rounded-md inline-flex items-center gap-1.5"
+          className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1"
         >
-          <Plus className="w-3.5 h-3.5" /> Novo agente
+          <Plus className="w-3 h-3" /> Novo agente
         </button>
       </div>
 
@@ -82,7 +82,7 @@ export default function AgentesPage() {
               value={form.nome}
               onChange={(e) => setForm({ ...form, nome: e.target.value })}
               placeholder="ex: Atendente principal"
-              className="mt-1 w-full h-9 px-3 text-[13px] border border-slate-300 rounded-md"
+              className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
               required
             />
           </label>
@@ -127,11 +127,11 @@ export default function AgentesPage() {
             <button
               type="button"
               onClick={() => setShowForm(false)}
-              className="h-8 px-3 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md"
+              className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1"
             >
               Cancelar
             </button>
-            <button type="submit" className="h-8 px-3 text-[12px] bg-tier text-white rounded-md hover:bg-tier-dark">
+            <button type="submit" className="h-6 px-2 text-[12px] bg-tier text-white rounded-md hover:bg-tier-dark inline-flex items-center gap-1">
               Criar agente
             </button>
           </div>

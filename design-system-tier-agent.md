@@ -136,27 +136,32 @@ Usado nos labels dos produtos dentro do product switcher (popup avatar). Importa
 - Padding interno: `p-5` (card médio) ou `p-6` (form)
 - Hover (opcional): `hover:border-slate-300`
 
-### Form/Inputs
+### Form/Inputs (padrão Stripe — espelha Tier Empresas)
+
+> Regra hard: **hierarquia visual botão < input**. Inputs h-7, botões h-6.
 
 | Estado | Estilo |
 |---|---|
-| Input default (light) | `h-9 px-3 text-[13px] border border-slate-300 rounded-md focus:outline-none focus:border-tier` |
-| Input dark (login) | `h-[40px] px-3 rounded-[6px] text-[14px]` + box-shadow custom |
+| Input default (light) | `h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier` |
+| Input dark (login) | `h-[40px] px-3 rounded-[6px] text-[14px]` + box-shadow custom (login é landing, fica maior) |
 | Label | `text-[12px] text-slate-700` (light) / `text-[13px] text-slate-300` (dark) |
-| Textarea | `px-3 py-2 text-[13px] border border-slate-300 rounded-md` |
-| Select | `mt-1 w-full h-9 px-3 text-[13px] border border-slate-300 rounded-md` |
+| Textarea | `px-3 py-1.5 text-[14px] border border-slate-300 rounded-md` |
+| Select | `h-7 px-3 text-[14px] border border-slate-300 rounded-md` |
 
-### Botão
+### Botão — padrão Stripe Tier Empresas
+
+> **TODOS botões admin: `h-6 px-2 text-[12px] inline-flex items-center gap-1`** com ícone `w-3 h-3`.
+> Login/Landing (público) podem ser maiores (h-9/h-10) — densidade baixa.
 
 | Tipo | Estilo |
 |---|---|
-| Primário | `h-9 px-3 bg-tier hover:bg-tier-dark text-white text-[13px] rounded-md inline-flex items-center gap-1.5` |
-| Primário pequeno | `h-8 px-3 text-[12px] bg-tier text-white rounded-md hover:bg-tier-dark` |
-| Secundário | `h-8 px-3 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md` |
-| Destrutivo | `text-rose-600 hover:bg-rose-50` |
+| Primário | `h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1` |
+| Secundário | `h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1` |
+| Destrutivo (link) | `text-rose-600 hover:bg-rose-50` |
 | Ícone-only | `p-1.5 hover:bg-slate-50 text-slate-400 rounded` |
+| Login/Landing | `h-9/h-10 text-[13px]/text-[14px]` (maior, fora do admin) |
 
-Ícones em botão: `w-3.5 h-3.5` (pequeno) ou `w-4 h-4` (médio).
+Ícones em botão admin: `w-3 h-3` SEMPRE.
 
 ### Tabela
 
@@ -221,12 +226,12 @@ Cada item: `h-auto px-2 py-2 rounded-md` + favicon 24px + nome `text-[15px]` Exo
 
 ---
 
-## Regras hard pra próximas páginas
+## Regras hard pra próximas páginas (padrão Tier Empresas / Stripe)
 
-1. **H1 página = `text-[28px] font-medium text-slate-900 mb-1`** + subtitle `text-[13px] text-slate-500 mb-6`
-2. **Card = `bg-white rounded-xl border border-slate-200 p-5`** (não `rounded-md`)
-3. **Input = `h-9 px-3 text-[13px] border border-slate-300 rounded-md focus:outline-none focus:border-tier`**
-4. **Botão primário = `h-9 px-3 bg-tier hover:bg-tier-dark text-white text-[13px] rounded-md`** com ícone `w-3.5 h-3.5`
+1. **H1 página = `text-[28px] font-medium tracking-tight text-slate-900 mb-1`** + subtitle `text-[13px] text-slate-500 mb-6`
+2. **Card = `bg-white rounded-xl border border-slate-200 p-5`**
+3. **Input = `h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier`**
+4. **Botão = `h-6 px-2 text-[12px] inline-flex items-center gap-1`** com ícone `w-3 h-3`. Hierarquia: botão < input.
 5. **Empty state = `text-center text-[13px] text-slate-400 py-6`**
 6. **Container página = `max-w-[1280px] mx-auto px-8 py-8`** (já vem do AdminLayout)
 7. **NÃO usar fontes externas globais** (Inter, Geist, etc) — só system stack
