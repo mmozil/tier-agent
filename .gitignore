@@ -36,3 +36,6 @@ uploads/
 tmp/
 *.sqlite3
 *.db
+
+# tsbuildinfo
+**/tsconfig.tsbuildinfo

@@ -2,6 +2,7 @@
 
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
@@ -114,33 +115,55 @@ async def login(payload: LoginIn, response: Response, db: AsyncSession = Depends
 
 
 class GoogleLoginIn(BaseModel):
-    credential: str  # ID token from Google Identity Services
+    credential: str | None = None  # ID token (GIS widget legacy)
+    access_token: str | None = None  # OAuth2 access token (useGoogleLogin popup)
 
 
 @router.post("/google", response_model=AuthOut)
 async def google_login(
     payload: GoogleLoginIn, response: Response, db: AsyncSession = Depends(get_db)
 ):
-    """Login via Google OAuth — valida ID token + cria tenant se não existe."""
+    """Login via Google OAuth — aceita credential (ID token GIS) OU access_token (popup)."""
     if not settings.google_client_id:
         raise HTTPException(500, "Google OAuth não configurado")
 
-    try:
-        idinfo = google_id_token.verify_oauth2_token(
-            payload.credential,
-            google_requests.Request(),
-            settings.google_client_id,
-            clock_skew_in_seconds=10,
-        )
-    except ValueError as e:
-        logger.warning("Google ID token inválido: %s", e)
-        raise HTTPException(401, "Token Google inválido")
+    email: str | None = None
+    nome_pessoa: str | None = None
 
-    email = idinfo.get("email")
-    if not email or not idinfo.get("email_verified"):
-        raise HTTPException(401, "Email não verificado pelo Google")
+    if payload.access_token:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {payload.access_token}"},
+            )
+            if r.status_code != 200:
+                logger.warning("Google userinfo falhou: %s %s", r.status_code, r.text[:200])
+                raise HTTPException(401, "Token Google inválido")
+            info = r.json()
+            if not info.get("email_verified"):
+                raise HTTPException(401, "Email não verificado pelo Google")
+            email = info.get("email")
+            nome_pessoa = info.get("name") or (email.split("@")[0] if email else None)
+    elif payload.credential:
+        try:
+            idinfo = google_id_token.verify_oauth2_token(
+                payload.credential,
+                google_requests.Request(),
+                settings.google_client_id,
+                clock_skew_in_seconds=10,
+            )
+        except ValueError as e:
+            logger.warning("Google ID token inválido: %s", e)
+            raise HTTPException(401, "Token Google inválido")
+        if not idinfo.get("email_verified"):
+            raise HTTPException(401, "Email não verificado pelo Google")
+        email = idinfo.get("email")
+        nome_pessoa = idinfo.get("name") or (email.split("@")[0] if email else None)
+    else:
+        raise HTTPException(400, "Informe access_token ou credential")
 
-    nome_pessoa = idinfo.get("name") or email.split("@")[0]
+    if not email:
+        raise HTTPException(401, "Email não retornado pelo Google")
 
     tenant = await _find_tenant(db, email)
     if not tenant:
