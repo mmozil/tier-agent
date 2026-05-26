@@ -39,7 +39,7 @@ export default function App() {
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="params" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
         <Route path="metricas" element={<Placeholder title="Métricas" desc="Custo, mensagens/dia, deflection rate (em breve)." />} />
-        <Route path="cobranca" element={<Placeholder title="Cobrança" desc="Plano Tier Pay + faturas (em breve)." />} />
+        <Route path="cobranca" element={<CobrancaPage />} />
         <Route path="equipe" element={<Placeholder title="Equipe" desc="Convidar membros pro tenant (em breve)." />} />
         <Route path="perfil" element={<Placeholder title="Meu perfil" desc="Editar dados da conta (em breve)." />} />
       </Route>
