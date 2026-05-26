@@ -283,12 +283,16 @@ export default function CanaisPage() {
                     {formatPhone(c.config_summary?.phone)}
                   </td>
                   <td className="px-4 py-2.5 text-[13px]">
-                    <span
-                      title={meta.tip}
-                      className="inline-flex items-center gap-1.5 cursor-help"
-                    >
+                    <span className="group relative inline-flex items-center gap-1.5 cursor-help">
                       <span className={`w-2 h-2 rounded-full ${meta.color}`} />
                       <span className="text-slate-700">{meta.label}</span>
+                      <span
+                        className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-75 z-10 shadow-lg"
+                        role="tooltip"
+                      >
+                        {meta.tip}
+                        <span className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-900" />
+                      </span>
                     </span>
                   </td>
                   <td className="px-2 py-2.5">
