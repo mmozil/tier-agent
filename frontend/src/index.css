@@ -9,7 +9,7 @@
     height: 100%;
   }
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-tier-bg-page text-tier-text-body antialiased;
     font-feature-settings: "cv11", "ss03", "ss02";
   }
 }

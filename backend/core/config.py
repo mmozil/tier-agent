@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     google_tts_api_key: str = ""
     google_tts_default_voice: str = "pt-BR-Wavenet-A"
 
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
     default_llm_provider: str = "minimax"
     default_llm_model: str = "MiniMax-M2"
     default_llm_api_key: str = ""

@@ -19,6 +19,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.2.1
 email-validator==2.2.0
 cryptography==44.0.0
+google-auth==2.36.0
 
 # HTTP
 httpx==0.28.1

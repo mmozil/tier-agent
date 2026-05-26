@@ -1,6 +1,10 @@
-"""Auth — signup + login. MVP: 1 user por tenant (email = login)."""
+"""Auth — signup + login + Google OAuth. MVP: 1 user por tenant (email = login)."""
+
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
@@ -10,6 +14,8 @@ from core.auth import create_token
 from core.config import get_settings
 from core.db import get_db
 from models import TaTenant
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -96,6 +102,60 @@ async def login(payload: LoginIn, response: Response, db: AsyncSession = Depends
         raise HTTPException(401, "Credenciais inválidas")
     if not pwd_ctx.verify(payload.password, tenant.password_hash):
         raise HTTPException(401, "Credenciais inválidas")
+
+    token = create_token(
+        subject=str(tenant.id),
+        extra_claims={"email": tenant.email, "tenant_id": tenant.id, "is_admin": tenant.is_admin},
+    )
+    _set_cookie(response, token)
+    return AuthOut(
+        access_token=token, tenant_id=tenant.id, email=tenant.email, is_admin=tenant.is_admin
+    )
+
+
+class GoogleLoginIn(BaseModel):
+    credential: str  # ID token from Google Identity Services
+
+
+@router.post("/google", response_model=AuthOut)
+async def google_login(
+    payload: GoogleLoginIn, response: Response, db: AsyncSession = Depends(get_db)
+):
+    """Login via Google OAuth — valida ID token + cria tenant se não existe."""
+    if not settings.google_client_id:
+        raise HTTPException(500, "Google OAuth não configurado")
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            payload.credential,
+            google_requests.Request(),
+            settings.google_client_id,
+            clock_skew_in_seconds=10,
+        )
+    except ValueError as e:
+        logger.warning("Google ID token inválido: %s", e)
+        raise HTTPException(401, "Token Google inválido")
+
+    email = idinfo.get("email")
+    if not email or not idinfo.get("email_verified"):
+        raise HTTPException(401, "Email não verificado pelo Google")
+
+    nome_pessoa = idinfo.get("name") or email.split("@")[0]
+
+    tenant = await _find_tenant(db, email)
+    if not tenant:
+        # Auto-cria tenant no primeiro login Google
+        tenant = TaTenant(
+            nome=nome_pessoa,  # usa nome pessoa como label de tenant por padrão
+            nome_pessoa=nome_pessoa,
+            email=email,
+            sku="trial",
+            status="active",
+        )
+        db.add(tenant)
+        await db.commit()
+        await db.refresh(tenant)
+        logger.info("Tenant criado via Google login: %s id=%s", email, tenant.id)
 
     token = create_token(
         subject=str(tenant.id),
