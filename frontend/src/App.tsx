@@ -10,6 +10,7 @@ import LlmProvidersPage from "./pages/admin/LlmProvidersPage";
 import FeaturesPage from "./pages/admin/FeaturesPage";
 import CanaisPage from "./pages/admin/CanaisPage";
 import KnowledgePage from "./pages/admin/KnowledgePage";
+import CobrancaPage from "./pages/admin/CobrancaPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
