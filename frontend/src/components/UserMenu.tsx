@@ -13,7 +13,7 @@ interface Produto {
 
 const PRODUTOS: Produto[] = [
   // Atual primeiro (Tier Agent usa mesmo favicon cinza/preto do Tier Empresas — design unificado)
-  { key: "agent", label: "tier agent", url: "https://agent.tier.finance", colors: ["#1a1a1a", "#4a4a4a", "#888"] },
+  { key: "agent", label: "tier agent", url: "https://agent.tier.finance", colors: ["#001a4d", "#003083", "#0050D5"] },
   { key: "erp", label: "tier empresas", url: "https://erp.tier.finance", colors: ["#1a1a1a", "#4a4a4a", "#888"] },
   { key: "emissor", label: "tier emissor", url: "https://emissor.tier.finance", colors: ["#1a1a1a", "#4a4a4a", "#888"] },
   { key: "pay", label: "tier pay", url: "https://pay.tier.finance", colors: ["#0a3520", "#1f5e36", "#d4f5dd"] },
