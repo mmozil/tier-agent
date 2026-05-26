@@ -84,7 +84,7 @@ export default function LlmProvidersPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-[28px] font-medium tracking-tight text-slate-900">LLM Providers</h1>
+          <h1 className="text-[28px] font-bold text-[#30313d]">LLM Providers</h1>
           <p className="text-[13px] text-slate-500 mt-1">
             Cadastre os modelos disponíveis. Cada agente escolhe um na configuração — zero hardcode.
           </p>

@@ -55,7 +55,7 @@ export default function FeaturesPage() {
 
   return (
     <div>
-      <h1 className="text-[28px] font-medium tracking-tight text-slate-900 mb-1">Feature Flags</h1>
+      <h1 className="text-[28px] font-bold text-[#30313d] mb-1">Feature Flags</h1>
       <p className="text-[13px] text-slate-500 mb-6">
         Liga/desliga capacidades do agente sem deploy. Escopo global = aplica em todos os tenants.
       </p>

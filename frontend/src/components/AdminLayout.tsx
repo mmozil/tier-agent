@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Cpu,
@@ -7,7 +6,6 @@ import {
   Sliders,
   BarChart3,
   CreditCard,
-  ChevronDown,
   Bot,
   MessageSquare,
   Plug,
@@ -27,13 +25,13 @@ interface NavItem {
 }
 
 interface NavGroup {
-  title: string;
+  label: string;
   items: NavItem[];
 }
 
-const GROUPS: NavGroup[] = [
+const SECTIONS: NavGroup[] = [
   {
-    title: "Plataforma",
+    label: "Plataforma",
     items: [
       { to: "/admin/agentes", label: "Agentes", icon: Bot },
       { to: "/admin/conversas", label: "Conversas", icon: MessageSquare },
@@ -42,7 +40,7 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: "Configuração",
+    label: "Configuração",
     items: [
       { to: "/admin/llm", label: "LLM Providers", icon: Cpu },
       { to: "/admin/features", label: "Feature Flags", icon: ToggleLeft },
@@ -50,7 +48,7 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: "Conta",
+    label: "Conta",
     items: [
       { to: "/admin/metricas", label: "Métricas", icon: BarChart3 },
       { to: "/admin/cobranca", label: "Cobrança", icon: CreditCard },
@@ -59,71 +57,72 @@ const GROUPS: NavGroup[] = [
   },
 ];
 
-function NavSection({ group }: { group: NavGroup }) {
-  const location = useLocation();
-  const hasActive = group.items.some((it) => location.pathname.startsWith(it.to));
-  const [open, setOpen] = useState<boolean>(hasActive || true);
-  return (
-    <div className="mt-5 first:mt-2">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 mb-1 text-[12px] text-slate-400 hover:text-slate-600 transition-colors"
-      >
-        <span>{group.title}</span>
-        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? "" : "-rotate-90"}`} />
-      </button>
-      {open && (
-        <div>
-          {group.items.map((it) => (
-            <NavLink
-              key={it.to}
-              to={it.to}
-              className={({ isActive }) =>
-                `flex items-center gap-2.5 h-[30px] mx-2 px-3 rounded-md text-[14px] transition-colors ${
-                  isActive
-                    ? "bg-[#003083]/[0.08] text-[#003083] font-semibold"
-                    : "text-[#1a2c44] hover:bg-slate-50"
-                }`
-              }
-            >
-              <it.icon className="w-4 h-4 opacity-60" />
-              {it.label}
-            </NavLink>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+const SIDEBAR_FONT =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, sans-serif';
 
 export default function AdminLayout() {
+  const location = useLocation();
+  const itemClass = (active: boolean) =>
+    `flex items-center gap-2.5 rounded-md transition-colors h-[30px] text-[14px] px-2 ${
+      active
+        ? "text-[#1a2c44] font-semibold bg-[#e8ecf0]"
+        : "text-[#1a2c44] hover:text-slate-900 hover:bg-slate-50 font-normal"
+    }`;
+
   return (
-    <div className="min-h-screen bg-white flex font-sans">
+    <div className="min-h-screen bg-white flex">
       <aside
-        className="bg-white border-r border-slate-200 flex flex-col fixed left-0 top-0 h-full"
-        style={{ width: 240 }}
+        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#FAFAFA] border-r border-slate-200"
+        style={{
+          width: 240,
+          fontFamily: SIDEBAR_FONT,
+          WebkitFontSmoothing: "antialiased",
+        }}
       >
-        {/* Header com logo */}
-        <div className="h-[60px] px-5 flex items-center border-b border-slate-100">
-          <img src="/tier-agent-escuro.png" alt="Tier Agent" className="h-8 w-auto" />
+        {/* Logo — padding px-5 py-4, height 28px (igual Tier Empresas) */}
+        <div className="px-5 py-4 shrink-0 flex items-center">
+          <img
+            src="/tier-agent-escuro.png"
+            alt="Tier Agent"
+            style={{ height: 28, width: "auto", display: "block" }}
+          />
         </div>
 
-        {/* Nav sections */}
-        <nav className="flex-1 overflow-y-auto py-2">
-          {GROUPS.map((g) => (
-            <NavSection key={g.title} group={g} />
+        {/* Nav — px-5 py-1 */}
+        <nav className="flex-1 overflow-y-auto px-5 py-1">
+          {SECTIONS.map((section, sIdx) => (
+            <div key={section.label} className={sIdx > 0 ? "mt-5" : ""}>
+              <div className="mb-1">
+                <span className="text-[12px] font-normal text-slate-400">{section.label}</span>
+              </div>
+              {section.items.map((item) => (
+                <NavLink key={item.to} to={item.to}>
+                  {({ isActive }) => (
+                    <div
+                      className={itemClass(isActive || location.pathname.startsWith(item.to))}
+                    >
+                      <item.icon className="w-4 h-4 flex-shrink-0 opacity-60" />
+                      <span>{item.label}</span>
+                    </div>
+                  )}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 
         {/* User menu bottom */}
-        <div className="border-t border-slate-100 p-2">
+        <div className="border-t border-slate-200 p-2 shrink-0">
           <UserMenu />
         </div>
       </aside>
 
-      <main className="flex-1 ml-[240px] min-h-screen bg-white">
+      <main
+        className="flex-1 ml-[240px] min-h-screen bg-white"
+        style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
+      >
         <div className="px-8 pb-8 max-w-[1400px] mx-auto">
-          {/* TOP BAR — 60px, search + ícones */}
+          {/* TOP BAR — 60px, search + ícones (igual Stripe/Tier Empresas) */}
           <div className="h-[60px] flex items-center justify-between">
             <div className="relative w-[320px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />

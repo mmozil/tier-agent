@@ -65,7 +65,7 @@ export default function CobrancaPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-[28px] font-medium tracking-tight text-slate-900">Cobrança</h1>
+        <h1 className="text-[28px] font-bold text-[#30313d]">Cobrança</h1>
         <p className="text-[13px] text-slate-500 mt-1">
           Escolha o plano que cabe no seu volume.
         </p>
@@ -113,7 +113,7 @@ export default function CobrancaPage() {
               <div className="text-[13px] text-slate-500 mt-1 min-h-[36px]">{s.description}</div>
 
               <div className="mt-4 flex items-baseline gap-1">
-                <span className="text-[28px] font-medium tracking-tight text-slate-900">
+                <span className="text-[28px] font-bold text-[#30313d]">
                   {s.monthly_brl_display}
                 </span>
                 <span className="text-[13px] text-slate-500">/mês</span>
