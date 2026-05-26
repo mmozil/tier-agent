@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
-from . import flow, text, triggers
+from . import flow, integrations, llm, text, triggers
 from .base import ExecutionContext, NodeResult
 
 NodeExecutor = Callable[[ExecutionContext, dict], Awaitable[NodeResult]]
@@ -22,7 +22,7 @@ REGISTRY: dict[str, NodeExecutor] = {
     # Triggers — no runtime, são entry points (executor pula-os após match)
     "trigger_keyword": triggers.execute_noop,
     "trigger_manual": triggers.execute_noop,
-    "trigger_intent": triggers.execute_noop,  # Sprint 3 (match no router)
+    "trigger_intent": triggers.execute_noop,
     "trigger_cron": triggers.execute_noop,
     "trigger_event": triggers.execute_noop,
     # Actions Sprint 1
@@ -30,6 +30,14 @@ REGISTRY: dict[str, NodeExecutor] = {
     "branch": flow.execute_branch,
     "wait": flow.execute_wait,
     "set_var": flow.execute_set_var,
+    # Sprint 3: LLM
+    "llm_step": llm.execute_llm_step,
+    "intent_classifier": llm.execute_intent_classifier,
+    "knowledge_lookup": llm.execute_knowledge_lookup,
+    # Sprint 3: integrações
+    "call_api": integrations.execute_call_api,
+    "tier_pay": integrations.execute_tier_pay,
+    "handoff_human": integrations.execute_handoff_human,
 }
 
 __all__ = ["REGISTRY", "ExecutionContext", "NodeResult", "NodeExecutor"]

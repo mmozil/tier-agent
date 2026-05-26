@@ -206,12 +206,249 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
         </>
       );
 
+    case "llm_step":
+      return (
+        <>
+          <FieldGroup label="Instrução (system)" hint="Como o agente deve responder. Suporta {{vars}}.">
+            <TextareaInput
+              value={(local.system_prompt as string) || ""}
+              onChange={(v) => set("system_prompt", v)}
+              placeholder="Você é um vendedor experiente. Responda em pt-BR..."
+              rows={4}
+            />
+          </FieldGroup>
+          <FieldGroup label="Mensagem (user)" hint="Por padrão usa {{message.text}}">
+            <TextareaInput
+              value={(local.user_prompt as string) || ""}
+              onChange={(v) => set("user_prompt", v)}
+              placeholder="{{message.text}}"
+              rows={2}
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar resposta em">
+            <TextInput
+              value={(local.save_as as string) || ""}
+              onChange={(v) => set("save_as", v)}
+              placeholder="resposta_ia"
+              mono
+            />
+          </FieldGroup>
+          <FieldGroup label="">
+            <CheckboxInput
+              checked={local.send_text !== false}
+              onChange={(v) => set("send_text", v)}
+              label="Enviar resposta automaticamente pelo canal"
+            />
+          </FieldGroup>
+        </>
+      );
+
+    case "knowledge_lookup":
+      return (
+        <>
+          <FieldGroup label="Pergunta (query)" hint="O que buscar na knowledge base do agente">
+            <TextareaInput
+              value={(local.query as string) || ""}
+              onChange={(v) => set("query", v)}
+              placeholder="{{message.text}}"
+              rows={3}
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar resultado em">
+            <TextInput
+              value={(local.save_as as string) || ""}
+              onChange={(v) => set("save_as", v)}
+              placeholder="kb_result"
+              mono
+            />
+          </FieldGroup>
+          <FieldGroup label="">
+            <CheckboxInput
+              checked={!!local.send_text}
+              onChange={(v) => set("send_text", v)}
+              label="Enviar resultado automaticamente pelo canal"
+            />
+          </FieldGroup>
+        </>
+      );
+
+    case "call_api":
+      return (
+        <>
+          <FieldGroup label="Método">
+            <SelectInput
+              value={(local.method as string) || "POST"}
+              onChange={(v) => set("method", v)}
+              options={[
+                { value: "GET", label: "GET" },
+                { value: "POST", label: "POST" },
+                { value: "PUT", label: "PUT" },
+                { value: "PATCH", label: "PATCH" },
+                { value: "DELETE", label: "DELETE" },
+              ]}
+            />
+          </FieldGroup>
+          <FieldGroup label="URL" hint="Suporta {{vars.X}}">
+            <TextInput
+              value={(local.url as string) || ""}
+              onChange={(v) => set("url", v)}
+              placeholder="https://api.exemplo.com/leads"
+              mono
+            />
+          </FieldGroup>
+          <FieldGroup label="Headers (JSON)" hint='{"Authorization":"Bearer X"}'>
+            <JsonInput
+              value={local.headers_json}
+              onChange={(v) => set("headers_json", v)}
+            />
+          </FieldGroup>
+          <FieldGroup label="Body (JSON)">
+            <JsonInput value={local.body_json} onChange={(v) => set("body_json", v)} />
+          </FieldGroup>
+          <FieldGroup label="Salvar resposta em">
+            <TextInput
+              value={(local.save_as as string) || ""}
+              onChange={(v) => set("save_as", v)}
+              placeholder="api_response"
+              mono
+            />
+          </FieldGroup>
+        </>
+      );
+
+    case "tier_pay":
+      return (
+        <>
+          <FieldGroup label="Valor (centavos)" hint="19900 = R$ 199,00">
+            <NumberInput
+              value={(local.valor_cents as number) || 0}
+              onChange={(v) => set("valor_cents", v)}
+              min={100}
+            />
+          </FieldGroup>
+          <FieldGroup label="Descrição da cobrança">
+            <TextInput
+              value={(local.descricao as string) || ""}
+              onChange={(v) => set("descricao", v)}
+              placeholder="Pedido {{vars.pedido_id}}"
+            />
+          </FieldGroup>
+          <FieldGroup label="Método">
+            <SelectInput
+              value={(local.metodo as string) || "pix"}
+              onChange={(v) => set("metodo", v)}
+              options={[
+                { value: "pix", label: "Pix" },
+                { value: "cartao", label: "Cartão" },
+                { value: "both", label: "Pix + Cartão" },
+              ]}
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar URL gerada em">
+            <TextInput
+              value={(local.save_as as string) || ""}
+              onChange={(v) => set("save_as", v)}
+              placeholder="payment_link"
+              mono
+            />
+          </FieldGroup>
+          <div className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1.5 rounded">
+            ⚠ MVP — gera URL placeholder. Integração real com Pagar.me chega no Sprint 4.
+          </div>
+        </>
+      );
+
+    case "handoff_human":
+      return (
+        <>
+          <FieldGroup label="Fila / setor">
+            <TextInput
+              value={(local.queue as string) || ""}
+              onChange={(v) => set("queue", v)}
+              placeholder="vendas / suporte / financeiro"
+            />
+          </FieldGroup>
+          <FieldGroup label="Mensagem pro contato (opcional)">
+            <TextareaInput
+              value={(local.msg as string) || ""}
+              onChange={(v) => set("msg", v)}
+              placeholder="Um atendente humano vai continuar daqui, ok?"
+              rows={3}
+            />
+          </FieldGroup>
+          <FieldGroup label="Pausar IA por (minutos)" hint="0 = pausa permanente até admin reativar">
+            <NumberInput
+              value={(local.pause_minutes as number) ?? 60}
+              onChange={(v) => set("pause_minutes", v)}
+              min={0}
+              max={43200}
+            />
+          </FieldGroup>
+        </>
+      );
+
     default:
       return (
         <div className="text-[12px] text-[#697386] italic">
           Configuração deste nó chega em breve.
         </div>
       );
+  }
+}
+
+function JsonInput({
+  value,
+  onChange,
+}: {
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const [raw, setRaw] = useState(() => safeStringify(value));
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRaw(safeStringify(value));
+  }, [value]);
+
+  function handleChange(next: string) {
+    setRaw(next);
+    if (!next.trim()) {
+      setErr(null);
+      onChange({});
+      return;
+    }
+    try {
+      const parsed = JSON.parse(next);
+      setErr(null);
+      onChange(parsed);
+    } catch (e) {
+      setErr("JSON inválido");
+    }
+  }
+
+  return (
+    <>
+      <textarea
+        value={raw}
+        onChange={(e) => handleChange(e.target.value)}
+        rows={4}
+        className={`w-full px-3 py-2 text-[12px] rounded-md bg-white text-[#1a2c44] outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow resize-none font-mono ${
+          err ? "shadow-[0_0_0_1px_#fca5a5]" : ""
+        }`}
+        spellCheck={false}
+      />
+      {err && <p className="text-[10px] text-red-500">{err}</p>}
+    </>
+  );
+}
+
+function safeStringify(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
   }
 }
 
