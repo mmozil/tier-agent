@@ -22,7 +22,7 @@ from models import (
     TaPlaybookStepLog,
     TaPlaybookTriggerIndex,
 )
-from services import playbook_executor
+from services import playbook_executor, playbook_seed
 
 router = APIRouter(prefix="/playbooks", tags=["playbooks"])
 
@@ -123,6 +123,53 @@ _TRIGGER_TYPES = {
 # ============================================================
 # Routes
 # ============================================================
+class TemplateInfo(BaseModel):
+    key: str
+    nome: str
+    descricao: str
+    nodes_count: int
+
+
+class SeedIn(BaseModel):
+    agent_id: int
+    nome: str | None = None  # se omitido, usa nome do template
+
+
+@router.get("/templates", response_model=list[TemplateInfo])
+async def list_playbook_templates(user: CurrentUser = Depends(get_current_user)):
+    """Lista templates prontos (FAQ, Recuperar Carrinho, SDR BANT)."""
+    await _ensure_tenant(user)
+    return [TemplateInfo(**t) for t in playbook_seed.list_templates()]
+
+
+@router.post("/seed/{template_key}", response_model=PlaybookOut, status_code=201)
+async def seed_from_template(
+    template_key: str,
+    payload: SeedIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cria playbook novo a partir de um template pronto."""
+    tenant_id = await _ensure_tenant(user)
+    await _validate_agent(db, payload.agent_id, tenant_id)
+
+    tpl = playbook_seed.get_template(template_key)
+    if not tpl:
+        raise HTTPException(404, f"Template '{template_key}' não encontrado")
+
+    pb = TaPlaybook(
+        agent_id=payload.agent_id,
+        nome=payload.nome or tpl.nome,
+        descricao=tpl.descricao,
+        canvas_json=tpl.canvas_json,
+        status="draft",
+    )
+    db.add(pb)
+    await db.commit()
+    await db.refresh(pb)
+    return pb
+
+
 @router.get("", response_model=list[PlaybookListItem])
 async def list_playbooks(
     agent_id: int | None = None,

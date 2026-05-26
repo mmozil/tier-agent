@@ -66,8 +66,12 @@ app.include_router(playbooks.router, prefix="/api/v1")
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
+    from scheduler import init_scheduler
+    init_scheduler()
 
 
 @app.on_event("shutdown")
 async def shutdown():
     logger.info("Tier Agent shutting down")
+    from scheduler import shutdown_scheduler
+    shutdown_scheduler()
