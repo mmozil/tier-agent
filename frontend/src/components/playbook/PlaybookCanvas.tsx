@@ -262,17 +262,12 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
             const meta = NODE_CATALOG.find((m) => m.kind === n.type);
             return meta?.color || "#64748b";
           }}
-          nodeStrokeWidth={3}
-          nodeBorderRadius={8}
-          maskColor="rgba(250, 251, 253, 0.7)"
-          className="!shadow-[0_0_0_1px_rgb(226,232,240),0_4px_12px_-4px_rgba(15,23,42,0.08)] !rounded-lg !overflow-hidden"
-          style={{ background: "white", marginBottom: 0 }}
+          nodeStrokeWidth={2}
+          nodeBorderRadius={6}
+          maskColor="rgba(250, 251, 253, 0.6)"
+          className="!shadow-[0_0_0_1px_rgb(226,232,240)] !rounded-md !overflow-hidden opacity-50 hover:opacity-100 transition-opacity"
+          style={{ background: "white", width: 140, height: 90 }}
         />
-        <div className="absolute bottom-[152px] left-4 z-10 pointer-events-none">
-          <span className="inline-block bg-white text-[10px] font-medium text-slate-500 uppercase tracking-wider px-2 py-0.5 rounded shadow-[0_0_0_1px_rgb(226,232,240)]">
-            Mapa
-          </span>
-        </div>
       </ReactFlow>
     </div>
   );
