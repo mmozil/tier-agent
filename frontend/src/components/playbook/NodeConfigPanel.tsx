@@ -442,6 +442,47 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
         </>
       );
 
+    case "code_step":
+      return (
+        <>
+          <FieldGroup label="Código Python" hint="Sandbox E2B isolado. Suporta {{vars.X}}. stdout/result salvos em save_as.">
+            <TextareaInput
+              value={(local.code as string) || ""}
+              onChange={(v) => set("code", v)}
+              placeholder="import pandas as pd&#10;result = ..."
+              rows={10}
+            />
+          </FieldGroup>
+          <FieldGroup label="Timeout (segundos)">
+            <NumberInput
+              value={(local.timeout_s as number) ?? 30}
+              onChange={(v) => set("timeout_s", v)}
+              min={1}
+              max={300}
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar result em">
+            <TextInput
+              value={(local.save_as as string) || ""}
+              onChange={(v) => set("save_as", v)}
+              placeholder="code_result"
+              mono
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar stdout em (opcional)">
+            <TextInput
+              value={(local.save_stdout_as as string) || ""}
+              onChange={(v) => set("save_stdout_as", v)}
+              placeholder="code_stdout"
+              mono
+            />
+          </FieldGroup>
+          <div className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded">
+            ⚡ E2B Firecracker microVMs isoladas. Sem RCE. Precisa E2B_API_KEY env. Libs default: pandas, requests, numpy.
+          </div>
+        </>
+      );
+
     case "call_api":
       return (
         <>
@@ -522,8 +563,8 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
               mono
             />
           </FieldGroup>
-          <div className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1.5 rounded">
-            ⚠ MVP — gera URL placeholder. Integração real com Pagar.me chega no Sprint 4.
+          <div className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded">
+            💳 Integração real Pagar.me ativada. Link aceita Pix + Cartão + Boleto. Precisa TIER_PAY_SECRET_KEY env.
           </div>
         </>
       );

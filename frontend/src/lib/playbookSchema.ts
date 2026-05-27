@@ -51,7 +51,8 @@ export type PlaybookNodeKind =
   | "mcp_tool_call"
   | "memory_lookup"
   | "route_to_specialist"
-  | "send_audio";
+  | "send_audio"
+  | "code_step";
 
 export interface NodeKindMeta {
   kind: PlaybookNodeKind;
@@ -225,6 +226,20 @@ export const NODE_CATALOG: NodeKindMeta[] = [
   },
 
   // ─── INTEGRATIONS ───
+  {
+    kind: "code_step",
+    label: "Código Python (CodeAct)",
+    description: "Roda Python em sandbox E2B isolado. Análise, ETL, cálculo. Suporta vars.",
+    icon: Database,
+    category: "integration",
+    color: "#10b981",
+    available: true,
+    defaultData: {
+      code: '# Suporta {{vars}}\nimport json\nresult = {"hello": "{{contact.name|default:\'world\'}}"}\nprint(json.dumps(result))',
+      timeout_s: 30,
+      save_as: "code_result",
+    },
+  },
   {
     kind: "call_api",
     label: "Chamar API",

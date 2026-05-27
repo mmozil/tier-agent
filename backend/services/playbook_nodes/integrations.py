@@ -87,18 +87,14 @@ async def execute_call_api(ctx: ExecutionContext, config: dict) -> NodeResult:
 
 
 async def execute_tier_pay(ctx: ExecutionContext, config: dict) -> NodeResult:
-    """Gera link de pagamento Pix/Cartão via Tier Pay (Pagar.me).
-
-    Sprint 3 MVP: placeholder estruturado. Sprint 4+ integra TierPayService real
-    (precisa env vars TIER_PAY_SECRET_KEY no tenant + endpoint /paymentlinks).
-
-    Por enquanto retorna URL mockada + salva em vars pra cliente testar fluxo end-to-end.
+    """Gera link de pagamento Pix/Cartão via Tier Pay (Pagar.me real).
 
     Config:
         valor_cents (int): valor em centavos
         descricao (str): descrição (suporta vars)
-        metodo (str): pix|cartao|both
+        metodo (str): pix|cartao|both (default both = pix + credit_card)
         save_as (str): variável onde salvar a URL gerada
+        expires_in_days (int, default 7): validade do link
     """
     valor_cents = int(config.get("valor_cents") or 0)
     if valor_cents <= 0:
@@ -108,28 +104,69 @@ async def execute_tier_pay(ctx: ExecutionContext, config: dict) -> NodeResult:
         config.get("descricao") or "Cobrança Tier Agent",
         ctx.template_context,
     )
-    metodo = (config.get("metodo") or "pix").lower()
+    metodo = (config.get("metodo") or "both").lower()
     save_as = (config.get("save_as") or "payment_link").strip()
+    expires_in_days = int(config.get("expires_in_days") or 7)
 
-    # MVP: gera placeholder. Sprint 4 chama TierPayService real.
-    # TODO: integrar services.tier_pay (copy da tier-finance) — requer env vars por tenant
-    mock_url = f"https://pay.tier.finance/checkout/mock-{ctx.execution_id}-{valor_cents}"
+    # Mapeia metodo → Pagar.me payment methods
+    if metodo == "pix":
+        methods = ["pix"]
+    elif metodo in ("cartao", "credit_card"):
+        methods = ["credit_card"]
+    elif metodo == "boleto":
+        methods = ["boleto"]
+    else:
+        methods = ["pix", "credit_card"]
 
-    vars_update = {save_as: mock_url, f"{save_as}_status": "pending"}
-    ctx.template_context.setdefault("vars", {})[save_as] = mock_url
+    # Customer info do contact
+    contact = ctx.template_context.get("contact") or {}
+    customer_name = contact.get("name")
+    tenant = ctx.template_context.get("tenant") or {}
+    tenant_label = tenant.get("nome") or f"tenant-{ctx.tenant_id}"
 
-    logger.warning(
-        "tier_pay node MVP usando URL mock — integração real em Sprint 4. tenant=%s exec=%s valor=%s",
-        ctx.tenant_id, ctx.execution_id, valor_cents,
+    from services import tier_pay_client
+
+    result = await tier_pay_client.create_payment_link(
+        name=f"{tenant_label[:40]} — {descricao[:40]}",
+        amount_cents=valor_cents,
+        description=descricao,
+        methods=methods,
+        expires_in_days=expires_in_days,
+        customer_name=customer_name,
+        metadata={
+            "tenant_id": ctx.tenant_id,
+            "agent_id": ctx.agent_id,
+            "playbook_id": ctx.playbook_id,
+            "execution_id": ctx.execution_id,
+            "conversation_id": ctx.conversation_id,
+            "external_chat_id": ctx.external_chat_id or "",
+        },
     )
+
+    if not result.ok:
+        # Fallback pro mock URL em caso de erro — não trava playbook
+        logger.warning("tier_pay falhou — fallback mock: %s", result.error)
+        mock_url = f"https://pay.tier.finance/checkout/erro-{ctx.execution_id}"
+        return NodeResult(
+            output={"url": mock_url, "error": result.error, "fallback": True},
+            vars_update={save_as: mock_url, f"{save_as}_status": "error"},
+            error=result.error,
+        )
+
+    vars_update = {
+        save_as: result.url,
+        f"{save_as}_id": result.payment_link_id,
+        f"{save_as}_status": "pending",
+    }
+    ctx.template_context.setdefault("vars", {})[save_as] = result.url
 
     return NodeResult(
         output={
-            "url": mock_url,
+            "url": result.url,
+            "payment_link_id": result.payment_link_id,
             "valor_cents": valor_cents,
             "descricao": descricao,
-            "metodo": metodo,
-            "warning": "MVP — URL placeholder, integração real em Sprint 4",
+            "methods": methods,
         },
         vars_update=vars_update,
     )
