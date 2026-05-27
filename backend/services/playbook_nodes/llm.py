@@ -157,46 +157,86 @@ async def execute_intent_classifier(ctx: ExecutionContext, config: dict) -> Node
 
 
 async def execute_knowledge_lookup(ctx: ExecutionContext, config: dict) -> NodeResult:
-    """Busca em knowledge do agente via Hermes.
+    """Busca em knowledge via RAG real (pgvector cosine + Cohere Rerank opt).
 
     Config:
-        query (str): pergunta (suporta vars)
-        top_k (int): número de chunks a recuperar (não controlado por API REST do Hermes — informativo)
-        save_as (str): variável onde salvar resultado (default: 'kb_result')
-        send_text (bool): se true, envia texto pelo canal
-
-    Implementação MVP: usa llm_step com system_prompt que instrui a usar knowledge.
-    V2: endpoint dedicado /v1/search no Hermes (se existir) ou query direto na DB SQLite do container.
+        query (str): pergunta (suporta vars). Default: {{message.text}}
+        top_k (int): número de chunks retornados (default 3)
+        save_as (str): variável onde salvar texto consolidado (default: 'kb_result')
+        save_sources_as (str): variável com lista de sources [{title, position, score}] (default: 'kb_sources')
+        send_text (bool): se true, envia resposta pelo canal (default false)
+        synthesize (bool): se true, chama Hermes pra sintetizar uma resposta usando os chunks
+                           como context (default true). Se false, só retorna chunks brutos.
     """
     query_raw = (config.get("query") or "{{message.text}}").strip()
     save_as = (config.get("save_as") or "kb_result").strip()
+    save_sources_as = (config.get("save_sources_as") or "kb_sources").strip()
     send_text = config.get("send_text", False)
+    synthesize = config.get("synthesize", True)
+    top_k = int(config.get("top_k") or 3)
 
     query = render_string(query_raw, ctx.template_context)
     if not query:
         return NodeResult(error="knowledge_lookup: query vazia")
 
-    system_prompt = (
-        "Você é um assistente que responde APENAS com base na knowledge cadastrada do agente. "
-        "Se a informação não está na knowledge, responda 'não encontrei nada relevante'. "
-        "Resposta máxima 3 frases."
-    )
+    # Busca chunks via RAG engine (pgvector + Cohere rerank)
+    from core.db import db_context
+    from services import rag_engine
 
     try:
-        from core.db import db_context
-
         async with db_context() as db:
-            reply = await hermes_proxy.send_message(
-                tenant_id=ctx.tenant_id,
-                user_content=query,
-                db=db,
-                session_id=f"pb-kb-{ctx.execution_id}",
-                system_override=system_prompt,
-            )
+            hits = await rag_engine.search(db, agent_id=ctx.agent_id, query=query, top_k=top_k)
     except Exception as e:
-        return NodeResult(error=f"knowledge_lookup: {e}")
+        return NodeResult(error=f"rag_engine.search: {e}")
 
-    text = (reply.text or "").strip()
+    sources = [
+        {
+            "title": h.knowledge_title or f"knowledge-{h.knowledge_id}",
+            "knowledge_id": h.knowledge_id,
+            "position": h.position,
+            "score": round(h.score, 3),
+        }
+        for h in hits
+    ]
+
+    if not hits:
+        out_text = "Não encontrei nada relevante na knowledge cadastrada."
+        if send_text:
+            ctx.outbound_messages.append({"kind": "text", "content": out_text})
+        return NodeResult(
+            output={"query": query, "hits": 0, "result": out_text, "sources": []},
+            vars_update={save_as: out_text, save_sources_as: []},
+        )
+
+    # Synthesize: chama Hermes com chunks como context
+    if synthesize:
+        context_block = "\n\n".join(
+            f"[Fonte: {h.knowledge_title or f'#{h.knowledge_id}'} · trecho {h.position}]\n{h.text}"
+            for h in hits
+        )
+        system_prompt = (
+            "Você é assistente que responde APENAS usando as fontes abaixo. "
+            "Se a info não está nas fontes, diga 'não encontrei isso na base'. "
+            "Cite a [Fonte] quando relevante. Máximo 3 frases.\n\n"
+            f"FONTES:\n{context_block}"
+        )
+        try:
+            async with db_context() as db:
+                reply = await hermes_proxy.send_message(
+                    tenant_id=ctx.tenant_id,
+                    user_content=query,
+                    db=db,
+                    session_id=f"pb-kb-{ctx.execution_id}",
+                    system_override=system_prompt,
+                    agent_id=ctx.agent_id,
+                    use_cache=False,  # context custom — não cacheia
+                )
+            text = (reply.text or "").strip()
+        except Exception as e:
+            return NodeResult(error=f"knowledge_lookup synth: {e}")
+    else:
+        # Concat raw chunks
+        text = "\n\n".join(h.text for h in hits)
 
     if send_text and text:
         ctx.outbound_messages.append({"kind": "text", "content": text})
@@ -204,9 +244,9 @@ async def execute_knowledge_lookup(ctx: ExecutionContext, config: dict) -> NodeR
     return NodeResult(
         output={
             "query": query,
+            "hits": len(hits),
             "result": text[:500] + ("..." if len(text) > 500 else ""),
-            "tokens_in": reply.tokens_in,
-            "tokens_out": reply.tokens_out,
+            "sources": sources,
         },
-        vars_update={save_as: text},
+        vars_update={save_as: text, save_sources_as: sources},
     )

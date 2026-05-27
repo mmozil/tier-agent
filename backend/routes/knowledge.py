@@ -130,9 +130,21 @@ async def upload(
         skill_path = skill_builder.install_skill_in_container(agent.tenant_id, filename, skill_md)
 
         record.skill_md_path = skill_path
-        record.chunks_count = len([p for p in body.split("\n\n") if p.strip()])
         record.status = "ready"
         record.indexed_at = datetime.utcnow()
+        await db.commit()
+
+        # Indexa no pgvector pra RAG real (em paralelo ao skill no container Hermes)
+        try:
+            from services import rag_engine
+
+            stats = await rag_engine.index_knowledge(db, record.id, full_text=body)
+            record.chunks_count = int(stats.get("chunks_count", 0))
+            if stats.get("error"):
+                logger.warning("rag_engine.index falhou knowledge=%s: %s", record.id, stats["error"])
+        except Exception:
+            logger.exception("rag_engine.index_knowledge falhou knowledge=%s", record.id)
+            record.chunks_count = len([p for p in body.split("\n\n") if p.strip()])
     except RuntimeError as e:
         record.status = "failed"
         logger.exception("skill build falhou")
@@ -154,6 +166,48 @@ async def upload(
         "chunks_count": record.chunks_count,
         "skill_md_path": record.skill_md_path,
     }
+
+
+@router.post("/{knowledge_id}/reindex")
+async def reindex_knowledge(
+    knowledge_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-extrai texto do R2 (ou skill no container) + re-indexa em pgvector."""
+    k = await db.get(TaKnowledge, knowledge_id)
+    if not k:
+        raise HTTPException(404, "Knowledge não encontrado")
+    agent = await _ensure_agent_owned(db, k.agent_id, user)
+
+    # Pega texto do R2 (se temos r2_key) ou re-baixa do source_url
+    full_text = ""
+    try:
+        if k.r2_key:
+            data = storage.download(k.r2_key)
+            if k.kind == "pdf":
+                full_text = skill_builder.extract_pdf_text(data)
+            elif k.kind == "sheet":
+                full_text = skill_builder.extract_xlsx_text(data)
+            else:
+                full_text = data.decode("utf-8", errors="replace")
+    except Exception as e:
+        raise HTTPException(500, f"Falha re-extraindo texto: {e}")
+
+    if not full_text.strip():
+        raise HTTPException(400, "Não foi possível extrair texto pra re-indexar")
+
+    from services import rag_engine
+
+    stats = await rag_engine.index_knowledge(db, k.id, full_text=full_text)
+    if stats.get("error"):
+        raise HTTPException(500, f"reindex falhou: {stats['error']}")
+
+    k.chunks_count = int(stats.get("chunks_count", 0))
+    k.status = "ready"
+    k.indexed_at = datetime.utcnow()
+    await db.commit()
+    return {"reindexed": True, "knowledge_id": k.id, "chunks_count": k.chunks_count}
 
 
 @router.delete("/{knowledge_id}", status_code=204)

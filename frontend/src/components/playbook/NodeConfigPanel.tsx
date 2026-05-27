@@ -352,7 +352,7 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
     case "knowledge_lookup":
       return (
         <>
-          <FieldGroup label="Pergunta (query)" hint="O que buscar na knowledge base do agente">
+          <FieldGroup label="Pergunta (query)" hint="O que buscar na knowledge base. Suporta {{vars}}.">
             <TextareaInput
               value={(local.query as string) || ""}
               onChange={(v) => set("query", v)}
@@ -360,7 +360,15 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
               rows={3}
             />
           </FieldGroup>
-          <FieldGroup label="Salvar resultado em">
+          <FieldGroup label="Top K (chunks)" hint="Quantos trechos buscar (3-5 é ideal)">
+            <NumberInput
+              value={(local.top_k as number) ?? 3}
+              onChange={(v) => set("top_k", v)}
+              min={1}
+              max={20}
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar texto em">
             <TextInput
               value={(local.save_as as string) || ""}
               onChange={(v) => set("save_as", v)}
@@ -368,13 +376,29 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
               mono
             />
           </FieldGroup>
+          <FieldGroup label="Salvar fontes em" hint="Lista [{title, score, position}] pra usar em send_text">
+            <TextInput
+              value={(local.save_sources_as as string) || ""}
+              onChange={(v) => set("save_sources_as", v)}
+              placeholder="kb_sources"
+              mono
+            />
+          </FieldGroup>
           <FieldGroup label="">
+            <CheckboxInput
+              checked={local.synthesize !== false}
+              onChange={(v) => set("synthesize", v)}
+              label="Sintetizar resposta com IA (recomendado)"
+            />
             <CheckboxInput
               checked={!!local.send_text}
               onChange={(v) => set("send_text", v)}
-              label="Enviar resultado automaticamente pelo canal"
+              label="Enviar resposta automaticamente pelo canal"
             />
           </FieldGroup>
+          <div className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded">
+            💡 RAG real com pgvector + Cohere Rerank. Citações aparecem como 📄 badge no test mode.
+          </div>
         </>
       );
 

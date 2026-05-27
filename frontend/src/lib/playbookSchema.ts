@@ -160,12 +160,19 @@ export const NODE_CATALOG: NodeKindMeta[] = [
   {
     kind: "knowledge_lookup",
     label: "Buscar conhecimento",
-    description: "RAG no knowledge do agente, salva resultado em variável.",
+    description: "RAG real (pgvector + Cohere Rerank) com citação de fonte na resposta.",
     icon: Database,
     category: "action",
     color: "#003083",
     available: true,
-    defaultData: { query: "{{message.text}}", top_k: 3, save_as: "kb_result", send_text: false },
+    defaultData: {
+      query: "{{message.text}}",
+      top_k: 3,
+      save_as: "kb_result",
+      save_sources_as: "kb_sources",
+      synthesize: true,
+      send_text: false,
+    },
   },
 
   // ─── FLOW ───

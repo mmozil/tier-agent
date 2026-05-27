@@ -460,6 +460,20 @@ function TestRunDrawer({ playbookId, onClose }: { playbookId: number; onClose: (
                     </div>
                     <span className="text-[10px] text-[#697386]">{s.latency_ms ?? 0}ms</span>
                   </div>
+                  {/* Sources RAG (knowledge_lookup) */}
+                  {s.output_json?.sources && Array.isArray(s.output_json.sources) && s.output_json.sources.length > 0 && (
+                    <div className="mt-1.5 mb-1.5 flex flex-wrap gap-1">
+                      {s.output_json.sources.map((src: any, i: number) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                          title={`Score ${src.score} · trecho ${src.position}`}
+                        >
+                          📄 {src.title}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {s.output_json && Object.keys(s.output_json).length > 0 && (
                     <pre className="text-[10px] font-mono text-[#697386] overflow-x-auto whitespace-pre-wrap mt-1 bg-slate-50 p-2 rounded">
                       {JSON.stringify(s.output_json, null, 2)}
