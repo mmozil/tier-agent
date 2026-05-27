@@ -46,6 +46,13 @@ async def resolve_connector_by_instance(
             bot_id = token.split(":")[0] if ":" in token else ""
             if bot_id and bot_id == instance_id:
                 return conn
+        # Email: instance_id = connector.id direto (webhook usa /email/{connector_id})
+        if kind == "email":
+            try:
+                if int(instance_id) == conn.id:
+                    return conn
+            except (ValueError, TypeError):
+                pass
         # Default fallback (compat)
         if cfg.get("instance_id") == instance_id:
             return conn
@@ -169,36 +176,50 @@ async def handle_inbound_message(
         logger.exception("budget_guard falhou — continua processando")
 
     # Q3.1 Guardrails Lakera — bloqueia prompt injection / jailbreak
+    # Q2.6 Azure Content Safety — bloqueia hate/violence/sexual/self-harm
     try:
-        from services import guardrails
+        from services import content_moderation, guardrails
+
+        blocked_by: list[str] = []
+        blocked_categories: list[str] = []
 
         if await guardrails.is_enabled_for_tenant(db, agent.tenant_id):
-            guard_result = await guardrails.check_lakera(text_content)
-            if not guard_result.ok:
-                logger.warning(
-                    "guardrails BLOCKED agent=%s contact=%s categories=%s",
-                    agent.id, external_chat_id, guard_result.blocked_categories,
+            gr = await guardrails.check_lakera(text_content)
+            if not gr.ok:
+                blocked_by.append("lakera")
+                blocked_categories.extend(gr.blocked_categories)
+
+        if not blocked_by and await content_moderation.is_enabled_for_tenant(db, agent.tenant_id):
+            mr = await content_moderation.check_text(text_content)
+            if not mr.ok:
+                blocked_by.append("azure_content_safety")
+                blocked_categories.extend(mr.blocked_categories)
+
+        if blocked_by:
+            logger.warning(
+                "moderation BLOCKED agent=%s contact=%s by=%s categories=%s",
+                agent.id, external_chat_id, blocked_by, blocked_categories,
+            )
+            safe_reply = (
+                "Desculpe, não posso processar essa mensagem. Se for dúvida legítima, "
+                "reformule por favor ou peça pra falar com um humano."
+            )
+            try:
+                connector_impl = registry.get(connector_kind)
+                cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
+                await connector_impl.send(
+                    cfg, OutboundMessage(external_chat_id=external_chat_id, content=safe_reply)
                 )
-                # Resposta segura ao cliente — não vaza categorias específicas
-                safe_reply = (
-                    "Desculpe, não posso processar essa mensagem. Se for dúvida legítima, "
-                    "reformule por favor ou peça pra falar com um humano."
-                )
-                try:
-                    connector_impl = registry.get(connector_kind)
-                    cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
-                    await connector_impl.send(
-                        cfg, OutboundMessage(external_chat_id=external_chat_id, content=safe_reply)
-                    )
-                except Exception:
-                    logger.exception("envio safe_reply guardrails falhou")
-                return {
-                    "status": "blocked_guardrails",
-                    "agent_id": agent.id,
-                    "categories": guard_result.blocked_categories,
-                }
+            except Exception:
+                logger.exception("envio safe_reply moderation falhou")
+            return {
+                "status": "blocked_moderation",
+                "agent_id": agent.id,
+                "blocked_by": blocked_by,
+                "categories": blocked_categories,
+            }
     except Exception:
-        logger.exception("guardrails check falhou — continua processando")
+        logger.exception("moderation check falhou — continua processando")
 
     conv = await ensure_conversation(
         db,
@@ -347,6 +368,18 @@ async def handle_inbound_message(
                         user_text=text_content,
                         assistant_text=reply.text,
                         contact_name=sender_name,
+                    )
+                # Q2.6 Style adapter — primeiras 3 mensagens classifica tom + salva como preference
+                from services import style_adapter
+
+                async with db_context() as sdb:
+                    await style_adapter.maybe_extract_style(
+                        sdb,
+                        tenant_id=agent.tenant_id,
+                        agent_id=agent.id,
+                        external_chat_id=external_chat_id,
+                        text=text_content,
+                        msg_count=conv.msg_count,
                     )
             except Exception:
                 logger.exception("memory.add background falhou")

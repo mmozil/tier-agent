@@ -324,6 +324,113 @@ async def telegram_webhook(
 
 
 # ============================================================
+# Email inbound — webhook genérico (Mailgun/Postmark/SES/Stalwart)
+# ============================================================
+@router.post("/email/{connector_id}")
+async def email_webhook(
+    connector_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Recebe email inbound de provider externo.
+
+    Cliente configura forward upstream pra este URL. Aceita payloads:
+    - Mailgun: from, To, subject, body-plain, body-html, Message-Id
+    - Postmark: From, To, Subject, TextBody, HtmlBody, MessageID
+    - SES SNS: Records[0].ses.mail.commonHeaders.{from,to,subject}, content
+    - Genérico: {from, to, subject, text}
+
+    Normaliza tudo pra {from_addr, subject, text}.
+    """
+    try:
+        ct = request.headers.get("content-type", "")
+        if "application/json" in ct:
+            data = await request.json()
+        else:
+            form = await request.form()
+            data = dict(form)
+    except Exception:
+        raise HTTPException(400, "Body inválido")
+
+    # Extrai from/subject/text de qualquer formato
+    from_addr = (
+        data.get("from")
+        or data.get("From")
+        or data.get("sender")
+        or (data.get("envelope") or {}).get("from")
+        or ""
+    )
+    # Limpa "Nome <email@x.com>" → "email@x.com"
+    import re as _re
+
+    m = _re.search(r"<([^>]+)>", str(from_addr))
+    if m:
+        from_addr = m.group(1).strip()
+    else:
+        from_addr = str(from_addr).strip()
+
+    subject = (
+        data.get("subject")
+        or data.get("Subject")
+        or ""
+    )
+    text = (
+        data.get("body-plain")
+        or data.get("TextBody")
+        or data.get("text")
+        or data.get("stripped-text")
+        or ""
+    )
+    sender_name = data.get("from_name") or data.get("FromName") or ""
+
+    msg_id = (
+        data.get("Message-Id")
+        or data.get("MessageID")
+        or data.get("message_id")
+        or f"email-{connector_id}-{datetime.utcnow().timestamp()}"
+    )
+
+    if not from_addr:
+        return {"status": "ignored", "reason": "no_from"}
+    if not (subject or text):
+        return {"status": "ignored", "reason": "empty"}
+
+    if await _record_idempotent(db, f"email:{connector_id}", str(msg_id), {"from": from_addr, "subject": subject}):
+        return {"status": "duplicate"}
+
+    # Resolve connector pelo ID
+    from sqlalchemy import select as _sel
+
+    conn = (
+        await db.execute(_sel(TaConnector).where(TaConnector.id == connector_id))
+    ).scalar_one_or_none()
+    if not conn or conn.kind != "email":
+        raise HTTPException(404, "Connector email não encontrado")
+
+    text_content = f"Subject: {subject}\n\n{text}".strip()
+
+    from services import agent_runtime
+
+    # Pra email, instance_id virtual = connector_id (resolve direto via fallback)
+    # Mas precisa modificar resolve_connector_by_instance pra match email kind.
+    # Workaround: passa connector encontrado direto via agent_id no agent_runtime
+    # Por simplicidade, usa instance_id=str(connector_id) e resolve fallback funciona
+    # se cfg tiver instance_id=connector_id setado, OU adicionar branch email no resolver.
+    # Pra MVP: passa connector_id como instance_id, fallback simples.
+
+    result = await agent_runtime.handle_inbound_message(
+        db,
+        connector_kind="email",
+        instance_id=str(connector_id),
+        external_chat_id=from_addr,
+        sender_name=str(sender_name) or None,
+        text_content=text_content,
+    )
+    logger.info("webhook email processed conn=%s from=%s status=%s", connector_id, from_addr, result.get("status"))
+    return result
+
+
+# ============================================================
 # Trigger event — webhook externo dispara playbooks com trigger_event
 # ============================================================
 @router.post("/event/{event_key}")
