@@ -71,11 +71,17 @@ async def resume_waiting_playbooks_job() -> None:
 
 
 async def fire_cron_triggers_job() -> None:
-    """Avalia trigger_cron e dispara playbooks na hora.
+    """Avalia trigger_cron via croniter e dispara playbooks que matchearam na janela [now-65s, now].
 
-    MVP: por enquanto loga + skip (cron real precisa croniter pra avaliar
-    cron_expr — adicionar no requirements + lógica em Sprint 4.1).
+    Tolerância 65s pra cobrir interval=60s (não dispara 2x mesmo cron porque guarda
+    `last_fired_at` em trigger_data e só dispara se cron expr deu match APÓS last_fired_at).
     """
+    try:
+        from croniter import croniter
+    except ImportError:
+        logger.warning("croniter não instalado — fire_cron skip")
+        return
+
     try:
         async with db_context() as db:
             rows = (
@@ -89,10 +95,87 @@ async def fire_cron_triggers_job() -> None:
                     )
                 )
             ).all()
-            if rows:
-                logger.debug("fire_cron: %s cron triggers ativos (avaliação real em Sprint 4.1)", len(rows))
     except Exception:
-        logger.exception("fire_cron_triggers_job falhou")
+        logger.exception("fire_cron query falhou")
+        return
+
+    if not rows:
+        return
+
+    now_utc = datetime.now(timezone.utc)
+    fired = 0
+    for idx, pb in rows:
+        data = idx.trigger_data or {}
+        cron_expr = (data.get("cron_expr") or "").strip()
+        if not cron_expr:
+            continue
+
+        # last_fired_at pra evitar double-fire
+        last_fired_str = data.get("last_fired_at")
+        try:
+            last_fired = (
+                datetime.fromisoformat(last_fired_str.replace("Z", "+00:00"))
+                if last_fired_str
+                else now_utc.replace(year=now_utc.year - 1)
+            )
+        except Exception:
+            last_fired = now_utc.replace(year=now_utc.year - 1)
+
+        # Próximo trigger DEPOIS de last_fired
+        try:
+            it = croniter(cron_expr, last_fired)
+            next_fire = it.get_next(datetime)
+            if next_fire.tzinfo is None:
+                next_fire = next_fire.replace(tzinfo=timezone.utc)
+        except Exception as e:
+            logger.warning("cron expr inválida playbook=%s expr=%s: %s", pb.id, cron_expr, e)
+            continue
+
+        # Se próximo trigger está NO PASSADO (ou agora), dispara
+        if next_fire <= now_utc:
+            try:
+                async with db_context() as db:
+                    result = await playbook_executor.run_playbook(
+                        db,
+                        playbook_id=pb.id,
+                        trigger_node_id=idx.node_id,
+                        trigger_type="trigger_cron",
+                        agent_id=pb.agent_id,
+                        conversation_id=None,
+                        inbound_text=None,
+                        inbound_sender=None,
+                        connector_kind=None,
+                        external_chat_id=None,
+                        initial_vars={"cron_fired_at": now_utc.isoformat()},
+                    )
+                    fired += 1
+                    logger.info(
+                        "cron fired playbook=%s exec=%s",
+                        pb.id, result.get("execution_id"),
+                    )
+                    # Atualiza last_fired_at em trigger_data
+                    data["last_fired_at"] = now_utc.isoformat()
+                    import json as _json
+
+                    await db.execute(
+                        sql_text_update_trigger(),
+                        {"data": _json.dumps(data), "id": idx.id},
+                    )
+                    await db.commit()
+            except Exception:
+                logger.exception("cron fire falhou playbook=%s", pb.id)
+
+    if fired:
+        logger.info("fire_cron: %s playbooks disparados", fired)
+
+
+def sql_text_update_trigger():
+    """Helper pra UPDATE JSONB em trigger_data."""
+    from sqlalchemy import text as sql_text
+
+    return sql_text(
+        "UPDATE ta_playbook_trigger_index SET trigger_data = CAST(:data AS jsonb) WHERE id = :id"
+    )
 
 
 # Singleton scheduler

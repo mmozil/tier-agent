@@ -301,10 +301,309 @@ QUALIFICACAO_SDR = PlaybookTemplate(
 )
 
 
+# ──────────────────────────────────────────────────────────────
+# 4. NPS pós-compra (cron 7d após entrega → pergunta nota → branch)
+# ──────────────────────────────────────────────────────────────
+NPS_POS_COMPRA = PlaybookTemplate(
+    key="nps_pos_compra",
+    nome="NPS pós-compra",
+    descricao="7 dias após entrega: pergunta nota 0-10. Promotor pede review, detrator escala humano.",
+    canvas_json={
+        "version": 1,
+        "nodes": [
+            {
+                "id": "n_trigger",
+                "type": "trigger_event",
+                "position": {"x": 80, "y": 100},
+                "data": {"event_key": "pedido_entregue"},
+            },
+            {
+                "id": "n_wait",
+                "type": "wait",
+                "position": {"x": 360, "y": 100},
+                "data": {"duration_seconds": 7 * 86400},
+            },
+            {
+                "id": "n_pergunta",
+                "type": "send_text",
+                "position": {"x": 640, "y": 100},
+                "data": {
+                    "text": (
+                        "Oi {{contact.name|default:'amigo'}}! Faz uma semana que recebeu seu pedido. "
+                        "De 0 a 10, quanto recomendaria a gente pra alguém? Manda só o número 🙏"
+                    )
+                },
+            },
+            {
+                "id": "n_wait_resposta",
+                "type": "wait",
+                "position": {"x": 920, "y": 100},
+                "data": {"duration_seconds": 300},
+            },
+            {
+                "id": "n_save_nota",
+                "type": "set_var",
+                "position": {"x": 1200, "y": 100},
+                "data": {"key": "nps_nota", "value": "{{message.text|trim}}"},
+            },
+            {
+                "id": "n_branch",
+                "type": "branch",
+                "position": {"x": 1480, "y": 100},
+                "data": {"condition": "{{vars.nps_nota}} >= 9"},
+            },
+            {
+                "id": "n_promotor",
+                "type": "send_text",
+                "position": {"x": 1760, "y": 30},
+                "data": {
+                    "text": "Que demais! 🙌 Posso te pedir uma avaliação no Google? https://g.page/r/SEU_LINK/review"
+                },
+            },
+            {
+                "id": "n_handoff",
+                "type": "handoff_human",
+                "position": {"x": 1760, "y": 180},
+                "data": {
+                    "queue": "qualidade",
+                    "msg": "Vou pedir pra alguém da equipe te chamar pra entender o que dá pra melhorar.",
+                    "pause_minutes": 240,
+                },
+            },
+        ],
+        "edges": [
+            {"id": "e1", "source": "n_trigger", "target": "n_wait"},
+            {"id": "e2", "source": "n_wait", "target": "n_pergunta"},
+            {"id": "e3", "source": "n_pergunta", "target": "n_wait_resposta"},
+            {"id": "e4", "source": "n_wait_resposta", "target": "n_save_nota"},
+            {"id": "e5", "source": "n_save_nota", "target": "n_branch"},
+            {"id": "e6", "source": "n_branch", "sourceHandle": "true", "target": "n_promotor"},
+            {"id": "e7", "source": "n_branch", "sourceHandle": "false", "target": "n_handoff"},
+        ],
+    },
+)
+
+
+# ──────────────────────────────────────────────────────────────
+# 5. Reativação cliente inativo 90d (cron → desconto Pix)
+# ──────────────────────────────────────────────────────────────
+REATIVACAO_INATIVO = PlaybookTemplate(
+    key="reativacao_inativo",
+    nome="Reativação cliente inativo",
+    descricao="Cron diário 9h: clientes sem compra há 90d recebem cupom personalizado via Pix Tier Pay.",
+    canvas_json={
+        "version": 1,
+        "nodes": [
+            {
+                "id": "n_trigger",
+                "type": "trigger_cron",
+                "position": {"x": 80, "y": 100},
+                "data": {"cron_expr": "0 9 * * *", "audience": "inativos_90d"},
+            },
+            {
+                "id": "n_llm",
+                "type": "llm_step",
+                "position": {"x": 360, "y": 100},
+                "data": {
+                    "system_prompt": (
+                        "Você é vendedor amigável escrevendo mensagem de reativação. "
+                        "Use tom carinhoso, lembra que sentiu falta, oferece cupom 15% off."
+                    ),
+                    "user_prompt": "Cliente: {{contact.name}}. Última compra: há 90+ dias.",
+                    "send_text": True,
+                    "save_as": "msg_reativacao",
+                },
+            },
+            {
+                "id": "n_wait",
+                "type": "wait",
+                "position": {"x": 640, "y": 100},
+                "data": {"duration_seconds": 24 * 3600},
+            },
+            {
+                "id": "n_branch",
+                "type": "branch",
+                "position": {"x": 920, "y": 100},
+                "data": {"condition": "{{message.text|lower}} contains 'quero'"},
+            },
+            {
+                "id": "n_pix",
+                "type": "tier_pay",
+                "position": {"x": 1200, "y": 30},
+                "data": {
+                    "valor_cents": 8500,
+                    "descricao": "Compra reativação {{contact.name}} (15% off)",
+                    "metodo": "pix",
+                    "save_as": "pix_url",
+                },
+            },
+            {
+                "id": "n_send_pix",
+                "type": "send_text",
+                "position": {"x": 1480, "y": 30},
+                "data": {
+                    "text": "Show! Aqui o Pix com 15% off: {{vars.pix_url}}"
+                },
+            },
+            {
+                "id": "n_fim",
+                "type": "send_text",
+                "position": {"x": 1200, "y": 180},
+                "data": {"text": "Tudo bem! Tá sempre aqui se mudar de ideia 💙"},
+            },
+        ],
+        "edges": [
+            {"id": "e1", "source": "n_trigger", "target": "n_llm"},
+            {"id": "e2", "source": "n_llm", "target": "n_wait"},
+            {"id": "e3", "source": "n_wait", "target": "n_branch"},
+            {"id": "e4", "source": "n_branch", "sourceHandle": "true", "target": "n_pix"},
+            {"id": "e5", "source": "n_pix", "target": "n_send_pix"},
+            {"id": "e6", "source": "n_branch", "sourceHandle": "false", "target": "n_fim"},
+        ],
+    },
+)
+
+
+# ──────────────────────────────────────────────────────────────
+# 6. Triagem Suporte L1 + escalation L2 (RAG knowledge → branch resolvido → handoff)
+# ──────────────────────────────────────────────────────────────
+TRIAGEM_SUPORTE = PlaybookTemplate(
+    key="triagem_suporte",
+    nome="Triagem Suporte L1 + L2",
+    descricao="Agente busca knowledge real (RAG pgvector + cita fonte). Resolveu? fim. Senão escala L2.",
+    canvas_json={
+        "version": 1,
+        "nodes": [
+            {
+                "id": "n_trigger",
+                "type": "trigger_keyword",
+                "position": {"x": 80, "y": 100},
+                "data": {
+                    "patterns": ["ajuda", "como faço", "problema", "não funciona", "dúvida"],
+                    "match": "any",
+                },
+            },
+            {
+                "id": "n_kb",
+                "type": "knowledge_lookup",
+                "position": {"x": 360, "y": 100},
+                "data": {
+                    "query": "{{message.text}}",
+                    "top_k": 3,
+                    "save_as": "kb_result",
+                    "save_sources_as": "kb_sources",
+                    "synthesize": True,
+                    "send_text": True,
+                },
+            },
+            {
+                "id": "n_pergunta",
+                "type": "send_text",
+                "position": {"x": 640, "y": 100},
+                "data": {"text": "Isso resolveu? Responde *sim* ou *não*."},
+            },
+            {
+                "id": "n_wait",
+                "type": "wait",
+                "position": {"x": 920, "y": 100},
+                "data": {"duration_seconds": 120},
+            },
+            {
+                "id": "n_branch",
+                "type": "branch",
+                "position": {"x": 1200, "y": 100},
+                "data": {"condition": "{{message.text|lower}} contains 'não'"},
+            },
+            {
+                "id": "n_handoff",
+                "type": "handoff_human",
+                "position": {"x": 1480, "y": 30},
+                "data": {
+                    "queue": "suporte_l2",
+                    "msg": "Vou chamar alguém da equipe técnica pra te ajudar melhor.",
+                    "pause_minutes": 120,
+                },
+            },
+            {
+                "id": "n_fim",
+                "type": "send_text",
+                "position": {"x": 1480, "y": 180},
+                "data": {"text": "Show! Qualquer outra dúvida, é só chamar. 😊"},
+            },
+        ],
+        "edges": [
+            {"id": "e1", "source": "n_trigger", "target": "n_kb"},
+            {"id": "e2", "source": "n_kb", "target": "n_pergunta"},
+            {"id": "e3", "source": "n_pergunta", "target": "n_wait"},
+            {"id": "e4", "source": "n_wait", "target": "n_branch"},
+            {"id": "e5", "source": "n_branch", "sourceHandle": "true", "target": "n_handoff"},
+            {"id": "e6", "source": "n_branch", "sourceHandle": "false", "target": "n_fim"},
+        ],
+    },
+)
+
+
+# ──────────────────────────────────────────────────────────────
+# 7. Atendente Multi-especialista (route_to_specialist)
+# ──────────────────────────────────────────────────────────────
+EQUIPE_MULTI_ESPECIALISTA = PlaybookTemplate(
+    key="equipe_multi_especialista",
+    nome="Equipe IA Multi-Especialista",
+    descricao="Router classifica intent e direciona pra vendedor / suporte / financeiro / agendamento.",
+    canvas_json={
+        "version": 1,
+        "nodes": [
+            {
+                "id": "n_trigger",
+                "type": "trigger_keyword",
+                "position": {"x": 80, "y": 100},
+                "data": {"patterns": ["oi", "olá", "ola", "bom dia", "boa tarde"], "match": "any"},
+            },
+            {
+                "id": "n_router",
+                "type": "route_to_specialist",
+                "position": {"x": 380, "y": 100},
+                "data": {
+                    "specialists": [
+                        {
+                            "name": "vendas",
+                            "description": "Cliente quer comprar, orçamento, ver preço, fechar pedido",
+                            "system_prompt": "Você é vendedor experiente focado em fechar venda. Use técnicas SPIN simples (Situação, Problema, Implicação, Necessidade). Ofereça Pix com 5% off se cliente hesitar.",
+                            "auto_reply": True,
+                        },
+                        {
+                            "name": "suporte",
+                            "description": "Cliente tem dúvida, problema, defeito, pediu ajuda técnica",
+                            "system_prompt": "Você é suporte L1. Responda com clareza, ofereça passo-a-passo numerado. Se não souber, peça pra detalhar o erro.",
+                            "auto_reply": True,
+                        },
+                        {
+                            "name": "financeiro",
+                            "description": "Cliente perguntou fatura, boleto, 2ª via, pagamento, parcelamento",
+                            "system_prompt": "Você é financeiro objetivo. Explique condições, ofereça parcelar até 3x sem juros, ou Pix com 5% off à vista.",
+                            "auto_reply": True,
+                        },
+                    ],
+                    "default_specialist": "suporte",
+                    "save_as": "specialist",
+                },
+            },
+        ],
+        "edges": [
+            {"id": "e1", "source": "n_trigger", "target": "n_router"},
+        ],
+    },
+)
+
+
 TEMPLATES: dict[str, PlaybookTemplate] = {
     FAQ_HANDOFF.key: FAQ_HANDOFF,
     RECUPERAR_CARRINHO.key: RECUPERAR_CARRINHO,
     QUALIFICACAO_SDR.key: QUALIFICACAO_SDR,
+    NPS_POS_COMPRA.key: NPS_POS_COMPRA,
+    REATIVACAO_INATIVO.key: REATIVACAO_INATIVO,
+    TRIAGEM_SUPORTE.key: TRIAGEM_SUPORTE,
+    EQUIPE_MULTI_ESPECIALISTA.key: EQUIPE_MULTI_ESPECIALISTA,
 }
 
 

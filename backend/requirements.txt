@@ -42,6 +42,7 @@ python-multipart==0.0.20
 python-dotenv==1.0.1
 tenacity==9.0.0
 apscheduler==3.11.0
+croniter==3.0.4
 
 # Doc processing (Fase 5 — knowledge upload)
 pdfplumber==0.11.4

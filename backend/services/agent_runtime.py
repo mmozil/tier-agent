@@ -144,6 +144,20 @@ async def handle_inbound_message(
     if not agent or not agent.active:
         return {"status": "agent_inactive", "agent_id": connector.agent_id}
 
+    # Q2.4 Budget guard — bloqueia tenant suspenso
+    try:
+        from services import budget_guard
+
+        budget_state = await budget_guard.check_and_enforce(db, agent.tenant_id)
+        if budget_state.get("status") == "paused":
+            logger.warning(
+                "budget guard: tenant=%s pausado (uso %.0f%%)",
+                agent.tenant_id, (budget_state.get("pct") or 0) * 100,
+            )
+            return {"status": "tenant_suspended", "agent_id": agent.id, **budget_state}
+    except Exception:
+        logger.exception("budget_guard falhou — continua processando")
+
     conv = await ensure_conversation(
         db,
         agent_id=agent.id,
