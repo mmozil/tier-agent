@@ -49,7 +49,8 @@ export type PlaybookNodeKind =
   | "tier_pay"
   | "handoff_human"
   | "mcp_tool_call"
-  | "memory_lookup";
+  | "memory_lookup"
+  | "route_to_specialist";
 
 export interface NodeKindMeta {
   kind: PlaybookNodeKind;
@@ -239,6 +240,40 @@ export const NODE_CATALOG: NodeKindMeta[] = [
       descricao: "Pedido {{vars.pedido_id|default:'?'}}",
       metodo: "pix",
       save_as: "payment_link",
+    },
+  },
+  {
+    kind: "route_to_specialist",
+    label: "Roteador (especialistas)",
+    description: "Multi-agent visual: classifica intent e roteia pra um especialista (sub-persona).",
+    icon: Users,
+    category: "flow",
+    color: "#8b5cf6",
+    hasMultipleOutputs: true,
+    available: true,
+    defaultData: {
+      specialists: [
+        {
+          name: "vendas",
+          description: "Cliente quer comprar, pedir orçamento, ver preços",
+          system_prompt: "Você é vendedor experiente. Foque em fechar venda, gerar Pix ou agendar.",
+          auto_reply: true,
+        },
+        {
+          name: "suporte",
+          description: "Cliente tem dúvida, problema, pediu ajuda técnica",
+          system_prompt: "Você é suporte L1. Responda com clareza, ofereça alternativa, escale se complexo.",
+          auto_reply: true,
+        },
+        {
+          name: "financeiro",
+          description: "Cliente perguntou sobre fatura, boleto, segunda via, pagamento",
+          system_prompt: "Você é financeiro. Responda dados de cobrança com objetividade.",
+          auto_reply: true,
+        },
+      ],
+      default_specialist: "suporte",
+      save_as: "specialist",
     },
   },
   {

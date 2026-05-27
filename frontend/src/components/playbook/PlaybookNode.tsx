@@ -86,7 +86,45 @@ export default function PlaybookNode(props: NodeProps) {
       </div>
 
       {/* Source handles (direita) */}
-      {meta.hasMultipleOutputs ? (
+      {kind === "route_to_specialist" ? (
+        (() => {
+          const specs = ((data.specialists as any[]) || []).filter(
+            (s) => s && typeof s.name === "string" && s.name,
+          );
+          if (!specs.length) {
+            return (
+              <Handle
+                id="default"
+                type="source"
+                position={Position.Right}
+                style={{
+                  background: "#fff",
+                  border: `2px solid ${meta.color}`,
+                  width: 12,
+                  height: 12,
+                  right: -6,
+                }}
+              />
+            );
+          }
+          return (
+            <>
+              {specs.map((s, i) => {
+                const total = specs.length;
+                const pct = ((i + 0.5) / total) * 100;
+                return (
+                  <SpecHandle
+                    key={s.name}
+                    name={s.name}
+                    pct={pct}
+                    color={meta.color}
+                  />
+                );
+              })}
+            </>
+          );
+        })()
+      ) : meta.hasMultipleOutputs ? (
         <>
           <Handle
             id="true"
@@ -143,6 +181,33 @@ export default function PlaybookNode(props: NodeProps) {
         />
       )}
     </div>
+  );
+}
+
+function SpecHandle({ name, pct, color }: { name: string; pct: number; color: string }) {
+  return (
+    <>
+      <Handle
+        id={name}
+        type="source"
+        position={Position.Right}
+        style={{
+          background: color,
+          border: "2px solid #fff",
+          width: 12,
+          height: 12,
+          right: -6,
+          top: `${pct}%`,
+          boxShadow: `0 0 0 1px ${color}40`,
+        }}
+      />
+      <span
+        className="absolute right-[14px] text-[9px] font-semibold pointer-events-none uppercase tracking-wide"
+        style={{ top: `calc(${pct}% - 6px)`, color }}
+      >
+        {name}
+      </span>
+    </>
   );
 }
 
@@ -282,6 +347,28 @@ function NodePreview({
           <span className="text-[#1a2c44] font-medium">{(data.queue as string) || "padrão"}</span>
         </div>
       );
+    case "route_to_specialist": {
+      const specs = (data.specialists as any[]) || [];
+      return (
+        <div className="text-[11px]">
+          <div className="text-[#697386] mb-1">{specs.length} especialista(s):</div>
+          <div className="flex flex-wrap gap-1">
+            {specs.slice(0, 4).map((s: any, i: number) => (
+              <span
+                key={i}
+                className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                style={{ backgroundColor: `${color}14`, color }}
+              >
+                {s.name}
+              </span>
+            ))}
+            {specs.length > 4 && (
+              <span className="text-[10px] text-[#697386]">+{specs.length - 4}</span>
+            )}
+          </div>
+        </div>
+      );
+    }
     default:
       return null;
   }

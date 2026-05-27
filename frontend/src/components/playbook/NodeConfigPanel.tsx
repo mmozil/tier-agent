@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Settings2, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Settings2, Trash2, X } from "lucide-react";
 
 import { getNodeMeta, type PlaybookNode } from "@/lib/playbookSchema";
 
@@ -488,6 +488,22 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
         </>
       );
 
+    case "route_to_specialist":
+      return (
+        <SpecialistsEditor
+          specialists={(local.specialists as any[]) || []}
+          defaultName={(local.default_specialist as string) || ""}
+          saveAs={(local.save_as as string) || ""}
+          onChange={(specs, def, save) => {
+            const next: Record<string, unknown> = { ...local, specialists: specs };
+            if (def !== undefined) next.default_specialist = def;
+            if (save !== undefined) next.save_as = save;
+            setLocal(next);
+            onChange(next);
+          }}
+        />
+      );
+
     case "memory_lookup":
       return (
         <>
@@ -797,5 +813,142 @@ function CheckboxInput({
       />
       {label}
     </label>
+  );
+}
+
+// ─── Specialists editor (route_to_specialist)
+interface SpecConfig {
+  name: string;
+  description: string;
+  system_prompt: string;
+  auto_reply?: boolean;
+}
+
+function SpecialistsEditor({
+  specialists,
+  defaultName,
+  saveAs,
+  onChange,
+}: {
+  specialists: SpecConfig[];
+  defaultName: string;
+  saveAs: string;
+  onChange: (specs: SpecConfig[], defaultName?: string, saveAs?: string) => void;
+}) {
+  function update(idx: number, patch: Partial<SpecConfig>) {
+    const next = specialists.map((s, i) => (i === idx ? { ...s, ...patch } : s));
+    onChange(next);
+  }
+
+  function add() {
+    const next = [
+      ...specialists,
+      {
+        name: `specialist_${specialists.length + 1}`,
+        description: "Quando o cliente...",
+        system_prompt: "Você é um especialista que...",
+        auto_reply: true,
+      },
+    ];
+    onChange(next);
+  }
+
+  function remove(idx: number) {
+    const next = specialists.filter((_, i) => i !== idx);
+    onChange(next);
+  }
+
+  function normalizeName(raw: string): string {
+    return raw
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "");
+  }
+
+  return (
+    <>
+      <FieldGroup
+        label="Especialistas"
+        hint="Cada um vira uma saída do nó. Lead agent classifica intent e roteia."
+      >
+        <div className="space-y-2">
+          {specialists.map((s, idx) => (
+            <div
+              key={idx}
+              className="border border-slate-200 rounded-md p-2.5 space-y-1.5 bg-slate-50"
+            >
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={s.name}
+                  onChange={(e) => update(idx, { name: normalizeName(e.target.value) })}
+                  placeholder="vendas"
+                  className="flex-1 h-6 px-2 text-[12px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] font-mono"
+                />
+                <button
+                  onClick={() => remove(idx)}
+                  className="w-6 h-6 inline-flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                  title="Remover"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+              <input
+                type="text"
+                value={s.description}
+                onChange={(e) => update(idx, { description: e.target.value })}
+                placeholder="Quando o cliente quer..."
+                className="w-full h-6 px-2 text-[11px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083]"
+              />
+              <textarea
+                value={s.system_prompt}
+                onChange={(e) => update(idx, { system_prompt: e.target.value })}
+                placeholder="Persona/instrução pro Hermes quando este specialist responder"
+                rows={2}
+                className="w-full px-2 py-1.5 text-[11px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] resize-none font-mono"
+              />
+              <label className="flex items-center gap-1.5 text-[10px] text-[#697386]">
+                <input
+                  type="checkbox"
+                  checked={s.auto_reply !== false}
+                  onChange={(e) => update(idx, { auto_reply: e.target.checked })}
+                  className="w-3 h-3"
+                />
+                Responder automaticamente (senão só roteia)
+              </label>
+            </div>
+          ))}
+          <button
+            onClick={add}
+            className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_#003083]"
+          >
+            <Plus className="w-3 h-3" />
+            Adicionar especialista
+          </button>
+        </div>
+      </FieldGroup>
+
+      <FieldGroup label="Especialista padrão (fallback)">
+        <SelectInput
+          value={defaultName || (specialists[0]?.name ?? "")}
+          onChange={(v) => onChange(specialists, v, undefined)}
+          options={specialists.map((s) => ({ value: s.name, label: s.name }))}
+        />
+      </FieldGroup>
+
+      <FieldGroup label="Salvar nome escolhido em">
+        <TextInput
+          value={saveAs || "specialist"}
+          onChange={(v) => onChange(specialists, undefined, v)}
+          placeholder="specialist"
+          mono
+        />
+      </FieldGroup>
+
+      <div className="text-[10px] text-purple-700 bg-purple-50 px-2 py-1.5 rounded">
+        💡 Cada specialist vira uma saída do nó. Conecte cada saída a fluxos diferentes ou deixe só "auto_reply" pro especialista responder direto.
+      </div>
+    </>
   );
 }
