@@ -264,6 +264,42 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
         </FieldGroup>
       );
 
+    case "send_audio":
+      return (
+        <>
+          <FieldGroup
+            label="Texto (será convertido em áudio PT-BR)"
+            hint="ElevenLabs Flash v2.5. ~150 chars = 1 min de áudio. Suporta {{vars}}."
+          >
+            <TextareaInput
+              value={(local.text as string) || ""}
+              onChange={(v) => set("text", v)}
+              placeholder="Olá {{contact.name}}, posso te ajudar?"
+              rows={4}
+            />
+          </FieldGroup>
+          <FieldGroup label="Voice ID (opcional)" hint="Default: Rachel multilingue. Override ElevenLabs ID se quiser outra voz.">
+            <TextInput
+              value={(local.voice_id as string) || ""}
+              onChange={(v) => set("voice_id", v)}
+              placeholder="21m00Tcm4TlvDq8ikWAM"
+              mono
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar URL R2 em (opcional)">
+            <TextInput
+              value={(local.save_url_as as string) || ""}
+              onChange={(v) => set("save_url_as", v)}
+              placeholder="audio_url"
+              mono
+            />
+          </FieldGroup>
+          <div className="text-[10px] text-blue-700 bg-blue-50 px-2 py-1.5 rounded">
+            🔊 Custo aprox $0.0008/1k chars. Áudio enviado via WhatsApp Engine como voice message.
+          </div>
+        </>
+      );
+
     case "branch":
       return (
         <FieldGroup

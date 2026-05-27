@@ -484,20 +484,52 @@ async def _flush_outbound(db: AsyncSession, ctx: ExecutionContext) -> int:
 
     cfg = ConnectorConfig(data=json.loads(decrypt(conn_row.config_json_enc)))
 
+    from services.connectors.base import ConnectorAttachment
+
     sent = 0
     for msg in ctx.outbound_messages:
-        if msg.get("kind") != "text":
-            continue
+        kind = msg.get("kind", "text")
         try:
-            await connector_impl.send(
-                cfg,
-                OutboundMessage(
-                    external_chat_id=ctx.external_chat_id,
-                    content=msg["content"],
-                ),
-            )
+            if kind == "audio":
+                # content é URL R2 do MP3 gerado por TTS
+                attachment = ConnectorAttachment(
+                    kind="audio",
+                    url=msg["content"],
+                    mime=msg.get("mime") or "audio/mpeg",
+                )
+                await connector_impl.send(
+                    cfg,
+                    OutboundMessage(
+                        external_chat_id=ctx.external_chat_id,
+                        content=msg.get("text") or "",
+                        attachments=[attachment],
+                    ),
+                )
+            elif kind == "image":
+                attachment = ConnectorAttachment(
+                    kind="image",
+                    url=msg["content"],
+                    mime=msg.get("mime") or "image/jpeg",
+                )
+                await connector_impl.send(
+                    cfg,
+                    OutboundMessage(
+                        external_chat_id=ctx.external_chat_id,
+                        content=msg.get("text") or "",
+                        attachments=[attachment],
+                    ),
+                )
+            else:
+                # texto default
+                await connector_impl.send(
+                    cfg,
+                    OutboundMessage(
+                        external_chat_id=ctx.external_chat_id,
+                        content=msg["content"],
+                    ),
+                )
             sent += 1
         except Exception:
-            logger.exception("envio playbook falhou agent=%s", ctx.agent_id)
+            logger.exception("envio playbook falhou agent=%s kind=%s", ctx.agent_id, kind)
 
     return sent

@@ -154,7 +154,27 @@ async def whatsapp_engine_webhook(
     if not external_chat_id:
         return {"status": "missing_fields", "event": event}
 
-    # Permite mensagem só com mídia (sem texto) — placeholder "[imagem]" / "[áudio]"
+    # Q2.3: ASR — se inbound é áudio sem texto, transcrever via Deepgram PT-BR
+    audio_att = next((a for a in attachments if a.kind == "audio" and a.url), None)
+    if audio_att and not text_content:
+        try:
+            from services.voice import deepgram_client
+
+            tr = await deepgram_client.transcribe_url(audio_att.url, language="pt-BR")
+            if tr.ok and tr.text:
+                text_content = tr.text
+                logger.info(
+                    "voice ASR ok confidence=%.2f duration=%.1fs text='%s'",
+                    tr.confidence, tr.duration_seconds, tr.text[:80],
+                )
+            else:
+                logger.warning("voice ASR falhou: %s", tr.error or "vazio")
+                text_content = "[áudio — transcrição falhou]"
+        except Exception:
+            logger.exception("voice ASR exception")
+            text_content = "[áudio]"
+
+    # Permite mensagem só com mídia (sem texto) — placeholder
     if not text_content and attachments:
         text_content = f"[{attachments[0].kind}]"
 

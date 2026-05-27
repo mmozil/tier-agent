@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
-from . import flow, integrations, llm, mcp, memory, routing, text, triggers
+from . import flow, integrations, llm, mcp, memory, routing, text, triggers, voice
 from .base import ExecutionContext, NodeResult
 
 NodeExecutor = Callable[[ExecutionContext, dict], Awaitable[NodeResult]]
@@ -44,6 +44,8 @@ REGISTRY: dict[str, NodeExecutor] = {
     "memory_lookup": memory.execute_memory_lookup,
     # Q2.2: Specialist routing (multi-agent visual)
     "route_to_specialist": routing.execute_route_to_specialist,
+    # Q2.3: Voz TTS outbound (ASR inbound é transparente no webhook)
+    "send_audio": voice.execute_send_audio,
 }
 
 __all__ = ["REGISTRY", "ExecutionContext", "NodeResult", "NodeExecutor"]

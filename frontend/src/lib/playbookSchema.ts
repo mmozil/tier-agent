@@ -50,7 +50,8 @@ export type PlaybookNodeKind =
   | "handoff_human"
   | "mcp_tool_call"
   | "memory_lookup"
-  | "route_to_specialist";
+  | "route_to_specialist"
+  | "send_audio";
 
 export interface NodeKindMeta {
   kind: PlaybookNodeKind;
@@ -143,6 +144,19 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     color: "#003083",
     available: true,
     defaultData: { text: "Olá {{contact.name|default:'amigo'}}!" },
+  },
+  {
+    kind: "send_audio",
+    label: "Enviar áudio (TTS)",
+    description: "Gera áudio PT-BR via ElevenLabs e envia pelo canal. Cliente ouve sua resposta.",
+    icon: MessageSquare,
+    category: "action",
+    color: "#003083",
+    available: true,
+    defaultData: {
+      text: "Olá {{contact.name|default:'amigo'}}, sou seu atendente.",
+      save_url_as: "audio_url",
+    },
   },
   {
     kind: "llm_step",
