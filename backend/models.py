@@ -345,6 +345,16 @@ class TaPlaybook(Base):
     # status: draft | published | archived
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Q3.5: marketplace
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    public_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    public_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    marketplace_downloads: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    marketplace_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_playbook_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ta_playbook.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

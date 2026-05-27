@@ -28,11 +28,13 @@ registry = _ConnectorRegistry()
 
 def _register_defaults() -> None:
     """Auto-registra adapters disponíveis. Chamado no startup."""
+    from services.connectors.adapters.telegram import TelegramConnector
     from services.connectors.adapters.whatsapp import WhatsAppConnector
 
     registry.register(WhatsAppConnector())
+    registry.register(TelegramConnector())
 
-    # Telegram / Email / Web form ficam pra próxima fase
+    # Email / Web form ficam pra próxima fase
 
 
 _register_defaults()

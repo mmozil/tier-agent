@@ -228,6 +228,123 @@ async def validate_playbook(
     return ValidateResult(ok=not errors, errors=errors)
 
 
+class MarketplaceItem(BaseModel):
+    id: int
+    nome: str
+    public_label: str | None
+    public_description: str | None
+    nodes_count: int
+    marketplace_downloads: int
+    marketplace_rating: float | None
+    published_at: datetime | None
+
+
+class PublishMarketplaceIn(BaseModel):
+    public_label: str
+    public_description: str | None = None
+
+
+class ImportMarketplaceIn(BaseModel):
+    agent_id: int
+    nome: str | None = None  # se omitido usa public_label
+
+
+@router.get("/marketplace", response_model=list[MarketplaceItem])
+async def list_marketplace(
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista pública de playbooks marketplace (sem auth — qualquer tenant pode browse)."""
+    rows = (
+        await db.execute(
+            select(TaPlaybook)
+            .where(TaPlaybook.is_public.is_(True), TaPlaybook.status == "published")
+            .order_by(TaPlaybook.marketplace_downloads.desc(), TaPlaybook.id.desc())
+            .limit(max(1, min(limit, 200)))
+        )
+    ).scalars().all()
+    return [
+        MarketplaceItem(
+            id=pb.id,
+            nome=pb.nome,
+            public_label=pb.public_label or pb.nome,
+            public_description=pb.public_description or pb.descricao,
+            nodes_count=_nodes_count(pb.canvas_json),
+            marketplace_downloads=pb.marketplace_downloads,
+            marketplace_rating=pb.marketplace_rating,
+            published_at=pb.published_at,
+        )
+        for pb in rows
+    ]
+
+
+@router.post("/{playbook_id}/publish-marketplace", response_model=PlaybookOut)
+async def publish_to_marketplace(
+    playbook_id: int,
+    payload: PublishMarketplaceIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Marca playbook como público no marketplace."""
+    tenant_id = await _ensure_tenant(user)
+    pb = await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+    if pb.status != "published":
+        raise HTTPException(400, "Playbook precisa estar publicado antes de virar template")
+    pb.is_public = True
+    pb.public_label = payload.public_label.strip()
+    pb.public_description = (payload.public_description or "").strip() or None
+    await db.commit()
+    await db.refresh(pb)
+    return pb
+
+
+@router.post("/{playbook_id}/unpublish-marketplace", response_model=PlaybookOut)
+async def unpublish_marketplace(
+    playbook_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = await _ensure_tenant(user)
+    pb = await _get_playbook_for_tenant(db, playbook_id, tenant_id)
+    pb.is_public = False
+    await db.commit()
+    await db.refresh(pb)
+    return pb
+
+
+@router.post("/marketplace/{playbook_id}/import", response_model=PlaybookOut, status_code=201)
+async def import_from_marketplace(
+    playbook_id: int,
+    payload: ImportMarketplaceIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Importa playbook público pra meu tenant (cria cópia em draft + bump downloads)."""
+    tenant_id = await _ensure_tenant(user)
+    source = await db.get(TaPlaybook, playbook_id)
+    if not source or not source.is_public:
+        raise HTTPException(404, "Template marketplace não encontrado")
+
+    # Valida agent
+    await _validate_agent(db, payload.agent_id, tenant_id)
+
+    nome = (payload.nome or source.public_label or source.nome).strip()
+    new_pb = TaPlaybook(
+        agent_id=payload.agent_id,
+        nome=nome,
+        descricao=source.public_description or source.descricao,
+        canvas_json=source.canvas_json,
+        status="draft",
+        source_playbook_id=source.id,
+    )
+    db.add(new_pb)
+    # Bump downloads do source
+    source.marketplace_downloads = (source.marketplace_downloads or 0) + 1
+    await db.commit()
+    await db.refresh(new_pb)
+    return new_pb
+
+
 class TemplateInfo(BaseModel):
     key: str
     nome: str

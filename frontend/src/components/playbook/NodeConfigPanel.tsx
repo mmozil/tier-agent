@@ -351,7 +351,7 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
     case "llm_step":
       return (
         <>
-          <FieldGroup label="Instrução (system)" hint="Como o agente deve responder. Suporta {{vars}}.">
+          <FieldGroup label="Instrução (system)" hint="Como o agente deve responder. Suporta {{vars}}. Ignorado se A/B variants ativos.">
             <TextareaInput
               value={(local.system_prompt as string) || ""}
               onChange={(v) => set("system_prompt", v)}
@@ -382,6 +382,10 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
               label="Enviar resposta automaticamente pelo canal"
             />
           </FieldGroup>
+          <VariantsEditor
+            variants={(local.variants as any[]) || []}
+            onChange={(variants) => set("variants", variants)}
+          />
         </>
       );
 
@@ -986,5 +990,120 @@ function SpecialistsEditor({
         💡 Cada specialist vira uma saída do nó. Conecte cada saída a fluxos diferentes ou deixe só "auto_reply" pro especialista responder direto.
       </div>
     </>
+  );
+}
+
+// ─── A/B Testing variants editor (llm_step)
+interface Variant {
+  name: string;
+  system_prompt: string;
+  weight: number;
+}
+
+function VariantsEditor({
+  variants,
+  onChange,
+}: {
+  variants: Variant[];
+  onChange: (v: Variant[]) => void;
+}) {
+  const [expanded, setExpanded] = useState((variants?.length || 0) > 0);
+
+  function update(idx: number, patch: Partial<Variant>) {
+    const next = variants.map((v, i) => (i === idx ? { ...v, ...patch } : v));
+    onChange(next);
+  }
+
+  function add() {
+    onChange([
+      ...variants,
+      {
+        name: String.fromCharCode(65 + variants.length), // A, B, C
+        system_prompt: "",
+        weight: 50,
+      },
+    ]);
+  }
+
+  function remove(idx: number) {
+    onChange(variants.filter((_, i) => i !== idx));
+  }
+
+  const totalWeight = variants.reduce((sum, v) => sum + (Number(v.weight) || 0), 0);
+
+  return (
+    <div className="border-t border-slate-100 pt-3 mt-2">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between text-[12px] font-semibold text-[#1a2c44] mb-2"
+      >
+        <span>🧪 A/B Testing {variants.length > 0 && `(${variants.length} variants)`}</span>
+        <span className="text-slate-400">{expanded ? "−" : "+"}</span>
+      </button>
+
+      {expanded && (
+        <div className="space-y-2">
+          {variants.length === 0 ? (
+            <p className="text-[11px] text-[#697386] italic">
+              Sem variants. Quando ativo, system_prompt principal é ignorado e engine sorteia uma variant por mensagem.
+            </p>
+          ) : (
+            variants.map((v, idx) => (
+              <div key={idx} className="border border-slate-200 rounded-md p-2 space-y-1.5 bg-slate-50">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={v.name}
+                    onChange={(e) => update(idx, { name: e.target.value })}
+                    placeholder="A"
+                    className="flex-1 h-6 px-2 text-[12px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] font-mono"
+                  />
+                  <input
+                    type="number"
+                    value={v.weight}
+                    onChange={(e) => update(idx, { weight: Number(e.target.value) })}
+                    min={1}
+                    max={1000}
+                    title="Peso (probabilidade relativa)"
+                    className="w-14 h-6 px-2 text-[12px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] font-mono"
+                  />
+                  {totalWeight > 0 && (
+                    <span className="text-[10px] text-[#697386] font-mono w-10">
+                      {Math.round(((v.weight || 0) / totalWeight) * 100)}%
+                    </span>
+                  )}
+                  <button
+                    onClick={() => remove(idx)}
+                    className="w-6 h-6 inline-flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+                <textarea
+                  value={v.system_prompt}
+                  onChange={(e) => update(idx, { system_prompt: e.target.value })}
+                  placeholder="System prompt da variant..."
+                  rows={2}
+                  className="w-full px-2 py-1.5 text-[11px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] resize-none font-mono"
+                />
+              </div>
+            ))
+          )}
+          <button
+            onClick={add}
+            className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_#003083]"
+          >
+            <Plus className="w-3 h-3" />
+            Adicionar variant
+          </button>
+          {variants.length > 0 && (
+            <div className="text-[10px] text-blue-700 bg-blue-50 px-2 py-1.5 rounded">
+              💡 Performance por variant em /admin/metricas (em breve aba A/B). Cada execução salva `variant_name` no step log.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

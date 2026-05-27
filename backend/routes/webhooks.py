@@ -195,6 +195,68 @@ async def whatsapp_engine_webhook(
 
 
 # ============================================================
+# Telegram Bot API webhook inbound
+# ============================================================
+@router.post("/telegram/{bot_id}")
+async def telegram_webhook(
+    bot_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Recebe update do Telegram Bot API.
+
+    Cliente configurou setWebhook → POST /webhooks/telegram/{bot_id} com Update JSON.
+    {update_id, message: {chat: {id}, text, from: {first_name}, voice?, photo?}}
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON inválido")
+
+    event_id = str(data.get("update_id") or "")
+    if not event_id:
+        return {"status": "no_update_id"}
+    if await _record_idempotent(db, f"telegram:{bot_id}", event_id, data):
+        return {"status": "duplicate"}
+
+    msg = data.get("message") or data.get("edited_message") or {}
+    chat = msg.get("chat") or {}
+    chat_id = str(chat.get("id") or "")
+    if not chat_id:
+        return {"status": "ignored", "reason": "no_chat_id"}
+
+    sender_name = (msg.get("from") or {}).get("first_name") or (msg.get("from") or {}).get("username")
+
+    from services import agent_runtime
+    from services.connectors.base import ConnectorAttachment
+
+    text_content = (msg.get("text") or msg.get("caption") or "").strip()
+    attachments: list[ConnectorAttachment] = []
+
+    # Telegram NÃO retorna URL direta — só file_id. Pra MVP, marca attachment sem URL
+    # (Q4 implementará getFile pra resolver URL e baixar). Por ora só processa text.
+    if msg.get("voice"):
+        attachments.append(ConnectorAttachment(kind="audio", url=None, mime="audio/ogg"))
+    elif msg.get("photo"):
+        attachments.append(ConnectorAttachment(kind="image", url=None, mime="image/jpeg"))
+
+    if not text_content:
+        text_content = f"[{attachments[0].kind}]" if attachments else "[mensagem sem texto]"
+
+    result = await agent_runtime.handle_inbound_message(
+        db,
+        connector_kind="telegram",
+        instance_id=bot_id,
+        external_chat_id=chat_id,
+        sender_name=sender_name,
+        text_content=text_content,
+        attachments=attachments,
+    )
+    logger.info("webhook telegram processed bot=%s chat=%s status=%s", bot_id, chat_id, result.get("status"))
+    return result
+
+
+# ============================================================
 # Trigger event — webhook externo dispara playbooks com trigger_event
 # ============================================================
 @router.post("/event/{event_key}")

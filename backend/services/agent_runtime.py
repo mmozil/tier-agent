@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 async def resolve_connector_by_instance(
     db: AsyncSession, kind: str, instance_id: str
 ) -> TaConnector | None:
-    """Procura TaConnector cujo config_json_enc contenha instance_id (heurística)."""
+    """Procura TaConnector cujo config_json_enc contenha instance_id (heurística por canal)."""
     result = await db.execute(
         select(TaConnector).where(TaConnector.kind == kind, TaConnector.enabled.is_(True))
     )
@@ -37,6 +37,16 @@ async def resolve_connector_by_instance(
             cfg = json.loads(decrypt(conn.config_json_enc))
         except Exception:
             continue
+        # WhatsApp: match instance_id direto
+        if kind == "whatsapp" and cfg.get("instance_id") == instance_id:
+            return conn
+        # Telegram: instance_id = bot_id (extraído do bot_token "1234567:ABCdef...")
+        if kind == "telegram":
+            token = cfg.get("bot_token") or ""
+            bot_id = token.split(":")[0] if ":" in token else ""
+            if bot_id and bot_id == instance_id:
+                return conn
+        # Default fallback (compat)
         if cfg.get("instance_id") == instance_id:
             return conn
     return None
@@ -157,6 +167,38 @@ async def handle_inbound_message(
             return {"status": "tenant_suspended", "agent_id": agent.id, **budget_state}
     except Exception:
         logger.exception("budget_guard falhou — continua processando")
+
+    # Q3.1 Guardrails Lakera — bloqueia prompt injection / jailbreak
+    try:
+        from services import guardrails
+
+        if await guardrails.is_enabled_for_tenant(db, agent.tenant_id):
+            guard_result = await guardrails.check_lakera(text_content)
+            if not guard_result.ok:
+                logger.warning(
+                    "guardrails BLOCKED agent=%s contact=%s categories=%s",
+                    agent.id, external_chat_id, guard_result.blocked_categories,
+                )
+                # Resposta segura ao cliente — não vaza categorias específicas
+                safe_reply = (
+                    "Desculpe, não posso processar essa mensagem. Se for dúvida legítima, "
+                    "reformule por favor ou peça pra falar com um humano."
+                )
+                try:
+                    connector_impl = registry.get(connector_kind)
+                    cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
+                    await connector_impl.send(
+                        cfg, OutboundMessage(external_chat_id=external_chat_id, content=safe_reply)
+                    )
+                except Exception:
+                    logger.exception("envio safe_reply guardrails falhou")
+                return {
+                    "status": "blocked_guardrails",
+                    "agent_id": agent.id,
+                    "categories": guard_result.blocked_categories,
+                }
+    except Exception:
+        logger.exception("guardrails check falhou — continua processando")
 
     conv = await ensure_conversation(
         db,

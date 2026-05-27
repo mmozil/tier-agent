@@ -26,11 +26,33 @@ async def execute_llm_step(ctx: ExecutionContext, config: dict) -> NodeResult:
         temperature (float)  — ignorado por enquanto (vem do config do container)
         save_as (str, opcional): salva resposta em vars[save_as]
         send_text (bool, default true): true = também envia texto pelo canal
+        variants (list[{name, system_prompt, weight}], opcional): A/B testing.
+            Engine sorteia variant pelo weight + salva variant_name no output
+            pra dashboard agregar performance.
     """
     system_prompt_raw = (config.get("system_prompt") or "").strip()
     user_prompt_raw = (config.get("user_prompt") or "{{message.text}}").strip()
     save_as = (config.get("save_as") or "").strip() or None
     send_text = config.get("send_text", True)
+
+    # A/B testing — se há variants[], sorteia por weight
+    variant_name: str | None = None
+    raw_variants = config.get("variants")
+    if isinstance(raw_variants, list) and raw_variants:
+        import random
+
+        valid = [
+            v
+            for v in raw_variants
+            if isinstance(v, dict)
+            and v.get("system_prompt")
+            and (v.get("weight") is None or float(v.get("weight", 0)) > 0)
+        ]
+        if valid:
+            weights = [float(v.get("weight", 1)) for v in valid]
+            chosen = random.choices(valid, weights=weights, k=1)[0]
+            system_prompt_raw = str(chosen["system_prompt"]).strip()
+            variant_name = str(chosen.get("name") or f"v{valid.index(chosen) + 1}")
 
     if not system_prompt_raw:
         return NodeResult(error="llm_step: system_prompt vazio")
@@ -91,6 +113,7 @@ async def execute_llm_step(ctx: ExecutionContext, config: dict) -> NodeResult:
             "model": reply.model_used,
             "cost_cents": cost_cents,
             "saved_to": save_as,
+            "variant": variant_name,
         },
         vars_update=vars_update,
     )

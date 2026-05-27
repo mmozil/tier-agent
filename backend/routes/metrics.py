@@ -289,6 +289,68 @@ async def by_model(
     ]
 
 
+class AbVariantRow(BaseModel):
+    playbook_id: int
+    node_id: str
+    variant: str
+    runs: int
+    avg_latency_ms: float
+    total_cost_cents: int
+
+
+@router.get("/ab-tests", response_model=list[AbVariantRow])
+async def ab_tests(
+    days: int = Query(30, ge=1, le=365),
+    playbook_id: int | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Performance por variant de A/B testing em llm_step nodes."""
+    tenant_id = await _ensure_tenant(user)
+    since = _period_start(days)
+
+    # output_json->>'variant' como discriminator
+    stmt = select(
+        TaPlaybookExecution.playbook_id,
+        TaPlaybookStepLog.node_id,
+        TaPlaybookStepLog.output_json["variant"].astext.label("variant"),
+        func.count(TaPlaybookStepLog.id),
+        func.coalesce(func.avg(TaPlaybookStepLog.latency_ms), 0),
+        func.coalesce(func.sum(TaPlaybookStepLog.cost_cents), 0),
+    ).select_from(
+        TaPlaybookStepLog.__table__.join(
+            TaPlaybookExecution.__table__,
+            TaPlaybookExecution.id == TaPlaybookStepLog.execution_id,
+        ).join(TaAgent.__table__, TaAgent.id == TaPlaybookExecution.agent_id)
+    ).where(
+        TaAgent.tenant_id == tenant_id,
+        TaPlaybookStepLog.node_type == "llm_step",
+        TaPlaybookStepLog.created_at >= since,
+        TaPlaybookStepLog.output_json["variant"].astext.is_not(None),
+    ).group_by(
+        TaPlaybookExecution.playbook_id,
+        TaPlaybookStepLog.node_id,
+        TaPlaybookStepLog.output_json["variant"].astext,
+    ).order_by(
+        TaPlaybookExecution.playbook_id, TaPlaybookStepLog.node_id, desc(func.count(TaPlaybookStepLog.id))
+    )
+    if playbook_id is not None:
+        stmt = stmt.where(TaPlaybookExecution.playbook_id == playbook_id)
+
+    rows = (await db.execute(stmt)).all()
+    return [
+        AbVariantRow(
+            playbook_id=int(r[0]),
+            node_id=str(r[1]),
+            variant=str(r[2]),
+            runs=int(r[3]),
+            avg_latency_ms=float(r[4] or 0),
+            total_cost_cents=int(r[5] or 0),
+        )
+        for r in rows
+    ]
+
+
 @router.get("/top-conversations", response_model=list[TopConversationRow])
 async def top_conversations(
     days: int = Query(30, ge=1, le=365),
