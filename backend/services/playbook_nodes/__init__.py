@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
-from . import flow, integrations, llm, mcp, text, triggers
+from . import flow, integrations, llm, mcp, memory, text, triggers
 from .base import ExecutionContext, NodeResult
 
 NodeExecutor = Callable[[ExecutionContext, dict], Awaitable[NodeResult]]
@@ -40,6 +40,8 @@ REGISTRY: dict[str, NodeExecutor] = {
     "handoff_human": integrations.execute_handoff_human,
     # Q1.1: MCP
     "mcp_tool_call": mcp.execute_mcp_tool_call,
+    # Q2.1: Memory cross-session
+    "memory_lookup": memory.execute_memory_lookup,
 }
 
 __all__ = ["REGISTRY", "ExecutionContext", "NodeResult", "NodeExecutor"]

@@ -488,6 +488,47 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
         </>
       );
 
+    case "memory_lookup":
+      return (
+        <>
+          <FieldGroup label="Query (o que buscar)" hint="Suporta {{vars}}">
+            <TextareaInput
+              value={(local.query as string) || ""}
+              onChange={(v) => set("query", v)}
+              placeholder="{{message.text}}"
+              rows={2}
+            />
+          </FieldGroup>
+          <FieldGroup label="Top K">
+            <NumberInput
+              value={(local.top_k as number) ?? 5}
+              onChange={(v) => set("top_k", v)}
+              min={1}
+              max={20}
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar lista em">
+            <TextInput
+              value={(local.save_as as string) || ""}
+              onChange={(v) => set("save_as", v)}
+              placeholder="memories"
+              mono
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar texto formatado em">
+            <TextInput
+              value={(local.save_text_as as string) || ""}
+              onChange={(v) => set("save_text_as", v)}
+              placeholder="memory_block"
+              mono
+            />
+          </FieldGroup>
+          <div className="text-[10px] text-blue-700 bg-blue-50 px-2 py-1.5 rounded">
+            💡 Memória é auto-injetada em todo inbound. Use este nó só quando quiser buscar em ponto custom do fluxo (ex: após qualificação).
+          </div>
+        </>
+      );
+
     case "mcp_tool_call":
       return (
         <>

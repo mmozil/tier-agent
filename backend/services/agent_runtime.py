@@ -200,6 +200,28 @@ async def handle_inbound_message(
             )
             # cai pro Hermes free como fallback
 
+    # Memory cross-session: busca fatos relevantes do contato + injeta no system
+    from services import memory_service
+
+    memory_block = ""
+    try:
+        mem_hits = await memory_service.search(
+            db,
+            tenant_id=agent.tenant_id,
+            agent_id=agent.id,
+            external_chat_id=external_chat_id,
+            query=text_content,
+            top_k=5,
+        )
+        if mem_hits:
+            memory_block = memory_service.format_for_prompt(mem_hits)
+    except Exception:
+        logger.exception("memory.search falhou agent=%s — segue sem memory", agent.id)
+
+    system_prompt = agent.persona or agent.system_prompt or ""
+    if memory_block:
+        system_prompt = f"{system_prompt}\n\n{memory_block}".strip()
+
     # Hermes responde (com vision se attachment image presente)
     try:
         reply = await hermes_proxy.send_message(
@@ -207,9 +229,10 @@ async def handle_inbound_message(
             user_content=text_content,
             db=db,
             session_id=f"conv-{conv.id}",
-            system_override=agent.persona or agent.system_prompt,
+            system_override=system_prompt,
             attachments=attachments or [],
             agent_id=agent.id,
+            use_cache=not memory_block,  # cache desliga quando há memory custom no system
         )
     except Exception as e:
         logger.exception("Hermes falhou tenant=%s agent=%s", agent.tenant_id, agent.id)
@@ -251,6 +274,31 @@ async def handle_inbound_message(
         logger.exception("Falha enviando resposta agent=%s channel=%s", agent.id, connector_kind)
         return {"status": "send_error", "agent_id": agent.id, "error": str(e)}
 
+    # Memory.add em background (sessão isolada — não bloqueia resposta)
+    try:
+        import asyncio
+
+        from core.db import db_context
+
+        async def _async_add_memory():
+            try:
+                async with db_context() as mdb:
+                    await memory_service.add(
+                        mdb,
+                        tenant_id=agent.tenant_id,
+                        agent_id=agent.id,
+                        external_chat_id=external_chat_id,
+                        user_text=text_content,
+                        assistant_text=reply.text,
+                        contact_name=sender_name,
+                    )
+            except Exception:
+                logger.exception("memory.add background falhou")
+
+        asyncio.create_task(_async_add_memory())
+    except Exception:
+        logger.exception("agendar memory.add falhou")
+
     return {
         "status": "ok",
         "agent_id": agent.id,
@@ -258,4 +306,5 @@ async def handle_inbound_message(
         "tokens_in": reply.tokens_in,
         "tokens_out": reply.tokens_out,
         "latency_ms": reply.latency_ms,
+        "memory_used": bool(memory_block),
     }

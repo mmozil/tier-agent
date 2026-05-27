@@ -48,7 +48,8 @@ export type PlaybookNodeKind =
   | "call_api"
   | "tier_pay"
   | "handoff_human"
-  | "mcp_tool_call";
+  | "mcp_tool_call"
+  | "memory_lookup";
 
 export interface NodeKindMeta {
   kind: PlaybookNodeKind;
@@ -238,6 +239,21 @@ export const NODE_CATALOG: NodeKindMeta[] = [
       descricao: "Pedido {{vars.pedido_id|default:'?'}}",
       metodo: "pix",
       save_as: "payment_link",
+    },
+  },
+  {
+    kind: "memory_lookup",
+    label: "Buscar memória",
+    description: "Recupera fatos lembrados do contato (cross-session). Auto-injetado também em todo inbound.",
+    icon: Database,
+    category: "action",
+    color: "#003083",
+    available: true,
+    defaultData: {
+      query: "{{message.text}}",
+      top_k: 5,
+      save_as: "memories",
+      save_text_as: "memory_block",
     },
   },
   {

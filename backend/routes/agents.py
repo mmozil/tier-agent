@@ -213,6 +213,51 @@ async def agent_stats(
     )
 
 
+@router.get("/{agent_id}/memories")
+async def list_memories(
+    agent_id: int,
+    contact: str,
+    limit: int = 100,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista memórias salvas pra um contato específico do agente.
+
+    Query params:
+        contact: external_chat_id (WhatsApp number, Telegram chat_id, etc)
+        limit: max rows (default 100, max 500)
+    """
+    tenant_id = await _ensure_tenant(user)
+    agent = await db.get(TaAgent, agent_id)
+    if not agent or agent.tenant_id != tenant_id:
+        raise HTTPException(404, "Agente não encontrado")
+
+    from services import memory_service
+
+    items = await memory_service.list_for_contact(
+        db,
+        agent_id=agent_id,
+        external_chat_id=contact,
+        limit=max(1, min(limit, 500)),
+    )
+    return {"agent_id": agent_id, "contact": contact, "memories": items, "count": len(items)}
+
+
+@router.delete("/memories/{memory_id}", status_code=204)
+async def delete_memory(
+    memory_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove fato específico (admin override)."""
+    tenant_id = await _ensure_tenant(user)
+    from services import memory_service
+
+    ok = await memory_service.delete_memory(db, memory_id=memory_id, tenant_id=tenant_id)
+    if not ok:
+        raise HTTPException(404, "Memória não encontrada")
+
+
 @router.delete("/{agent_id}", status_code=204)
 async def delete_agent(
     agent_id: int,
