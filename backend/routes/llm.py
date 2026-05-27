@@ -17,6 +17,16 @@ from models import TaLlmProvider
 router = APIRouter(prefix="/llm-providers", tags=["llm"])
 
 
+def _invalidate_cost_cache(tenant_id: int | None) -> None:
+    """Limpa cache de prices em memória após edição via painel."""
+    try:
+        from services import cost_calculator
+
+        cost_calculator.invalidate_cache(tenant_id)
+    except Exception:
+        pass
+
+
 SUPPORTED_PROVIDERS = {
     "minimax": "MiniMax (MiniMax-M2, abab6.5)",
     "gemini": "Google Gemini (gemini-2.5-flash, gemini-2.5-pro)",
@@ -119,6 +129,7 @@ async def create_provider(
     db.add(item)
     await db.commit()
     await db.refresh(item)
+    _invalidate_cost_cache(item.tenant_id)
     return item
 
 
@@ -150,6 +161,7 @@ async def update_provider(
         setattr(item, k, v)
     await db.commit()
     await db.refresh(item)
+    _invalidate_cost_cache(item.tenant_id)
     return item
 
 
@@ -166,8 +178,10 @@ async def delete_provider(
         raise HTTPException(403, "Apenas admin Tier pode deletar config global")
     if item.tenant_id is not None and item.tenant_id != user.tenant_id and not user.is_admin:
         raise HTTPException(403, "Provider de outro tenant")
+    tenant_for_cache = item.tenant_id
     await db.delete(item)
     await db.commit()
+    _invalidate_cost_cache(tenant_for_cache)
 
 
 @router.post("/{provider_id}/test")

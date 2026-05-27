@@ -66,8 +66,21 @@ async def execute_llm_step(ctx: ExecutionContext, config: dict) -> NodeResult:
     if send_text and text:
         ctx.outbound_messages.append({"kind": "text", "content": text})
 
-    # cost aproximado (Hermes não retorna cost — usa tokens)
-    cost_cents = 0  # TODO: lookup TaLlmProvider.cost_*_per_1m e calcular
+    # cost real via cost_calculator
+    try:
+        from core.db import db_context
+        from services import cost_calculator
+
+        async with db_context() as cdb:
+            cost_cents = await cost_calculator.calculate_cost_cents(
+                cdb,
+                ctx.tenant_id,
+                model_used=reply.model_used,
+                tokens_in=reply.tokens_in,
+                tokens_out=reply.tokens_out,
+            )
+    except Exception:
+        cost_cents = 0
 
     return NodeResult(
         output={
@@ -76,6 +89,7 @@ async def execute_llm_step(ctx: ExecutionContext, config: dict) -> NodeResult:
             "tokens_out": reply.tokens_out,
             "latency_ms": reply.latency_ms,
             "model": reply.model_used,
+            "cost_cents": cost_cents,
             "saved_to": save_as,
         },
         vars_update=vars_update,

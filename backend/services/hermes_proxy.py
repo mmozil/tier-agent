@@ -49,8 +49,14 @@ async def send_message(
     *,
     session_id: str | None = None,
     system_override: str | None = None,
+    attachments: list | None = None,
 ) -> HermesReply:
-    """Envia mensagem pro container Hermes do tenant via REST OpenAI-compatible."""
+    """Envia mensagem pro container Hermes do tenant via REST OpenAI-compatible.
+
+    Quando attachments contém imagens (kind=image, url presente), monta payload
+    multimodal OpenAI Vision: content vira lista com {type:text} + {type:image_url}.
+    Modelo subjacente precisa suportar vision (Gemini 2.5/GPT-4o/Claude Sonnet 4).
+    """
     record = await db.get(TaContainer, tenant_id)
     if not record or not record.port or record.status not in {"running", "starting"}:
         raise RuntimeError(
@@ -64,9 +70,38 @@ async def send_message(
         "model": "hermes-agent",  # nome interno do Hermes; o LLM real vem do config do container
         "messages": [],
     }
+
+    # PII redaction (gate por feature flag — default ON pra LGPD compliance)
+    pii_enabled = await _pii_enabled_for_tenant(db, tenant_id)
+    pii_mapping = None
+    if pii_enabled:
+        from services import pii_redactor
+
+        if system_override:
+            system_override, _ = pii_redactor.redact(system_override or "")
+        user_content, pii_mapping = pii_redactor.redact(user_content or "")
+
     if system_override:
         payload["messages"].append({"role": "system", "content": system_override})
-    payload["messages"].append({"role": "user", "content": user_content})
+
+    # Monta content multimodal se há imagens
+    image_atts = [a for a in (attachments or []) if getattr(a, "kind", None) == "image" and getattr(a, "url", None)]
+
+    if image_atts:
+        content_parts: list[dict] = []
+        # Texto primeiro (caption ou placeholder)
+        if user_content:
+            content_parts.append({"type": "text", "text": user_content})
+        # Cada imagem como image_url (URL pública R2 — vision providers baixam)
+        for att in image_atts:
+            content_parts.append({"type": "image_url", "image_url": {"url": att.url}})
+        payload["messages"].append({"role": "user", "content": content_parts})
+        logger.info(
+            "hermes_proxy: payload multimodal tenant=%s images=%d text_len=%d",
+            tenant_id, len(image_atts), len(user_content or ""),
+        )
+    else:
+        payload["messages"].append({"role": "user", "content": user_content})
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -88,6 +123,12 @@ async def send_message(
     text = choice.get("message", {}).get("content", "")
     usage = data.get("usage", {})
 
+    # Restora PII na resposta (se o LLM eco-ou placeholders, valores reais voltam)
+    if pii_mapping:
+        from services import pii_redactor
+
+        text = pii_redactor.restore(text, pii_mapping)
+
     return HermesReply(
         text=text,
         tokens_in=usage.get("prompt_tokens", 0),
@@ -96,4 +137,37 @@ async def send_message(
         model_used=data.get("model"),
         raw_response=data,
     )
+
+
+async def _pii_enabled_for_tenant(db: AsyncSession, tenant_id: int) -> bool:
+    """Lê feature flag enable_pii_redaction (escopo tenant ou global). Default true."""
+    from sqlalchemy import select as _sel
+    from models import TaFeatureFlag
+
+    try:
+        # tenant primeiro, depois global
+        row = (
+            await db.execute(
+                _sel(TaFeatureFlag).where(
+                    TaFeatureFlag.key == "enable_pii_redaction",
+                    TaFeatureFlag.escopo == "tenant",
+                    TaFeatureFlag.escopo_id == tenant_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = (
+                await db.execute(
+                    _sel(TaFeatureFlag).where(
+                        TaFeatureFlag.key == "enable_pii_redaction",
+                        TaFeatureFlag.escopo == "global",
+                    )
+                )
+            ).scalar_one_or_none()
+        if row is None:
+            return True  # default ON pra LGPD
+        return bool(row.enabled and (str(row.value or "true").lower() in ("true", "1", "on", "yes")))
+    except Exception:
+        logger.exception("pii feature flag lookup falhou tenant=%s — default OFF", tenant_id)
+        return False
 

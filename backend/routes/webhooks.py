@@ -78,23 +78,85 @@ async def whatsapp_engine_webhook(
     if await _record_idempotent(db, "whatsapp-engine", event_id, data):
         return {"status": "duplicate", "skipped": True}
 
-    instance_id = data.get("instanceId")
+    # Webhook Engine moderno usa `instance_id` + `data` (worker); legado/dev usam `instanceId` + `payload`
+    instance_id = data.get("instance_id") or data.get("instanceId")
     event = data.get("event")
-    payload = data.get("payload", {})
+    payload = data.get("data") or data.get("payload") or {}
 
-    # Só processa eventos de mensagem text (image/audio próxima fase)
-    if event not in {"message.text", "message"}:
+    # Aceita formato Baileys real (messages.upsert) + formato legado (message/message.text)
+    if event not in {"messages.upsert", "message", "message.text"}:
         logger.debug("ignorando event %s", event)
         return {"status": "ignored", "event": event}
 
+    # Ignora mensagens enviadas POR NÓS (fromMe=true) — só processa inbound
+    key = payload.get("key") or {}
+    if key.get("fromMe"):
+        return {"status": "ignored", "reason": "from_me"}
+
     from services import agent_runtime
+    from services.connectors.base import ConnectorAttachment
 
-    text_content = payload.get("text") or payload.get("body") or ""
-    external_chat_id = payload.get("from") or payload.get("chat_id") or ""
-    sender_name = payload.get("sender_name") or payload.get("pushName")
+    # Extrai texto + attachments do payload Baileys
+    text_content = ""
+    attachments: list[ConnectorAttachment] = []
 
-    if not text_content or not external_chat_id:
+    msg = payload.get("message") or {}
+    media_url = payload.get("mediaUrl")  # URL R2 pública (pre-uploaded pelo Engine)
+
+    # Texto puro (conversation) ou caption de mídia
+    if isinstance(msg, dict):
+        if msg.get("conversation"):
+            text_content = msg["conversation"]
+        elif msg.get("extendedTextMessage"):
+            text_content = msg["extendedTextMessage"].get("text") or ""
+        elif msg.get("imageMessage"):
+            text_content = msg["imageMessage"].get("caption") or ""
+            if media_url:
+                attachments.append(
+                    ConnectorAttachment(
+                        kind="image",
+                        url=media_url,
+                        mime=msg["imageMessage"].get("mimetype") or "image/jpeg",
+                    )
+                )
+        elif msg.get("videoMessage"):
+            text_content = msg["videoMessage"].get("caption") or ""
+            if media_url:
+                attachments.append(
+                    ConnectorAttachment(kind="video", url=media_url, mime=msg["videoMessage"].get("mimetype"))
+                )
+        elif msg.get("audioMessage"):
+            if media_url:
+                attachments.append(
+                    ConnectorAttachment(kind="audio", url=media_url, mime=msg["audioMessage"].get("mimetype"))
+                )
+        elif msg.get("documentMessage"):
+            text_content = msg["documentMessage"].get("caption") or ""
+            if media_url:
+                attachments.append(
+                    ConnectorAttachment(kind="document", url=media_url, mime=msg["documentMessage"].get("mimetype"))
+                )
+
+    # Fallback: formato legado/dev (payload.text/body)
+    if not text_content and not attachments:
+        text_content = payload.get("text") or payload.get("body") or ""
+
+    # External chat id — preferir resolvedPhoneJid (LID → phone), fallback remoteJid
+    external_chat_id = (
+        payload.get("resolvedPhoneJid")
+        or key.get("remoteJid")
+        or payload.get("from")
+        or payload.get("chat_id")
+        or ""
+    )
+    sender_name = payload.get("pushName") or payload.get("sender_name") or payload.get("notifyName")
+
+    if not external_chat_id:
         return {"status": "missing_fields", "event": event}
+
+    # Permite mensagem só com mídia (sem texto) — placeholder "[imagem]" / "[áudio]"
+    if not text_content and attachments:
+        text_content = f"[{attachments[0].kind}]"
 
     result = await agent_runtime.handle_inbound_message(
         db,
@@ -103,8 +165,12 @@ async def whatsapp_engine_webhook(
         external_chat_id=external_chat_id,
         sender_name=sender_name,
         text_content=text_content,
+        attachments=attachments,
     )
-    logger.info("webhook WhatsApp processed: %s", result)
+    logger.info(
+        "webhook WhatsApp processed: agent=%s status=%s attachments=%s",
+        result.get("agent_id"), result.get("status"), len(attachments),
+    )
     return result
 
 

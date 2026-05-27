@@ -420,6 +420,12 @@ async def _log_step(
     latency_ms: int,
     error: str | None = None,
 ) -> None:
+    # Extrai cost_cents do output (nós LLM passam isso em output["cost_cents"])
+    cost_cents = 0
+    if isinstance(output, dict):
+        raw_cost = output.get("cost_cents")
+        if isinstance(raw_cost, (int, float)):
+            cost_cents = int(raw_cost)
     db.add(
         TaPlaybookStepLog(
             execution_id=execution_id,
@@ -429,6 +435,7 @@ async def _log_step(
             output_json=_safe_json(output),
             status=status,
             latency_ms=latency_ms,
+            cost_cents=cost_cents,
             error=(error or "")[:2000] if error else None,
         )
     )

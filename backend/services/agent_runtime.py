@@ -133,6 +133,7 @@ async def handle_inbound_message(
     external_chat_id: str,
     sender_name: str | None,
     text_content: str,
+    attachments: list | None = None,
 ) -> dict:
     """Pipeline completo: webhook → Hermes → resposta no canal."""
     connector = await resolve_connector_by_instance(db, connector_kind, instance_id)
@@ -199,7 +200,7 @@ async def handle_inbound_message(
             )
             # cai pro Hermes free como fallback
 
-    # Hermes responde
+    # Hermes responde (com vision se attachment image presente)
     try:
         reply = await hermes_proxy.send_message(
             tenant_id=agent.tenant_id,
@@ -207,10 +208,22 @@ async def handle_inbound_message(
             db=db,
             session_id=f"conv-{conv.id}",
             system_override=agent.persona or agent.system_prompt,
+            attachments=attachments or [],
         )
     except Exception as e:
         logger.exception("Hermes falhou tenant=%s agent=%s", agent.tenant_id, agent.id)
         return {"status": "hermes_error", "error": str(e)}
+
+    # Calcula custo real via TaLlmProvider lookup
+    from services import cost_calculator
+
+    cost_cents = await cost_calculator.calculate_cost_cents(
+        db,
+        agent.tenant_id,
+        model_used=reply.model_used,
+        tokens_in=reply.tokens_in,
+        tokens_out=reply.tokens_out,
+    )
 
     # Log resposta do assistant
     await log_message(
@@ -220,6 +233,7 @@ async def handle_inbound_message(
         role="assistant",
         tokens_in=reply.tokens_in,
         tokens_out=reply.tokens_out,
+        cost_cents=cost_cents,
         latency_ms=reply.latency_ms,
         model_used=reply.model_used,
     )
