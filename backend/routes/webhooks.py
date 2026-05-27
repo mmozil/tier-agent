@@ -324,6 +324,114 @@ async def telegram_webhook(
 
 
 # ============================================================
+# Instagram DM inbound — Meta Graph API webhook
+# ============================================================
+@router.get("/instagram/{ig_user_id}")
+async def instagram_verify(
+    ig_user_id: str,
+    request: Request,
+):
+    """Verify token handshake do Meta (GET com hub.mode=subscribe + hub.verify_token + hub.challenge)."""
+    import os as _os
+
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    expected = _os.environ.get("META_WEBHOOK_VERIFY_TOKEN")
+    if mode == "subscribe" and token == expected and challenge:
+        return int(challenge) if challenge.isdigit() else challenge
+    raise HTTPException(403, "Verify token mismatch")
+
+
+@router.post("/instagram/{ig_user_id}")
+async def instagram_webhook(
+    ig_user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Recebe DM Instagram via Meta Graph webhook.
+
+    Payload Meta:
+    {
+      "object": "instagram",
+      "entry": [{
+        "id": "<ig_user_id>",
+        "time": ...,
+        "messaging": [{
+          "sender": {"id": "<scoped_user_id>"},
+          "recipient": {"id": "<ig_user_id>"},
+          "timestamp": ...,
+          "message": {"mid": "...", "text": "...", "attachments": [...]}
+        }]
+      }]
+    }
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON inválido")
+
+    if data.get("object") != "instagram":
+        return {"status": "ignored", "reason": "not_instagram_object"}
+
+    from services import agent_runtime
+    from services.connectors.base import ConnectorAttachment
+
+    results = []
+    for entry in data.get("entry") or []:
+        for ev in entry.get("messaging") or []:
+            msg = ev.get("message") or {}
+            if msg.get("is_echo"):
+                continue
+            mid = msg.get("mid") or ""
+            if not mid:
+                continue
+            sender_id = (ev.get("sender") or {}).get("id") or ""
+            if not sender_id:
+                continue
+
+            if await _record_idempotent(db, f"instagram:{ig_user_id}", mid, ev):
+                continue
+
+            text_content = (msg.get("text") or "").strip()
+            attachments: list[ConnectorAttachment] = []
+            for att in msg.get("attachments") or []:
+                t = att.get("type")
+                payload = att.get("payload") or {}
+                url = payload.get("url")
+                if not url:
+                    continue
+                if t in ("image", "story_mention"):
+                    attachments.append(ConnectorAttachment(kind="image", url=url, mime="image/jpeg"))
+                elif t == "audio":
+                    attachments.append(ConnectorAttachment(kind="audio", url=url, mime="audio/mpeg"))
+                elif t == "video":
+                    attachments.append(ConnectorAttachment(kind="video", url=url, mime="video/mp4"))
+                elif t == "file":
+                    attachments.append(ConnectorAttachment(kind="document", url=url))
+
+            if not text_content and attachments:
+                text_content = f"[{attachments[0].kind}]"
+            if not text_content:
+                continue
+
+            result = await agent_runtime.handle_inbound_message(
+                db,
+                connector_kind="instagram",
+                instance_id=ig_user_id,
+                external_chat_id=sender_id,
+                sender_name=None,
+                text_content=text_content,
+                attachments=attachments,
+            )
+            results.append({"sender": sender_id, "status": result.get("status")})
+
+    logger.info("webhook instagram processed ig=%s events=%s", ig_user_id, len(results))
+    return {"status": "ok", "processed": results}
+
+
+# ============================================================
 # Email inbound — webhook genérico (Mailgun/Postmark/SES/Stalwart)
 # ============================================================
 @router.post("/email/{connector_id}")

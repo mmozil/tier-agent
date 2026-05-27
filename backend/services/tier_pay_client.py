@@ -41,14 +41,23 @@ async def create_payment_link(
     customer_name: str | None = None,
     customer_email: str | None = None,
     metadata: dict | None = None,
+    secret_key: str | None = None,
+    recipient_id: str | None = None,
+    fee_percent: float = 0.0,
 ) -> PaymentLinkResult:
-    """Cria payment link Pagar.me. Sem split (MVP).
+    """Cria payment link Pagar.me.
 
-    methods: lista de ['pix', 'credit_card', 'boleto']. Default: pix + credit_card.
+    Modos:
+    - secret_key=None → usa TIER_PAY_SECRET_KEY env (master Tier, MVP single-account)
+    - secret_key=<tenant_sk> → cobra direto na conta do tenant
+    - recipient_id + fee_percent → split nativo (tenant recebe N%, Tier recebe fee%)
+      (só ativa em cartão; pix/boleto sem split nativo)
+
+    methods: ['pix', 'credit_card', 'boleto']. Default: pix + credit_card.
     """
-    api_key = os.environ.get("TIER_PAY_SECRET_KEY")
+    api_key = secret_key or os.environ.get("TIER_PAY_SECRET_KEY")
     if not api_key:
-        return PaymentLinkResult(ok=False, error="TIER_PAY_SECRET_KEY ausente")
+        return PaymentLinkResult(ok=False, error="secret_key ausente (tenant config ou TIER_PAY_SECRET_KEY env)")
     if amount_cents <= 0:
         return PaymentLinkResult(ok=False, error="amount_cents inválido")
 

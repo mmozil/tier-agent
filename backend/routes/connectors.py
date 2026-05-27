@@ -231,6 +231,77 @@ async def disconnect(
     return {"status": "disconnected"}
 
 
+class GenericSetupIn(BaseModel):
+    agent_id: int
+    kind: str  # 'telegram' | 'email' | 'instagram'
+    config: dict  # campos específicos por kind (bot_token / smtp_* / page_access_token+ig_user_id)
+    enabled: bool = True
+
+
+@router.post("/generic", response_model=ConnectorOut, status_code=201)
+async def setup_generic_connector(
+    payload: GenericSetupIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cria/atualiza conector genérico (Telegram/Email/Instagram).
+
+    Valida config via adapter.validate_config() antes de persistir.
+    Se já existe um conector do mesmo kind+agent, atualiza config.
+    """
+    kind = (payload.kind or "").strip().lower()
+    allowed = {"telegram", "email", "instagram"}
+    if kind not in allowed:
+        raise HTTPException(400, f"kind deve ser um de: {sorted(allowed)}")
+
+    await _ensure_agent_owned(db, payload.agent_id, user)
+
+    from services.connectors import registry as conn_registry
+    from services.connectors.base import ConnectorConfig
+
+    try:
+        adapter = conn_registry.get(kind)
+    except Exception:
+        raise HTTPException(400, f"Adapter '{kind}' não registrado")
+
+    # Valida config (cada adapter implementa validate_config)
+    try:
+        ok = await adapter.validate_config(ConnectorConfig(data=payload.config))
+    except Exception as e:
+        raise HTTPException(400, f"Validação falhou: {e}")
+    if not ok:
+        raise HTTPException(400, f"Config '{kind}' inválida (credenciais ou campos faltando)")
+
+    # Upsert por (agent_id, kind)
+    from sqlalchemy import select as _sel
+
+    existing = (
+        await db.execute(
+            _sel(TaConnector).where(
+                TaConnector.agent_id == payload.agent_id,
+                TaConnector.kind == kind,
+            )
+        )
+    ).scalar_one_or_none()
+
+    cfg_enc = encrypt(json.dumps(payload.config))
+    if existing:
+        existing.config_json_enc = cfg_enc
+        existing.enabled = payload.enabled
+        conn_out = existing
+    else:
+        conn_out = TaConnector(
+            agent_id=payload.agent_id,
+            kind=kind,
+            config_json_enc=cfg_enc,
+            enabled=payload.enabled,
+        )
+        db.add(conn_out)
+    await db.commit()
+    await db.refresh(conn_out)
+    return conn_out
+
+
 @router.delete("/{connector_id}", status_code=204)
 async def delete_connector(
     connector_id: int,

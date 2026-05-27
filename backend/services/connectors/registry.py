@@ -29,14 +29,14 @@ registry = _ConnectorRegistry()
 def _register_defaults() -> None:
     """Auto-registra adapters disponíveis. Chamado no startup."""
     from services.connectors.adapters.email import EmailConnector
+    from services.connectors.adapters.instagram import InstagramConnector
     from services.connectors.adapters.telegram import TelegramConnector
     from services.connectors.adapters.whatsapp import WhatsAppConnector
 
     registry.register(WhatsAppConnector())
     registry.register(TelegramConnector())
     registry.register(EmailConnector())
-
-    # Instagram / Web form ficam pra próxima fase
+    registry.register(InstagramConnector())
 
 
 _register_defaults()

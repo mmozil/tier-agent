@@ -439,6 +439,28 @@ class TaPlaybookStepLog(Base):
 
 
 # ============================================================
+# 18.5 Tier Pay config por tenant (Q3.7 multi-tenant)
+# ============================================================
+class TaTierPayConfig(Base):
+    __tablename__ = "ta_tier_pay_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("ta_tenant.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    secret_key_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    recipient_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    statement_descriptor: Mapped[str | None] = mapped_column(String(22), nullable=True)
+    fee_percent: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    webhook_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ============================================================
 # 18. Notification — inbox de eventos pra equipe do tenant
 # ============================================================
 class TaNotification(Base):

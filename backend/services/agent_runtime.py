@@ -53,6 +53,10 @@ async def resolve_connector_by_instance(
                     return conn
             except (ValueError, TypeError):
                 pass
+        # Instagram: instance_id = ig_user_id (instagram business account id)
+        if kind == "instagram":
+            if str(cfg.get("ig_user_id") or "") == instance_id:
+                return conn
         # Default fallback (compat)
         if cfg.get("instance_id") == instance_id:
             return conn
@@ -387,6 +391,30 @@ async def handle_inbound_message(
         asyncio.create_task(_async_add_memory())
     except Exception:
         logger.exception("agendar memory.add falhou")
+
+    # Langfuse trace (fire-and-forget) — observability cliente
+    try:
+        from services import langfuse_client
+
+        await langfuse_client.trace_event(
+            name="agent_message",
+            tenant_id=agent.tenant_id,
+            agent_id=agent.id,
+            conversation_id=conv.id,
+            input={"text": text_content[:500], "attachments": len(attachments or [])},
+            output={"text": (reply.text or "")[:500]},
+            metadata={
+                "channel": connector_kind,
+                "external_chat_id": external_chat_id,
+                "tokens_in": reply.tokens_in,
+                "tokens_out": reply.tokens_out,
+                "model": reply.model_used,
+                "memory_used": bool(memory_block),
+            },
+            latency_ms=reply.latency_ms,
+        )
+    except Exception:
+        pass
 
     return {
         "status": "ok",

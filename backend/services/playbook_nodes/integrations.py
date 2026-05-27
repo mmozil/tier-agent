@@ -126,6 +126,32 @@ async def execute_tier_pay(ctx: ExecutionContext, config: dict) -> NodeResult:
 
     from services import tier_pay_client
 
+    # Carrega config Tier Pay do tenant (Q3.7 multi-tenant). Fallback pro env master se sem config.
+    tenant_sk: str | None = None
+    tenant_recipient: str | None = None
+    tenant_fee = 0.0
+    try:
+        from core.db import db_context
+        from core.encryption import decrypt
+        from models import TaTierPayConfig
+        from sqlalchemy import select as _sel
+
+        async with db_context() as pdb:
+            cfg_row = (
+                await pdb.execute(
+                    _sel(TaTierPayConfig).where(
+                        TaTierPayConfig.tenant_id == ctx.tenant_id,
+                        TaTierPayConfig.active.is_(True),
+                    )
+                )
+            ).scalar_one_or_none()
+            if cfg_row:
+                tenant_sk = decrypt(cfg_row.secret_key_enc)
+                tenant_recipient = cfg_row.recipient_id
+                tenant_fee = float(cfg_row.fee_percent or 0)
+    except Exception:
+        logger.exception("tier_pay tenant config load falhou — fallback master")
+
     result = await tier_pay_client.create_payment_link(
         name=f"{tenant_label[:40]} — {descricao[:40]}",
         amount_cents=valor_cents,
@@ -133,6 +159,9 @@ async def execute_tier_pay(ctx: ExecutionContext, config: dict) -> NodeResult:
         methods=methods,
         expires_in_days=expires_in_days,
         customer_name=customer_name,
+        secret_key=tenant_sk,
+        recipient_id=tenant_recipient,
+        fee_percent=tenant_fee,
         metadata={
             "tenant_id": ctx.tenant_id,
             "agent_id": ctx.agent_id,
