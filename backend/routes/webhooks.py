@@ -233,12 +233,79 @@ async def telegram_webhook(
     text_content = (msg.get("text") or msg.get("caption") or "").strip()
     attachments: list[ConnectorAttachment] = []
 
-    # Telegram NÃO retorna URL direta — só file_id. Pra MVP, marca attachment sem URL
-    # (Q4 implementará getFile pra resolver URL e baixar). Por ora só processa text.
+    # Telegram getFile resolver — extrai file_id de voice/photo/document/video,
+    # chama getFile API pra resolver file_path, monta URL pública Telegram CDN
+    # (https://api.telegram.org/file/bot<token>/<file_path>).
+    # Precisa bot_token — resolve via TaConnector lookup.
+    async def _resolve_telegram_url(file_id: str) -> str | None:
+        try:
+            from sqlalchemy import select as _sel
+
+            from core.encryption import decrypt
+            from models import TaConnector
+
+            res = await db.execute(
+                _sel(TaConnector).where(
+                    TaConnector.kind == "telegram", TaConnector.enabled.is_(True)
+                )
+            )
+            for conn in res.scalars().all():
+                try:
+                    import json as _json
+
+                    cfg = _json.loads(decrypt(conn.config_json_enc))
+                    token = cfg.get("bot_token") or ""
+                    if not token:
+                        continue
+                    cbot_id = token.split(":")[0] if ":" in token else ""
+                    if cbot_id != bot_id:
+                        continue
+                    import httpx as _httpx
+
+                    async with _httpx.AsyncClient(timeout=10) as cli:
+                        r = await cli.get(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}")
+                        if r.status_code != 200:
+                            return None
+                        d = r.json()
+                        if not d.get("ok"):
+                            return None
+                        file_path = d["result"].get("file_path")
+                        if not file_path:
+                            return None
+                        return f"https://api.telegram.org/file/bot{token}/{file_path}"
+                except Exception:
+                    continue
+        except Exception:
+            return None
+        return None
+
     if msg.get("voice"):
-        attachments.append(ConnectorAttachment(kind="audio", url=None, mime="audio/ogg"))
+        file_id = msg["voice"].get("file_id")
+        url = await _resolve_telegram_url(file_id) if file_id else None
+        attachments.append(
+            ConnectorAttachment(
+                kind="audio",
+                url=url,
+                mime=msg["voice"].get("mime_type") or "audio/ogg",
+            )
+        )
     elif msg.get("photo"):
-        attachments.append(ConnectorAttachment(kind="image", url=None, mime="image/jpeg"))
+        # photo é lista de tamanhos — pega o maior (último)
+        photos = msg["photo"] if isinstance(msg["photo"], list) else []
+        if photos:
+            file_id = photos[-1].get("file_id")
+            url = await _resolve_telegram_url(file_id) if file_id else None
+            attachments.append(ConnectorAttachment(kind="image", url=url, mime="image/jpeg"))
+    elif msg.get("document"):
+        file_id = msg["document"].get("file_id")
+        url = await _resolve_telegram_url(file_id) if file_id else None
+        attachments.append(
+            ConnectorAttachment(
+                kind="document",
+                url=url,
+                mime=msg["document"].get("mime_type") or "application/octet-stream",
+            )
+        )
 
     if not text_content:
         text_content = f"[{attachments[0].kind}]" if attachments else "[mensagem sem texto]"

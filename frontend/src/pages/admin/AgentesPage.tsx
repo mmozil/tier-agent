@@ -645,6 +645,12 @@ function AgentDetailsDrawer({
             Ações
           </h3>
           <div className="space-y-2">
+            <a
+              href={`/admin/agentes/${agent.id}/skills`}
+              className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_#003083]"
+            >
+              ✨ Ver skills do agente
+            </a>
             <button
               onClick={toggleActive}
               className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"

@@ -9,6 +9,7 @@ import {
   Loader2,
   Play,
   Send,
+  Store,
   Trash2,
   Workflow,
 } from "lucide-react";
@@ -191,6 +192,26 @@ export default function PlaybookEditorPage() {
     }
   }
 
+  async function publishMarketplace() {
+    if (!pb) return;
+    if (pb.status !== "published") {
+      toast.error("Publica o playbook primeiro (Publicar). Depois marca como template.");
+      return;
+    }
+    const label = prompt("Nome público no marketplace:", pb.nome);
+    if (!label) return;
+    const description = prompt("Descrição pública (opcional):", pb.descricao || "");
+    try {
+      await api.post(`/playbooks/${pb.id}/publish-marketplace`, {
+        public_label: label,
+        public_description: description,
+      });
+      toast.success("Publicado no marketplace!");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao publicar marketplace");
+    }
+  }
+
   async function archive() {
     if (!pb) return;
     if (!confirm("Arquivar este playbook? Ele para de rodar imediatamente.")) return;
@@ -255,6 +276,16 @@ export default function PlaybookEditorPage() {
           <Play className="w-3.5 h-3.5" />
           Testar
         </button>
+        {pb.status === "published" && (
+          <button
+            onClick={publishMarketplace}
+            className="h-7 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 text-[#404452] hover:bg-slate-100 transition-colors"
+            title="Publicar no marketplace público"
+          >
+            <Store className="w-3.5 h-3.5" />
+            Marketplace
+          </button>
+        )}
         <button
           onClick={archive}
           className="h-7 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 text-[#404452] hover:bg-slate-100 transition-colors"

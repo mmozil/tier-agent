@@ -18,6 +18,8 @@ import PlaybooksPage from "./pages/admin/PlaybooksPage";
 import PlaybookEditorPage from "./pages/admin/PlaybookEditorPage";
 import PlaybookExecutionsPage from "./pages/admin/PlaybookExecutionsPage";
 import MetricasPage from "./pages/admin/MetricasPage";
+import AgentSkillsPage from "./pages/admin/AgentSkillsPage";
+import MarketplacePage from "./pages/admin/MarketplacePage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
@@ -46,6 +48,8 @@ export default function App() {
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="params" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
         <Route path="metricas" element={<MetricasPage />} />
+        <Route path="agentes/:id/skills" element={<AgentSkillsPage />} />
+        <Route path="marketplace" element={<MarketplacePage />} />
         <Route path="cobranca" element={<CobrancaPage />} />
         <Route path="equipe" element={<Placeholder title="Equipe" desc="Convidar membros pro tenant (em breve)." />} />
         <Route path="playbooks" element={<PlaybooksPage />} />

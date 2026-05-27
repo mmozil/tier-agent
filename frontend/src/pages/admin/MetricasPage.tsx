@@ -61,6 +61,15 @@ interface TopConv {
   msg_count: number;
 }
 
+interface AbRow {
+  playbook_id: number;
+  node_id: string;
+  variant: string;
+  runs: number;
+  avg_latency_ms: number;
+  total_cost_cents: number;
+}
+
 const PERIODS = [
   { value: 7, label: "7 dias" },
   { value: 30, label: "30 dias" },
@@ -74,23 +83,26 @@ export default function MetricasPage() {
   const [byAgent, setByAgent] = useState<ByAgent[]>([]);
   const [byModel, setByModel] = useState<ByModel[]>([]);
   const [topConv, setTopConv] = useState<TopConv[]>([]);
+  const [abRows, setAbRows] = useState<AbRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function load() {
     setLoading(true);
     try {
-      const [ov, dy, ag, md, tc] = await Promise.all([
+      const [ov, dy, ag, md, tc, ab] = await Promise.all([
         api.get<Overview>(`/metrics/overview`, { params: { days } }),
         api.get<DailyPoint[]>(`/metrics/daily`, { params: { days } }),
         api.get<ByAgent[]>(`/metrics/by-agent`, { params: { days } }),
         api.get<ByModel[]>(`/metrics/by-model`, { params: { days } }),
         api.get<TopConv[]>(`/metrics/top-conversations`, { params: { days, limit: 10 } }),
+        api.get<AbRow[]>(`/metrics/ab-tests`, { params: { days } }),
       ]);
       setOverview(ov.data);
       setDaily(dy.data);
       setByAgent(ag.data);
       setByModel(md.data);
       setTopConv(tc.data);
+      setAbRows(ab.data);
     } catch (e) {
       console.error(e);
       toast.error("Falha ao carregar métricas");
@@ -265,6 +277,30 @@ export default function MetricasPage() {
           </div>
 
           {/* Top conversas */}
+          {abRows.length > 0 && (
+            <div className="mb-6">
+              <Card title="A/B testing — performance por variant" icon={Sparkles}>
+                <Table
+                  cols={["Playbook · Node", "Variant", "Runs", "Latência avg", "Custo"]}
+                  rows={abRows.map((a) => [
+                    <span key="pl" className="font-mono text-[11px] text-[#697386]">
+                      #{a.playbook_id} · {a.node_id.slice(0, 12)}
+                    </span>,
+                    <span key="v" className="font-mono text-[11px] font-semibold text-[#003083]">
+                      {a.variant}
+                    </span>,
+                    a.runs.toLocaleString("pt-BR"),
+                    `${Math.round(a.avg_latency_ms)}ms`,
+                    <span key="c" className="font-medium text-[#1a2c44]">
+                      R$ {(a.total_cost_cents / 100).toFixed(2)}
+                    </span>,
+                  ])}
+                  emptyMsg="Sem variants disparados"
+                />
+              </Card>
+            </div>
+          )}
+
           <Card title={`Top ${topConv.length} conversas mais caras`} icon={TrendingUp}>
             <Table
               cols={["Conversa", "Contato", "Msgs", "Custo"]}
