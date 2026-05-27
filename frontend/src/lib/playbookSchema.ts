@@ -47,7 +47,8 @@ export type PlaybookNodeKind =
   | "set_var"
   | "call_api"
   | "tier_pay"
-  | "handoff_human";
+  | "handoff_human"
+  | "mcp_tool_call";
 
 export interface NodeKindMeta {
   kind: PlaybookNodeKind;
@@ -230,6 +231,22 @@ export const NODE_CATALOG: NodeKindMeta[] = [
       descricao: "Pedido {{vars.pedido_id|default:'?'}}",
       metodo: "pix",
       save_as: "payment_link",
+    },
+  },
+  {
+    kind: "mcp_tool_call",
+    label: "MCP Tool",
+    description: "Chama tool de qualquer MCP server externo (Notion, Slack, GitHub, 10k+).",
+    icon: Sparkles,
+    category: "integration",
+    color: "#10b981",
+    available: true,
+    defaultData: {
+      server_url: "https://mcp.exemplo.com/messages",
+      tool_name: "search",
+      arguments: { query: "{{message.text}}" },
+      auth_header: "",
+      save_as: "mcp_result",
     },
   },
   {

@@ -180,5 +180,14 @@ async def delete_knowledge(
         except Exception as e:
             logger.warning("remove skill falhou: %s", e)
 
+    tenant_id_inv = agent.tenant_id if agent else None
+    agent_id_inv = agent.id if agent else None
     await db.delete(k)
     await db.commit()
+    if tenant_id_inv:
+        try:
+            from services import llm_cache
+
+            await llm_cache.invalidate(tenant_id_inv, agent_id_inv)
+        except Exception:
+            pass

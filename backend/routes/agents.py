@@ -108,6 +108,7 @@ async def update_agent(
     if not agent or agent.tenant_id != tenant_id:
         raise HTTPException(404, "Agente não encontrado")
     data = payload.model_dump(exclude_unset=True)
+    persona_or_prompt_changed = any(k in data for k in ("persona", "system_prompt"))
     if "nome" in data and data["nome"] is not None:
         nome = data["nome"].strip()
         if not nome:
@@ -118,6 +119,13 @@ async def update_agent(
             setattr(agent, k, data[k])
     await db.commit()
     await db.refresh(agent)
+    if persona_or_prompt_changed:
+        try:
+            from services import llm_cache
+
+            await llm_cache.invalidate(agent.tenant_id, agent.id)
+        except Exception:
+            pass
     return agent
 
 

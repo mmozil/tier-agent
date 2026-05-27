@@ -464,6 +464,47 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
         </>
       );
 
+    case "mcp_tool_call":
+      return (
+        <>
+          <FieldGroup label="Server URL" hint="Endpoint MCP (ex: https://mcp.notion.com/messages)">
+            <TextInput
+              value={(local.server_url as string) || ""}
+              onChange={(v) => set("server_url", v)}
+              placeholder="https://mcp.exemplo.com/messages"
+              mono
+            />
+          </FieldGroup>
+          <FieldGroup label="Tool name" hint="Nome da tool a chamar (ex: search, create_page)">
+            <TextInput
+              value={(local.tool_name as string) || ""}
+              onChange={(v) => set("tool_name", v)}
+              placeholder="search"
+              mono
+            />
+          </FieldGroup>
+          <FieldGroup label="Arguments (JSON)" hint="Args da tool. Valores suportam {{vars}}">
+            <JsonInput value={local.arguments} onChange={(v) => set("arguments", v)} />
+          </FieldGroup>
+          <FieldGroup label="Authorization header (opcional)" hint='Ex: "Bearer xxx" ou "Token abc"'>
+            <TextInput
+              value={(local.auth_header as string) || ""}
+              onChange={(v) => set("auth_header", v)}
+              placeholder="Bearer ..."
+              mono
+            />
+          </FieldGroup>
+          <FieldGroup label="Salvar resultado em">
+            <TextInput
+              value={(local.save_as as string) || ""}
+              onChange={(v) => set("save_as", v)}
+              placeholder="mcp_result"
+              mono
+            />
+          </FieldGroup>
+        </>
+      );
+
     case "handoff_human":
       return (
         <>

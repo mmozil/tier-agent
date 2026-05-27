@@ -209,6 +209,7 @@ async def handle_inbound_message(
             session_id=f"conv-{conv.id}",
             system_override=agent.persona or agent.system_prompt,
             attachments=attachments or [],
+            agent_id=agent.id,
         )
     except Exception as e:
         logger.exception("Hermes falhou tenant=%s agent=%s", agent.tenant_id, agent.id)

@@ -50,6 +50,8 @@ async def send_message(
     session_id: str | None = None,
     system_override: str | None = None,
     attachments: list | None = None,
+    agent_id: int | None = None,
+    use_cache: bool = True,
 ) -> HermesReply:
     """Envia mensagem pro container Hermes do tenant via REST OpenAI-compatible.
 
@@ -63,6 +65,31 @@ async def send_message(
             f"Container do tenant {tenant_id} não está rodando "
             f"(status={record.status if record else 'none'})"
         )
+
+    # LLM cache lookup (exact-match) — pula se há attachments ou cache desabilitado
+    has_attachments = bool(attachments)
+    if use_cache and not has_attachments:
+        from services import llm_cache
+
+        cached = await llm_cache.get(
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            system_prompt=system_override,
+            user_content=user_content,
+        )
+        if cached:
+            logger.info(
+                "hermes_proxy: cache HIT tenant=%s agent=%s tokens_saved=%d",
+                tenant_id, agent_id, (cached.tokens_in + cached.tokens_out),
+            )
+            return HermesReply(
+                text=cached.text,
+                tokens_in=0,  # zero pra não duplicar custo no log
+                tokens_out=0,
+                latency_ms=1,  # ~instantâneo
+                model_used=cached.model,
+                raw_response={"_cache_hit": True, "cached_at": cached.cached_at},
+            )
 
     api_key = await _get_api_key(tenant_id)
     url = f"http://{record.host}:{record.port}/v1/chat/completions"
@@ -128,6 +155,21 @@ async def send_message(
         from services import pii_redactor
 
         text = pii_redactor.restore(text, pii_mapping)
+
+    # Salva no cache (só se cache habilitado, sem attachments, e resposta não-vazia)
+    if use_cache and not has_attachments and text:
+        from services import llm_cache
+
+        await llm_cache.put(
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            system_prompt=system_override,
+            user_content=user_content,
+            reply_text=text,
+            tokens_in=usage.get("prompt_tokens", 0),
+            tokens_out=usage.get("completion_tokens", 0),
+            model=data.get("model"),
+        )
 
     return HermesReply(
         text=text,
