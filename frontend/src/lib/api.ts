@@ -11,10 +11,15 @@ export const api = axios.create({
   withCredentials: true,
 });
 
+// Só redireciona pra /login em rotas PROTEGIDAS. Páginas públicas
+// (Landing /, /login, /signup) montam o AuthProvider e disparam /auth/me,
+// que retorna 401 quando deslogado — isso NÃO pode quicar a landing.
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err.response?.status === 401 && !window.location.pathname.startsWith("/login")) {
+    const path = window.location.pathname;
+    const isProtected = path.startsWith("/admin") || path.startsWith("/dashboard");
+    if (err.response?.status === 401 && isProtected) {
       window.location.href = "/login";
     }
     return Promise.reject(err);
