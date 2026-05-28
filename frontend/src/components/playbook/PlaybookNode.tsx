@@ -26,58 +26,86 @@ export default function PlaybookNode(props: NodeProps) {
   const isTrigger = meta.isTrigger;
   const data = (props.data as Record<string, unknown>) || {};
   const selected = props.selected;
+  const status = (data.status as string) || ""; // triggered | completed | running | error
+  const done = status === "completed" || status === "triggered";
+
+  // Borda/sombra Attio: hairline padrão · azul acento selecionado · verde no caminho ativo
+  const ring = selected
+    ? `0 0 0 2px ${meta.color}, 0 8px 24px -6px rgba(13,15,17,.14)`
+    : done
+      ? `0 0 0 1.5px #00D17E, 0 0 0 4px rgba(0,209,126,.14), 0 4px 12px -4px rgba(13,15,17,.08)`
+      : status === "error"
+        ? `0 0 0 1.5px #E5484D, 0 4px 12px -4px rgba(13,15,17,.08)`
+        : `0 1px 2px rgba(13,15,17,.06), 0 0 0 1px #E4E7EC`;
 
   return (
     <div
-      className="bg-white rounded-xl transition-all duration-150 relative"
-      style={{
-        width: 240,
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
-        boxShadow: selected
-          ? `0 0 0 2px ${meta.color}, 0 8px 24px -4px rgba(15,23,42,0.12), 0 4px 8px -2px rgba(15,23,42,0.08)`
-          : `0 0 0 1px rgb(226,232,240), 0 4px 12px -4px rgba(15,23,42,0.08), 0 2px 4px -2px rgba(15,23,42,0.04)`,
-      }}
+      className="bg-white rounded-lg transition-all duration-150 relative hover:shadow-md"
+      style={{ width: 240, boxShadow: ring }}
     >
+      {/* Tab de trigger acima do nó */}
+      {isTrigger && (
+        <div className="absolute -top-[18px] left-0 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-node-trigger">
+          <span className="w-1.5 h-1.5 rounded-full bg-node-trigger" />
+          Trigger
+        </div>
+      )}
+
+      {/* Pill de status (canto sup-dir) */}
+      {status && (
+        <div
+          className={`absolute -top-2.5 right-2 inline-flex items-center gap-1 h-[18px] px-1.5 rounded-full text-[10px] font-semibold ${
+            status === "error"
+              ? "bg-flow-errbg text-flow-errfg"
+              : status === "running"
+                ? "bg-flow-runbg text-flow-runfg"
+                : "bg-flow-okbg text-flow-okfg"
+          }`}
+        >
+          {status === "running" ? (
+            <span className="w-1.5 h-1.5 rounded-full bg-flow-runfg animate-pulsedot" />
+          ) : status === "error" ? (
+            "✕"
+          ) : (
+            "✓"
+          )}
+          <span className="capitalize">{status === "triggered" ? "Triggered" : status === "completed" ? "Completed" : status === "running" ? "Running" : "Error"}</span>
+        </div>
+      )}
+
       {/* Input handle (esquerda) — só pra não-triggers */}
       {!isTrigger && (
         <Handle
           type="target"
           position={Position.Left}
-          style={{
-            background: "#fff",
-            border: `2px solid ${meta.color}`,
-            width: 12,
-            height: 12,
-            left: -6,
-          }}
+          style={{ background: "#fff", border: `2px solid ${meta.color}`, width: 11, height: 11, left: -6 }}
         />
       )}
 
-      {/* Top accent bar — colorida por categoria */}
-      <div
-        className="h-1 rounded-t-xl"
-        style={{ backgroundColor: meta.color }}
-      />
+      {/* Faixa de categoria lateral (esquerda) */}
+      <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg" style={{ backgroundColor: meta.color }} />
 
       {/* Header */}
-      <div className="px-3 pt-2.5 pb-2 flex items-center gap-2">
+      <div className="px-3 pt-3 pb-2 flex items-center gap-2.5">
         <div
-          className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-          style={{
-            backgroundColor: `${meta.color}14`,
-            boxShadow: `0 0 0 1px ${meta.color}26`,
-          }}
+          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+          style={{ backgroundColor: `${meta.color}12`, boxShadow: `0 0 0 1px ${meta.color}22` }}
         >
           <Icon className="w-3.5 h-3.5" style={{ color: meta.color }} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[12px] font-semibold text-[#1a2c44] truncate leading-tight">
+          <div className="text-[13px] font-semibold text-ink truncate leading-tight tracking-snug">
             {meta.label}
           </div>
-          <div className="text-[10px] text-[#697386] truncate leading-tight font-mono mt-0.5">
-            {(props.id as string).slice(0, 14)}
+          <div className="text-[11px] text-[#6A7385] truncate leading-tight mt-0.5">
+            {(data.subtitle as string) || meta.category}
           </div>
         </div>
+        {(data.objectTag as string) && (
+          <span className="shrink-0 h-[18px] px-1.5 inline-flex items-center rounded-full bg-surface-sunken text-[10px] font-medium text-[#6A7385]">
+            {data.objectTag as string}
+          </span>
+        )}
       </div>
 
       {/* Body — preview da config */}

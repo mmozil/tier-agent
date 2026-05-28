@@ -39,7 +39,7 @@ const NODE_TYPES = Object.fromEntries(NODE_CATALOG.map((m) => [m.kind, PlaybookN
 
 const DEFAULT_EDGE_OPTS = {
   type: "smoothstep" as const,
-  style: { stroke: "#94a3b8", strokeWidth: 2 },
+  style: { stroke: "#C0C6CF", strokeWidth: 1.5 },
 };
 
 export default function PlaybookCanvasWrapper(props: Props) {
@@ -87,13 +87,20 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
       })),
     );
     setEdges(
-      canvas.edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        sourceHandle: e.sourceHandle || undefined,
-        ...DEFAULT_EDGE_OPTS,
-      })),
+      canvas.edges.map((e) => {
+        const src = canvas.nodes.find((n) => n.id === e.source);
+        const st = (src?.data as Record<string, unknown> | undefined)?.status;
+        const active = st === "completed" || st === "triggered";
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          sourceHandle: e.sourceHandle || undefined,
+          type: "smoothstep" as const,
+          animated: active,
+          style: { stroke: active ? "#00D17E" : "#C0C6CF", strokeWidth: active ? 2 : 1.5 },
+        };
+      }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas]);
@@ -243,7 +250,7 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
         multiSelectionKeyCode={["Meta", "Control"]}
         selectionKeyCode={["Shift"]}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#cbd5e1" />
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D1D3D6" />
         <Controls
           position="bottom-right"
           showInteractive={false}
