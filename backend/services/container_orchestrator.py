@@ -20,6 +20,7 @@ from datetime import datetime
 
 import paramiko
 import redis.asyncio as redis_async
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import get_settings
@@ -28,6 +29,19 @@ from models import TaContainer, TaFeatureFlag, TaLlmProvider
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+async def get_container_by_tenant(db: AsyncSession, tenant_id: int) -> TaContainer | None:
+    """Busca o TaContainer pelo `tenant_id`.
+
+    ATENÇÃO: a primary key de TaContainer é `id` (serial), NÃO `tenant_id`.
+    `db.get(TaContainer, tenant_id)` faz lookup pela PK `id` — só funcionava
+    por coincidência quando id == tenant_id (ex: tenant 1 = id 1). Pro tenant 3
+    (id 2) retornava None → "container não está rodando (status=none)".
+    """
+    return (
+        await db.execute(select(TaContainer).where(TaContainer.tenant_id == tenant_id))
+    ).scalar_one_or_none()
 
 
 @dataclass
@@ -178,7 +192,7 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
     )
 
     # Upsert TaContainer
-    existing = await db.get(TaContainer, spec.tenant_id)
+    existing = await get_container_by_tenant(db, spec.tenant_id)
     if existing:
         existing.docker_container_id = container_id
         existing.status = "starting"
@@ -209,7 +223,7 @@ async def stop_container(tenant_id: int, db: AsyncSession) -> None:
     name = container_name(tenant_id)
     _ssh_run(f"docker stop {shlex.quote(name)} >/dev/null 2>&1 || true", timeout=30)
 
-    record = await db.get(TaContainer, tenant_id)
+    record = await get_container_by_tenant(db, tenant_id)
     if record:
         record.status = "stopped"
         if record.port:
@@ -227,7 +241,7 @@ async def remove_container(
     if drop_volume:
         _ssh_run(f"docker volume rm {shlex.quote(volume_name(tenant_id))} >/dev/null 2>&1 || true")
 
-    record = await db.get(TaContainer, tenant_id)
+    record = await get_container_by_tenant(db, tenant_id)
     if record:
         if record.port:
             await release_port(record.port)
@@ -240,7 +254,7 @@ async def restart_container(tenant_id: int, db: AsyncSession) -> None:
     rc, _, err = _ssh_run(f"docker restart {shlex.quote(name)}", timeout=30)
     if rc != 0:
         raise RuntimeError(f"restart falhou: {err[:200]}")
-    record = await db.get(TaContainer, tenant_id)
+    record = await get_container_by_tenant(db, tenant_id)
     if record:
         record.restart_count += 1
         record.status = "starting"
@@ -251,7 +265,7 @@ async def health_check(tenant_id: int, db: AsyncSession) -> bool:
     """Health via REST do container Hermes."""
     import httpx
 
-    record = await db.get(TaContainer, tenant_id)
+    record = await get_container_by_tenant(db, tenant_id)
     if not record or not record.port:
         return False
 

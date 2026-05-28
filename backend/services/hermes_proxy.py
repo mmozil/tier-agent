@@ -59,7 +59,9 @@ async def send_message(
     multimodal OpenAI Vision: content vira lista com {type:text} + {type:image_url}.
     Modelo subjacente precisa suportar vision (Gemini 2.5/GPT-4o/Claude Sonnet 4).
     """
-    record = await db.get(TaContainer, tenant_id)
+    from services.container_orchestrator import get_container_by_tenant
+
+    record = await get_container_by_tenant(db, tenant_id)
     if not record or not record.port or record.status not in {"running", "starting"}:
         raise RuntimeError(
             f"Container do tenant {tenant_id} não está rodando "

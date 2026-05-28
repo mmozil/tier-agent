@@ -90,7 +90,9 @@ async def get_container(
 ):
     if not user.is_admin and user.tenant_id != tenant_id:
         raise HTTPException(403, "Sem permissão")
-    record = await db.get(TaContainer, tenant_id)
+    from services.container_orchestrator import get_container_by_tenant
+
+    record = await get_container_by_tenant(db, tenant_id)
     if not record:
         raise HTTPException(404, "Container não provisionado")
     return record
