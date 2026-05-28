@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, QrCode, Trash2, X, Unplug } from "lucide-react";
+import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone } from "lucide-react";
 
 import { api } from "@/lib/api";
 
@@ -152,11 +152,16 @@ export default function CanaisPage() {
     try {
       const { data } = await api.get(`/connectors/${connId}/status`);
       if (qrModal?.connId === connId) {
-        setQrModal({ ...qrModal, qr: data.qr_code || qrModal.qr, status: data.status });
-        if (data.status === "connected") {
+        if (data.status === "connected" && qrModal.status !== "connected") {
+          // Mostra o estado de sucesso por ~1.4s antes de fechar (feedback claro)
+          setQrModal({ ...qrModal, status: "connected" });
           toast.success("WhatsApp conectado!");
-          setQrModal(null);
-          load();
+          setTimeout(() => {
+            setQrModal(null);
+            load();
+          }, 1400);
+        } else if (data.status !== "connected") {
+          setQrModal({ ...qrModal, qr: data.qr_code || qrModal.qr, status: data.status });
         }
       }
     } catch {
@@ -339,46 +344,140 @@ export default function CanaisPage() {
       </div>
 
       {/* QR Modal */}
-      {qrModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-md w-full p-8">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="text-[18px] font-medium text-slate-900">Escaneie o QR</h2>
-                <p className="text-[13px] text-slate-500 mt-1">
-                  WhatsApp → Configurações → Aparelhos conectados → Conectar um aparelho
-                </p>
+      {qrModal &&
+        (() => {
+          const isConnected = qrModal.status === "connected";
+          const isConnecting = qrModal.status === "connecting";
+          const qrSrc = qrModal.qr
+            ? qrModal.qr.startsWith("data:")
+              ? qrModal.qr
+              : `data:image/png;base64,${qrModal.qr}`
+            : "";
+          const steps = [
+            "Abra o WhatsApp no seu celular",
+            "Toque em Configurações → Aparelhos conectados",
+            "Toque em Conectar um aparelho",
+            "Aponte a câmera para o código ao lado",
+          ];
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+              <div className="w-full max-w-[760px] overflow-hidden rounded-2xl bg-white shadow-[0_24px_60px_-12px_rgba(15,23,42,0.28)] ring-1 ring-slate-900/[0.06]">
+                {/* Header */}
+                <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#25D366]/10">
+                    <WhatsAppIcon className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-[15px] font-semibold leading-tight text-slate-900">
+                      Conectar WhatsApp
+                    </h2>
+                    <p className="text-[12px] text-slate-500">Pareie escaneando o código — leva segundos</p>
+                  </div>
+                  <button
+                    onClick={() => setQrModal(null)}
+                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_280px]">
+                  {/* Passos */}
+                  <div className="order-2 px-6 py-6 sm:order-1">
+                    <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                      <Smartphone className="h-3 w-3" /> No seu celular
+                    </div>
+                    <ol className="space-y-3">
+                      {steps.map((s, i) => (
+                        <li key={i} className="flex items-start gap-3">
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-tier/10 text-[11px] font-semibold text-tier">
+                            {i + 1}
+                          </span>
+                          <span className="text-[13px] leading-snug text-slate-700">{s}</span>
+                        </li>
+                      ))}
+                    </ol>
+
+                    {/* Status pill */}
+                    <div className="mt-6 flex items-center gap-2 border-t border-slate-100 pt-4">
+                      {isConnected ? (
+                        <>
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
+                            <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                          </span>
+                          <span className="text-[13px] font-medium text-emerald-600">Conectado com sucesso!</span>
+                        </>
+                      ) : isConnecting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-tier" />
+                          <span className="text-[13px] font-medium text-slate-700">Conectando…</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="relative flex h-2.5 w-2.5">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
+                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                          </span>
+                          <span className="text-[13px] font-medium text-slate-700">Aguardando leitura</span>
+                          <span className="ml-auto text-[11px] text-slate-400">atualiza sozinho</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* QR */}
+                  <div className="order-1 flex items-center justify-center border-b border-slate-100 bg-slate-50/70 p-6 sm:order-2 sm:border-b-0 sm:border-l">
+                    <div className="relative">
+                      {/* moldura tipo scanner */}
+                      <div className="relative rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                        {/* cantos */}
+                        <span className="pointer-events-none absolute left-1 top-1 h-4 w-4 rounded-tl-lg border-l-2 border-t-2 border-tier/40" />
+                        <span className="pointer-events-none absolute right-1 top-1 h-4 w-4 rounded-tr-lg border-r-2 border-t-2 border-tier/40" />
+                        <span className="pointer-events-none absolute bottom-1 left-1 h-4 w-4 rounded-bl-lg border-b-2 border-l-2 border-tier/40" />
+                        <span className="pointer-events-none absolute bottom-1 right-1 h-4 w-4 rounded-br-lg border-b-2 border-r-2 border-tier/40" />
+
+                        <div className="relative h-[208px] w-[208px] overflow-hidden rounded-lg">
+                          {qrSrc ? (
+                            <img
+                              src={qrSrc}
+                              alt="QR Code WhatsApp"
+                              className={`h-[208px] w-[208px] transition-all duration-300 ${
+                                isConnected || isConnecting ? "scale-95 opacity-20 blur-sm" : ""
+                              }`}
+                            />
+                          ) : (
+                            <div className="flex h-[208px] w-[208px] flex-col items-center justify-center gap-2 text-slate-400">
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                              <span className="text-[12px]">Gerando código…</span>
+                            </div>
+                          )}
+
+                          {/* overlay sucesso */}
+                          {isConnected && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 shadow-lg">
+                                <Check className="h-7 w-7 text-white" strokeWidth={3} />
+                              </span>
+                            </div>
+                          )}
+                          {/* overlay conectando */}
+                          {isConnecting && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <Loader2 className="h-8 w-8 animate-spin text-tier" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <p className="mt-3 text-center text-[11px] text-slate-400">
+                        O código se renova automaticamente
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <button
-                onClick={() => setQrModal(null)}
-                className="p-1.5 hover:bg-slate-100 rounded text-slate-400"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
-
-            <div className="bg-slate-50 rounded-lg p-6 flex items-center justify-center min-h-[280px]">
-              {qrModal.qr ? (
-                <img
-                  src={
-                    qrModal.qr.startsWith("data:")
-                      ? qrModal.qr
-                      : `data:image/png;base64,${qrModal.qr}`
-                  }
-                  alt="QR Code"
-                  className="w-64 h-64"
-                />
-              ) : (
-                <div className="text-[13px] text-slate-400">Gerando QR...</div>
-              )}
-            </div>
-
-            <div className="mt-4 text-center text-[12px] text-slate-500">
-              Status: <span className="font-medium">{qrModal.status}</span> · auto-refresh a cada 4s
-            </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
     </div>
   );
 }
