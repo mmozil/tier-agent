@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import {
   Zap,
@@ -9,6 +10,9 @@ import {
   ArrowRight,
   Check,
 } from "lucide-react";
+
+// Globo WebGL (three.js) — lazy p/ não pesar o bundle inicial
+const ScaleGlobe = lazy(() => import("../../components/landing/ScaleGlobe"));
 
 /* ─────────────────────────────────────────────────────────────
    Tier Agent — Landing "Attio-grade"
@@ -267,6 +271,64 @@ export default function Landing() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Escala multicanal (globo WebGL) ─────────────── */}
+      <section className="relative border-b border-hairline overflow-hidden">
+        <div className="absolute inset-0 bg-dots opacity-40" />
+        <div className="absolute inset-y-0 left-0 w-8 hatch hidden lg:block" />
+        <div className="absolute inset-y-0 right-0 w-8 hatch hidden lg:block" />
+        <div className="relative max-w-[1180px] mx-auto px-6 pt-16 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <h2 className="font-display text-[clamp(30px,4.4vw,52px)] font-semibold tracking-display text-ink leading-[1.04] max-w-[680px]">
+              Escale rápido —<br className="hidden sm:block" /> em qualquer canal.
+            </h2>
+            <Link
+              to="/signup"
+              className="group shrink-0 h-9 px-3.5 inline-flex items-center gap-1.5 rounded-md bg-cta hover:bg-cta-hover text-white text-[13px] font-medium uppercase tracking-wide transition-colors"
+            >
+              Conectar canais
+              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-[3px]" />
+            </Link>
+          </div>
+          <p className="mt-4 text-[16px] leading-relaxed text-[#4a5159] max-w-[560px]">
+            WhatsApp, Instagram, Telegram e e-mail convergem num único agente. Ele atende
+            milhares de conversas ao mesmo tempo e roteia pra um humano só quando precisa.
+          </p>
+        </div>
+
+        {/* globo */}
+        <div className="relative h-[440px] sm:h-[500px]">
+          <Suspense
+            fallback={<div className="absolute inset-0 flex items-center justify-center text-[13px] text-[#9AA4B2]">Carregando visualização…</div>}
+          >
+            <ScaleGlobe />
+          </Suspense>
+        </div>
+
+        {/* duas colunas (Tier Cloud / multicanal) */}
+        <div className="relative max-w-[1180px] mx-auto grid grid-cols-1 md:grid-cols-2 border-t border-hairline">
+          <div className="p-8 lg:p-10 md:border-r border-hairline">
+            <h3 className="text-[17px] font-semibold text-ink">Um número, todos os canais</h3>
+            <p className="mt-2 text-[14px] text-[#4a5159] leading-relaxed">
+              Conecte cada canal uma vez. A persona, a memória e os playbooks são os mesmos —
+              o cliente fala onde quiser e o agente nunca perde o contexto.
+            </p>
+            <Link to="/signup" className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent hover:text-accent-hover">
+              Ver canais <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+          <div className="p-8 lg:p-10 border-t md:border-t-0 border-hairline">
+            <h3 className="text-[17px] font-semibold text-ink">Escala sem fila</h3>
+            <p className="mt-2 text-[14px] text-[#4a5159] leading-relaxed">
+              Picos de demanda não derrubam o atendimento. O agente responde em paralelo,
+              prioriza o que é urgente e escala pra equipe humana com todo o histórico.
+            </p>
+            <Link to="/signup" className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent hover:text-accent-hover">
+              Como funciona <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
         </div>
       </section>
