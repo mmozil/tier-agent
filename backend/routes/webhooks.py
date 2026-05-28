@@ -73,7 +73,16 @@ async def whatsapp_engine_webhook(
         raise HTTPException(401, "Assinatura inválida")
 
     data = await request.json()
-    event_id = data.get("id") or f"{data.get('instanceId')}-{data.get('ts')}-{data.get('event')}"
+    # event_id ÚNICO por mensagem. A Engine manda o payload com `instance_id`/
+    # `timestamp` (snake_case) + o evento Baileys em `data`. O código antigo lia
+    # `instanceId`/`ts` (que NÃO existem) → event_id virava "None-None-messages.upsert"
+    # constante → TODA mensagem após a 1ª era tratada como duplicata e ignorada.
+    # Agora usa o waMessageId real (key.id), com fallbacks robustos.
+    _inst = data.get("instance_id") or data.get("instanceId")
+    _ts = data.get("timestamp") or data.get("ts")
+    _inner = data.get("data") or data.get("payload") or {}
+    _msg_id = (_inner.get("key") or {}).get("id") if isinstance(_inner, dict) else None
+    event_id = data.get("id") or _msg_id or f"{_inst}-{_ts}-{data.get('event')}"
 
     if await _record_idempotent(db, "whatsapp-engine", event_id, data):
         return {"status": "duplicate", "skipped": True}
