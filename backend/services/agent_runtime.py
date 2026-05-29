@@ -40,6 +40,9 @@ async def resolve_connector_by_instance(
         # WhatsApp: match instance_id direto
         if kind == "whatsapp" and cfg.get("instance_id") == instance_id:
             return conn
+        # WhatsApp Cloud API (oficial): instance_id = phone_number_id
+        if kind == "whatsapp_cloud" and str(cfg.get("phone_number_id") or "") == instance_id:
+            return conn
         # Telegram: instance_id = bot_id (extraído do bot_token "1234567:ABCdef...")
         if kind == "telegram":
             token = cfg.get("bot_token") or ""

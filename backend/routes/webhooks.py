@@ -204,6 +204,124 @@ async def whatsapp_engine_webhook(
 
 
 # ============================================================
+# WhatsApp Cloud API (oficial Meta) webhook inbound
+# ============================================================
+@router.get("/whatsapp-cloud")
+async def whatsapp_cloud_verify(request: Request):
+    """Handshake de verificação do Meta (GET hub.mode=subscribe + verify_token + challenge)."""
+    import os as _os
+
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+    expected = _os.environ.get("WHATSAPP_CLOUD_VERIFY_TOKEN")
+    if mode == "subscribe" and expected and token == expected and challenge:
+        return int(challenge) if challenge.isdigit() else challenge
+    raise HTTPException(403, "Verify token mismatch")
+
+
+def _verify_meta_signature(body: bytes, signature: str | None) -> bool:
+    """Valida HMAC SHA-256 do body com o App Secret (header X-Hub-Signature-256).
+    Se WHATSAPP_CLOUD_APP_SECRET não estiver setado, não bloqueia (dev/setup)."""
+    import os as _os
+
+    secret = _os.environ.get("WHATSAPP_CLOUD_APP_SECRET")
+    if not secret:
+        return True  # sem secret configurado → não valida (permite setup inicial)
+    if not signature:
+        return False
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+@router.post("/whatsapp-cloud")
+async def whatsapp_cloud_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Recebe mensagens da WhatsApp Cloud API (Meta).
+
+    Payload Meta:
+    { object: "whatsapp_business_account",
+      entry: [{ changes: [{ value: {
+        metadata: { phone_number_id }, contacts: [{profile:{name}, wa_id}],
+        messages: [{ from, id, type, text:{body} | image/audio/document:{id,caption} }]
+      }}]}]}
+    """
+    body = await request.body()
+    sig = request.headers.get("X-Hub-Signature-256")
+    if not _verify_meta_signature(body, sig):
+        raise HTTPException(401, "Assinatura inválida")
+
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON inválido")
+
+    if data.get("object") != "whatsapp_business_account":
+        return {"status": "ignored", "reason": "not_waba_object"}
+
+    from services import agent_runtime
+    from services.connectors.base import ConnectorAttachment
+
+    results = []
+    for entry in data.get("entry") or []:
+        for change in entry.get("changes") or []:
+            value = change.get("value") or {}
+            metadata = value.get("metadata") or {}
+            phone_number_id = metadata.get("phone_number_id")
+            contacts = value.get("contacts") or []
+            sender_name = (
+                (contacts[0].get("profile") or {}).get("name") if contacts else None
+            )
+
+            for m in value.get("messages") or []:
+                from_id = m.get("from")
+                mid = m.get("id") or ""
+                if not from_id or not mid:
+                    continue
+                if await _record_idempotent(db, "whatsapp-cloud", mid, m):
+                    continue
+
+                mtype = m.get("type")
+                text_content = ""
+                attachments: list[ConnectorAttachment] = []
+
+                if mtype == "text":
+                    text_content = (m.get("text") or {}).get("body") or ""
+                elif mtype == "interactive":
+                    inter = m.get("interactive") or {}
+                    br = inter.get("button_reply") or inter.get("list_reply") or {}
+                    text_content = br.get("title") or br.get("id") or ""
+                elif mtype == "button":
+                    text_content = (m.get("button") or {}).get("text") or ""
+                elif mtype in ("image", "audio", "video", "document"):
+                    media = m.get(mtype) or {}
+                    text_content = media.get("caption") or ""
+                    # mídia recebida tem só `id` — baixar exige token; tratado como
+                    # follow-up (por ora placeholder pra não travar o fluxo de texto)
+                    if not text_content:
+                        text_content = f"[{mtype}]"
+
+                if not text_content:
+                    text_content = f"[{mtype or 'mensagem'}]"
+
+                result = await agent_runtime.handle_inbound_message(
+                    db,
+                    connector_kind="whatsapp_cloud",
+                    instance_id=phone_number_id,
+                    external_chat_id=from_id,
+                    sender_name=sender_name,
+                    text_content=text_content,
+                    attachments=attachments,
+                )
+                results.append({"from": from_id, "status": result.get("status")})
+
+    logger.info("webhook whatsapp-cloud processed events=%s", len(results))
+    return {"status": "ok", "processed": results}
+
+
+# ============================================================
 # Telegram Bot API webhook inbound
 # ============================================================
 @router.post("/telegram/{bot_id}")

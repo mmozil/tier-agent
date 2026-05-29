@@ -32,8 +32,10 @@ def _register_defaults() -> None:
     from services.connectors.adapters.instagram import InstagramConnector
     from services.connectors.adapters.telegram import TelegramConnector
     from services.connectors.adapters.whatsapp import WhatsAppConnector
+    from services.connectors.adapters.whatsapp_cloud import WhatsAppCloudConnector
 
     registry.register(WhatsAppConnector())
+    registry.register(WhatsAppCloudConnector())
     registry.register(TelegramConnector())
     registry.register(EmailConnector())
     registry.register(InstagramConnector())
