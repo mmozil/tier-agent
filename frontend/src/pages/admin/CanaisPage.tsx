@@ -199,11 +199,25 @@ export default function CanaisPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {selectedAgent && (
+          {selectedAgent ? (
             <ConnectWhatsAppCloud agentId={selectedAgent} onConnected={load} />
+          ) : (
+            <button
+              onClick={() => toast.error("Crie um agente primeiro para conectar um canal.")}
+              className="h-6 px-2 bg-[#1877F2]/40 text-white text-[12px] rounded-md inline-flex items-center gap-1 cursor-not-allowed whitespace-nowrap"
+              title="Crie um agente primeiro para conectar um canal"
+            >
+              Conectar WhatsApp Oficial
+            </button>
           )}
           <button
-            onClick={() => setShowProvision(true)}
+            onClick={() => {
+              if (!selectedAgent) {
+                toast.error("Crie um agente primeiro para conectar um canal.");
+                return;
+              }
+              setShowProvision(true);
+            }}
             className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1"
           >
             <Plus className="w-3 h-3" /> Conectar WhatsApp
@@ -272,7 +286,9 @@ export default function CanaisPage() {
             {!loading && conns.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-[13px] text-slate-400">
-                  Nenhum canal conectado. Clique em "Conectar WhatsApp".
+                  {agents.length === 0
+                    ? "Crie um agente primeiro (menu Agentes) para conectar um canal."
+                    : 'Nenhum canal conectado. Clique em "Conectar WhatsApp".'}
                 </td>
               </tr>
             )}
