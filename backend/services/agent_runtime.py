@@ -24,6 +24,29 @@ from services.connectors.base import ConnectorConfig, OutboundMessage
 
 logger = logging.getLogger(__name__)
 
+# Filtro de segurança: remove caracteres CJK (chinês/japonês/coreano) que o
+# MiniMax ocasionalmente vaza em respostas em português. 2ª camada sobre a regra
+# de idioma da persona — garante que o cliente nunca veja caractere oriental.
+import re as _re
+
+_CJK_RE = _re.compile(
+    r"[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿"
+    r"豈-﫿＀-￯가-힯]"
+)
+
+
+def _sanitize_reply(text: str | None) -> str:
+    """Remove caracteres CJK vazados e limpa espaços/pontuação resultantes."""
+    if not text:
+        return text or ""
+    if not _CJK_RE.search(text):
+        return text
+    cleaned = _CJK_RE.sub("", text)
+    cleaned = _re.sub(r"[ \t]{2,}", " ", cleaned)  # espaços duplos
+    cleaned = _re.sub(r"\s+([.,!?;:])", r"\1", cleaned)  # espaço antes de pontuação
+    logger.warning("resposta tinha CJK vazado — caracteres removidos antes do envio")
+    return cleaned.strip()
+
 
 async def resolve_connector_by_instance(
     db: AsyncSession, kind: str, instance_id: str
@@ -384,7 +407,7 @@ async def handle_inbound_message(
         cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
         await connector_impl.send(
             cfg,
-            OutboundMessage(external_chat_id=external_chat_id, content=reply.text),
+            OutboundMessage(external_chat_id=external_chat_id, content=_sanitize_reply(reply.text)),
         )
     except Exception as e:
         logger.exception("Falha enviando resposta agent=%s channel=%s", agent.id, connector_kind)
