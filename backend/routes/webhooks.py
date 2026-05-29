@@ -243,6 +243,73 @@ def _verify_meta_signature(body: bytes, signature: str | None) -> bool:
     return False
 
 
+# ── Timing humanizado (WhatsApp Cloud) ──────────────────────────────
+# Responder no mesmo instante (tique + "digitando…" imediatos) entrega que é
+# bot. Aqui damos um atraso de leitura curto antes de ler/digitar; o tempo de
+# geração do agente já funciona como "tempo de digitação". Faixa ajustável.
+_CLOUD_READ_DELAY_MIN = 2.0  # segundos
+_CLOUD_READ_DELAY_MAX = 3.2  # segundos
+_BG_TASKS: set = set()
+
+
+async def _process_cloud_message_humanized(
+    *,
+    phone_number_id: str | None,
+    mid: str,
+    from_id: str,
+    sender_name: str | None,
+    text_content: str,
+    attachments: list,
+) -> None:
+    """Processa 1 mensagem inbound do WhatsApp Cloud com timing humano.
+
+    Roda em background (asyncio.create_task) pra não segurar o 200 do webhook:
+    1. espera um intervalo curto (leitura) — não responde no mesmo instante
+    2. marca como lido + "digitando…"
+    3. o agente gera a resposta (a latência do LLM já é o tempo de digitação)
+    4. envia
+    """
+    import asyncio
+    import json as _json
+    import random
+
+    from core.db import db_context
+    from core.encryption import decrypt
+    from services import agent_runtime
+    from services.connectors.base import ConnectorConfig
+    from services.connectors.registry import registry as _reg
+
+    try:
+        # 1. atraso de leitura — não responder no mesmo instante
+        await asyncio.sleep(random.uniform(_CLOUD_READ_DELAY_MIN, _CLOUD_READ_DELAY_MAX))
+
+        async with db_context() as db:
+            # 2. marca lido + "digitando…"
+            try:
+                conn = await agent_runtime.resolve_connector_by_instance(
+                    db, "whatsapp_cloud", phone_number_id
+                )
+                if conn:
+                    cloud = _reg.get("whatsapp_cloud")
+                    cfg = ConnectorConfig(data=_json.loads(decrypt(conn.config_json_enc)))
+                    await cloud.mark_read_and_typing(cfg, mid)
+            except Exception:
+                logger.debug("typing indicator whatsapp-cloud falhou (ignorando)")
+
+            # 3+4. gera e envia (latência do LLM = tempo de digitação percebido)
+            await agent_runtime.handle_inbound_message(
+                db,
+                connector_kind="whatsapp_cloud",
+                instance_id=phone_number_id,
+                external_chat_id=from_id,
+                sender_name=sender_name,
+                text_content=text_content,
+                attachments=attachments,
+            )
+    except Exception:
+        logger.exception("processamento humanizado whatsapp-cloud falhou from=%s", from_id)
+
+
 @router.post("/whatsapp-cloud")
 async def whatsapp_cloud_webhook(
     request: Request,
@@ -315,34 +382,24 @@ async def whatsapp_cloud_webhook(
                 if not text_content:
                     text_content = f"[{mtype or 'mensagem'}]"
 
-                # Marca como lido (tique azul) + "digitando…" enquanto o agente pensa.
-                # Fire-and-forget — não bloqueia nem falha o fluxo se der erro.
-                try:
-                    import json as _json
+                # Processa em background com timing humanizado (atraso de leitura
+                # + digitar), pra não responder no mesmo instante. O webhook
+                # devolve 200 já; a idempotência acima evita reprocessar retries.
+                import asyncio as _asyncio
 
-                    from core.encryption import decrypt
-                    from services.connectors.registry import registry as _reg
-
-                    _conn = await agent_runtime.resolve_connector_by_instance(
-                        db, "whatsapp_cloud", phone_number_id
+                _task = _asyncio.create_task(
+                    _process_cloud_message_humanized(
+                        phone_number_id=phone_number_id,
+                        mid=mid,
+                        from_id=from_id,
+                        sender_name=sender_name,
+                        text_content=text_content,
+                        attachments=attachments,
                     )
-                    if _conn:
-                        _cloud = _reg.get("whatsapp_cloud")
-                        _cfg = ConnectorConfig(data=_json.loads(decrypt(_conn.config_json_enc)))
-                        await _cloud.mark_read_and_typing(_cfg, mid)
-                except Exception:
-                    logger.debug("typing indicator whatsapp-cloud falhou (ignorando)")
-
-                result = await agent_runtime.handle_inbound_message(
-                    db,
-                    connector_kind="whatsapp_cloud",
-                    instance_id=phone_number_id,
-                    external_chat_id=from_id,
-                    sender_name=sender_name,
-                    text_content=text_content,
-                    attachments=attachments,
                 )
-                results.append({"from": from_id, "status": result.get("status")})
+                _BG_TASKS.add(_task)
+                _task.add_done_callback(_BG_TASKS.discard)
+                results.append({"from": from_id, "status": "accepted"})
 
     logger.info("webhook whatsapp-cloud processed events=%s", len(results))
     return {"status": "ok", "processed": results}

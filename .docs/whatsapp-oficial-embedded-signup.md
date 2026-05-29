@@ -18,7 +18,7 @@ O Tier Agent atende clientes via **WhatsApp Cloud API oficial da Meta** (sem Bai
 | App | App ID | App Secret | Uso |
 |---|---|---|---|
 | **Tier Agent API Oficial** | `1644748586815003` | `7a4144ef8217be00eb1bea85ddeae313` | **Produção / Embedded Signup** (Tech Provider). Empresa: Out Group (verificada) |
-| APP-API-TIER (legado/teste) | `1042084538480511` | `c9c1c8315284bb73f836003d090c62ea` | Teste: número Tier 92336 (Sofia respondendo). Empresa: Out Group |
+| APP-API-TIER (legado/teste) | `1042084538480511` | `c9c1c8315284bb73f836003d090c62ea` | Teste: número Tier 92336 (Maria Luiza respondendo). Empresa: Out Group |
 
 - Ambos sob a empresa **Out Group** (`business_id=173693864655266`), que está **verificada** (verificação vale pra os dois apps).
 - O app de produção foi criado limpo (só caso de uso "Conectar-se com clientes pelo WhatsApp") e inscrito como **Provedor de Tecnologia (Tech Provider)** — pré-requisito do Embedded Signup.
@@ -76,7 +76,7 @@ VITE_FB_APP_ID=1644748586815003
 
 | Item | Status |
 |---|---|
-| Agente no WhatsApp oficial (Sofia respondendo) | ✅ |
+| Agente no WhatsApp oficial (Maria Luiza respondendo) | ✅ |
 | App produção + Tech Provider + Config ID | ✅ |
 | Domínios SDK + botão + backend + envs | ✅ |
 | Embedded Signup popup (abre, fluxo roda) | ✅ provado |

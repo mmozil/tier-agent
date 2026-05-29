@@ -63,7 +63,7 @@ perfil padrão para identificar quem autorizou a conexão.
 
 ## Roteiro do screencast (gravar 1 vídeo, ~2-3 min)
 
-Grava a tela mostrando o fluxo ponta a ponta. Pode usar o número de teste já conectado (Sofia) pra a parte de mensagens.
+Grava a tela mostrando o fluxo ponta a ponta. Pode usar o número de teste já conectado (Maria Luiza) pra a parte de mensagens.
 
 **Cena 1 — Onboarding (Embedded Signup)** → prova `business_management` + `public_profile`
 - Abre `agent.tier.finance/admin/canais`
@@ -73,7 +73,7 @@ Grava a tela mostrando o fluxo ponta a ponta. Pode usar o número de teste já c
 
 **Cena 2 — Atendimento (mensagens)** → prova `whatsapp_business_messaging`
 - De outro celular, envia uma mensagem ao número conectado (ex: "Oi, vocês estão abertos?")
-- Mostra a mensagem chegando + o agente (Sofia) **respondendo automaticamente**
+- Mostra a mensagem chegando + o agente (Maria Luiza) **respondendo automaticamente**
 - Mostra a resposta chegando no WhatsApp do cliente
 
 **Cena 3 — Gestão** → prova `whatsapp_business_management`
