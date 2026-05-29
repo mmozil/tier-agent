@@ -16,6 +16,7 @@ import {
   Bell,
   Settings,
   Store,
+  Inbox,
 } from "lucide-react";
 
 import UserMenu from "./UserMenu";
@@ -37,6 +38,7 @@ const SECTIONS: NavGroup[] = [
     items: [
       { to: "/admin/agentes", label: "Agentes", icon: Bot },
       { to: "/admin/conversas", label: "Conversas", icon: MessageSquare },
+      { to: "/admin/leads", label: "Leads", icon: Inbox },
       { to: "/admin/playbooks", label: "Playbooks", icon: Workflow },
       { to: "/admin/marketplace", label: "Marketplace", icon: Store },
       { to: "/admin/canais", label: "Canais", icon: Plug },

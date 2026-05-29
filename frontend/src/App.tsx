@@ -22,6 +22,7 @@ import PlaybookExecutionsPage from "./pages/admin/PlaybookExecutionsPage";
 import MetricasPage from "./pages/admin/MetricasPage";
 import AgentSkillsPage from "./pages/admin/AgentSkillsPage";
 import MarketplacePage from "./pages/admin/MarketplacePage";
+import LeadsPage from "./pages/admin/LeadsPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="features" element={<FeaturesPage />} />
         <Route path="conversas" element={<Placeholder title="Conversas" desc="Histórico de conversas por agente (em breve)." />} />
         <Route path="canais" element={<CanaisPage />} />
+        <Route path="leads" element={<LeadsPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="params" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
         <Route path="metricas" element={<MetricasPage />} />

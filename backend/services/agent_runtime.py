@@ -358,6 +358,23 @@ async def handle_inbound_message(
         logger.exception("Falha enviando resposta agent=%s channel=%s", agent.id, connector_kind)
         return {"status": "send_error", "agent_id": agent.id, "error": str(e)}
 
+    # Captura de lead — se o cliente demonstrou intenção de compra ou informou
+    # telefone, registra um lead pra equipe (não perder oportunidades). Não bloqueia.
+    try:
+        from services import lead_capture
+
+        await lead_capture.maybe_capture_lead(
+            db,
+            tenant_id=agent.tenant_id,
+            agent_id=agent.id,
+            conversation_id=conv.id,
+            external_chat_id=external_chat_id,
+            sender_name=sender_name,
+            user_text=text_content,
+        )
+    except Exception:
+        logger.exception("lead_capture falhou agent=%s — ignorando", agent.id)
+
     # Memory.add em background (sessão isolada — não bloqueia resposta)
     try:
         import asyncio
