@@ -231,6 +231,97 @@ async def disconnect(
     return {"status": "disconnected"}
 
 
+class WhatsAppCloudOnboardIn(BaseModel):
+    """Payload do Embedded Signup: o FB SDK devolve `code` + waba_id + phone_number_id."""
+
+    agent_id: int
+    code: str
+    waba_id: str
+    phone_number_id: str
+
+
+@router.post("/whatsapp-cloud/onboard")
+async def onboard_whatsapp_cloud(
+    payload: WhatsAppCloudOnboardIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Núcleo do Embedded Signup (API oficial Meta).
+
+    1. Troca o `code` do Facebook Login for Business por um **token permanente**
+       (Business Integration System User token) — não expira como o temporário.
+    2. Assina o app na WABA do cliente (webhook passa a chegar pro Tier).
+    3. Cria/atualiza o conector `whatsapp_cloud` ligado ao agente.
+
+    O cliente paga as próprias mensagens (WABA dele) → Tier sem responsabilidade
+    financeira. Requer App Review aprovado (Advanced Access) pra clientes reais.
+    """
+    import os
+
+    import httpx
+
+    agent = await _ensure_agent_owned(db, payload.agent_id, user)
+
+    app_id = os.environ.get("WHATSAPP_CLOUD_APP_ID")
+    app_secret = os.environ.get("WHATSAPP_CLOUD_APP_SECRET")
+    if not app_id or not app_secret:
+        raise HTTPException(500, "WHATSAPP_CLOUD_APP_ID/APP_SECRET não configurados")
+
+    graph = "https://graph.facebook.com/v21.0"
+
+    # 1. code -> token permanente (Business Integration System User token)
+    async with httpx.AsyncClient(timeout=30) as cli:
+        r = await cli.get(
+            f"{graph}/oauth/access_token",
+            params={"client_id": app_id, "client_secret": app_secret, "code": payload.code},
+        )
+    if r.status_code >= 400:
+        raise HTTPException(502, f"Falha trocando code por token: {r.text[:300]}")
+    token = r.json().get("access_token")
+    if not token:
+        raise HTTPException(502, f"Token não retornado: {r.text[:200]}")
+
+    # 2. assina o app na WABA do cliente (pra receber os webhooks de mensagem)
+    try:
+        async with httpx.AsyncClient(timeout=30) as cli:
+            await cli.post(
+                f"{graph}/{payload.waba_id}/subscribed_apps",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except Exception as e:
+        logger.warning("subscribe WABA falhou (segue): %s", e)
+
+    # 3. upsert conector whatsapp_cloud
+    cfg = {
+        "phone_number_id": payload.phone_number_id,
+        "token": token,
+        "waba_id": payload.waba_id,
+    }
+    existing = (
+        await db.execute(
+            select(TaConnector).where(
+                TaConnector.agent_id == agent.id, TaConnector.kind == "whatsapp_cloud"
+            )
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.config_json_enc = encrypt(json.dumps(cfg))
+        existing.enabled = True
+        conn = existing
+    else:
+        conn = TaConnector(
+            agent_id=agent.id,
+            kind="whatsapp_cloud",
+            config_json_enc=encrypt(json.dumps(cfg)),
+            enabled=True,
+        )
+        db.add(conn)
+    await db.commit()
+    await db.refresh(conn)
+    logger.info("whatsapp-cloud onboard ok agent=%s waba=%s", agent.id, payload.waba_id)
+    return _serialize(conn)
+
+
 class GenericSetupIn(BaseModel):
     agent_id: int
     kind: str  # 'telegram' | 'email' | 'instagram'
