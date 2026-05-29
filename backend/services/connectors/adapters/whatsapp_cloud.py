@@ -124,6 +124,32 @@ class WhatsAppCloudConnector:
             )
         return r.json()
 
+    async def mark_read_and_typing(self, config: ConnectorConfig, message_id: str) -> None:
+        """Marca a mensagem como lida (tique azul) + mostra 'digitando…' pro cliente.
+
+        O indicador some quando você responde OU após 25s (o que vier antes).
+        Best practice da Meta: só mostrar digitando se VAI responder. Fire-and-forget.
+        """
+        pnid = config.data.get("phone_number_id")
+        token = config.data.get("token")
+        if not pnid or not token or not message_id:
+            return
+        body = {
+            "messaging_product": "whatsapp",
+            "status": "read",
+            "message_id": message_id,
+            "typing_indicator": {"type": "text"},
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as cli:
+                await cli.post(
+                    f"{GRAPH_BASE}/{pnid}/messages",
+                    json=body,
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                )
+        except Exception as e:
+            logger.debug("mark_read_and_typing falhou (ignorando): %s", e)
+
     async def resolve_media_url(self, token: str, media_id: str) -> str | None:
         """Resolve a URL temporária de uma mídia recebida (precisa do token pra baixar)."""
         try:

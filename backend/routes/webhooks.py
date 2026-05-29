@@ -262,7 +262,7 @@ async def whatsapp_cloud_webhook(
         return {"status": "ignored", "reason": "not_waba_object"}
 
     from services import agent_runtime
-    from services.connectors.base import ConnectorAttachment
+    from services.connectors.base import ConnectorAttachment, ConnectorConfig
 
     results = []
     for entry in data.get("entry") or []:
@@ -305,6 +305,24 @@ async def whatsapp_cloud_webhook(
 
                 if not text_content:
                     text_content = f"[{mtype or 'mensagem'}]"
+
+                # Marca como lido (tique azul) + "digitando…" enquanto o agente pensa.
+                # Fire-and-forget — não bloqueia nem falha o fluxo se der erro.
+                try:
+                    import json as _json
+
+                    from core.encryption import decrypt
+                    from services.connectors.registry import registry as _reg
+
+                    _conn = await agent_runtime.resolve_connector_by_instance(
+                        db, "whatsapp_cloud", phone_number_id
+                    )
+                    if _conn:
+                        _cloud = _reg.get("whatsapp_cloud")
+                        _cfg = ConnectorConfig(data=_json.loads(decrypt(_conn.config_json_enc)))
+                        await _cloud.mark_read_and_typing(_cfg, mid)
+                except Exception:
+                    logger.debug("typing indicator whatsapp-cloud falhou (ignorando)")
 
                 result = await agent_runtime.handle_inbound_message(
                     db,
