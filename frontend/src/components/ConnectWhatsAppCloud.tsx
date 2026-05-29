@@ -92,28 +92,31 @@ export default function ConnectWhatsAppCloud({
       return;
     }
     setLoading(true);
+    // FB SDK NÃO aceita callback async — usamos função normal + IIFE async dentro.
     window.FB.login(
-      async (response: any) => {
-        try {
-          const code = response?.authResponse?.code;
-          const { waba_id, phone_number_id } = sessionInfo.current;
-          if (!code || !waba_id || !phone_number_id) {
-            toast.error("Conexão cancelada ou incompleta.");
-            return;
+      (response: any) => {
+        void (async () => {
+          try {
+            const code = response?.authResponse?.code;
+            const { waba_id, phone_number_id } = sessionInfo.current;
+            if (!code || !waba_id || !phone_number_id) {
+              toast.error("Conexão cancelada ou incompleta.");
+              return;
+            }
+            await api.post("/connectors/whatsapp-cloud/onboard", {
+              agent_id: agentId,
+              code,
+              waba_id,
+              phone_number_id,
+            });
+            toast.success("WhatsApp Oficial conectado!");
+            onConnected?.();
+          } catch (err: any) {
+            toast.error(err?.response?.data?.detail || "Falha ao conectar");
+          } finally {
+            setLoading(false);
           }
-          await api.post("/connectors/whatsapp-cloud/onboard", {
-            agent_id: agentId,
-            code,
-            waba_id,
-            phone_number_id,
-          });
-          toast.success("WhatsApp Oficial conectado!");
-          onConnected?.();
-        } catch (err: any) {
-          toast.error(err?.response?.data?.detail || "Falha ao conectar");
-        } finally {
-          setLoading(false);
-        }
+        })();
       },
       {
         config_id: CONFIG_ID,
