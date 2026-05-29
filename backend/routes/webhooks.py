@@ -225,13 +225,22 @@ def _verify_meta_signature(body: bytes, signature: str | None) -> bool:
     Se WHATSAPP_CLOUD_APP_SECRET não estiver setado, não bloqueia (dev/setup)."""
     import os as _os
 
-    secret = _os.environ.get("WHATSAPP_CLOUD_APP_SECRET")
-    if not secret:
+    # Aceita múltiplos app secrets: o app de produção (Embedded Signup) +
+    # o app legado (teste Tier 92336). Cada app assina com o secret dele.
+    secrets = [
+        _os.environ.get("WHATSAPP_CLOUD_APP_SECRET"),
+        _os.environ.get("WHATSAPP_CLOUD_APP_SECRET_LEGACY"),
+    ]
+    secrets = [s for s in secrets if s]
+    if not secrets:
         return True  # sem secret configurado → não valida (permite setup inicial)
     if not signature:
         return False
-    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, signature)
+    for secret in secrets:
+        expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        if hmac.compare_digest(expected, signature):
+            return True
+    return False
 
 
 @router.post("/whatsapp-cloud")
