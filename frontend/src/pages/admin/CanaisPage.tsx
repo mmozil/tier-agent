@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone } from "lucide-react";
 
 import { api } from "@/lib/api";
+import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
 
 function WhatsAppIcon({ className }: { className?: string }) {
   return (
@@ -197,12 +198,17 @@ export default function CanaisPage() {
             Conecte WhatsApp, Telegram, Email e outros canais aos seus agentes.
           </p>
         </div>
-        <button
-          onClick={() => setShowProvision(true)}
-          className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" /> Conectar WhatsApp
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedAgent && (
+            <ConnectWhatsAppCloud agentId={selectedAgent} onConnected={load} />
+          )}
+          <button
+            onClick={() => setShowProvision(true)}
+            className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1"
+          >
+            <Plus className="w-3 h-3" /> Conectar WhatsApp
+          </button>
+        </div>
       </div>
 
       {showProvision && (
