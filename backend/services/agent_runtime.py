@@ -241,6 +241,38 @@ async def handle_inbound_message(
         db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", tokens_in=0
     )
 
+    # ─── Handoff para humano ───
+    # Se o cliente pede explicitamente um atendente, avisa a equipe (notificação)
+    # e responde com confirmação — sem acionar o LLM (curto-circuito).
+    try:
+        from services import handoff
+
+        if handoff.wants_human(text_content):
+            await handoff.create_handoff(
+                db,
+                tenant_id=agent.tenant_id,
+                agent_id=agent.id,
+                conversation_id=conv.id,
+                external_chat_id=external_chat_id,
+                sender_name=sender_name,
+                user_text=text_content,
+            )
+            try:
+                connector_impl = registry.get(connector_kind)
+                cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
+                await connector_impl.send(
+                    cfg,
+                    OutboundMessage(external_chat_id=external_chat_id, content=handoff.HANDOFF_REPLY),
+                )
+            except Exception:
+                logger.exception("envio handoff reply falhou agent=%s", agent.id)
+            await log_message(
+                db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="assistant"
+            )
+            return {"status": "handoff", "agent_id": agent.id, "conversation_id": conv.id}
+    except Exception:
+        logger.exception("handoff check falhou agent=%s — segue fluxo normal", agent.id)
+
     # ─── Playbook router (Sprint 1) ───
     # Intercepta antes do Hermes. Se nenhuma trigger matchou, cai pro fluxo padrão.
     try:
