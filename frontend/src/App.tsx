@@ -3,6 +3,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AdminLayout from "./components/AdminLayout";
 import Dashboard from "./pages/agent/Dashboard";
 import Landing from "./pages/public/Landing";
+import Plataforma from "./pages/public/Plataforma";
+import Recursos from "./pages/public/Recursos";
+import Precos from "./pages/public/Precos";
 import Login from "./pages/public/Login";
 import Signup from "./pages/public/Signup";
 import Privacy from "./pages/public/Privacy";
@@ -38,6 +41,9 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/plataforma" element={<Plataforma />} />
+      <Route path="/recursos" element={<Recursos />} />
+      <Route path="/precos" element={<Precos />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/privacy" element={<Privacy />} />

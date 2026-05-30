@@ -297,13 +297,28 @@ async def handle_inbound_message(
         content=text_content,
     )
 
-    # ─── Handoff para humano ───
-    # Se o cliente pede explicitamente um atendente, avisa a equipe (notificação)
-    # e responde com confirmação — sem acionar o LLM (curto-circuito).
+    # ─── Conversa já assumida por humano? Bot fica em silêncio ───
+    # Quando alguém da equipe assumiu (status handed_off), o bot NÃO responde mais
+    # automaticamente — só registra a mensagem do cliente (visível na inbox) pra o
+    # humano conduzir. "Devolver para a IA" (resume) volta o status pra active.
+    if conv.status == "handed_off":
+        logger.info("conv=%s handed_off — bot em silêncio (humano no controle)", conv.id)
+        return {"status": "handed_off_paused", "agent_id": agent.id, "conversation_id": conv.id}
+
+    _phone_for_summary = _re.sub(r"\D", "", (external_chat_id or "").split("@")[0])
+
+    # ─── Handoff explícito + escalonamento por frustração ───
+    # Pedido explícito de humano → handoff + PAUSA o bot + confirma ao cliente.
+    # Frustração detectada → ALERTA o time (warm handoff), mas o bot CONTINUA
+    # tentando ajudar (ref: Fin tenta resolver antes; sentimento não pausa sozinho).
     try:
-        from services import handoff
+        from services import escalation, handoff
 
         if handoff.wants_human(text_content):
+            summary = await escalation.build_context_summary(
+                db, conversation_id=conv.id, reason=escalation.REASON_EXPLICIT,
+                contact_name=sender_name, phone=_phone_for_summary,
+            )
             await handoff.create_handoff(
                 db,
                 tenant_id=agent.tenant_id,
@@ -312,6 +327,9 @@ async def handle_inbound_message(
                 external_chat_id=external_chat_id,
                 sender_name=sender_name,
                 user_text=text_content,
+                reason=escalation.REASON_EXPLICIT,
+                summary=summary,
+                pause=True,
             )
             try:
                 connector_impl = registry.get(connector_kind)
@@ -327,8 +345,27 @@ async def handle_inbound_message(
                 content=handoff.HANDOFF_REPLY,
             )
             return {"status": "handoff", "agent_id": agent.id, "conversation_id": conv.id}
+
+        if escalation.is_frustrated(text_content):
+            summary = await escalation.build_context_summary(
+                db, conversation_id=conv.id, reason=escalation.REASON_FRUSTRATION,
+                contact_name=sender_name, phone=_phone_for_summary,
+            )
+            # pause=False: alerta o time, mas o bot segue respondendo abaixo.
+            await handoff.create_handoff(
+                db,
+                tenant_id=agent.tenant_id,
+                agent_id=agent.id,
+                conversation_id=conv.id,
+                external_chat_id=external_chat_id,
+                sender_name=sender_name,
+                user_text=text_content,
+                reason=escalation.REASON_FRUSTRATION,
+                summary=summary,
+                pause=False,
+            )
     except Exception:
-        logger.exception("handoff check falhou agent=%s — segue fluxo normal", agent.id)
+        logger.exception("handoff/escalation check falhou agent=%s — segue fluxo normal", agent.id)
 
     # ─── Playbook router (Sprint 1) ───
     # Intercepta antes do Hermes. Se nenhuma trigger matchou, cai pro fluxo padrão.
@@ -490,6 +527,32 @@ async def handle_inbound_message(
         )
     except Exception:
         logger.exception("lead_capture falhou agent=%s — ignorando", agent.id)
+
+    # Loop sem resolução — bot respondeu "não sei" repetidas vezes. Alerta o time
+    # (warm handoff) sem pausar o bot. Dedup evita spam (1 não-lida por conversa).
+    try:
+        from services import escalation, handoff
+
+        if await escalation.detect_loop(db, conv.id, reply.text):
+            summary = await escalation.build_context_summary(
+                db, conversation_id=conv.id, reason=escalation.REASON_LOOP,
+                contact_name=sender_name,
+                phone=_re.sub(r"\D", "", (external_chat_id or "").split("@")[0]),
+            )
+            await handoff.create_handoff(
+                db,
+                tenant_id=agent.tenant_id,
+                agent_id=agent.id,
+                conversation_id=conv.id,
+                external_chat_id=external_chat_id,
+                sender_name=sender_name,
+                user_text=text_content,
+                reason=escalation.REASON_LOOP,
+                summary=summary,
+                pause=False,
+            )
+    except Exception:
+        logger.exception("loop detection falhou agent=%s — ignorando", agent.id)
 
     # Memory.add em background (sessão isolada — não bloqueia resposta)
     try:

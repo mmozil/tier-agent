@@ -1,6 +1,6 @@
 """Inbox de conversas — o dono do tenant vê as conversas do agente e o histórico.
 
-Read-only por enquanto (acompanhar). Assumir/responder manualmente = V2.
+Permite assumir (pausar a IA), devolver pra IA e resolver uma conversa.
 """
 
 from datetime import datetime
@@ -138,3 +138,60 @@ async def conversation_detail(
         ).model_dump(),
         "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
     }
+
+
+async def _get_owned_conversation(
+    db: AsyncSession, conversation_id: int, tenant_id: int
+) -> TaConversation:
+    conv = await db.get(TaConversation, conversation_id)
+    if not conv:
+        raise HTTPException(404, "Conversa não encontrada")
+    agent_ids = await _tenant_agent_ids(db, tenant_id)
+    if conv.agent_id not in agent_ids:
+        raise HTTPException(403, "Conversa de outro tenant")
+    return conv
+
+
+@router.post("/{conversation_id}/handoff", response_model=dict)
+async def take_over(
+    conversation_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Assumir manualmente: pausa a IA — o humano passa a conduzir a conversa."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv.status = "handed_off"
+    await db.commit()
+    return {"status": "handed_off", "conversation_id": conv.id}
+
+
+@router.post("/{conversation_id}/resume", response_model=dict)
+async def resume_ai(
+    conversation_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Devolver pra IA: o bot volta a responder automaticamente."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv.status = "active"
+    await db.commit()
+    return {"status": "active", "conversation_id": conv.id}
+
+
+@router.post("/{conversation_id}/resolve", response_model=dict)
+async def resolve(
+    conversation_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resolver: encerra a conversa (sai da fila de ativas)."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv.status = "closed"
+    await db.commit()
+    return {"status": "closed", "conversation_id": conv.id}

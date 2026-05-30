@@ -14,9 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
-from models import TaAgent, TaNotification
+from models import TaAgent, TaNotification, TaRuntimeParam
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+
+_ALERT_KEYS = ("alert_whatsapp", "alert_email", "alert_enabled")
 
 
 class NotificationOut(BaseModel):
@@ -97,6 +99,75 @@ async def list_notifications(
             )
         )
     return out
+
+
+class AlertConfig(BaseModel):
+    alert_whatsapp: str | None = None
+    alert_email: str | None = None
+    alert_enabled: bool = True
+
+
+@router.get("/alert-config", response_model=AlertConfig)
+async def get_alert_config(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Destinos do alerta externo (WhatsApp/e-mail) que avisa a equipe."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    rows = (
+        await db.execute(
+            select(TaRuntimeParam.key, TaRuntimeParam.value).where(
+                TaRuntimeParam.escopo == "tenant",
+                TaRuntimeParam.escopo_id == user.tenant_id,
+                TaRuntimeParam.key.in_(_ALERT_KEYS),
+            )
+        )
+    ).all()
+    vals = {k: v for k, v in rows}
+    return AlertConfig(
+        alert_whatsapp=vals.get("alert_whatsapp") or None,
+        alert_email=vals.get("alert_email") or None,
+        alert_enabled=vals.get("alert_enabled", "1") != "0",
+    )
+
+
+@router.put("/alert-config", response_model=AlertConfig)
+async def put_alert_config(
+    cfg: AlertConfig,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    desired = {
+        "alert_whatsapp": (cfg.alert_whatsapp or "").strip(),
+        "alert_email": (cfg.alert_email or "").strip(),
+        "alert_enabled": "1" if cfg.alert_enabled else "0",
+    }
+    existing = (
+        await db.execute(
+            select(TaRuntimeParam).where(
+                TaRuntimeParam.escopo == "tenant",
+                TaRuntimeParam.escopo_id == user.tenant_id,
+                TaRuntimeParam.key.in_(_ALERT_KEYS),
+            )
+        )
+    ).scalars().all()
+    by_key = {p.key: p for p in existing}
+    for key, val in desired.items():
+        if key in by_key:
+            by_key[key].value = val
+        else:
+            db.add(
+                TaRuntimeParam(escopo="tenant", escopo_id=user.tenant_id, key=key, value=val)
+            )
+    await db.commit()
+    return AlertConfig(
+        alert_whatsapp=desired["alert_whatsapp"] or None,
+        alert_email=desired["alert_email"] or None,
+        alert_enabled=cfg.alert_enabled,
+    )
 
 
 @router.get("/stats", response_model=NotificationStats)

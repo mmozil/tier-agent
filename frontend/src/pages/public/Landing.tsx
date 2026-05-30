@@ -11,6 +11,10 @@ import {
   Check,
 } from "lucide-react";
 
+import { MarketingNav, MarketingFooter, FinalCTA, FlowNode, FlowEdge } from "../../components/landing/marketing";
+import PlaybookDemo from "../../components/landing/PlaybookDemo";
+import AgentResearchDemo from "../../components/landing/AgentResearchDemo";
+
 // Globo WebGL (three.js) — lazy p/ não pesar o bundle inicial
 const ScaleGlobe = lazy(() => import("../../components/landing/ScaleGlobe"));
 
@@ -37,73 +41,6 @@ function IsoCube({ className = "" }: { className?: string }) {
   );
 }
 
-// Nó estático do canvas (mostra a linguagem do builder na landing)
-function DemoNode({
-  icon: Icon,
-  title,
-  subtitle,
-  tag,
-  color,
-  status,
-  trigger,
-}: {
-  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
-  title: string;
-  subtitle: string;
-  tag?: string;
-  color: string;
-  status?: "completed" | "running";
-  trigger?: boolean;
-}) {
-  const ring =
-    status === "completed"
-      ? "shadow-[0_0_0_1.5px_#00D17E,0_0_0_4px_rgba(0,209,126,.14),0_4px_12px_-4px_rgba(13,15,17,.08)]"
-      : "shadow-sm";
-  return (
-    <div className={`relative w-[230px] rounded-lg bg-white ${ring}`}>
-      {trigger && (
-        <div className="absolute -top-[18px] left-0 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-node-trigger">
-          <span className="w-1.5 h-1.5 rounded-full bg-node-trigger" /> Trigger
-        </div>
-      )}
-      {status && (
-        <div
-          className={`absolute -top-2.5 right-2 inline-flex items-center gap-1 h-[18px] px-1.5 rounded-full text-[10px] font-semibold ${
-            status === "running" ? "bg-flow-runbg text-flow-runfg" : "bg-flow-okbg text-flow-okfg"
-          }`}
-        >
-          {status === "running" ? (
-            <span className="w-1.5 h-1.5 rounded-full bg-flow-runfg animate-pulsedot" />
-          ) : (
-            "✓"
-          )}
-          {status === "running" ? "Running" : "Completed"}
-        </div>
-      )}
-      <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg" style={{ backgroundColor: color }} />
-      <div className="px-3 py-3 flex items-center gap-2.5">
-        <div
-          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
-          style={{ backgroundColor: `${color}12`, boxShadow: `0 0 0 1px ${color}22` }}
-        >
-          <Icon className="w-3.5 h-3.5" style={{ color }} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold text-ink leading-tight tracking-snug truncate">{title}</div>
-          <div className="text-[11px] text-[#6A7385] leading-tight mt-0.5 truncate">{subtitle}</div>
-        </div>
-        {tag && (
-          <span className="shrink-0 h-[18px] px-1.5 inline-flex items-center rounded-full bg-surface-sunken text-[10px] font-medium text-[#6A7385]">
-            {tag}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const NAV = ["Plataforma", "Recursos", "Clientes", "Preços"];
-
 const PILLARS = [
   { icon: MessagesSquare, title: "Atende em qualquer canal", desc: "WhatsApp, Instagram, Telegram, e-mail e widget web — uma persona, todos os canais." },
   { icon: GitBranch, title: "Playbooks visuais", desc: "Desenhe fluxos arrastando blocos. Gatilho, decisão, IA, cobrança, hand-off humano." },
@@ -120,27 +57,8 @@ const PRICING = [
 export default function Landing() {
   return (
     <div className="min-h-screen bg-surface text-ink font-sans antialiased">
-      {/* ── Nav ─────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-white/85 backdrop-blur-md border-b border-hairline">
-        <div className="max-w-[1180px] mx-auto px-6 h-[60px] flex items-center justify-between">
-          <img src="/tier-agent-escuro.png" alt="Tier Agent" className="h-7 w-auto" />
-          <nav className="hidden md:flex items-center gap-7">
-            {NAV.map((n) => (
-              <span key={n} className="text-[14px] text-[#3a3f47] hover:text-ink cursor-pointer transition-colors">
-                {n}
-              </span>
-            ))}
-          </nav>
-          <div className="flex items-center gap-2.5">
-            <Link to="/login" className="text-[14px] font-medium text-[#3a3f47] hover:text-ink h-9 px-3 inline-flex items-center rounded-md border border-line hover:bg-surface-muted transition-colors">
-              Entrar
-            </Link>
-            <Link to="/signup" className="text-[14px] font-medium text-white bg-cta hover:bg-cta-hover h-9 px-3.5 inline-flex items-center rounded-md transition-colors">
-              Começar grátis
-            </Link>
-          </div>
-        </div>
-      </header>
+      {/* ── Nav (chrome compartilhado) ──────────────────── */}
+      <MarketingNav />
 
       {/* ── Hero ────────────────────────────────────────── */}
       <section className="relative overflow-hidden border-b border-hairline">
@@ -150,56 +68,52 @@ export default function Landing() {
         <div className="absolute inset-y-0 right-0 w-8 hatch hidden lg:block" />
         <div className="relative max-w-[1180px] mx-auto px-6 pt-20 pb-16 text-center">
           <span className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-surface-muted border border-line text-[12px] font-medium text-[#3a3f47]">
-            <span className="w-1.5 h-1.5 rounded-full bg-success" /> Agentes de IA que agem sozinhos
+            <span className="w-1.5 h-1.5 rounded-full bg-success" /> Plataforma de agentes de IA
           </span>
           <h1 className="font-display text-balance mt-6 text-[clamp(40px,6vw,68px)] font-semibold leading-[1.02] tracking-display text-ink">
-            O funcionário digital que<br className="hidden sm:block" /> nunca dorme.
+            Seu atendimento no<br className="hidden sm:block" /> piloto automático.
           </h1>
-          <p className="mt-5 text-[18px] leading-relaxed text-[#4a5159] max-w-[640px] mx-auto text-balance">
-            Crie agentes que atendem, qualificam e cobram em qualquer canal. Eles lembram do cliente,
-            decidem o próximo passo e escalam pra um humano quando precisa.
+          <p className="mt-5 text-[18px] leading-relaxed text-[#4a5159] max-w-[620px] mx-auto text-balance">
+            Agentes de IA que conversam, qualificam e cobram em qualquer canal — lembram de
+            cada cliente e chamam um humano só quando precisa.
           </p>
-          <div className="mt-8 flex items-center justify-center gap-3">
-            <Link to="/signup" className="h-11 px-5 inline-flex items-center gap-2 rounded-md bg-cta hover:bg-cta-hover text-white text-[15px] font-medium transition-colors">
-              Criar meu agente <ArrowRight className="w-4 h-4" />
+          <div className="mt-8 flex items-center justify-center gap-2.5">
+            <Link to="/signup" className="h-11 px-5 inline-flex items-center gap-2 rounded-[10px] bg-cta hover:bg-cta-hover text-white text-[15px] font-semibold shadow-[0_1px_2px_rgba(13,15,17,.18)] transition-colors">
+              Começar grátis <ArrowRight className="w-4 h-4" />
             </Link>
-            <Link to="/login" className="h-11 px-5 inline-flex items-center rounded-md border border-line bg-white hover:bg-surface-muted text-ink text-[15px] font-medium transition-colors">
+            <Link to="/plataforma" className="h-11 px-5 inline-flex items-center rounded-[10px] border border-line bg-white hover:bg-surface-muted text-ink text-[15px] font-medium transition-colors">
               Ver demonstração
             </Link>
           </div>
 
-          {/* mockup do canvas */}
+          {/* tela do builder — fluxo rodando ao vivo */}
           <div className="mt-14 relative">
-            <div className="mx-auto max-w-[900px] rounded-2xl border border-line bg-surface-sunken shadow-md overflow-hidden">
-              <div className="h-9 border-b border-line bg-white flex items-center gap-1.5 px-3">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#E4E7EC]" />
-                <span className="w-2.5 h-2.5 rounded-full bg-[#E4E7EC]" />
-                <span className="w-2.5 h-2.5 rounded-full bg-[#E4E7EC]" />
-                <span className="ml-3 text-[12px] text-[#6A7385]">Playbook · Recuperação de carrinho</span>
-              </div>
-              <div className="relative bg-dots p-8 min-h-[300px] flex flex-col items-center gap-6">
-                <div className="flex items-start gap-10">
-                  <div className="pt-1"><DemoNode icon={Zap} title="Quando carrinho abandona" subtitle="Gatilho · evento" tag="Vendas" color="#8B5CF6" status="completed" trigger /></div>
-                </div>
-                <svg width="2" height="28" className="-my-2"><line x1="1" y1="0" x2="1" y2="28" stroke="#00D17E" strokeWidth="2" /></svg>
-                <DemoNode icon={Sparkles} title="Gera oferta com IA" subtitle="Cupom personalizado" tag="LLM" color="#003083" status="completed" />
-                <svg width="2" height="28" className="-my-2"><line x1="1" y1="0" x2="1" y2="28" stroke="#00D17E" strokeWidth="2" /></svg>
-                <DemoNode icon={MessagesSquare} title="Envia no WhatsApp" subtitle="Mensagem + cupom" tag="Canal" color="#00D17E" status="running" />
-              </div>
-            </div>
+            <PlaybookDemo />
           </div>
         </div>
       </section>
 
       {/* ── Logos ───────────────────────────────────────── */}
-      <section className="border-b border-hairline bg-surface-subtle">
+      <section id="prova" className="scroll-mt-20 border-b border-hairline bg-surface-subtle">
         <div className="max-w-[1180px] mx-auto px-6 py-8">
           <p className="text-center text-[12px] font-semibold uppercase tracking-wide text-[#9AA4B2] mb-5">
             Empresas que já automatizam com a Tier
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-4 opacity-60">
-            {["Kirvah", "Hovio", "M7", "Out Group", "Esneper", "Petdubem"].map((l) => (
-              <span key={l} className="text-[18px] font-semibold text-[#6A7385]">{l}</span>
+          <div className="flex flex-wrap items-center justify-center gap-x-9 gap-y-5">
+            {[
+              { name: "Kirvah", ini: "K" },
+              { name: "Hovio", ini: "H" },
+              { name: "M7", ini: "M7" },
+              { name: "Out Group", ini: "OG" },
+              { name: "Esneper", ini: "E" },
+              { name: "Petdubem", ini: "P" },
+            ].map((b) => (
+              <div key={b.name} className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-opacity">
+                <span className="w-7 h-7 rounded-[7px] bg-[#6A7385]/[0.1] text-[#6A7385] text-[10.5px] font-bold flex items-center justify-center shrink-0">
+                  {b.ini}
+                </span>
+                <span className="text-[16px] font-semibold text-[#6A7385] tracking-[-0.01em]">{b.name}</span>
+              </div>
             ))}
           </div>
         </div>
@@ -254,23 +168,45 @@ export default function Landing() {
           </div>
           {/* canvas demo */}
           <div className="relative bg-dots p-10 lg:p-12 lg:rule-x min-h-[420px]">
-            <div className="flex flex-col items-center gap-5">
-              <DemoNode icon={Zap} title="Quando mensagem chega" subtitle="Gatilho" tag="Inbox" color="#8B5CF6" status="completed" trigger />
-              <svg width="2" height="24"><line x1="1" y1="0" x2="1" y2="24" stroke="#00D17E" strokeWidth="2" /></svg>
-              <DemoNode icon={GitBranch} title="Classifica intenção" subtitle="Decisão" tag="Switch" color="#F5A300" status="completed" />
-              <div className="flex items-start gap-6">
-                <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-col items-center">
+              <FlowNode icon={Zap} title="Quando mensagem chega" subtitle="Gatilho · inbox" tag="Inbox" color="#8B5CF6" status="completed" trigger />
+              <FlowEdge active />
+              <FlowNode icon={GitBranch} title="Classifica intenção" subtitle="Decisão · IA" tag="Switch" color="#F5A300" status="completed" />
+              <div className="flex items-start gap-8 mt-1">
+                <div className="flex flex-col items-center">
                   <span className="text-[10px] font-medium text-[#6A7385] bg-white border border-line rounded-full px-2 py-0.5">Vendas</span>
-                  <svg width="2" height="20"><line x1="1" y1="0" x2="1" y2="20" stroke="#00D17E" strokeWidth="2" /></svg>
-                  <DemoNode icon={Sparkles} title="Qualifica + cobra" subtitle="LLM + Tier Pay" tag="Pix" color="#003083" status="running" />
+                  <FlowEdge active height={26} />
+                  <FlowNode icon={Sparkles} title="Qualifica + cobra" subtitle="LLM + Tier Pay" tag="Pix" color="#003083" status="running" />
                 </div>
-                <div className="flex flex-col items-center gap-1 opacity-45">
+                <div className="flex flex-col items-center">
                   <span className="text-[10px] font-medium text-[#6A7385] bg-white border border-line rounded-full px-2 py-0.5">Suporte</span>
-                  <svg width="2" height="20"><line x1="1" y1="0" x2="1" y2="20" stroke="#C0C6CF" strokeWidth="1.5" /></svg>
-                  <DemoNode icon={ShieldCheck} title="Resolve dúvida" subtitle="Base de conhecimento" tag="RAG" color="#003083" />
+                  <FlowEdge active={false} height={26} />
+                  <FlowNode icon={ShieldCheck} title="Resolve dúvida" subtitle="Base de conhecimento" tag="RAG" color="#003083" dim />
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Pesquisa IA (o agente já chega sabendo) ─────── */}
+      <section className="relative border-b border-hairline overflow-hidden">
+        <div className="max-w-[1180px] mx-auto grid grid-cols-1 lg:grid-cols-[340px_1fr]">
+          <div className="p-10 lg:p-12 lg:rule-x border-b lg:border-b-0 border-hairline">
+            <span className="text-[12px] font-semibold uppercase tracking-wide text-accent">Inteligência</span>
+            <h2 className="font-display mt-3 text-[28px] font-semibold tracking-display text-ink leading-tight">
+              Já chega sabendo do cliente.
+            </h2>
+            <p className="mt-3 text-[15px] text-[#4a5159] leading-relaxed">
+              Quando a mensagem chega, o agente já levantou quem é o cliente, o histórico e a oportunidade —
+              e responde com a fonte, sem inventar.
+            </p>
+            <Link to="/recursos#inteligencia" className="mt-5 inline-flex items-center gap-1.5 text-[14px] font-medium text-accent hover:text-accent-hover">
+              Explorar inteligência <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+          <div className="relative bg-dots p-10 lg:p-12 lg:rule-x min-h-[440px]">
+            <AgentResearchDemo />
           </div>
         </div>
       </section>
@@ -415,34 +351,10 @@ export default function Landing() {
       </section>
 
       {/* ── CTA final (dark) ────────────────────────────── */}
-      <section className="bg-cta relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.08]" style={{ backgroundImage: "radial-gradient(circle, #FFFFFF 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
-        <div className="relative max-w-[820px] mx-auto px-6 py-20 text-center">
-          <h2 className="font-display text-[clamp(32px,5vw,48px)] font-semibold tracking-display text-white leading-tight text-balance">
-            Coloque seu primeiro agente no ar hoje.
-          </h2>
-          <p className="mt-4 text-[17px] text-white/70 max-w-[520px] mx-auto">
-            Sem cartão. Conecte o WhatsApp e veja o agente atender em minutos.
-          </p>
-          <Link to="/signup" className="mt-8 h-11 px-6 inline-flex items-center gap-2 rounded-md bg-white text-ink text-[15px] font-medium hover:bg-white/90 transition-colors">
-            Começar grátis <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-      </section>
+      <FinalCTA />
 
-      {/* ── Footer ──────────────────────────────────────── */}
-      <footer className="bg-surface-subtle border-t border-hairline">
-        <div className="max-w-[1180px] mx-auto px-6 py-10 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <img src="/tier-agent-escuro.png" alt="Tier Agent" className="h-6 w-auto" />
-          </div>
-          <div className="flex items-center gap-6 text-[13px] text-[#6A7385]">
-            <a href="https://tier.finance" className="hover:text-ink transition-colors">tier.finance</a>
-            <Link to="/login" className="hover:text-ink transition-colors">Entrar</Link>
-            <span>© 2026 Tier</span>
-          </div>
-        </div>
-      </footer>
+      {/* ── Footer (chrome compartilhado) ───────────────── */}
+      <MarketingFooter />
     </div>
   );
 }

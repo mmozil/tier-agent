@@ -1,8 +1,21 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { MessageSquare, RefreshCw, X, User } from "lucide-react";
+import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2 } from "lucide-react";
 
 import { api } from "@/lib/api";
+
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  active: { label: "IA ativa", cls: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
+  handed_off: { label: "Humano no controle", cls: "bg-blue-50 text-blue-700 ring-blue-600/20" },
+  closed: { label: "Resolvida", cls: "bg-slate-100 text-slate-500 ring-slate-400/20" },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const m = STATUS_META[status] || STATUS_META.active;
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ring-1 ${m.cls}`}>{m.label}</span>
+  );
+}
 
 interface Conversation {
   id: number;
@@ -79,6 +92,23 @@ export default function ConversasPage() {
     }
   }
 
+  async function changeStatus(id: number, action: "handoff" | "resume" | "resolve") {
+    try {
+      const { data } = await api.post<{ status: string }>(`/conversations/${id}/${action}`);
+      const newStatus = data.status;
+      setOpenConv((prev) => (prev && prev.id === id ? { ...prev, status: newStatus } : prev));
+      setConvs((prev) => prev.map((c) => (c.id === id ? { ...c, status: newStatus } : c)));
+      const labels: Record<string, string> = {
+        handoff: "Você assumiu — a IA está pausada",
+        resume: "Devolvido para a IA",
+        resolve: "Conversa resolvida",
+      };
+      toast.success(labels[action]);
+    } catch {
+      toast.error("Não foi possível atualizar");
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6 mt-2">
@@ -113,8 +143,9 @@ export default function ConversasPage() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[14px] font-medium text-slate-900 truncate">
+                <span className="text-[14px] font-medium text-slate-900 truncate flex items-center gap-2">
                   {c.contact_name || fmtPhone(c.external_id)}
+                  {c.status !== "active" && <StatusBadge status={c.status} />}
                 </span>
                 <span className="text-[11px] text-slate-400 shrink-0">{fmtDate(c.last_message_at)}</span>
               </div>
@@ -136,12 +167,45 @@ export default function ConversasPage() {
                 <h2 className="text-[15px] font-semibold text-slate-900 truncate">
                   {openConv?.contact_name || fmtPhone(openConv?.external_id || "")}
                 </h2>
-                <p className="text-[12px] text-slate-400">{openConv?.connector_kind || "whatsapp"} · {openConv?.status}</p>
+                <p className="text-[12px] text-slate-400 flex items-center gap-2">
+                  {openConv?.connector_kind || "whatsapp"}
+                  {openConv && <StatusBadge status={openConv.status} />}
+                </p>
               </div>
               <button onClick={() => setOpenId(null)} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Ações: assumir / devolver / resolver */}
+            {openConv && openConv.status !== "closed" && (
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-100 bg-slate-50/60">
+                {openConv.status === "handed_off" ? (
+                  <button
+                    onClick={() => changeStatus(openConv.id, "resume")}
+                    className="h-7 px-3 text-[12px] rounded-md bg-[#003083] text-white inline-flex items-center gap-1.5 hover:bg-[#002266]"
+                  >
+                    <Bot className="w-3.5 h-3.5" /> Devolver para a IA
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => changeStatus(openConv.id, "handoff")}
+                    className="h-7 px-3 text-[12px] rounded-md bg-blue-600 text-white inline-flex items-center gap-1.5 hover:bg-blue-700"
+                  >
+                    <Hand className="w-3.5 h-3.5" /> Assumir (pausar IA)
+                  </button>
+                )}
+                <button
+                  onClick={() => changeStatus(openConv.id, "resolve")}
+                  className="h-7 px-3 text-[12px] rounded-md border border-slate-200 text-slate-600 inline-flex items-center gap-1.5 hover:bg-white"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Resolver
+                </button>
+                {openConv.status === "handed_off" && (
+                  <span className="text-[11px] text-blue-600 ml-auto">IA pausada — você está no controle</span>
+                )}
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2 bg-slate-50">
               {loadingMsgs && <div className="text-[13px] text-slate-400 text-center py-6">Carregando...</div>}
               {!loadingMsgs && msgs.length === 0 && (

@@ -13,13 +13,13 @@ import {
   Workflow,
   Search,
   HelpCircle,
-  Bell,
   Settings,
   Store,
   Inbox,
 } from "lucide-react";
 
 import UserMenu from "./UserMenu";
+import NotificationBell from "./NotificationBell";
 
 interface NavItem {
   to: string;
@@ -142,9 +142,7 @@ export default function AdminLayout() {
               <button className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
                 <HelpCircle className="w-[18px] h-[18px]" />
               </button>
-              <button className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
-                <Bell className="w-[18px] h-[18px]" />
-              </button>
+              <NotificationBell />
               <button className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
                 <Settings className="w-[18px] h-[18px]" />
               </button>

@@ -13,7 +13,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import TaNotification
+from models import TaConversation, TaNotification
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,14 @@ def wants_human(text: str | None) -> bool:
     return bool(_HUMAN_RE.search(text))
 
 
+_TITLE_BY_REASON = {
+    "explicit_request": "Atendimento humano solicitado",
+    "frustration": "Cliente insatisfeito — atenção",
+    "repeated_loop": "Conversa travada — possível loop",
+    "manual": "Conversa assumida pela equipe",
+}
+
+
 async def create_handoff(
     db: AsyncSession,
     *,
@@ -54,11 +62,18 @@ async def create_handoff(
     external_chat_id: str,
     sender_name: str | None,
     user_text: str,
+    reason: str = "explicit_request",
+    summary: str | None = None,
+    pause: bool = True,
 ) -> bool:
-    """Cria uma notificação de handoff (dedup: 1 não-lida por conversa).
+    """Cria notificação de handoff (dedup: 1 não-lida por conversa), opcionalmente
+    pausa o bot (status handed_off) e dispara o alerta externo pra equipe.
 
+    - `reason`: explicit_request | frustration | repeated_loop | manual
+    - `pause`: True pausa a IA (humano assume). Frustração/loop alertam SEM pausar.
     Retorna True se criou uma notificação nova.
     """
+    created = True
     if conversation_id is not None:
         existing = (
             await db.execute(
@@ -70,29 +85,58 @@ async def create_handoff(
             )
         ).first()
         if existing:
-            return False
+            created = False
 
     nome = sender_name or "Cliente"
-    notif = TaNotification(
-        tenant_id=tenant_id,
-        agent_id=agent_id,
-        conversation_id=conversation_id,
-        category="handoff",
-        queue="atendimento",
-        title=f"Atendimento humano solicitado: {nome}",
-        body=(user_text or "")[:1000],
-        payload_json={
-            "contato": sender_name,
-            "whatsapp": external_chat_id,
-            "telefone": re.sub(r"\D", "", external_chat_id or ""),
-            "mensagem": (user_text or "")[:2000],
-        },
-        status="unread",
-    )
-    db.add(notif)
+    titulo = f"{_TITLE_BY_REASON.get(reason, 'Atendimento humano')}: {nome}"
+
+    if created:
+        notif = TaNotification(
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            conversation_id=conversation_id,
+            category="handoff",
+            queue="atendimento",
+            title=titulo,
+            body=(summary or user_text or "")[:2000],
+            payload_json={
+                "contato": sender_name,
+                "whatsapp": external_chat_id,
+                "telefone": re.sub(r"\D", "", external_chat_id or ""),
+                "mensagem": (user_text or "")[:2000],
+                "reason": reason,
+                "resumo": summary,
+            },
+            status="unread",
+        )
+        db.add(notif)
+
+    # Pausa o bot: humano assume a conversa (não responde mais automaticamente).
+    if pause and conversation_id is not None:
+        conv = await db.get(TaConversation, conversation_id)
+        if conv and conv.status != "handed_off":
+            conv.status = "handed_off"
+
     await db.commit()
     logger.info(
-        "handoff criado tenant=%s agent=%s conv=%s contato=%s",
-        tenant_id, agent_id, conversation_id, external_chat_id,
+        "handoff tenant=%s agent=%s conv=%s reason=%s pause=%s created=%s",
+        tenant_id, agent_id, conversation_id, reason, pause, created,
     )
-    return True
+
+    # Alerta externo pra equipe (WhatsApp/e-mail) — só pra notificação nova.
+    if created:
+        try:
+            from services import team_alert
+
+            await team_alert.dispatch_team_alert(
+                db,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                category="handoff" if reason in ("explicit_request", "manual") else reason,
+                title=titulo,
+                summary=summary,
+            )
+        except Exception:
+            logger.exception("team_alert no handoff falhou tenant=%s", tenant_id)
+
+    return created

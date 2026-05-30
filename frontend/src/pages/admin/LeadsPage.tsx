@@ -1,8 +1,114 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Inbox, Phone, MessageCircle, Check, Archive, RefreshCw } from "lucide-react";
+import { Inbox, Phone, MessageCircle, Check, Archive, RefreshCw, Bell, Save } from "lucide-react";
 
 import { api } from "@/lib/api";
+
+const REASON_LABEL: Record<string, string> = {
+  explicit_request: "Pediu humano",
+  frustration: "Insatisfeito",
+  repeated_loop: "Conversa travada",
+  manual: "Assumido",
+};
+
+interface AlertCfg {
+  alert_whatsapp: string | null;
+  alert_email: string | null;
+  alert_enabled: boolean;
+}
+
+function AlertConfigCard() {
+  const [cfg, setCfg] = useState<AlertCfg>({ alert_whatsapp: "", alert_email: "", alert_enabled: true });
+  const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<AlertCfg>("/notifications/alert-config")
+      .then(({ data }) =>
+        setCfg({
+          alert_whatsapp: data.alert_whatsapp || "",
+          alert_email: data.alert_email || "",
+          alert_enabled: data.alert_enabled,
+        }),
+      )
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.put("/notifications/alert-config", cfg);
+      toast.success("Alertas salvos");
+      setOpen(false);
+    } catch {
+      toast.error("Erro ao salvar");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 mb-4">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-4 py-3 text-left"
+      >
+        <Bell className="w-4 h-4 text-[#003083]" />
+        <span className="text-[14px] font-medium text-slate-800">Onde te avisamos</span>
+        <span className="text-[12px] text-slate-400 ml-1">
+          {cfg.alert_whatsapp || cfg.alert_email
+            ? `· ${cfg.alert_whatsapp || cfg.alert_email}`
+            : "· nenhum canal configurado"}
+        </span>
+        <span className="ml-auto text-[12px] text-[#003083]">{open ? "Fechar" : "Configurar"}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 border-t border-slate-100 pt-3 space-y-3">
+          <p className="text-[12px] text-slate-500">
+            Quando um cliente pede um humano, demonstra insatisfação ou é um lead quente, te avisamos
+            também por estes canais (além do sininho aqui no painel).
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[12px] text-slate-600 block mb-1">WhatsApp da equipe (com DDI)</label>
+              <input
+                value={cfg.alert_whatsapp || ""}
+                onChange={(e) => setCfg({ ...cfg, alert_whatsapp: e.target.value })}
+                placeholder="5511999999999"
+                className="w-full h-8 px-3 text-[13px] rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
+              />
+            </div>
+            <div>
+              <label className="text-[12px] text-slate-600 block mb-1">E-mail da equipe</label>
+              <input
+                value={cfg.alert_email || ""}
+                onChange={(e) => setCfg({ ...cfg, alert_email: e.target.value })}
+                placeholder="equipe@empresa.com"
+                className="w-full h-8 px-3 text-[13px] rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
+              />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-[13px] text-slate-700">
+            <input
+              type="checkbox"
+              checked={cfg.alert_enabled}
+              onChange={(e) => setCfg({ ...cfg, alert_enabled: e.target.checked })}
+            />
+            Alertas externos ativados
+          </label>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="h-8 px-3 text-[13px] rounded-md bg-[#003083] text-white inline-flex items-center gap-1.5 hover:bg-[#002266] disabled:opacity-50"
+          >
+            <Save className="w-3.5 h-3.5" /> {saving ? "Salvando..." : "Salvar"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Notification {
   id: number;
@@ -108,6 +214,8 @@ export default function LeadsPage() {
         </button>
       </div>
 
+      <AlertConfigCard />
+
       {/* Filtros */}
       <div className="flex items-center gap-1 mb-4 border-b border-slate-200">
         {FILTERS.map((f) => (
@@ -148,6 +256,8 @@ export default function LeadsPage() {
           const tel = n.telefone || n.payload_json?.telefone || n.payload_json?.whatsapp;
           const contato = n.contato || n.payload_json?.contato;
           const unread = n.status === "unread";
+          const reason = n.payload_json?.reason as string | undefined;
+          const resumo = n.payload_json?.resumo as string | undefined;
           return (
             <div
               key={n.id}
@@ -161,11 +271,22 @@ export default function LeadsPage() {
                     <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ring-1 ${meta.color}`}>
                       {meta.label}
                     </span>
+                    {reason && REASON_LABEL[reason] && (
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 ring-1 ring-slate-400/20">
+                        {REASON_LABEL[reason]}
+                      </span>
+                    )}
                     {unread && <span className="w-2 h-2 rounded-full bg-[#003083]" title="Não lido" />}
                     <span className="text-[12px] text-slate-400">{fmtDate(n.created_at)}</span>
                   </div>
                   <h3 className="text-[14px] font-semibold text-slate-900 truncate">{n.title}</h3>
-                  {n.body && <p className="text-[13px] text-slate-600 mt-1 line-clamp-2">{n.body}</p>}
+                  {resumo ? (
+                    <pre className="text-[12px] text-slate-600 mt-1.5 whitespace-pre-wrap font-sans bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+                      {resumo}
+                    </pre>
+                  ) : (
+                    n.body && <p className="text-[13px] text-slate-600 mt-1 line-clamp-2">{n.body}</p>
+                  )}
                   <div className="flex flex-wrap items-center gap-4 mt-2">
                     {tel && (
                       <a

@@ -7,7 +7,7 @@ import * as THREE from "three";
    central AGENTE. Three.js puro (sem fiber), cena imperativa,
    lazy-loaded. Dome de pontos + cubos isométricos + linhas
    dashflow + pulsos magenta + labels mono projetados.
-   Acentos: verde #00D17E (canais) · magenta #FF3DB8 (pulsos)
+   Acentos: verde #00D17E (canais) · azul sky #38BDF8 (pulsos)
    · azul Tier #003083 (nó central).
    ──────────────────────────────────────────────────────────── */
 
@@ -21,7 +21,7 @@ type NodeDef = {
 
 const R = 2.7; // raio do dome
 const GREEN = 0x00d17e;
-const MAGENTA = 0xff3db8;
+const PULSE = 0x38bdf8; // azul sky on-brand (substitui o magenta off-brand)
 const TIER = 0x1f4fd0; // azul Tier um tom mais vivo p/ WebGL
 const GRID = 0xc4ccd6;
 
@@ -161,11 +161,13 @@ export default function ScaleGlobe() {
       const pulses: THREE.Sprite[] = [];
       const offsets: number[] = [];
       for (let k = 0; k < nPulses; k++) {
-        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pulseTex, color: MAGENTA, transparent: true, depthWrite: false }));
-        sp.scale.setScalar(0.22);
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pulseTex, color: PULSE, transparent: true, depthWrite: false }));
+        sp.scale.setScalar(0.2);
+        const off = (i * 0.27 + k * 0.5) % 1;
+        sp.position.copy(curve.getPoint(off)); // posiciona já na curva (evita dot parado na origem)
         root.add(sp);
         pulses.push(sp);
-        offsets.push((i * 0.27 + k * 0.5) % 1);
+        offsets.push(off);
       }
       conns.push({ curve, line, pulses, offsets });
     }

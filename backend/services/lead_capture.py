@@ -125,4 +125,21 @@ async def maybe_capture_lead(
         "lead capturado tenant=%s agent=%s conv=%s tel=%s intent=%s",
         tenant_id, agent_id, conversation_id, contato_tel, intent,
     )
+
+    # Alerta externo pra equipe (WhatsApp/e-mail) — não perder lead quente.
+    try:
+        from services import team_alert
+
+        resumo = f"📱 {contato_tel}\n💬 {(user_text or '')[:300]}"
+        await team_alert.dispatch_team_alert(
+            db,
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            category="lead",
+            title=title,
+            summary=resumo,
+        )
+    except Exception:
+        logger.exception("team_alert no lead falhou tenant=%s", tenant_id)
+
     return True

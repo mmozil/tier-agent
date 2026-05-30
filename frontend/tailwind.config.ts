@@ -98,12 +98,34 @@ export default {
         "dots-lg": "24px 24px",
       },
       keyframes: {
-        dashflow: { to: { strokeDashoffset: "-16" } },
+        dashflow: { to: { strokeDashoffset: "-20" } },
         pulsedot: { "0%,100%": { opacity: "1" }, "50%": { opacity: "0.35" } },
+        // pulso "radar" no nó em execução
+        runpulse: {
+          "0%,100%": { boxShadow: "0 0 0 1.5px #F5A300, 0 0 0 3px rgba(245,163,0,.22)" },
+          "50%": { boxShadow: "0 0 0 1.5px #F5A300, 0 0 0 9px rgba(245,163,0,0)" },
+        },
+        // brilho verde do nó concluído (entrada)
+        okpop: {
+          "0%": { boxShadow: "0 0 0 1.5px #00D17E, 0 0 0 8px rgba(0,209,126,.0)" },
+          "40%": { boxShadow: "0 0 0 1.5px #00D17E, 0 0 0 7px rgba(0,209,126,.22)" },
+          "100%": { boxShadow: "0 0 0 1.5px #00D17E, 0 2px 10px -3px rgba(0,209,126,.28)" },
+        },
+        // dot viajando pelo conector
+        travel: { "0%": { offsetDistance: "0%", opacity: "0" }, "12%": { opacity: "1" }, "88%": { opacity: "1" }, "100%": { offsetDistance: "100%", opacity: "0" } },
+        // reveal on scroll
+        revealup: { "0%": { opacity: "0", transform: "translateY(14px)" }, "100%": { opacity: "1", transform: "translateY(0)" } },
+        // fade in suave
+        fadein: { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
       },
       animation: {
-        dashflow: "dashflow 0.6s linear infinite",
+        dashflow: "dashflow 0.7s linear infinite",
         pulsedot: "pulsedot 1.2s ease-in-out infinite",
+        runpulse: "runpulse 1.4s ease-out infinite",
+        okpop: "okpop 0.5s ease-out forwards",
+        travel: "travel 1.1s ease-in-out infinite",
+        revealup: "revealup 0.6s cubic-bezier(0.22,1,0.36,1) forwards",
+        fadein: "fadein 0.5s ease-out forwards",
       },
     },
   },
