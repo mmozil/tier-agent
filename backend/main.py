@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import agents, auth, billing, connectors, containers, features, health, knowledge, llm, mcp_server, metrics, notifications, playbooks, skills, templates, tenants, tier_pay, webhooks
+from routes import agents, auth, billing, connectors, containers, conversations, features, health, knowledge, llm, mcp_server, metrics, notifications, playbooks, skills, templates, tenants, tier_pay, webhooks
 
 settings = get_settings()
 
@@ -62,15 +62,34 @@ app.include_router(billing.router, prefix="/api/v1")
 app.include_router(webhooks.router, prefix="/api/v1")
 app.include_router(playbooks.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
+app.include_router(conversations.router, prefix="/api/v1")
 app.include_router(metrics.router, prefix="/api/v1")
 app.include_router(skills.router, prefix="/api/v1")
 app.include_router(tier_pay.router, prefix="/api/v1")
 app.include_router(mcp_server.router, prefix="/api/v1")
 
 
+async def _ensure_message_content_column():
+    """Runtime DDL idempotente — adiciona ta_message_log.content (texto da msg,
+    pra inbox/histórico). Coluna nullable, tabela pequena → ALTER rápido e seguro.
+    Não usa Alembic porque o deploy não roda migrations."""
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            await db.execute(_sql_text("ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS content TEXT"))
+            await db.commit()
+        logger.info("ensure_message_content_column ok")
+    except Exception:
+        logger.exception("ensure_message_content_column falhou (segue mesmo assim)")
+
+
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
+    await _ensure_message_content_column()
     from scheduler import init_scheduler
     init_scheduler()
 

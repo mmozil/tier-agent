@@ -23,6 +23,7 @@ import MetricasPage from "./pages/admin/MetricasPage";
 import AgentSkillsPage from "./pages/admin/AgentSkillsPage";
 import MarketplacePage from "./pages/admin/MarketplacePage";
 import LeadsPage from "./pages/admin/LeadsPage";
+import ConversasPage from "./pages/admin/ConversasPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
@@ -49,7 +50,7 @@ export default function App() {
         <Route path="agentes" element={<AgentesPage />} />
         <Route path="llm" element={<LlmProvidersPage />} />
         <Route path="features" element={<FeaturesPage />} />
-        <Route path="conversas" element={<Placeholder title="Conversas" desc="Histórico de conversas por agente (em breve)." />} />
+        <Route path="conversas" element={<ConversasPage />} />
         <Route path="canais" element={<CanaisPage />} />
         <Route path="leads" element={<LeadsPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />

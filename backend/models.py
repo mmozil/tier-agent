@@ -233,6 +233,9 @@ class TaMessageLog(Base):
     cost_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     model_used: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # texto da mensagem (user/assistant) — pra inbox/histórico. Coluna adicionada
+    # via ensure_message_content_column() (runtime DDL, nullable, retrocompatível).
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 

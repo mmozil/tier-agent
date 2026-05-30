@@ -135,6 +135,7 @@ async def log_message(
     cost_cents: int = 0,
     latency_ms: int = 0,
     model_used: str | None = None,
+    content: str | None = None,
 ) -> None:
     log = TaMessageLog(
         conversation_id=conversation_id,
@@ -144,6 +145,7 @@ async def log_message(
         cost_cents=cost_cents,
         latency_ms=latency_ms,
         model_used=model_used,
+        content=(content or "")[:8000] or None,
     )
     db.add(log)
 
@@ -261,7 +263,8 @@ async def handle_inbound_message(
 
     # Log mensagem do user
     await log_message(
-        db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", tokens_in=0
+        db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", tokens_in=0,
+        content=text_content,
     )
 
     # ─── Handoff para humano ───
@@ -290,7 +293,8 @@ async def handle_inbound_message(
             except Exception:
                 logger.exception("envio handoff reply falhou agent=%s", agent.id)
             await log_message(
-                db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="assistant"
+                db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="assistant",
+                content=handoff.HANDOFF_REPLY,
             )
             return {"status": "handoff", "agent_id": agent.id, "conversation_id": conv.id}
     except Exception:
@@ -399,6 +403,7 @@ async def handle_inbound_message(
         cost_cents=cost_cents,
         latency_ms=reply.latency_ms,
         model_used=reply.model_used,
+        content=reply.text,
     )
 
     # Envia resposta de volta no canal
