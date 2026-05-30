@@ -15,6 +15,8 @@ interface Notification {
   payload_json: Record<string, any> | null;
   status: string;
   created_at: string;
+  contato: string | null;
+  telefone: string | null;
 }
 
 const CATEGORY_META: Record<string, { label: string; color: string }> = {
@@ -143,7 +145,8 @@ export default function LeadsPage() {
       <div className="space-y-2">
         {visible.map((n) => {
           const meta = CATEGORY_META[n.category] || CATEGORY_META.info;
-          const tel = n.payload_json?.telefone || n.payload_json?.whatsapp;
+          const tel = n.telefone || n.payload_json?.telefone || n.payload_json?.whatsapp;
+          const contato = n.contato || n.payload_json?.contato;
           const unread = n.status === "unread";
           return (
             <div
@@ -174,10 +177,15 @@ export default function LeadsPage() {
                         <Phone className="w-3.5 h-3.5" /> {tel}
                       </a>
                     )}
-                    {n.payload_json?.contato && (
+                    {contato && (
                       <span className="inline-flex items-center gap-1 text-[13px] text-slate-500">
-                        <MessageCircle className="w-3.5 h-3.5" /> {n.payload_json.contato}
+                        <MessageCircle className="w-3.5 h-3.5" /> {contato}
                       </span>
+                    )}
+                    {n.conversation_id && (
+                      <a href="/admin/conversas" className="inline-flex items-center gap-1 text-[13px] text-[#003083] hover:underline">
+                        <MessageCircle className="w-3.5 h-3.5" /> Ver conversa
+                      </a>
                     )}
                   </div>
                 </div>

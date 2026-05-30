@@ -33,6 +33,9 @@ class NotificationOut(BaseModel):
     status: str
     read_at: datetime | None
     created_at: datetime
+    # Enriquecidos a partir da conversa vinculada (pra sempre mostrar quem é o cliente)
+    contato: str | None = None
+    telefone: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -61,7 +64,39 @@ async def list_notifications(
     stmt = stmt.order_by(TaNotification.id.desc()).limit(limit)
 
     rows = (await db.execute(stmt)).scalars().all()
-    return list(rows)
+
+    # Enriquece com nome/telefone do cliente da conversa vinculada (cobre
+    # notificações sem contato no payload, ex: handoff de playbook).
+    import re as _re
+
+    from models import TaConversation
+
+    conv_ids = {n.conversation_id for n in rows if n.conversation_id}
+    conv_map: dict[int, TaConversation] = {}
+    if conv_ids:
+        convs = (
+            await db.execute(select(TaConversation).where(TaConversation.id.in_(conv_ids)))
+        ).scalars().all()
+        conv_map = {c.id: c for c in convs}
+
+    out: list[NotificationOut] = []
+    for n in rows:
+        pj = n.payload_json or {}
+        conv = conv_map.get(n.conversation_id) if n.conversation_id else None
+        contato = pj.get("contato") or (conv.contact_name if conv else None)
+        telefone = pj.get("telefone") or pj.get("whatsapp")
+        if not telefone and conv and conv.external_id:
+            telefone = _re.sub(r"\D", "", conv.external_id.split("@")[0]) or None
+        out.append(
+            NotificationOut(
+                id=n.id, tenant_id=n.tenant_id, agent_id=n.agent_id,
+                conversation_id=n.conversation_id, playbook_execution_id=n.playbook_execution_id,
+                category=n.category, title=n.title, body=n.body, queue=n.queue,
+                payload_json=n.payload_json, status=n.status, read_at=n.read_at,
+                created_at=n.created_at, contato=contato, telefone=telefone,
+            )
+        )
+    return out
 
 
 @router.get("/stats", response_model=NotificationStats)
