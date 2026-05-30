@@ -36,6 +36,7 @@ class ConversationOut(BaseModel):
     last_preview: str | None = None
     tags: list[str] = []
     assigned_to: str | None = None
+    assigned_member_id: int | None = None
     csat_state: str = "none"
     csat_score: int | None = None
 
@@ -62,6 +63,7 @@ async def list_conversations(
     agent_id: int | None = None,
     status: str | None = None,
     tag: str | None = None,
+    scope: str | None = None,  # "mine" | "unassigned" | None (todas)
     limit: int = Query(100, ge=1, le=300),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -80,6 +82,10 @@ async def list_conversations(
         stmt = stmt.where(TaConversation.agent_id == agent_id)
     if status:
         stmt = stmt.where(TaConversation.status == status)
+    if scope == "unassigned":
+        stmt = stmt.where(TaConversation.assigned_member_id.is_(None))
+    elif scope == "mine" and user.member_id:
+        stmt = stmt.where(TaConversation.assigned_member_id == user.member_id)
     stmt = stmt.order_by(TaConversation.last_message_at.desc().nulls_last()).limit(limit)
 
     convs = (await db.execute(stmt)).scalars().all()
@@ -112,6 +118,7 @@ async def list_conversations(
                 last_preview=preview,
                 tags=ctags,
                 assigned_to=c.assigned_to,
+                assigned_member_id=c.assigned_member_id,
                 csat_state=c.csat_state,
                 csat_score=c.csat_score,
             )
@@ -156,6 +163,7 @@ async def conversation_detail(
             last_message_at=conv.last_message_at,
             tags=conv.tags or [],
             assigned_to=conv.assigned_to,
+            assigned_member_id=conv.assigned_member_id,
             csat_state=conv.csat_state,
             csat_score=conv.csat_score,
         ).model_dump(),
@@ -234,8 +242,12 @@ async def take_over(
         raise HTTPException(403, "Sem tenant")
     conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
     conv.status = "handed_off"
+    # quem assume manualmente vira o responsável (se for atendente)
+    if user.member_id:
+        conv.assigned_member_id = user.member_id
+        conv.assigned_to = user.member_name or conv.assigned_to
     await db.commit()
-    return {"status": "handed_off", "conversation_id": conv.id}
+    return {"status": "handed_off", "conversation_id": conv.id, "assigned_member_id": conv.assigned_member_id}
 
 
 @router.post("/{conversation_id}/resume", response_model=dict)
@@ -286,6 +298,7 @@ async def resolve(
 
 class NoteIn(BaseModel):
     content: str
+    mentions: list[int] = []  # member_ids marcados com @
 
 
 @router.post("/{conversation_id}/note", response_model=MessageOut)
@@ -295,7 +308,8 @@ async def add_note(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Nota interna — visível só pra equipe, NÃO é enviada ao cliente."""
+    """Nota interna — visível só pra equipe, NÃO é enviada ao cliente.
+    Se houver @menções (member_ids), cria notificação direcionada a cada um."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
     content = (body.content or "").strip()
@@ -304,13 +318,36 @@ async def add_note(
     conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
     note = TaMessageLog(conversation_id=conv.id, role="note", content=content[:8000])
     db.add(note)
+
+    # @menções → notificação direcionada por atendente
+    from models import TaMember, TaNotification
+
+    autor = user.member_name or "Equipe"
+    for mid in set(body.mentions or []):
+        m = await db.get(TaMember, mid)
+        if not m or m.tenant_id != user.tenant_id:
+            continue
+        db.add(
+            TaNotification(
+                tenant_id=user.tenant_id,
+                agent_id=conv.agent_id,
+                conversation_id=conv.id,
+                category="mention",
+                queue="atendimento",
+                title=f"{autor} te marcou numa conversa",
+                body=content[:500],
+                payload_json={"contato": conv.contact_name, "autor": autor},
+                status="unread",
+                target_member_id=mid,
+            )
+        )
     await db.commit()
     await db.refresh(note)
     return note
 
 
 class AssignIn(BaseModel):
-    assigned_to: str | None = None
+    member_id: int | None = None  # null = desatribuir
 
 
 @router.put("/{conversation_id}/assign", response_model=dict)
@@ -320,14 +357,23 @@ async def assign(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Atribui a conversa a um atendente (nome livre) ou limpa (null/vazio)."""
+    """Atribui a conversa a um atendente (member_id) ou desatribui (null)."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
     conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
-    val = (body.assigned_to or "").strip()[:120] or None
-    conv.assigned_to = val
+    if body.member_id is None:
+        conv.assigned_member_id = None
+        conv.assigned_to = None
+    else:
+        from models import TaMember
+
+        m = await db.get(TaMember, body.member_id)
+        if not m or m.tenant_id != user.tenant_id:
+            raise HTTPException(404, "Atendente não encontrado")
+        conv.assigned_member_id = m.id
+        conv.assigned_to = m.nome
     await db.commit()
-    return {"conversation_id": conv.id, "assigned_to": val}
+    return {"conversation_id": conv.id, "assigned_member_id": conv.assigned_member_id, "assigned_to": conv.assigned_to}
 
 
 class ReplyIn(BaseModel):

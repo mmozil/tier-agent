@@ -111,11 +111,19 @@ async def create_handoff(
         )
         db.add(notif)
 
-    # Pausa o bot: humano assume a conversa (não responde mais automaticamente).
+    # Pausa o bot: humano assume a conversa (não responde mais automaticamente)
+    # + distribui pra um atendente online (fila/round-robin), se houver.
     if pause and conversation_id is not None:
         conv = await db.get(TaConversation, conversation_id)
         if conv and conv.status != "handed_off":
             conv.status = "handed_off"
+        if conv and not conv.assigned_member_id:
+            try:
+                from services import assignment
+
+                await assignment.auto_assign(db, conv, tenant_id)
+            except Exception:
+                logger.exception("auto_assign falhou conv=%s", conversation_id)
 
     await db.commit()
     logger.info(

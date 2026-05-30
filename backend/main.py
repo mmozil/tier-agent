@@ -92,6 +92,8 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS csat_score INTEGER",
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS csat_at TIMESTAMP",
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS sla_alerted_at TIMESTAMP",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS assigned_member_id INTEGER",
+                "ALTER TABLE ta_notification ADD COLUMN IF NOT EXISTS target_member_id INTEGER",
             ):
                 await db.execute(_sql_text(ddl))
             await db.commit()

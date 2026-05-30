@@ -221,7 +221,9 @@ class TaConversation(Base):
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
     # lista de etiquetas (ex: ["orçamento", "vip"]) — adicionada via ensure runtime DDL
     assigned_to: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    # nome do atendente responsável (lightweight — sem tabela de usuários ainda)
+    # nome do atendente responsável (display)
+    assigned_member_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # FK lógica pra ta_member.id (fila/round-robin + filtro "minhas conversas")
     csat_state: Mapped[str] = mapped_column(String(16), default="none", nullable=False)
     # csat: none | pending | done
     csat_score: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-5
@@ -494,7 +496,9 @@ class TaNotification(Base):
         ForeignKey("ta_playbook_execution.id", ondelete="SET NULL"), nullable=True
     )
     category: Mapped[str] = mapped_column(String(32), default="info", nullable=False)
-    # category: handoff | error | info
+    # category: handoff | lead | sla | mention | error | info
+    target_member_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # se setado, notificação é direcionada a este atendente (ex: @menção). null = broadcast do tenant
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     queue: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -145,6 +145,7 @@ const CATEGORY_META: Record<string, { label: string; color: string }> = {
   lead: { label: "Lead", color: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
   handoff: { label: "Atendimento humano", color: "bg-blue-50 text-blue-700 ring-blue-600/20" },
   sla: { label: "SLA — cliente esperando", color: "bg-amber-50 text-amber-700 ring-amber-600/20" },
+  mention: { label: "Você foi marcado", color: "bg-violet-50 text-violet-700 ring-violet-600/20" },
   error: { label: "Erro", color: "bg-rose-50 text-rose-700 ring-rose-600/20" },
   info: { label: "Info", color: "bg-slate-100 text-slate-600 ring-slate-500/20" },
 };

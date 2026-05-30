@@ -9,7 +9,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
@@ -63,6 +63,14 @@ async def list_notifications(
         stmt = stmt.where(TaNotification.status == status)
     if agent_id is not None:
         stmt = stmt.where(TaNotification.agent_id == agent_id)
+    # Atendente vê broadcasts (target null) + as direcionadas a ele. Dono vê tudo.
+    if user.member_id:
+        stmt = stmt.where(
+            or_(
+                TaNotification.target_member_id.is_(None),
+                TaNotification.target_member_id == user.member_id,
+            )
+        )
     stmt = stmt.order_by(TaNotification.id.desc()).limit(limit)
 
     rows = (await db.execute(stmt)).scalars().all()
@@ -186,12 +194,21 @@ async def notification_stats(
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
 
-    # unread count
+    # unread count (respeita visibilidade por atendente)
+    member_filter = []
+    if user.member_id:
+        member_filter = [
+            or_(
+                TaNotification.target_member_id.is_(None),
+                TaNotification.target_member_id == user.member_id,
+            )
+        ]
     unread = (
         await db.execute(
             select(func.count(TaNotification.id)).where(
                 TaNotification.tenant_id == user.tenant_id,
                 TaNotification.status == "unread",
+                *member_filter,
             )
         )
     ).scalar_one() or 0
@@ -203,6 +220,7 @@ async def notification_stats(
             .where(
                 TaNotification.tenant_id == user.tenant_id,
                 TaNotification.status == "unread",
+                *member_filter,
             )
             .group_by(TaNotification.category)
         )

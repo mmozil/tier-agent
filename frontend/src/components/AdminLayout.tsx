@@ -20,6 +20,7 @@ import {
 
 import UserMenu from "./UserMenu";
 import NotificationBell from "./NotificationBell";
+import OnlineToggle from "./OnlineToggle";
 
 interface NavItem {
   to: string;
@@ -139,7 +140,8 @@ export default function AdminLayout() {
                 className="w-full h-7 pl-9 pr-3 text-[14px] rounded-lg bg-[#f4f7fa] text-slate-700 placeholder:text-slate-400 outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
               />
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
+              <OnlineToggle />
               <button className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
                 <HelpCircle className="w-[18px] h-[18px]" />
               </button>

@@ -30,8 +30,17 @@ interface Conversation {
   last_preview: string | null;
   tags: string[];
   assigned_to: string | null;
+  assigned_member_id: number | null;
   csat_state: string;
   csat_score: number | null;
+}
+
+interface Member {
+  id: number;
+  nome: string;
+  role: string;
+  online: boolean;
+  status: string;
 }
 
 interface Message {
@@ -69,12 +78,17 @@ export default function ConversasPage() {
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
   const [noteMode, setNoteMode] = useState(false);
-  const [assignInput, setAssignInput] = useState("");
+  const [members, setMembers] = useState<Member[]>([]);
+  const [me, setMe] = useState<{ role: string; member_id: number | null } | null>(null);
+  const [scope, setScope] = useState<"todas" | "mine" | "unassigned">("todas");
+  const [mentions, setMentions] = useState<number[]>([]);
 
-  async function load() {
+  async function load(sc = scope) {
     setLoading(true);
     try {
-      const { data } = await api.get<Conversation[]>("/conversations", { params: { limit: 200 } });
+      const params: Record<string, any> = { limit: 200 };
+      if (sc !== "todas") params.scope = sc;
+      const { data } = await api.get<Conversation[]>("/conversations", { params });
       setConvs(data);
     } catch {
       toast.error("Falha ao carregar conversas");
@@ -85,6 +99,8 @@ export default function ConversasPage() {
 
   useEffect(() => {
     load();
+    api.get<Member[]>("/team/members").then(({ data }) => setMembers(data)).catch(() => {});
+    api.get<{ role: string; member_id: number | null }>("/team/me").then(({ data }) => setMe(data)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -100,8 +116,8 @@ export default function ConversasPage() {
   async function openConversation(c: Conversation) {
     setOpenId(c.id);
     setOpenConv(c);
-    setAssignInput(c.assigned_to || "");
     setNoteMode(false);
+    setMentions([]);
     setLoadingMsgs(true);
     setMsgs([]);
     try {
@@ -137,9 +153,10 @@ export default function ConversasPage() {
     setSending(true);
     try {
       if (noteMode) {
-        const { data } = await api.post<Message>(`/conversations/${openConv.id}/note`, { content: text });
+        const { data } = await api.post<Message>(`/conversations/${openConv.id}/note`, { content: text, mentions });
         setMsgs((prev) => [...prev, data]);
         setReplyText("");
+        setMentions([]);
       } else {
         const { data } = await api.post<Message>(`/conversations/${openConv.id}/reply`, { content: text });
         setMsgs((prev) => [...prev, data]);
@@ -155,12 +172,13 @@ export default function ConversasPage() {
     }
   }
 
-  async function saveAssign(convId: number, value: string) {
-    const val = value.trim();
-    setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, assigned_to: val || null } : prev));
-    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, assigned_to: val || null } : c)));
+  async function saveAssign(convId: number, memberId: number | null) {
+    const m = members.find((x) => x.id === memberId);
+    const nome = m?.nome || null;
+    setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, assigned_member_id: memberId, assigned_to: nome } : prev));
+    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, assigned_member_id: memberId, assigned_to: nome } : c)));
     try {
-      await api.put(`/conversations/${convId}/assign`, { assigned_to: val });
+      await api.put(`/conversations/${convId}/assign`, { member_id: memberId });
     } catch {
       toast.error("Erro ao atribuir");
     }
@@ -193,9 +211,33 @@ export default function ConversasPage() {
           <h1 className="text-[28px] font-bold text-[#30313d]">Conversas</h1>
           <p className="text-[13px] text-slate-500 mt-1">Acompanhe as conversas do seu agente e o histórico de mensagens.</p>
         </div>
-        <button onClick={load} className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1">
+        <button onClick={() => load()} className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1">
           <RefreshCw className="w-3 h-3" /> Atualizar
         </button>
+      </div>
+
+      {/* Abas de escopo (fila) */}
+      <div className="flex items-center gap-1 mb-3 border-b border-slate-200">
+        {([
+          { k: "todas", label: "Todas" },
+          { k: "unassigned", label: "Não atribuídas" },
+          ...(me?.member_id ? [{ k: "mine", label: "Minhas" }] : []),
+        ] as { k: "todas" | "mine" | "unassigned"; label: string }[]).map((t) => (
+          <button
+            key={t.k}
+            onClick={() => {
+              setScope(t.k);
+              load(t.k);
+            }}
+            className={`px-3 py-2 text-[14px] border-b-2 -mb-px transition-colors ${
+              scope === t.k
+                ? "border-[#003083] text-[#1a2c44] font-medium"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Filtro por etiqueta */}
@@ -324,19 +366,20 @@ export default function ConversasPage() {
             {openConv && (
               <div className="px-5 py-2.5 border-b border-slate-100 flex items-center gap-2">
                 <span className="text-[12px] text-slate-500 shrink-0">Atendente:</span>
-                <input
-                  value={assignInput}
-                  onChange={(e) => setAssignInput(e.target.value)}
-                  onBlur={() => {
-                    if ((assignInput.trim() || "") !== (openConv.assigned_to || ""))
-                      saveAssign(openConv.id, assignInput);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                  }}
-                  placeholder="ninguém atribuído"
+                <select
+                  value={openConv.assigned_member_id ?? ""}
+                  onChange={(e) => saveAssign(openConv.id, e.target.value ? Number(e.target.value) : null)}
                   className="text-[13px] px-2 py-1 rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083] w-48"
-                />
+                >
+                  <option value="">— ninguém —</option>
+                  {members
+                    .filter((m) => m.status === "active")
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.nome} {m.online ? "🟢" : ""}
+                      </option>
+                    ))}
+                </select>
                 {openConv.csat_state === "done" && openConv.csat_score != null && (
                   <span className="ml-auto text-[12px] text-amber-600 font-medium">
                     ⭐ CSAT {openConv.csat_score}/5
@@ -442,6 +485,29 @@ export default function ConversasPage() {
                     📝 Nota interna
                   </button>
                 </div>
+                {noteMode && members.filter((m) => m.status === "active").length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 mb-2">
+                    <span className="text-[11px] text-slate-400">Marcar:</span>
+                    {members
+                      .filter((m) => m.status === "active")
+                      .map((m) => {
+                        const on = mentions.includes(m.id);
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() =>
+                              setMentions((prev) => (on ? prev.filter((x) => x !== m.id) : [...prev, m.id]))
+                            }
+                            className={`text-[11px] px-2 py-0.5 rounded-full border ${
+                              on ? "bg-amber-100 text-amber-800 border-amber-300" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                            }`}
+                          >
+                            @{m.nome}
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
                 <div className="flex items-end gap-2">
                   {!noteMode && (
                     <CannedPicker

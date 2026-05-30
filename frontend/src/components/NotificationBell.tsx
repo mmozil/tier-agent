@@ -25,6 +25,7 @@ const CAT_DOT: Record<string, string> = {
   handoff: "bg-blue-500",
   lead: "bg-emerald-500",
   sla: "bg-amber-500",
+  mention: "bg-violet-500",
   frustration: "bg-rose-500",
   error: "bg-amber-500",
 };
