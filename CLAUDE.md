@@ -34,6 +34,29 @@ Caminho de produção. Conector `whatsapp_cloud` no backend (REST + webhook). **
 ### 2. Baileys (Tier WhatsApp Engine) — entrada/teste, RISCO DE BAN ⚠️
 Conector `whatsapp` (fala com `whats.tier.finance`). Baileys é não-oficial: toma ban (número de teste foi restringido pela Meta). Manter só como tier de entrada. Ver memória `project-engine-baileys-instability-20260528`.
 
+## Modelo LLM + Atendimento (atualizado 29/mai/2026)
+
+### Modelo: MiniMax-M2 em produção (Claude/Haiku BLOQUEADO pela imagem)
+- **Modelo ativo = MiniMax-M2** (provider config-driven via `TaLlmProvider`). O `tier-entrypoint.sh` do container lê `TIER_LLM_PROVIDER/MODEL/API_KEY` → `hermes config set`. Trocar = `TaLlmProvider` (tenant-específico ativo ganha do global) + `container_orchestrator.create_container` (recria; `restart_container` NÃO basta — só `docker restart`, mantém env).
+- ⚠️ **Claude/Haiku NÃO funciona nesta imagem `tier/hermes:0.14.0-tier1`**: o `run_agent` **ignora `model.default`** e usa sempre `claude-opus-4-6` (thinking-first) → em conversa multi-turno reenvia thinking blocks com assinatura inválida → HTTP 400 `Invalid signature in thinking block` (agente para). Pra usar Claude precisa **rebuild da imagem** (run_agent honrar o modelo + desligar thinking). Crédito Anthropic intacto.
+- **Filtro anti-CJK** (`agent_runtime._sanitize_reply`): MiniMax às vezes vaza chinês/japonês/coreano em pt-BR → removidos antes do envio. Inglês/espanhol NÃO são filtráveis (teto do MiniMax — só some com Claude). Persona tem regra "só pt-BR" como 1ª camada.
+
+### Funcionalidades de atendimento (todas plataforma — valem p/ todo agente)
+- **Captura de lead** (`services/lead_capture.py`): detecta intenção de compra/telefone → `TaNotification(category=lead)`.
+- **Handoff humano** (`services/handoff.py`): pedido de atendente → curto-circuita antes do LLM → `TaNotification(category=handoff)` + resposta padrão.
+- **Inbox de conversas** (`routes/conversations.py` + coluna `ta_message_log.content` via ensure idempotente em `main.py`): tela `/admin/leads` (Leads & Notificações) + `/admin/conversas` (histórico).
+- **Split de mensagens** (`_split_into_bubbles`): resposta > 700 chars → até 4 balões.
+- **Timing humanizado** (`webhooks._process_cloud_message_humanized`): atraso de leitura ~2-3s antes de digitar.
+- **Persona consultiva + anti-alucinação**: entende antes de apresentar; nunca inventa (ERP é web, sem app dedicado; o que não sabe → encaminha consultor). Editada direto em `TaAgent.persona` (live, sem deploy) + `llm_cache.invalidate` após editar.
+
+### RAG (pgvector) — pronto mas NÃO ativado
+- `rag_engine.py` corrigido pra `gemini-embedding-001` + `embedContent` + `outputDimensionality=768` (text-embedding-004 aposentado; batchEmbedContents não suportado). Embeddings = etapa separada do chat (Anthropic NÃO tem embeddings — recomenda Voyage; usamos Gemini free OU MiniMax embo-01).
+- **NÃO wirado no `agent_runtime`**: pra conhecimento PEQUENO a persona é MELHOR (RAG com chunks grandes recupera mal). Ativar só quando cliente tiver base GRANDE: chunking menor + `rag_engine.search` injetado no system prompt + `GEMINI_API_KEY` no Coolify.
+
+### Agente de teste / App Review
+- Agente "Maria Luiza" = `agent_id 2`, tenant **Out Group** (id 3), número **+55 11 92336-2467** (Cloud API oficial, token System User permanente).
+- **App Review submetido** (29/mai, "em análise", ~10 dias). Login de teste do reviewer: `reviewer@tier.finance` / `TierReview2026!` (tenant 5). Pós-aprovação: **Publicar** (tirar de "Não publicado").
+
 ## Arquitetura backend
 
 - `routes/` — connectors, agents, webhooks, playbooks, billing, containers, etc.
@@ -49,8 +72,13 @@ Conector `whatsapp` (fala com `whats.tier.finance`). Baileys é não-oficial: to
 - **Webhook event_id**: usar o `key.id` real da mensagem (a Engine manda `instance_id`/`timestamp` snake_case, não `instanceId`/`ts` — senão event_id vira constante e tudo após a 1ª msg é "duplicata").
 - **FB.login callback** não pode ser `async` (SDK rejeita) — usar função normal + IIFE.
 - **Cloud API**: variação Embedded Signup só via modelo; app precisa ser Tech Provider; Vite vars build-time.
+- **Modelo do agente NÃO é `model.default`**: o `run_agent` da imagem força `claude-opus-4-6` quando provider=anthropic, ignorando a config → thinking-signature 400. Por isso MiniMax é o modelo de produção. Trocar modelo de verdade exige rebuild da imagem.
+- **Conversa "envenenada"**: se um histórico (sessão Hermes `conv-{id}`) acumulou thinking blocks (do opus), fechar a conversa (`TaConversation.status='closed'`) força sessão nova/limpa. Mas isso NÃO conserta o Claude (opus regenera thinking) — só MiniMax resolve.
+- **Editar persona é live (sem deploy)** — `TaAgent.persona` no DB; sempre `llm_cache.invalidate(tenant_id, agent_id)` depois.
 
 ## Convenções
 - Comentários/docs em pt-BR. Python: Ruff line-length 120, double quotes. TS: strict, zero-warning. `npm run build` antes de commit no frontend.
-- Memória canônica: `project_tier_agent_whatsapp_oficial.md`, `project_tier_agent.md` (+ Q1/Q2/Q3, playbook builder).
+- Memória canônica: `project_tier_agent_whatsapp_oficial.md` (mais completa — modelo, atendimento, RAG, App Review), `project_tier_agent.md` (+ Q1/Q2/Q3, playbook builder).
 - Obsidian: `projetos/Tier/Tier Agent/`.
+
+_Última atualização: 29/mai/2026 — atendimento (lead/handoff/inbox/split/consultivo), modelo MiniMax (Haiku bloqueado), filtro CJK, RAG pronto-não-ativado, App Review submetido._
