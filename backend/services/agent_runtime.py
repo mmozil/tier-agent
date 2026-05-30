@@ -48,6 +48,36 @@ def _sanitize_reply(text: str | None) -> str:
     return cleaned.strip()
 
 
+def _split_into_bubbles(text: str, max_len: int = 700) -> list[str]:
+    """Divide resposta longa em até 4 balões (mais humano no WhatsApp).
+
+    Quebra em parágrafos (\\n\\n), mantém listas/blocos inteiros, agrupa blocos
+    pequenos. Resposta curta → 1 balão (sem split)."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    if len(text) <= max_len:
+        return [text]
+    blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
+    bubbles: list[str] = []
+    cur = ""
+    for b in blocks:
+        if len(b) > max_len:  # bloco grande (ex: lista de planos) → balão próprio
+            if cur:
+                bubbles.append(cur)
+                cur = ""
+            bubbles.append(b)
+            continue
+        if cur and len(cur) + 2 + len(b) > max_len:
+            bubbles.append(cur)
+            cur = b
+        else:
+            cur = (cur + "\n\n" + b) if cur else b
+    if cur:
+        bubbles.append(cur)
+    return bubbles[:4]
+
+
 async def resolve_connector_by_instance(
     db: AsyncSession, kind: str, instance_id: str
 ) -> TaConnector | None:
@@ -410,10 +440,21 @@ async def handle_inbound_message(
     try:
         connector_impl = registry.get(connector_kind)
         cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
-        await connector_impl.send(
-            cfg,
-            OutboundMessage(external_chat_id=external_chat_id, content=_sanitize_reply(reply.text)),
-        )
+        _clean = _sanitize_reply(reply.text)
+        _bubbles = _split_into_bubbles(_clean)
+        if len(_bubbles) <= 1:
+            await connector_impl.send(
+                cfg, OutboundMessage(external_chat_id=external_chat_id, content=_clean)
+            )
+        else:
+            import asyncio as _asyncio
+
+            for _i, _b in enumerate(_bubbles):
+                await connector_impl.send(
+                    cfg, OutboundMessage(external_chat_id=external_chat_id, content=_b)
+                )
+                if _i < len(_bubbles) - 1:
+                    await _asyncio.sleep(1.2)  # pausa natural entre balões
     except Exception as e:
         logger.exception("Falha enviando resposta agent=%s channel=%s", agent.id, connector_kind)
         return {"status": "send_error", "agent_id": agent.id, "error": str(e)}
