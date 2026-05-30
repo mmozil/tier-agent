@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2 } from "lucide-react";
+import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send } from "lucide-react";
 
 import { api } from "@/lib/api";
 
@@ -59,6 +59,8 @@ export default function ConversasPage() {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [openConv, setOpenConv] = useState<Conversation | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -89,6 +91,24 @@ export default function ConversasPage() {
       toast.error("Falha ao abrir conversa");
     } finally {
       setLoadingMsgs(false);
+    }
+  }
+
+  async function sendReply() {
+    const text = replyText.trim();
+    if (!text || !openConv || sending) return;
+    setSending(true);
+    try {
+      const { data } = await api.post<Message>(`/conversations/${openConv.id}/reply`, { content: text });
+      setMsgs((prev) => [...prev, data]);
+      setReplyText("");
+      // responder assume a conversa (IA pausada)
+      setOpenConv((prev) => (prev ? { ...prev, status: "handed_off" } : prev));
+      setConvs((prev) => prev.map((c) => (c.id === openConv.id ? { ...c, status: "handed_off" } : c)));
+    } catch {
+      toast.error("Não foi possível enviar");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -215,19 +235,58 @@ export default function ConversasPage() {
               )}
               {msgs.map((m) => {
                 const isUser = m.role === "user";
+                const isAgent = m.role === "agent";
                 return (
-                  <div key={m.id} className={`flex ${isUser ? "justify-start" : "justify-end"}`}>
+                  <div key={m.id} className={`flex flex-col ${isUser ? "items-start" : "items-end"}`}>
                     <div
                       className={`max-w-[80%] rounded-2xl px-3 py-2 text-[13px] ${
-                        isUser ? "bg-white border border-slate-200 text-slate-700" : "bg-[#003083] text-white"
+                        isUser
+                          ? "bg-white border border-slate-200 text-slate-700"
+                          : isAgent
+                            ? "bg-emerald-600 text-white"
+                            : "bg-[#003083] text-white"
                       }`}
                     >
                       {m.content || <span className="opacity-60 italic">[sem texto]</span>}
                     </div>
+                    {isAgent && <span className="text-[10px] text-emerald-600 mt-0.5 mr-1">Você (atendente)</span>}
+                    {!isUser && !isAgent && <span className="text-[10px] text-slate-400 mt-0.5 mr-1">IA</span>}
                   </div>
                 );
               })}
             </div>
+
+            {/* Caixa de resposta — atendente responde pelo painel */}
+            {openConv && openConv.status !== "closed" && (
+              <div className="border-t border-slate-200 p-3 bg-white">
+                <div className="flex items-end gap-2">
+                  <textarea
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendReply();
+                      }
+                    }}
+                    rows={1}
+                    placeholder="Responder ao cliente… (Enter envia, Shift+Enter quebra linha)"
+                    className="flex-1 resize-none max-h-28 px-3 py-2 text-[13px] rounded-lg border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
+                  />
+                  <button
+                    onClick={sendReply}
+                    disabled={sending || !replyText.trim()}
+                    className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+                    title="Enviar"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5">
+                  Ao responder, você assume a conversa e a IA fica pausada.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

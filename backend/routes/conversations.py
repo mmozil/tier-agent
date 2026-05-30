@@ -3,6 +3,8 @@
 Permite assumir (pausar a IA), devolver pra IA e resolver uma conversa.
 """
 
+import json
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
-from models import TaAgent, TaConversation, TaMessageLog
+from core.encryption import decrypt
+from models import TaAgent, TaConnector, TaConversation, TaMessageLog
+from services.connectors import registry
+from services.connectors.base import ConnectorConfig, OutboundMessage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -195,3 +202,64 @@ async def resolve(
     conv.status = "closed"
     await db.commit()
     return {"status": "closed", "conversation_id": conv.id}
+
+
+class ReplyIn(BaseModel):
+    content: str
+
+
+@router.post("/{conversation_id}/reply", response_model=MessageOut)
+async def reply_manual(
+    conversation_id: int,
+    body: ReplyIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atendente responde pelo painel — envia no canal do cliente e pausa a IA.
+
+    A mensagem vai pelo mesmo conector do agente (WhatsApp/Telegram/e-mail) e é
+    gravada com role='agent' (humano). Assumir = a IA não responde mais sozinha
+    até "Devolver para a IA" (resume)."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(422, "Mensagem vazia")
+
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+
+    # Conector do agente pra este canal
+    conn = (
+        await db.execute(
+            select(TaConnector).where(
+                TaConnector.agent_id == conv.agent_id,
+                TaConnector.kind == conv.connector_kind,
+                TaConnector.enabled.is_(True),
+            )
+        )
+    ).scalars().first()
+    if not conn:
+        raise HTTPException(409, f"Sem canal {conv.connector_kind} ativo pra enviar")
+
+    # Email: 1ª linha vira assunto (padrão do adapter)
+    out_content = content
+    if conv.connector_kind == "email" and not content.lower().startswith("subject:"):
+        out_content = f"Subject: Resposta do atendimento\n\n{content}"
+
+    try:
+        impl = registry.get(conv.connector_kind)
+        cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
+        await impl.send(cfg, OutboundMessage(external_chat_id=conv.external_id, content=out_content))
+    except Exception as e:
+        logger.exception("reply manual falhou conv=%s", conversation_id)
+        raise HTTPException(502, f"Falha ao enviar: {e}")
+
+    # Grava a mensagem do atendente + pausa a IA
+    msg = TaMessageLog(conversation_id=conv.id, role="agent", content=content[:8000])
+    db.add(msg)
+    conv.status = "handed_off"
+    conv.last_message_at = datetime.utcnow()
+    conv.msg_count += 1
+    await db.commit()
+    await db.refresh(msg)
+    return msg

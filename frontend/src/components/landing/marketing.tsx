@@ -49,6 +49,54 @@ export function FlowEdge({ active = true, height = 44 }: { active?: boolean; hei
   );
 }
 
+// Fork de 2 ramos a partir de um nó (conecta o Switch aos 2 caminhos).
+// Alinha com 2 cards de 316px + gap 32px abaixo.
+export function BranchSplit({
+  leftLabel,
+  rightLabel,
+  activeRight = false,
+}: {
+  leftLabel: string;
+  rightLabel: string;
+  activeRight?: boolean;
+}) {
+  const cardW = 316;
+  const gap = 32;
+  const W = cardW * 2 + gap; // 664
+  const L = cardW / 2; // 158
+  const Rr = W - cardW / 2; // 506
+  const C = W / 2; // 332
+  const H = 60;
+  const g = "#00D17E";
+  const grey = "#D6DAE0";
+  const rightColor = activeRight ? g : grey;
+  return (
+    <div className="relative -mt-[6px]" style={{ width: W }}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block relative z-10" aria-hidden>
+        <circle cx={C} cy="5" r="3.5" fill="#FFFFFF" stroke={g} strokeWidth="1.5" />
+        <line x1={C} y1="8" x2={C} y2="20" stroke={g} strokeWidth="2" />
+        <line x1={L} y1="20" x2={C} y2="20" stroke={g} strokeWidth="2" />
+        <line x1={C} y1="20" x2={Rr} y2="20" stroke={rightColor} strokeWidth="2" />
+        <line x1={L} y1="20" x2={L} y2={H - 6} stroke={g} strokeWidth="2" />
+        <path d={`M${L} ${H} L${L - 5} ${H - 8} L${L + 5} ${H - 8} Z`} fill={g} />
+        <line x1={Rr} y1="20" x2={Rr} y2={H - 6} stroke={rightColor} strokeWidth="2" />
+        <path d={`M${Rr} ${H} L${Rr - 5} ${H - 8} L${Rr + 5} ${H - 8} Z`} fill={rightColor} />
+      </svg>
+      {/* labels sobre as linhas dos ramos */}
+      <div className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: L, top: 33 }}>
+        <span className="px-2 h-[20px] inline-flex items-center rounded-full bg-white border border-line text-[10.5px] font-medium text-[#6A7385]">
+          {leftLabel}
+        </span>
+      </div>
+      <div className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: Rr, top: 33 }}>
+        <span className={`px-2 h-[20px] inline-flex items-center rounded-full bg-white border border-line text-[10.5px] font-medium ${activeRight ? "text-[#6A7385]" : "text-[#9AA4B2]"}`}>
+          {rightLabel}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function FlowNode({
   icon: Icon,
   title,
@@ -77,7 +125,7 @@ export function FlowNode({
         : "border border-line shadow-[0_1px_2px_rgba(13,15,17,.04)]";
 
   return (
-    <div className={`relative w-[284px] ${dim ? "opacity-55" : ""}`}>
+    <div className={`relative w-[316px] ${dim ? "opacity-55" : ""}`}>
       {trigger && (
         <div className="absolute -top-[27px] left-0 inline-flex items-center gap-1.5 h-[21px] px-2 rounded-full bg-white/80 border border-hairline text-[10px] font-medium text-[#9AA4B2]">
           <span className="w-1.5 h-1.5 rounded-full bg-node-trigger" /> Trigger

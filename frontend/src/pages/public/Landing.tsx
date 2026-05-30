@@ -11,7 +11,7 @@ import {
   Check,
 } from "lucide-react";
 
-import { MarketingNav, MarketingFooter, FinalCTA, FlowNode, FlowEdge } from "../../components/landing/marketing";
+import { MarketingNav, MarketingFooter, FinalCTA, FlowNode, FlowEdge, BranchSplit } from "../../components/landing/marketing";
 import PlaybookDemo from "../../components/landing/PlaybookDemo";
 import AgentResearchDemo from "../../components/landing/AgentResearchDemo";
 
@@ -169,20 +169,13 @@ export default function Landing() {
           {/* canvas demo */}
           <div className="relative bg-dots p-10 lg:p-12 lg:rule-x min-h-[420px]">
             <div className="flex flex-col items-center">
-              <FlowNode icon={Zap} title="Quando mensagem chega" subtitle="Gatilho · inbox" tag="Inbox" color="#8B5CF6" status="completed" trigger />
+              <FlowNode icon={Zap} title="Mensagem recebida" subtitle="Gatilho · inbox" tag="Inbox" color="#8B5CF6" status="completed" trigger />
               <FlowEdge active />
               <FlowNode icon={GitBranch} title="Classifica intenção" subtitle="Decisão · IA" tag="Switch" color="#F5A300" status="completed" />
-              <div className="flex items-start gap-8 mt-1">
-                <div className="flex flex-col items-center">
-                  <span className="text-[10px] font-medium text-[#6A7385] bg-white border border-line rounded-full px-2 py-0.5">Vendas</span>
-                  <FlowEdge active height={26} />
-                  <FlowNode icon={Sparkles} title="Qualifica + cobra" subtitle="LLM + Tier Pay" tag="Pix" color="#003083" status="running" />
-                </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-[10px] font-medium text-[#6A7385] bg-white border border-line rounded-full px-2 py-0.5">Suporte</span>
-                  <FlowEdge active={false} height={26} />
-                  <FlowNode icon={ShieldCheck} title="Resolve dúvida" subtitle="Base de conhecimento" tag="RAG" color="#003083" dim />
-                </div>
+              <BranchSplit leftLabel="Vendas" rightLabel="Suporte" activeRight={false} />
+              <div className="flex items-start gap-8">
+                <FlowNode icon={Sparkles} title="Qualifica + cobra" subtitle="LLM + Tier Pay" tag="Pix" color="#003083" status="running" />
+                <FlowNode icon={ShieldCheck} title="Resolve dúvida" subtitle="Base de conhecimento" tag="RAG" color="#003083" dim />
               </div>
             </div>
           </div>
