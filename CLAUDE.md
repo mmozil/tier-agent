@@ -42,9 +42,13 @@ Conector `whatsapp` (fala com `whats.tier.finance`). Baileys é não-oficial: to
 - **Filtro anti-CJK** (`agent_runtime._sanitize_reply`): MiniMax às vezes vaza chinês/japonês/coreano em pt-BR → removidos antes do envio. Inglês/espanhol NÃO são filtráveis (teto do MiniMax — só some com Claude). Persona tem regra "só pt-BR" como 1ª camada.
 
 ### Funcionalidades de atendimento (todas plataforma — valem p/ todo agente)
-- **Captura de lead** (`services/lead_capture.py`): detecta intenção de compra/telefone → `TaNotification(category=lead)`.
-- **Handoff humano** (`services/handoff.py`): pedido de atendente → curto-circuita antes do LLM → `TaNotification(category=handoff)` + resposta padrão.
-- **Inbox de conversas** (`routes/conversations.py` + coluna `ta_message_log.content` via ensure idempotente em `main.py`): tela `/admin/leads` (Leads & Notificações) + `/admin/conversas` (histórico).
+- **Captura de lead** (`services/lead_capture.py`): detecta intenção de compra/telefone → `TaNotification(category=lead)` + dispara alerta externo.
+- **Handoff inteligente** (`services/handoff.py` + `services/escalation.py`): pedido de atendente → curto-circuita antes do LLM, **PAUSA o bot** (`TaConversation.status='handed_off'` → no próximo inbound o `agent_runtime` retorna `handed_off_paused` sem chamar LLM), cria `TaNotification(category=handoff)` com **warm summary** (motivo + contato + fatos + últimas msgs, determinístico, sem custo LLM) + resposta padrão + alerta externo.
+- **Escalonamento por sinal** (`escalation.py`): `is_frustrated` (palavrão/ameaça/caps/!!!) e `detect_loop` (2+ "não sei" do assistente seguidos) → **alertam o time sem pausar** o bot (reason no payload). Ref: Intercom/Chatwoot/Respond.io (sentimento é multiplicador, não pausa sozinho).
+- **Alerta externo pra equipe** (`services/team_alert.py`): "me chama quando precisar". Avisa por **WhatsApp** (pelo próprio canal do agente → número do time) e/ou **e-mail**. Config por tenant em `TaRuntimeParam` (escopo=tenant): `alert_whatsapp` / `alert_email` / `alert_enabled`. UI em `/admin/leads` (card "Onde te avisamos"). Sem destino → no-op silencioso.
+- **Assumir/Devolver/Resolver** (`routes/conversations.py`): `POST /conversations/{id}/handoff` (humano assume, pausa IA) · `/resume` (devolve pra IA) · `/resolve` (encerra). Botões no drawer de `/admin/conversas` + badge de status.
+- **Sino real** (`components/NotificationBell.tsx`): badge com `GET /notifications/stats` (poll 20s) + dropdown com não-lidas → `/admin/leads`.
+- **Inbox de conversas** (`routes/conversations.py` + coluna `ta_message_log.content` via ensure idempotente em `main.py`): tela `/admin/leads` (Leads & Notificações, mostra motivo+resumo) + `/admin/conversas` (histórico + ações).
 - **Split de mensagens** (`_split_into_bubbles`): resposta > 700 chars → até 4 balões.
 - **Timing humanizado** (`webhooks._process_cloud_message_humanized`): atraso de leitura ~2-3s antes de digitar.
 - **Persona consultiva + anti-alucinação**: entende antes de apresentar; nunca inventa (ERP é web, sem app dedicado; o que não sabe → encaminha consultor). Editada direto em `TaAgent.persona` (live, sem deploy) + `llm_cache.invalidate` após editar.
