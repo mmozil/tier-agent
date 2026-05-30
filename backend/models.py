@@ -220,6 +220,14 @@ class TaConversation(Base):
     # status: active | closed | handed_off
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
     # lista de etiquetas (ex: ["orçamento", "vip"]) — adicionada via ensure runtime DDL
+    assigned_to: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # nome do atendente responsável (lightweight — sem tabela de usuários ainda)
+    csat_state: Mapped[str] = mapped_column(String(16), default="none", nullable=False)
+    # csat: none | pending | done
+    csat_score: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-5
+    csat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sla_alerted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # quando o último alerta de SLA foi disparado (anti-spam do job)
 
 
 class TaMessageLog(Base):

@@ -15,10 +15,11 @@ interface AlertCfg {
   alert_whatsapp: string | null;
   alert_email: string | null;
   alert_enabled: boolean;
+  sla_minutes: number;
 }
 
 function AlertConfigCard() {
-  const [cfg, setCfg] = useState<AlertCfg>({ alert_whatsapp: "", alert_email: "", alert_enabled: true });
+  const [cfg, setCfg] = useState<AlertCfg>({ alert_whatsapp: "", alert_email: "", alert_enabled: true, sla_minutes: 0 });
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -30,6 +31,7 @@ function AlertConfigCard() {
           alert_whatsapp: data.alert_whatsapp || "",
           alert_email: data.alert_email || "",
           alert_enabled: data.alert_enabled,
+          sla_minutes: data.sla_minutes || 0,
         }),
       )
       .catch(() => {});
@@ -88,6 +90,20 @@ function AlertConfigCard() {
                 className="w-full h-8 px-3 text-[13px] rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
               />
             </div>
+          </div>
+          <div>
+            <label className="text-[12px] text-slate-600 block mb-1">
+              Alerta de SLA — avisar se cliente espera resposta humana por (minutos)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={cfg.sla_minutes}
+              onChange={(e) => setCfg({ ...cfg, sla_minutes: Math.max(0, parseInt(e.target.value || "0", 10)) })}
+              placeholder="0 = desligado"
+              className="w-40 h-8 px-3 text-[13px] rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
+            />
+            <span className="text-[12px] text-slate-400 ml-2">0 = desligado</span>
           </div>
           <label className="flex items-center gap-2 text-[13px] text-slate-700">
             <input

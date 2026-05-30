@@ -16,6 +16,7 @@ import PlaybookDemo from "../../components/landing/PlaybookDemo";
 import AgentResearchDemo from "../../components/landing/AgentResearchDemo";
 import { motion } from "framer-motion";
 import { StaggerIn, Item, Reveal } from "../../components/landing/motion";
+import { BorderBeam, Spotlight, GridFade } from "../../components/landing/effects";
 
 // Globo WebGL (three.js) — lazy p/ não pesar o bundle inicial
 const ScaleGlobe = lazy(() => import("../../components/landing/ScaleGlobe"));
@@ -64,12 +65,8 @@ export default function Landing() {
 
       {/* ── Hero ────────────────────────────────────────── */}
       <section className="relative overflow-hidden border-b border-hairline">
-        <div className="absolute inset-0 bg-dots-lg opacity-50" />
-        {/* glow radial sutil de fundo */}
-        <div
-          className="absolute left-1/2 -translate-x-1/2 top-[18%] w-[760px] h-[420px] pointer-events-none"
-          style={{ background: "radial-gradient(ellipse at center, rgba(0,48,131,.07), transparent 70%)" }}
-        />
+        <GridFade className="opacity-60" />
+        <Spotlight className="left-1/2 -translate-x-1/2 top-[4%] w-[860px] h-[500px]" />
         {/* margens hachuradas */}
         <div className="absolute inset-y-0 left-0 w-8 hatch hidden lg:block" />
         <div className="absolute inset-y-0 right-0 w-8 hatch hidden lg:block" />

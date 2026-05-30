@@ -27,6 +27,7 @@ import AgentSkillsPage from "./pages/admin/AgentSkillsPage";
 import MarketplacePage from "./pages/admin/MarketplacePage";
 import LeadsPage from "./pages/admin/LeadsPage";
 import ConversasPage from "./pages/admin/ConversasPage";
+import RelatoriosAtendimentoPage from "./pages/admin/RelatoriosAtendimentoPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="conversas" element={<ConversasPage />} />
         <Route path="canais" element={<CanaisPage />} />
         <Route path="leads" element={<LeadsPage />} />
+        <Route path="relatorios-atendimento" element={<RelatoriosAtendimentoPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="params" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
         <Route path="metricas" element={<MetricasPage />} />

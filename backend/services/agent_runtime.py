@@ -223,6 +223,27 @@ async def handle_inbound_message(
     if not agent or not agent.active:
         return {"status": "agent_inactive", "agent_id": connector.agent_id}
 
+    # ─── CSAT: resposta de avaliação (0-5) a uma conversa resolvida ───
+    # Captura ANTES de ensure_conversation pra não abrir conversa nova.
+    try:
+        from services import csat
+
+        thanks = await csat.maybe_capture_csat(
+            db, agent_id=agent.id, external_chat_id=external_chat_id, text=text_content
+        )
+        if thanks:
+            try:
+                connector_impl = registry.get(connector_kind)
+                cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
+                await connector_impl.send(
+                    cfg, OutboundMessage(external_chat_id=external_chat_id, content=thanks)
+                )
+            except Exception:
+                logger.exception("envio csat thanks falhou agent=%s", agent.id)
+            return {"status": "csat_captured", "agent_id": agent.id}
+    except Exception:
+        logger.exception("csat capture falhou agent=%s — segue fluxo normal", agent.id)
+
     # Q2.4 Budget guard — bloqueia tenant suspenso
     try:
         from services import budget_guard

@@ -117,6 +117,12 @@ export default {
         revealup: { "0%": { opacity: "0", transform: "translateY(14px)" }, "100%": { opacity: "1", transform: "translateY(0)" } },
         // fade in suave
         fadein: { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
+        // border beam (Magic UI) — luz percorrendo a borda
+        borderbeam: { "100%": { offsetDistance: "100%" } },
+        // gradiente animado (shimmer text)
+        gradientx: { "0%,100%": { backgroundPosition: "0% 50%" }, "50%": { backgroundPosition: "100% 50%" } },
+        // rotação lenta (border beam por conic-gradient)
+        spinslow: { to: { transform: "rotate(360deg)" } },
       },
       animation: {
         dashflow: "dashflow 0.7s linear infinite",
@@ -126,6 +132,8 @@ export default {
         travel: "travel 1.1s ease-in-out infinite",
         revealup: "revealup 0.6s cubic-bezier(0.22,1,0.36,1) forwards",
         fadein: "fadein 0.5s ease-out forwards",
+        borderbeam: "borderbeam 7s linear infinite",
+        gradientx: "gradientx 5s ease infinite",
       },
     },
   },

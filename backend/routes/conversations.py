@@ -35,6 +35,9 @@ class ConversationOut(BaseModel):
     last_message_at: datetime | None = None
     last_preview: str | None = None
     tags: list[str] = []
+    assigned_to: str | None = None
+    csat_state: str = "none"
+    csat_score: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -108,6 +111,9 @@ async def list_conversations(
                 last_message_at=c.last_message_at,
                 last_preview=preview,
                 tags=ctags,
+                assigned_to=c.assigned_to,
+                csat_state=c.csat_state,
+                csat_score=c.csat_score,
             )
         )
     return out
@@ -149,6 +155,9 @@ async def conversation_detail(
             msg_count=conv.msg_count,
             last_message_at=conv.last_message_at,
             tags=conv.tags or [],
+            assigned_to=conv.assigned_to,
+            csat_state=conv.csat_state,
+            csat_score=conv.csat_score,
         ).model_dump(),
         "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
     }
@@ -192,6 +201,28 @@ async def _get_owned_conversation(
     return conv
 
 
+async def _send_via_channel(db: AsyncSession, conv: TaConversation, content: str) -> None:
+    """Envia uma mensagem pro cliente no canal da conversa. Levanta HTTPException
+    em caso de erro (caller decide tratar)."""
+    conn = (
+        await db.execute(
+            select(TaConnector).where(
+                TaConnector.agent_id == conv.agent_id,
+                TaConnector.kind == conv.connector_kind,
+                TaConnector.enabled.is_(True),
+            )
+        )
+    ).scalars().first()
+    if not conn:
+        raise HTTPException(409, f"Sem canal {conv.connector_kind} ativo pra enviar")
+    out = content
+    if conv.connector_kind == "email" and not content.lower().startswith("subject:"):
+        out = f"Subject: Atendimento\n\n{content}"
+    impl = registry.get(conv.connector_kind)
+    cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
+    await impl.send(cfg, OutboundMessage(external_chat_id=conv.external_id, content=out))
+
+
 @router.post("/{conversation_id}/handoff", response_model=dict)
 async def take_over(
     conversation_id: int,
@@ -225,16 +256,78 @@ async def resume_ai(
 @router.post("/{conversation_id}/resolve", response_model=dict)
 async def resolve(
     conversation_id: int,
+    csat: bool = True,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Resolver: encerra a conversa (sai da fila de ativas)."""
+    """Resolver: encerra a conversa. Por padrão envia a pesquisa de satisfação
+    (CSAT) no canal — a próxima resposta numérica do cliente vira a nota."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
     conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
     conv.status = "closed"
+
+    csat_sent = False
+    if csat and conv.csat_state != "done":
+        from services import csat as csat_svc
+
+        try:
+            await _send_via_channel(db, conv, csat_svc.CSAT_QUESTION)
+            conv.csat_state = "pending"
+            csat_sent = True
+        except HTTPException:
+            pass  # sem canal pra enviar — encerra mesmo assim
+        except Exception:
+            logger.exception("envio CSAT falhou conv=%s", conversation_id)
+
     await db.commit()
-    return {"status": "closed", "conversation_id": conv.id}
+    return {"status": "closed", "conversation_id": conv.id, "csat_sent": csat_sent}
+
+
+class NoteIn(BaseModel):
+    content: str
+
+
+@router.post("/{conversation_id}/note", response_model=MessageOut)
+async def add_note(
+    conversation_id: int,
+    body: NoteIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Nota interna — visível só pra equipe, NÃO é enviada ao cliente."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(422, "Nota vazia")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    note = TaMessageLog(conversation_id=conv.id, role="note", content=content[:8000])
+    db.add(note)
+    await db.commit()
+    await db.refresh(note)
+    return note
+
+
+class AssignIn(BaseModel):
+    assigned_to: str | None = None
+
+
+@router.put("/{conversation_id}/assign", response_model=dict)
+async def assign(
+    conversation_id: int,
+    body: AssignIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atribui a conversa a um atendente (nome livre) ou limpa (null/vazio)."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    val = (body.assigned_to or "").strip()[:120] or None
+    conv.assigned_to = val
+    await db.commit()
+    return {"conversation_id": conv.id, "assigned_to": val}
 
 
 class ReplyIn(BaseModel):

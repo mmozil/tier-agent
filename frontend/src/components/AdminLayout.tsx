@@ -57,6 +57,7 @@ const SECTIONS: NavGroup[] = [
     label: "Conta",
     items: [
       { to: "/admin/metricas", label: "Métricas", icon: BarChart3 },
+      { to: "/admin/relatorios-atendimento", label: "Relatórios", icon: BarChart3 },
       { to: "/admin/cobranca", label: "Cobrança", icon: CreditCard },
       { to: "/admin/equipe", label: "Equipe", icon: Users },
     ],

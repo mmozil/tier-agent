@@ -29,6 +29,9 @@ interface Conversation {
   last_message_at: string | null;
   last_preview: string | null;
   tags: string[];
+  assigned_to: string | null;
+  csat_state: string;
+  csat_score: number | null;
 }
 
 interface Message {
@@ -65,6 +68,8 @@ export default function ConversasPage() {
   const [sending, setSending] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
+  const [noteMode, setNoteMode] = useState(false);
+  const [assignInput, setAssignInput] = useState("");
 
   async function load() {
     setLoading(true);
@@ -86,6 +91,8 @@ export default function ConversasPage() {
   async function openConversation(c: Conversation) {
     setOpenId(c.id);
     setOpenConv(c);
+    setAssignInput(c.assigned_to || "");
+    setNoteMode(false);
     setLoadingMsgs(true);
     setMsgs([]);
     try {
@@ -120,16 +127,33 @@ export default function ConversasPage() {
     if (!text || !openConv || sending) return;
     setSending(true);
     try {
-      const { data } = await api.post<Message>(`/conversations/${openConv.id}/reply`, { content: text });
-      setMsgs((prev) => [...prev, data]);
-      setReplyText("");
-      // responder assume a conversa (IA pausada)
-      setOpenConv((prev) => (prev ? { ...prev, status: "handed_off" } : prev));
-      setConvs((prev) => prev.map((c) => (c.id === openConv.id ? { ...c, status: "handed_off" } : c)));
+      if (noteMode) {
+        const { data } = await api.post<Message>(`/conversations/${openConv.id}/note`, { content: text });
+        setMsgs((prev) => [...prev, data]);
+        setReplyText("");
+      } else {
+        const { data } = await api.post<Message>(`/conversations/${openConv.id}/reply`, { content: text });
+        setMsgs((prev) => [...prev, data]);
+        setReplyText("");
+        // responder assume a conversa (IA pausada)
+        setOpenConv((prev) => (prev ? { ...prev, status: "handed_off" } : prev));
+        setConvs((prev) => prev.map((c) => (c.id === openConv.id ? { ...c, status: "handed_off" } : c)));
+      }
     } catch {
       toast.error("Não foi possível enviar");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function saveAssign(convId: number, value: string) {
+    const val = value.trim();
+    setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, assigned_to: val || null } : prev));
+    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, assigned_to: val || null } : c)));
+    try {
+      await api.put(`/conversations/${convId}/assign`, { assigned_to: val });
+    } catch {
+      toast.error("Erro ao atribuir");
     }
   }
 
@@ -286,6 +310,35 @@ export default function ConversasPage() {
                 )}
               </div>
             )}
+
+            {/* Atribuição + CSAT */}
+            {openConv && (
+              <div className="px-5 py-2.5 border-b border-slate-100 flex items-center gap-2">
+                <span className="text-[12px] text-slate-500 shrink-0">Atendente:</span>
+                <input
+                  value={assignInput}
+                  onChange={(e) => setAssignInput(e.target.value)}
+                  onBlur={() => {
+                    if ((assignInput.trim() || "") !== (openConv.assigned_to || ""))
+                      saveAssign(openConv.id, assignInput);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
+                  placeholder="ninguém atribuído"
+                  className="text-[13px] px-2 py-1 rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083] w-48"
+                />
+                {openConv.csat_state === "done" && openConv.csat_score != null && (
+                  <span className="ml-auto text-[12px] text-amber-600 font-medium">
+                    ⭐ CSAT {openConv.csat_score}/5
+                  </span>
+                )}
+                {openConv.csat_state === "pending" && (
+                  <span className="ml-auto text-[11px] text-slate-400">aguardando avaliação…</span>
+                )}
+              </div>
+            )}
+
             {/* Etiquetas */}
             {openConv && (
               <div className="px-5 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-1.5">
@@ -329,6 +382,16 @@ export default function ConversasPage() {
               {msgs.map((m) => {
                 const isUser = m.role === "user";
                 const isAgent = m.role === "agent";
+                const isNote = m.role === "note";
+                if (isNote) {
+                  return (
+                    <div key={m.id} className="flex justify-center">
+                      <div className="max-w-[88%] rounded-lg px-3 py-1.5 text-[12px] bg-amber-50 text-amber-800 border border-amber-200">
+                        📝 <span className="font-medium">Nota interna:</span> {m.content}
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={m.id} className={`flex flex-col ${isUser ? "items-start" : "items-end"}`}>
                     <div
@@ -349,13 +412,33 @@ export default function ConversasPage() {
               })}
             </div>
 
-            {/* Caixa de resposta — atendente responde pelo painel */}
+            {/* Caixa de resposta — atendente responde pelo painel ou adiciona nota */}
             {openConv && openConv.status !== "closed" && (
               <div className="border-t border-slate-200 p-3 bg-white">
+                <div className="flex items-center gap-1 mb-2">
+                  <button
+                    onClick={() => setNoteMode(false)}
+                    className={`text-[12px] px-2.5 py-1 rounded-md ${
+                      !noteMode ? "bg-emerald-50 text-emerald-700 font-medium" : "text-slate-500 hover:bg-slate-100"
+                    }`}
+                  >
+                    Responder
+                  </button>
+                  <button
+                    onClick={() => setNoteMode(true)}
+                    className={`text-[12px] px-2.5 py-1 rounded-md ${
+                      noteMode ? "bg-amber-50 text-amber-700 font-medium" : "text-slate-500 hover:bg-slate-100"
+                    }`}
+                  >
+                    📝 Nota interna
+                  </button>
+                </div>
                 <div className="flex items-end gap-2">
-                  <CannedPicker
-                    onInsert={(c) => setReplyText((prev) => (prev ? prev + "\n" + c : c))}
-                  />
+                  {!noteMode && (
+                    <CannedPicker
+                      onInsert={(c) => setReplyText((prev) => (prev ? prev + "\n" + c : c))}
+                    />
+                  )}
                   <textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
@@ -366,20 +449,32 @@ export default function ConversasPage() {
                       }
                     }}
                     rows={1}
-                    placeholder="Responder ao cliente… (Enter envia, Shift+Enter quebra linha)"
-                    className="flex-1 resize-none max-h-28 px-3 py-2 text-[13px] rounded-lg border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
+                    placeholder={
+                      noteMode
+                        ? "Nota visível só pra equipe (não vai pro cliente)…"
+                        : "Responder ao cliente… (Enter envia, Shift+Enter quebra linha)"
+                    }
+                    className={`flex-1 resize-none max-h-28 px-3 py-2 text-[13px] rounded-lg border outline-none ${
+                      noteMode
+                        ? "border-amber-200 bg-amber-50/40 focus:shadow-[0_0_0_2px_#f59e0b]"
+                        : "border-slate-200 focus:shadow-[0_0_0_2px_#003083]"
+                    }`}
                   />
                   <button
                     onClick={sendReply}
                     disabled={sending || !replyText.trim()}
-                    className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+                    className={`h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg text-white disabled:opacity-40 ${
+                      noteMode ? "bg-amber-500 hover:bg-amber-600" : "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
                     title="Enviar"
                   >
                     <Send className="w-4 h-4" />
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1.5">
-                  Ao responder, você assume a conversa e a IA fica pausada.
+                  {noteMode
+                    ? "A nota fica registrada na conversa, visível só pra equipe."
+                    : "Ao responder, você assume a conversa e a IA fica pausada."}
                 </p>
               </div>
             )}

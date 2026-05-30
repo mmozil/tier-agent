@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import agents, auth, billing, canned_responses, connectors, containers, conversations, features, health, knowledge, llm, mcp_server, metrics, notifications, playbooks, skills, templates, tenants, tier_pay, webhooks
+from routes import agents, auth, billing, canned_responses, connectors, containers, conversations, features, health, knowledge, llm, mcp_server, metrics, notifications, playbooks, reports, skills, templates, tenants, tier_pay, webhooks
 
 settings = get_settings()
 
@@ -68,6 +68,7 @@ app.include_router(skills.router, prefix="/api/v1")
 app.include_router(tier_pay.router, prefix="/api/v1")
 app.include_router(mcp_server.router, prefix="/api/v1")
 app.include_router(canned_responses.router, prefix="/api/v1")
+app.include_router(reports.router, prefix="/api/v1")
 
 
 async def _ensure_message_content_column():
@@ -84,6 +85,14 @@ async def _ensure_message_content_column():
             await db.execute(
                 _sql_text("ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb")
             )
+            for ddl in (
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(120)",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS csat_state VARCHAR(16) DEFAULT 'none'",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS csat_score INTEGER",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS csat_at TIMESTAMP",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS sla_alerted_at TIMESTAMP",
+            ):
+                await db.execute(_sql_text(ddl))
             await db.commit()
         logger.info("ensure_message_content_column ok")
     except Exception:

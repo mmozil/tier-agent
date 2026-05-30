@@ -37,6 +37,7 @@ CATEGORY_EMOJI = {
     "lead": "🔥",
     "frustration": "😠",
     "repeated_loop": "🔁",
+    "sla": "⏰",
     "error": "⚠️",
 }
 

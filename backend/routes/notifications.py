@@ -18,7 +18,7 @@ from models import TaAgent, TaNotification, TaRuntimeParam
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-_ALERT_KEYS = ("alert_whatsapp", "alert_email", "alert_enabled")
+_ALERT_KEYS = ("alert_whatsapp", "alert_email", "alert_enabled", "sla_minutes")
 
 
 class NotificationOut(BaseModel):
@@ -105,6 +105,7 @@ class AlertConfig(BaseModel):
     alert_whatsapp: str | None = None
     alert_email: str | None = None
     alert_enabled: bool = True
+    sla_minutes: int = 0  # 0 = SLA desligado
 
 
 @router.get("/alert-config", response_model=AlertConfig)
@@ -125,10 +126,15 @@ async def get_alert_config(
         )
     ).all()
     vals = {k: v for k, v in rows}
+    try:
+        sla = int(vals.get("sla_minutes", "0") or 0)
+    except (TypeError, ValueError):
+        sla = 0
     return AlertConfig(
         alert_whatsapp=vals.get("alert_whatsapp") or None,
         alert_email=vals.get("alert_email") or None,
         alert_enabled=vals.get("alert_enabled", "1") != "0",
+        sla_minutes=sla,
     )
 
 
@@ -144,6 +150,7 @@ async def put_alert_config(
         "alert_whatsapp": (cfg.alert_whatsapp or "").strip(),
         "alert_email": (cfg.alert_email or "").strip(),
         "alert_enabled": "1" if cfg.alert_enabled else "0",
+        "sla_minutes": str(max(0, cfg.sla_minutes or 0)),
     }
     existing = (
         await db.execute(
@@ -167,6 +174,7 @@ async def put_alert_config(
         alert_whatsapp=desired["alert_whatsapp"] or None,
         alert_email=desired["alert_email"] or None,
         alert_enabled=cfg.alert_enabled,
+        sla_minutes=max(0, cfg.sla_minutes or 0),
     )
 
 
