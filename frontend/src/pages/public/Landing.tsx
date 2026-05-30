@@ -106,14 +106,16 @@ export default function Landing() {
             </Item>
           </StaggerIn>
 
-          {/* tela do builder — sobe com fade ao carregar */}
+          {/* tela do builder — sobe com fade ao carregar + border beam */}
           <motion.div
-            className="mt-16 relative"
+            className="mt-16 relative max-w-[1040px] mx-auto"
             initial={{ opacity: 0, y: 40, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1], delay: 0.35 }}
           >
-            <PlaybookDemo />
+            <BorderBeam from="#003083" to="#38BDF8" duration={9}>
+              <PlaybookDemo />
+            </BorderBeam>
           </motion.div>
         </div>
       </section>
