@@ -33,8 +33,8 @@ settings = get_settings()
 
 CHUNK_SIZE = 1800  # chars
 CHUNK_OVERLAP = 200
-EMBED_MODEL = "text-embedding-004"
-EMBED_DIMS = 768
+EMBED_MODEL = "gemini-embedding-001"  # text-embedding-004 foi aposentado
+EMBED_DIMS = 768  # gemini-embedding-001 default é 3072; pedimos 768 p/ casar com pgvector
 COHERE_RERANK_MODEL = "rerank-multilingual-v3.0"
 
 
@@ -75,35 +75,33 @@ def chunk_text(text: str, *, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLA
 # Embeddings via Gemini
 # ────────────────────────────────────────────────────────────
 async def _embed_via_gemini(texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
-    """Chama Gemini Embeddings API direto via httpx (mais leve que SDK)."""
+    """Chama Gemini Embeddings API (gemini-embedding-001) via httpx.
+
+    gemini-embedding-001 NÃO suporta batchEmbedContents — usa embedContent (1 por
+    request). outputDimensionality=768 pra casar com a coluna pgvector vector(768).
+    """
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY ausente — defina em env vars do Tier Agent")
 
     url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/{EMBED_MODEL}:batchEmbedContents"
+        f"https://generativelanguage.googleapis.com/v1beta/models/{EMBED_MODEL}:embedContent"
         f"?key={api_key}"
     )
-    payload = {
-        "requests": [
-            {
+    out: list[list[float]] = []
+    async with httpx.AsyncClient(timeout=60) as cli:
+        for t in texts:
+            payload = {
                 "model": f"models/{EMBED_MODEL}",
                 "content": {"parts": [{"text": t}]},
                 "taskType": task_type,
+                "outputDimensionality": EMBED_DIMS,
             }
-            for t in texts
-        ]
-    }
-    async with httpx.AsyncClient(timeout=60) as cli:
-        r = await cli.post(url, json=payload)
-    if r.status_code >= 400:
-        raise RuntimeError(f"Gemini embed: HTTP {r.status_code}: {r.text[:300]}")
-    data = r.json()
-    embeddings = data.get("embeddings") or []
-    out: list[list[float]] = []
-    for e in embeddings:
-        vals = (e.get("values") or [])[:EMBED_DIMS]
-        out.append(vals)
+            r = await cli.post(url, json=payload)
+            if r.status_code >= 400:
+                raise RuntimeError(f"Gemini embed: HTTP {r.status_code}: {r.text[:300]}")
+            vals = (r.json().get("embedding", {}).get("values") or [])[:EMBED_DIMS]
+            out.append(vals)
     return out
 
 
