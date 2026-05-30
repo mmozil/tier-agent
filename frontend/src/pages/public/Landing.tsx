@@ -52,9 +52,9 @@ const PILLARS = [
 ];
 
 const PRICING = [
-  { name: "Lite", price: "99", tagline: "Pra começar a automatizar", feats: ["1 agente", "Playbooks até 3 fluxos", "WhatsApp + templates BR", "Memória 7 dias"], cta: "Assinar Lite", highlight: false },
-  { name: "Pro", price: "199", tagline: "Pro time que escala", feats: ["Multi-agente + specialists", "RAG + memória 30 dias", "Voz (áudio E2E)", "Multicanal completo"], cta: "Assinar Pro", highlight: true },
-  { name: "Business", price: "899", tagline: "Operação completa", feats: ["Tudo do Pro, ilimitado", "Guardrails + CodeAct", "Skills auto-evolutivas", "Marketplace + A/B testing"], cta: "Falar com vendas", highlight: false },
+  { name: "Lite", price: "297", tagline: "Pra começar a automatizar", feats: ["1 agente · WhatsApp + 1 canal", "Até 800 conversas/mês", "Playbooks até 3 fluxos", "Captura de lead + hand-off"], cta: "Assinar Lite", highlight: false },
+  { name: "Pro", price: "697", tagline: "Pro time que escala", feats: ["Multi-agente + specialists", "Até 3.000 conversas/mês", "RAG + voz + memória 30 dias", "Multicanal completo"], cta: "Assinar Pro", highlight: true },
+  { name: "Business", price: "1.997", tagline: "Operação completa", feats: ["Conversas ilimitadas", "Guardrails + CodeAct + A/B", "Skills auto-evolutivas", "SLA 1h + CSM dedicado"], cta: "Falar com vendas", highlight: false },
 ];
 
 export default function Landing() {

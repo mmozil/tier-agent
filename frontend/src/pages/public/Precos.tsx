@@ -7,27 +7,27 @@ import { MarketingNav, MarketingFooter, FinalCTA } from "../../components/landin
 const PLANS = [
   {
     name: "Lite",
-    price: "99",
+    price: "297",
     tagline: "Pra começar a automatizar",
     cta: "Assinar Lite",
     highlight: false,
-    feats: ["1 agente", "Playbooks até 3 fluxos", "WhatsApp + templates BR", "Memória 7 dias", "Captura de lead + hand-off"],
+    feats: ["1 agente · WhatsApp + 1 canal", "Até 800 conversas/mês", "Playbooks até 3 fluxos", "Memória 7 dias", "Captura de lead + hand-off"],
   },
   {
     name: "Pro",
-    price: "199",
+    price: "697",
     tagline: "Pro time que escala",
     cta: "Assinar Pro",
     highlight: true,
-    feats: ["Multi-agente + specialists", "RAG + memória 30 dias", "Voz (áudio E2E)", "Multicanal completo", "Cron + marketplace de templates"],
+    feats: ["Multi-agente + specialists", "Até 3.000 conversas/mês", "RAG + voz + memória 30 dias", "Multicanal completo", "Cron + marketplace de templates"],
   },
   {
     name: "Business",
-    price: "899",
+    price: "1.997",
     tagline: "Operação completa",
     cta: "Falar com vendas",
     highlight: false,
-    feats: ["Tudo do Pro, ilimitado", "Guardrails + CodeAct", "Skills auto-evolutivas", "A/B testing de prompts", "Auditoria + SLA"],
+    feats: ["Conversas ilimitadas", "Guardrails + CodeAct", "Skills auto-evolutivas", "A/B testing de prompts", "Auditoria + SLA 1h + CSM"],
   },
 ];
 
@@ -148,6 +148,9 @@ export default function Precos() {
               </div>
             ))}
           </div>
+          <p className="mt-6 text-center text-[12.5px] text-[#9AA4B2]">
+            Conversas excedentes a partir de R$ 0,30. Implementação assistida e white-label sob consulta.
+          </p>
         </div>
       </section>
 

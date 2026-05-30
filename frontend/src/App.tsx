@@ -28,6 +28,7 @@ import MarketplacePage from "./pages/admin/MarketplacePage";
 import LeadsPage from "./pages/admin/LeadsPage";
 import ConversasPage from "./pages/admin/ConversasPage";
 import RelatoriosAtendimentoPage from "./pages/admin/RelatoriosAtendimentoPage";
+import EquipePage from "./pages/admin/EquipePage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
@@ -67,7 +68,7 @@ export default function App() {
         <Route path="agentes/:id/skills" element={<AgentSkillsPage />} />
         <Route path="marketplace" element={<MarketplacePage />} />
         <Route path="cobranca" element={<CobrancaPage />} />
-        <Route path="equipe" element={<Placeholder title="Equipe" desc="Convidar membros pro tenant (em breve)." />} />
+        <Route path="equipe" element={<EquipePage />} />
         <Route path="playbooks" element={<PlaybooksPage />} />
         <Route path="playbooks/:id" element={<PlaybookEditorPage />} />
         <Route path="playbooks/:id/executions" element={<PlaybookExecutionsPage />} />

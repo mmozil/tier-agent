@@ -507,6 +507,35 @@ class TaNotification(Base):
 
 
 # ============================================================
+# Membros do time (atendentes) — multi-usuário por tenant
+# ============================================================
+class TaMember(Base):
+    """Atendente/membro do tenant. O 'owner' (dono) continua autenticando via
+    TaTenant; estes são contas adicionais com login próprio, usadas em
+    atribuição de conversas (fila/round-robin) e @menção em notas."""
+    __tablename__ = "ta_member"
+    __table_args__ = (UniqueConstraint("email", name="uq_member_email"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("ta_tenant.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[str] = mapped_column(String(16), default="atendente", nullable=False)
+    # role: admin | atendente  (owner é o TaTenant, fora desta tabela)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
+    # status: active | disabled
+    online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    max_conversas: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # 0 = ilimitado
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ============================================================
 # Respostas prontas (canned responses) — atalhos do atendente
 # ============================================================
 class TaCannedResponse(Base):

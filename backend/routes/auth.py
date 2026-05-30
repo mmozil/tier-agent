@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import create_token
 from core.config import get_settings
 from core.db import get_db
-from models import TaTenant
+from models import TaMember, TaTenant
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +43,18 @@ class AuthOut(BaseModel):
     tenant_id: int
     email: str
     is_admin: bool
+    role: str = "owner"
+    member_id: int | None = None
+    member_name: str | None = None
 
 
 async def _find_tenant(db: AsyncSession, email: str) -> TaTenant | None:
     result = await db.execute(select(TaTenant).where(TaTenant.email == email))
+    return result.scalar_one_or_none()
+
+
+async def _find_member(db: AsyncSession, email: str) -> TaMember | None:
+    result = await db.execute(select(TaMember).where(TaMember.email == email))
     return result.scalar_one_or_none()
 
 
@@ -98,19 +106,44 @@ async def signup(payload: SignupIn, response: Response, db: AsyncSession = Depen
 
 @router.post("/login", response_model=AuthOut)
 async def login(payload: LoginIn, response: Response, db: AsyncSession = Depends(get_db)):
+    # 1) dono (TaTenant) — login original, inalterado
     tenant = await _find_tenant(db, payload.email)
-    if not tenant or not tenant.password_hash:
-        raise HTTPException(401, "Credenciais inválidas")
-    if not pwd_ctx.verify(payload.password, tenant.password_hash):
-        raise HTTPException(401, "Credenciais inválidas")
+    if tenant:
+        if not tenant.password_hash or not pwd_ctx.verify(payload.password, tenant.password_hash):
+            raise HTTPException(401, "Credenciais inválidas")
+        token = create_token(
+            subject=str(tenant.id),
+            extra_claims={
+                "email": tenant.email, "tenant_id": tenant.id,
+                "is_admin": tenant.is_admin, "role": "owner",
+            },
+        )
+        _set_cookie(response, token)
+        return AuthOut(
+            access_token=token, tenant_id=tenant.id, email=tenant.email,
+            is_admin=tenant.is_admin, role="owner",
+        )
 
+    # 2) atendente (TaMember) — login multi-usuário
+    member = await _find_member(db, payload.email)
+    if (
+        not member
+        or member.status != "active"
+        or not member.password_hash
+        or not pwd_ctx.verify(payload.password, member.password_hash)
+    ):
+        raise HTTPException(401, "Credenciais inválidas")
     token = create_token(
-        subject=str(tenant.id),
-        extra_claims={"email": tenant.email, "tenant_id": tenant.id, "is_admin": tenant.is_admin},
+        subject=str(member.tenant_id),
+        extra_claims={
+            "email": member.email, "tenant_id": member.tenant_id, "is_admin": False,
+            "member_id": member.id, "member_name": member.nome, "role": member.role,
+        },
     )
     _set_cookie(response, token)
     return AuthOut(
-        access_token=token, tenant_id=tenant.id, email=tenant.email, is_admin=tenant.is_admin
+        access_token=token, tenant_id=member.tenant_id, email=member.email,
+        is_admin=False, role=member.role, member_id=member.id, member_name=member.nome,
     )
 
 

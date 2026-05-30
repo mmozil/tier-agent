@@ -31,11 +31,28 @@ def decode_token(token: str) -> dict:
 
 
 class CurrentUser:
-    def __init__(self, user_id: int, email: str, tenant_id: int | None = None, is_admin: bool = False):
+    def __init__(
+        self,
+        user_id: int,
+        email: str,
+        tenant_id: int | None = None,
+        is_admin: bool = False,
+        member_id: int | None = None,
+        member_name: str | None = None,
+        role: str = "owner",
+    ):
         self.user_id = user_id
         self.email = email
         self.tenant_id = tenant_id
         self.is_admin = is_admin
+        # Multi-usuário: member_id None = dono (TaTenant). role: owner|admin|atendente
+        self.member_id = member_id
+        self.member_name = member_name
+        self.role = role
+
+    @property
+    def is_owner(self) -> bool:
+        return self.member_id is None
 
 
 async def get_current_user(
@@ -59,6 +76,9 @@ async def get_current_user(
         email=payload.get("email", ""),
         tenant_id=payload.get("tenant_id"),
         is_admin=bool(payload.get("is_admin", False)),
+        member_id=payload.get("member_id"),
+        member_name=payload.get("member_name"),
+        role=payload.get("role", "owner"),
     )
 
 
