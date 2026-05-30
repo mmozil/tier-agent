@@ -494,3 +494,23 @@ class TaNotification(Base):
     # status: unread | read | archived
     read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ============================================================
+# Respostas prontas (canned responses) — atalhos do atendente
+# ============================================================
+class TaCannedResponse(Base):
+    """Respostas prontas por tenant — o atendente insere com 1 clique na hora de
+    responder pelo painel. `shortcut` é um atalho curto (ex: 'horario')."""
+    __tablename__ = "ta_canned_response"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("ta_tenant.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    shortcut: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

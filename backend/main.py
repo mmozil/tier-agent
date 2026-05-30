@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import agents, auth, billing, connectors, containers, conversations, features, health, knowledge, llm, mcp_server, metrics, notifications, playbooks, skills, templates, tenants, tier_pay, webhooks
+from routes import agents, auth, billing, canned_responses, connectors, containers, conversations, features, health, knowledge, llm, mcp_server, metrics, notifications, playbooks, skills, templates, tenants, tier_pay, webhooks
 
 settings = get_settings()
 
@@ -67,6 +67,7 @@ app.include_router(metrics.router, prefix="/api/v1")
 app.include_router(skills.router, prefix="/api/v1")
 app.include_router(tier_pay.router, prefix="/api/v1")
 app.include_router(mcp_server.router, prefix="/api/v1")
+app.include_router(canned_responses.router, prefix="/api/v1")
 
 
 async def _ensure_message_content_column():
@@ -86,10 +87,45 @@ async def _ensure_message_content_column():
         logger.exception("ensure_message_content_column falhou (segue mesmo assim)")
 
 
+async def _ensure_canned_response_table():
+    """Runtime DDL idempotente — cria ta_canned_response (respostas prontas)."""
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            await db.execute(
+                _sql_text(
+                    """
+                    CREATE TABLE IF NOT EXISTS ta_canned_response (
+                        id SERIAL PRIMARY KEY,
+                        tenant_id INTEGER NOT NULL REFERENCES ta_tenant(id) ON DELETE CASCADE,
+                        shortcut VARCHAR(64) NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT now(),
+                        updated_at TIMESTAMP DEFAULT now()
+                    )
+                    """
+                )
+            )
+            await db.execute(
+                _sql_text(
+                    "CREATE INDEX IF NOT EXISTS ix_ta_canned_response_tenant_id "
+                    "ON ta_canned_response (tenant_id)"
+                )
+            )
+            await db.commit()
+        logger.info("ensure_canned_response_table ok")
+    except Exception:
+        logger.exception("ensure_canned_response_table falhou (segue mesmo assim)")
+
+
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
     await _ensure_message_content_column()
+    await _ensure_canned_response_table()
     from scheduler import init_scheduler
     init_scheduler()
 

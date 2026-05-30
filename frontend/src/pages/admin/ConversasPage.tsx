@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send } from "lucide-react";
 
 import { api } from "@/lib/api";
+import CannedPicker from "@/components/CannedPicker";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   active: { label: "IA ativa", cls: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
@@ -260,6 +261,9 @@ export default function ConversasPage() {
             {openConv && openConv.status !== "closed" && (
               <div className="border-t border-slate-200 p-3 bg-white">
                 <div className="flex items-end gap-2">
+                  <CannedPicker
+                    onInsert={(c) => setReplyText((prev) => (prev ? prev + "\n" + c : c))}
+                  />
                   <textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
