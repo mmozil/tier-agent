@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Users, Plus, Trash2, RefreshCw, X, Shield, Headphones } from "lucide-react";
+import { Users, Plus, Trash2, RefreshCw, X, Shield, Headphones, Link2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 
@@ -12,6 +12,11 @@ interface Member {
   status: string;
   online: boolean;
   max_conversas: number;
+  invite_token: string | null;
+}
+
+function inviteLink(token: string): string {
+  return `${window.location.origin}/convite/${token}`;
 }
 
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", atendente: "Atendente" };
@@ -41,14 +46,26 @@ export default function EquipePage() {
   }, []);
 
   async function create() {
-    if (!form.nome.trim() || !form.email.trim() || form.password.length < 6) {
-      toast.error("Preencha nome, e-mail e senha (mín. 6)");
+    if (!form.nome.trim() || !form.email.trim()) {
+      toast.error("Preencha nome e e-mail");
+      return;
+    }
+    if (form.password && form.password.length < 6) {
+      toast.error("Senha precisa de pelo menos 6 caracteres");
       return;
     }
     setSaving(true);
     try {
-      await api.post("/team/members", form);
-      toast.success("Atendente criado");
+      // senha vazia → cria convite (atendente define a senha pelo link)
+      const payload: any = { nome: form.nome, email: form.email, role: form.role, max_conversas: 0 };
+      if (form.password) payload.password = form.password;
+      const { data } = await api.post<Member>("/team/members", payload);
+      if (data.invite_token) {
+        await navigator.clipboard?.writeText(inviteLink(data.invite_token)).catch(() => {});
+        toast.success("Convite criado — link copiado! Envie pro atendente.");
+      } else {
+        toast.success("Atendente criado");
+      }
       setForm({ nome: "", email: "", password: "", role: "atendente", max_conversas: 0 });
       setShowForm(false);
       load();
@@ -56,6 +73,16 @@ export default function EquipePage() {
       toast.error(e?.response?.data?.detail || "Erro ao criar");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function copyInvite(m: Member) {
+    if (!m.invite_token) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink(m.invite_token));
+      toast.success("Link de convite copiado");
+    } catch {
+      toast.error(inviteLink(m.invite_token));
     }
   }
 
@@ -135,7 +162,7 @@ export default function EquipePage() {
               type="password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              placeholder="Senha inicial (mín. 6)"
+              placeholder="Senha (vazio = enviar convite por link)"
               className="h-8 px-3 text-[13px] rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
             />
             <select
@@ -156,7 +183,8 @@ export default function EquipePage() {
               {saving ? "Criando..." : "Criar atendente"}
             </button>
             <span className="text-[12px] text-slate-400">
-              Você define a senha inicial e passa pro atendente. Ele entra em <b>/login</b>.
+              Com senha: você passa as credenciais. Sem senha: copiamos um <b>link de convite</b> — o
+              atendente define a própria senha.
             </span>
           </div>
         </div>
@@ -191,9 +219,20 @@ export default function EquipePage() {
                     {m.nome}
                   </span>
                   {m.status === "disabled" && <span className="text-[11px] text-rose-500">desativado</span>}
+                  {m.status === "invited" && (
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">convite pendente</span>
+                  )}
                 </div>
                 <p className="text-[12px] text-slate-500 truncate">{m.email}</p>
               </div>
+              {m.status === "invited" && m.invite_token && (
+                <button
+                  onClick={() => copyInvite(m)}
+                  className="h-7 px-2.5 text-[12px] rounded-md border border-slate-200 text-[#003083] hover:bg-slate-50 inline-flex items-center gap-1"
+                >
+                  <Link2 className="w-3.5 h-3.5" /> Copiar link
+                </button>
+              )}
               <select
                 value={m.role}
                 onChange={(e) => updateRole(m, e.target.value)}
@@ -202,12 +241,14 @@ export default function EquipePage() {
                 <option value="atendente">{ROLE_LABEL.atendente}</option>
                 <option value="admin">{ROLE_LABEL.admin}</option>
               </select>
-              <button
-                onClick={() => toggleStatus(m)}
-                className="h-7 px-2.5 text-[12px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
-              >
-                {m.status === "active" ? "Desativar" : "Ativar"}
-              </button>
+              {m.status !== "invited" && (
+                <button
+                  onClick={() => toggleStatus(m)}
+                  className="h-7 px-2.5 text-[12px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+                >
+                  {m.status === "active" ? "Desativar" : "Ativar"}
+                </button>
+              )}
               <button onClick={() => remove(m)} className="p-1.5 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50" title="Remover">
                 <Trash2 className="w-4 h-4" />
               </button>

@@ -6,6 +6,7 @@ deles. Base pra fila/round-robin e @menção.
 """
 
 import logging
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from passlib.context import CryptContext
@@ -15,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
-from models import TaMember
+from models import TaMember, TaTenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/team", tags=["team"])
@@ -30,6 +31,7 @@ class MemberOut(BaseModel):
     status: str
     online: bool
     max_conversas: int
+    invite_token: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -37,7 +39,7 @@ class MemberOut(BaseModel):
 class MemberIn(BaseModel):
     nome: str
     email: EmailStr
-    password: str
+    password: str | None = None  # se vazio → cria convite (atendente define a senha)
     role: str = "atendente"
     max_conversas: int = 0
 
@@ -96,8 +98,6 @@ async def create_member(
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
     _require_manager(user)
-    if len(body.password) < 6:
-        raise HTTPException(400, "Senha precisa de pelo menos 6 caracteres")
     role = body.role if body.role in ("admin", "atendente") else "atendente"
 
     # e-mail único (tabela toda)
@@ -105,15 +105,30 @@ async def create_member(
     if existing:
         raise HTTPException(400, "E-mail já cadastrado")
 
-    m = TaMember(
-        tenant_id=user.tenant_id,
-        nome=body.nome.strip(),
-        email=str(body.email).lower(),
-        password_hash=pwd_ctx.hash(body.password),
-        role=role,
-        status="active",
-        max_conversas=max(0, body.max_conversas or 0),
-    )
+    # Com senha → ativo direto. Sem senha → convite (atendente define a senha via link).
+    if body.password:
+        if len(body.password) < 6:
+            raise HTTPException(400, "Senha precisa de pelo menos 6 caracteres")
+        m = TaMember(
+            tenant_id=user.tenant_id,
+            nome=body.nome.strip(),
+            email=str(body.email).lower(),
+            password_hash=pwd_ctx.hash(body.password),
+            role=role,
+            status="active",
+            max_conversas=max(0, body.max_conversas or 0),
+        )
+    else:
+        m = TaMember(
+            tenant_id=user.tenant_id,
+            nome=body.nome.strip(),
+            email=str(body.email).lower(),
+            password_hash=None,
+            role=role,
+            status="invited",
+            max_conversas=max(0, body.max_conversas or 0),
+            invite_token=secrets.token_urlsafe(24),
+        )
     db.add(m)
     await db.commit()
     await db.refresh(m)
@@ -183,3 +198,39 @@ async def set_online(
     m.online = bool(body.online)
     await db.commit()
     return {"online": m.online}
+
+
+# ─────────────────────────────────────────────────────────────
+# Convite por link (público — sem auth)
+# ─────────────────────────────────────────────────────────────
+class AcceptInviteIn(BaseModel):
+    password: str
+
+
+@router.get("/invite/{token}", response_model=dict)
+async def invite_info(token: str, db: AsyncSession = Depends(get_db)):
+    """Dados do convite pra renderizar a tela pública (sem auth)."""
+    m = (
+        await db.execute(select(TaMember).where(TaMember.invite_token == token))
+    ).scalar_one_or_none()
+    if not m or m.status != "invited":
+        raise HTTPException(404, "Convite inválido ou já utilizado")
+    tenant = await db.get(TaTenant, m.tenant_id)
+    return {"nome": m.nome, "email": m.email, "empresa": tenant.nome if tenant else None}
+
+
+@router.post("/invite/{token}/accept", response_model=dict)
+async def accept_invite(token: str, body: AcceptInviteIn, db: AsyncSession = Depends(get_db)):
+    """Atendente define a senha e ativa a conta (sem auth)."""
+    m = (
+        await db.execute(select(TaMember).where(TaMember.invite_token == token))
+    ).scalar_one_or_none()
+    if not m or m.status != "invited":
+        raise HTTPException(404, "Convite inválido ou já utilizado")
+    if len(body.password) < 6:
+        raise HTTPException(400, "Senha precisa de pelo menos 6 caracteres")
+    m.password_hash = pwd_ctx.hash(body.password)
+    m.status = "active"
+    m.invite_token = None
+    await db.commit()
+    return {"ok": True, "email": m.email}

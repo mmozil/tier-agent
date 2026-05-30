@@ -16,10 +16,35 @@ interface AlertCfg {
   alert_email: string | null;
   alert_enabled: boolean;
   sla_minutes: number;
+  bh_enabled: boolean;
+  bh_days: string;
+  bh_start: string;
+  bh_end: string;
+  bh_message: string;
 }
 
+const DAYS = [
+  { n: "1", l: "Seg" },
+  { n: "2", l: "Ter" },
+  { n: "3", l: "Qua" },
+  { n: "4", l: "Qui" },
+  { n: "5", l: "Sex" },
+  { n: "6", l: "Sáb" },
+  { n: "7", l: "Dom" },
+];
+
 function AlertConfigCard() {
-  const [cfg, setCfg] = useState<AlertCfg>({ alert_whatsapp: "", alert_email: "", alert_enabled: true, sla_minutes: 0 });
+  const [cfg, setCfg] = useState<AlertCfg>({
+    alert_whatsapp: "",
+    alert_email: "",
+    alert_enabled: true,
+    sla_minutes: 0,
+    bh_enabled: false,
+    bh_days: "1,2,3,4,5",
+    bh_start: "09:00",
+    bh_end: "18:00",
+    bh_message: "",
+  });
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -32,6 +57,11 @@ function AlertConfigCard() {
           alert_email: data.alert_email || "",
           alert_enabled: data.alert_enabled,
           sla_minutes: data.sla_minutes || 0,
+          bh_enabled: data.bh_enabled || false,
+          bh_days: data.bh_days || "1,2,3,4,5",
+          bh_start: data.bh_start || "09:00",
+          bh_end: data.bh_end || "18:00",
+          bh_message: data.bh_message || "",
         }),
       )
       .catch(() => {});
@@ -113,6 +143,66 @@ function AlertConfigCard() {
             />
             Alertas externos ativados
           </label>
+
+          {/* Horário de atendimento */}
+          <div className="border-t border-slate-100 pt-3">
+            <label className="flex items-center gap-2 text-[13px] text-slate-700 mb-2">
+              <input
+                type="checkbox"
+                checked={cfg.bh_enabled}
+                onChange={(e) => setCfg({ ...cfg, bh_enabled: e.target.checked })}
+              />
+              Horário de atendimento humano (fuso BR)
+            </label>
+            {cfg.bh_enabled && (
+              <div className="pl-6 space-y-2">
+                <div className="flex flex-wrap gap-1">
+                  {DAYS.map((d) => {
+                    const set = new Set(cfg.bh_days.split(",").filter(Boolean));
+                    const on = set.has(d.n);
+                    return (
+                      <button
+                        key={d.n}
+                        onClick={() => {
+                          on ? set.delete(d.n) : set.add(d.n);
+                          const ordered = DAYS.map((x) => x.n).filter((n) => set.has(n));
+                          setCfg({ ...cfg, bh_days: ordered.join(",") });
+                        }}
+                        className={`text-[12px] px-2 py-0.5 rounded-md border ${
+                          on ? "bg-[#003083] text-white border-[#003083]" : "border-slate-200 text-slate-500"
+                        }`}
+                      >
+                        {d.l}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-2 text-[13px]">
+                  <span className="text-slate-500">das</span>
+                  <input
+                    type="time"
+                    value={cfg.bh_start}
+                    onChange={(e) => setCfg({ ...cfg, bh_start: e.target.value })}
+                    className="h-8 px-2 rounded-md border border-slate-200 outline-none"
+                  />
+                  <span className="text-slate-500">às</span>
+                  <input
+                    type="time"
+                    value={cfg.bh_end}
+                    onChange={(e) => setCfg({ ...cfg, bh_end: e.target.value })}
+                    className="h-8 px-2 rounded-md border border-slate-200 outline-none"
+                  />
+                </div>
+                <textarea
+                  value={cfg.bh_message}
+                  onChange={(e) => setCfg({ ...cfg, bh_message: e.target.value })}
+                  rows={2}
+                  placeholder="Mensagem enviada quando o cliente pede atendente fora do horário (opcional)"
+                  className="w-full px-3 py-2 text-[13px] rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083] resize-none"
+                />
+              </div>
+            )}
+          </div>
           <button
             onClick={save}
             disabled={saving}

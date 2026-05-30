@@ -18,7 +18,10 @@ from models import TaAgent, TaNotification, TaRuntimeParam
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-_ALERT_KEYS = ("alert_whatsapp", "alert_email", "alert_enabled", "sla_minutes")
+_ALERT_KEYS = (
+    "alert_whatsapp", "alert_email", "alert_enabled", "sla_minutes",
+    "bh_enabled", "bh_days", "bh_start", "bh_end", "bh_message",
+)
 
 
 class NotificationOut(BaseModel):
@@ -114,6 +117,12 @@ class AlertConfig(BaseModel):
     alert_email: str | None = None
     alert_enabled: bool = True
     sla_minutes: int = 0  # 0 = SLA desligado
+    # Horário de atendimento (America/Sao_Paulo)
+    bh_enabled: bool = False
+    bh_days: str = "1,2,3,4,5"
+    bh_start: str = "09:00"
+    bh_end: str = "18:00"
+    bh_message: str = ""
 
 
 @router.get("/alert-config", response_model=AlertConfig)
@@ -143,6 +152,11 @@ async def get_alert_config(
         alert_email=vals.get("alert_email") or None,
         alert_enabled=vals.get("alert_enabled", "1") != "0",
         sla_minutes=sla,
+        bh_enabled=vals.get("bh_enabled", "0") == "1",
+        bh_days=vals.get("bh_days") or "1,2,3,4,5",
+        bh_start=vals.get("bh_start") or "09:00",
+        bh_end=vals.get("bh_end") or "18:00",
+        bh_message=vals.get("bh_message") or "",
     )
 
 
@@ -159,6 +173,11 @@ async def put_alert_config(
         "alert_email": (cfg.alert_email or "").strip(),
         "alert_enabled": "1" if cfg.alert_enabled else "0",
         "sla_minutes": str(max(0, cfg.sla_minutes or 0)),
+        "bh_enabled": "1" if cfg.bh_enabled else "0",
+        "bh_days": (cfg.bh_days or "1,2,3,4,5").strip(),
+        "bh_start": (cfg.bh_start or "09:00").strip(),
+        "bh_end": (cfg.bh_end or "18:00").strip(),
+        "bh_message": (cfg.bh_message or "").strip(),
     }
     existing = (
         await db.execute(
@@ -183,6 +202,11 @@ async def put_alert_config(
         alert_email=desired["alert_email"] or None,
         alert_enabled=cfg.alert_enabled,
         sla_minutes=max(0, cfg.sla_minutes or 0),
+        bh_enabled=cfg.bh_enabled,
+        bh_days=desired["bh_days"],
+        bh_start=desired["bh_start"],
+        bh_end=desired["bh_end"],
+        bh_message=desired["bh_message"],
     )
 
 

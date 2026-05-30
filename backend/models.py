@@ -230,6 +230,8 @@ class TaConversation(Base):
     csat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     sla_alerted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # quando o último alerta de SLA foi disparado (anti-spam do job)
+    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # conversa adiada (snooze) — escondida da inbox ativa até esse horário
 
 
 class TaMessageLog(Base):
@@ -533,6 +535,8 @@ class TaMember(Base):
     # status: active | disabled
     online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     max_conversas: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # 0 = ilimitado
+    invite_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # token de convite (status='invited'); o atendente define a senha via link público
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()

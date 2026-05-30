@@ -33,6 +33,7 @@ interface Conversation {
   assigned_member_id: number | null;
   csat_state: string;
   csat_score: number | null;
+  snoozed_until: string | null;
 }
 
 interface Member {
@@ -80,8 +81,30 @@ export default function ConversasPage() {
   const [noteMode, setNoteMode] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<{ role: string; member_id: number | null } | null>(null);
-  const [scope, setScope] = useState<"todas" | "mine" | "unassigned">("todas");
+  const [scope, setScope] = useState<"todas" | "mine" | "unassigned" | "snoozed">("todas");
   const [mentions, setMentions] = useState<number[]>([]);
+
+  async function snoozeConv(id: number, minutes: number) {
+    try {
+      await api.post(`/conversations/${id}/snooze`, { minutes });
+      toast.success(minutes >= 1440 ? "Adiada pra amanhã" : `Adiada por ${minutes >= 60 ? minutes / 60 + "h" : minutes + "min"}`);
+      setConvs((prev) => prev.filter((c) => c.id !== id));
+      setOpenId(null);
+    } catch {
+      toast.error("Erro ao adiar");
+    }
+  }
+
+  async function unsnoozeConv(id: number) {
+    try {
+      await api.post(`/conversations/${id}/unsnooze`);
+      setOpenConv((prev) => (prev && prev.id === id ? { ...prev, snoozed_until: null } : prev));
+      setConvs((prev) => prev.map((c) => (c.id === id ? { ...c, snoozed_until: null } : c)));
+      toast.success("Reativada");
+    } catch {
+      toast.error("Erro ao reativar");
+    }
+  }
 
   async function load(sc = scope) {
     setLoading(true);
@@ -222,7 +245,8 @@ export default function ConversasPage() {
           { k: "todas", label: "Todas" },
           { k: "unassigned", label: "Não atribuídas" },
           ...(me?.member_id ? [{ k: "mine", label: "Minhas" }] : []),
-        ] as { k: "todas" | "mine" | "unassigned"; label: string }[]).map((t) => (
+          { k: "snoozed", label: "Adiadas" },
+        ] as { k: "todas" | "mine" | "unassigned" | "snoozed"; label: string }[]).map((t) => (
           <button
             key={t.k}
             onClick={() => {
@@ -356,6 +380,25 @@ export default function ConversasPage() {
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" /> Resolver
                 </button>
+                {openConv.snoozed_until ? (
+                  <button
+                    onClick={() => unsnoozeConv(openConv.id)}
+                    className="h-7 px-3 text-[12px] rounded-md border border-amber-200 bg-amber-50 text-amber-700 inline-flex items-center gap-1.5"
+                  >
+                    💤 Reativar
+                  </button>
+                ) : (
+                  <select
+                    value=""
+                    onChange={(e) => e.target.value && snoozeConv(openConv.id, Number(e.target.value))}
+                    className="h-7 px-2 text-[12px] rounded-md border border-slate-200 text-slate-600 outline-none"
+                  >
+                    <option value="">💤 Adiar…</option>
+                    <option value="60">1 hora</option>
+                    <option value="240">4 horas</option>
+                    <option value="1440">Amanhã (24h)</option>
+                  </select>
+                )}
                 {openConv.status === "handed_off" && (
                   <span className="text-[11px] text-blue-600 ml-auto">IA pausada — você está no controle</span>
                 )}

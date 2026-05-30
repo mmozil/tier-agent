@@ -138,6 +138,8 @@ async def ensure_conversation(
     if conv:
         conv.last_message_at = datetime.utcnow()
         conv.msg_count += 1
+        if conv.snoozed_until is not None:
+            conv.snoozed_until = None  # cliente voltou — tira do snooze
         await db.commit()
         return conv
 
@@ -352,18 +354,30 @@ async def handle_inbound_message(
                 summary=summary,
                 pause=True,
             )
+            # Fora do expediente → mensagem de fora-de-horário no lugar da padrão
+            from services import business_hours
+
+            try:
+                aberto = await business_hours.is_open(db, agent.tenant_id)
+            except Exception:
+                aberto = True
+            handoff_reply = (
+                handoff.HANDOFF_REPLY
+                if aberto
+                else await business_hours.offhours_message(db, agent.tenant_id)
+            )
             try:
                 connector_impl = registry.get(connector_kind)
                 cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
                 await connector_impl.send(
                     cfg,
-                    OutboundMessage(external_chat_id=external_chat_id, content=handoff.HANDOFF_REPLY),
+                    OutboundMessage(external_chat_id=external_chat_id, content=handoff_reply),
                 )
             except Exception:
                 logger.exception("envio handoff reply falhou agent=%s", agent.id)
             await log_message(
                 db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="assistant",
-                content=handoff.HANDOFF_REPLY,
+                content=handoff_reply,
             )
             return {"status": "handoff", "agent_id": agent.id, "conversation_id": conv.id}
 

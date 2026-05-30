@@ -9,7 +9,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
@@ -39,6 +39,7 @@ class ConversationOut(BaseModel):
     assigned_member_id: int | None = None
     csat_state: str = "none"
     csat_score: int | None = None
+    snoozed_until: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -82,10 +83,18 @@ async def list_conversations(
         stmt = stmt.where(TaConversation.agent_id == agent_id)
     if status:
         stmt = stmt.where(TaConversation.status == status)
+    now = datetime.utcnow()
     if scope == "unassigned":
         stmt = stmt.where(TaConversation.assigned_member_id.is_(None))
     elif scope == "mine" and user.member_id:
         stmt = stmt.where(TaConversation.assigned_member_id == user.member_id)
+    if scope == "snoozed":
+        stmt = stmt.where(TaConversation.snoozed_until.isnot(None), TaConversation.snoozed_until > now)
+    else:
+        # esconde adiadas das demais visões até a hora chegar
+        stmt = stmt.where(
+            or_(TaConversation.snoozed_until.is_(None), TaConversation.snoozed_until <= now)
+        )
     stmt = stmt.order_by(TaConversation.last_message_at.desc().nulls_last()).limit(limit)
 
     convs = (await db.execute(stmt)).scalars().all()
@@ -121,6 +130,7 @@ async def list_conversations(
                 assigned_member_id=c.assigned_member_id,
                 csat_state=c.csat_state,
                 csat_score=c.csat_score,
+                snoozed_until=c.snoozed_until,
             )
         )
     return out
@@ -166,6 +176,7 @@ async def conversation_detail(
             assigned_member_id=conv.assigned_member_id,
             csat_state=conv.csat_state,
             csat_score=conv.csat_score,
+            snoozed_until=conv.snoozed_until,
         ).model_dump(),
         "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
     }
@@ -344,6 +355,43 @@ async def add_note(
     await db.commit()
     await db.refresh(note)
     return note
+
+
+class SnoozeIn(BaseModel):
+    minutes: int = 60
+
+
+@router.post("/{conversation_id}/snooze", response_model=dict)
+async def snooze(
+    conversation_id: int,
+    body: SnoozeIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Adia a conversa por N minutos — some da inbox ativa até a hora chegar."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    from datetime import timedelta
+
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    mins = max(1, min(body.minutes or 60, 60 * 24 * 30))
+    conv.snoozed_until = datetime.utcnow() + timedelta(minutes=mins)
+    await db.commit()
+    return {"conversation_id": conv.id, "snoozed_until": conv.snoozed_until.isoformat()}
+
+
+@router.post("/{conversation_id}/unsnooze", response_model=dict)
+async def unsnooze(
+    conversation_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv.snoozed_until = None
+    await db.commit()
+    return {"conversation_id": conv.id, "snoozed_until": None}
 
 
 class AssignIn(BaseModel):
