@@ -395,6 +395,21 @@ async def handle_inbound_message(
     if memory_block:
         system_prompt = f"{system_prompt}\n\n{memory_block}".strip()
 
+    # Contexto do contato — o agente JÁ tem nome + telefone pelo canal (WhatsApp).
+    # Evita pedir ao cliente dados que já temos (irrita + cada atendente re-pergunta).
+    _is_wa = connector_kind in ("whatsapp", "whatsapp_cloud")
+    _phone = _re.sub(r"\D", "", (external_chat_id or "").split("@")[0]) if _is_wa else ""
+    _contact = ["# Contato atual (você JÁ tem estes dados — NÃO peça ao cliente)"]
+    _contact.append(f"- Nome: {sender_name or '(não informado pelo WhatsApp)'}")
+    if _phone:
+        _contact.append(f"- Telefone/WhatsApp: {_phone}")
+    _contact.append(
+        "Use esses dados diretamente. Ao agendar uma demonstração ou encaminhar a "
+        "um consultor, NUNCA peça nome nem telefone (você já tem) — apenas confirme "
+        "o contato e pergunte só o que falta, como o nome da empresa."
+    )
+    system_prompt = f"{system_prompt}\n\n" + "\n".join(_contact)
+
     # Hermes responde (com vision se attachment image presente)
     try:
         reply = await hermes_proxy.send_message(
