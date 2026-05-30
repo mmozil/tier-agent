@@ -218,6 +218,8 @@ class TaConversation(Base):
     msg_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     # status: active | closed | handed_off
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+    # lista de etiquetas (ex: ["orçamento", "vip"]) — adicionada via ensure runtime DDL
 
 
 class TaMessageLog(Base):

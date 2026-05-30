@@ -34,6 +34,7 @@ class ConversationOut(BaseModel):
     msg_count: int
     last_message_at: datetime | None = None
     last_preview: str | None = None
+    tags: list[str] = []
 
     model_config = {"from_attributes": True}
 
@@ -57,6 +58,7 @@ async def _tenant_agent_ids(db: AsyncSession, tenant_id: int) -> list[int]:
 async def list_conversations(
     agent_id: int | None = None,
     status: str | None = None,
+    tag: str | None = None,
     limit: int = Query(100, ge=1, le=300),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -81,6 +83,9 @@ async def list_conversations(
 
     out: list[ConversationOut] = []
     for c in convs:
+        ctags = c.tags or []
+        if tag and tag not in ctags:
+            continue
         # preview da última mensagem com texto
         last = (
             await db.execute(
@@ -102,6 +107,7 @@ async def list_conversations(
                 msg_count=c.msg_count,
                 last_message_at=c.last_message_at,
                 last_preview=preview,
+                tags=ctags,
             )
         )
     return out
@@ -142,9 +148,36 @@ async def conversation_detail(
             status=conv.status,
             msg_count=conv.msg_count,
             last_message_at=conv.last_message_at,
+            tags=conv.tags or [],
         ).model_dump(),
         "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
     }
+
+
+class TagsIn(BaseModel):
+    tags: list[str]
+
+
+@router.put("/{conversation_id}/tags", response_model=dict)
+async def set_tags(
+    conversation_id: int,
+    body: TagsIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Define as etiquetas da conversa (substitui a lista)."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    # normaliza: trim, sem vazios, sem duplicatas, minúsculas, max 8
+    seen: list[str] = []
+    for t in body.tags or []:
+        tt = (t or "").strip().lower()[:24]
+        if tt and tt not in seen:
+            seen.append(tt)
+    conv.tags = seen[:8]
+    await db.commit()
+    return {"conversation_id": conv.id, "tags": conv.tags}
 
 
 async def _get_owned_conversation(

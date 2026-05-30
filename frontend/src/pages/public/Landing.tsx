@@ -14,6 +14,8 @@ import {
 import { MarketingNav, MarketingFooter, FinalCTA, FlowNode, FlowEdge, BranchSplit } from "../../components/landing/marketing";
 import PlaybookDemo from "../../components/landing/PlaybookDemo";
 import AgentResearchDemo from "../../components/landing/AgentResearchDemo";
+import { motion } from "framer-motion";
+import { StaggerIn, Item, Reveal } from "../../components/landing/motion";
 
 // Globo WebGL (three.js) — lazy p/ não pesar o bundle inicial
 const ScaleGlobe = lazy(() => import("../../components/landing/ScaleGlobe"));
@@ -63,33 +65,59 @@ export default function Landing() {
       {/* ── Hero ────────────────────────────────────────── */}
       <section className="relative overflow-hidden border-b border-hairline">
         <div className="absolute inset-0 bg-dots-lg opacity-50" />
+        {/* glow radial sutil de fundo */}
+        <div
+          className="absolute left-1/2 -translate-x-1/2 top-[18%] w-[760px] h-[420px] pointer-events-none"
+          style={{ background: "radial-gradient(ellipse at center, rgba(0,48,131,.07), transparent 70%)" }}
+        />
         {/* margens hachuradas */}
         <div className="absolute inset-y-0 left-0 w-8 hatch hidden lg:block" />
         <div className="absolute inset-y-0 right-0 w-8 hatch hidden lg:block" />
-        <div className="relative max-w-[1180px] mx-auto px-6 pt-20 pb-16 text-center">
-          <span className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-surface-muted border border-line text-[12px] font-medium text-[#3a3f47]">
-            <span className="w-1.5 h-1.5 rounded-full bg-success" /> Plataforma de agentes de IA
-          </span>
-          <h1 className="font-display text-balance mt-6 text-[clamp(40px,6vw,68px)] font-semibold leading-[1.02] tracking-display text-ink">
-            Seu atendimento no<br className="hidden sm:block" /> piloto automático.
-          </h1>
-          <p className="mt-5 text-[18px] leading-relaxed text-[#4a5159] max-w-[620px] mx-auto text-balance">
-            Agentes de IA que conversam, qualificam e cobram em qualquer canal — lembram de
-            cada cliente e chamam um humano só quando precisa.
-          </p>
-          <div className="mt-8 flex items-center justify-center gap-2.5">
-            <Link to="/signup" className="h-11 px-5 inline-flex items-center gap-2 rounded-[10px] bg-cta hover:bg-cta-hover text-white text-[15px] font-semibold shadow-[0_1px_2px_rgba(13,15,17,.18)] transition-colors">
-              Começar grátis <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link to="/plataforma" className="h-11 px-5 inline-flex items-center rounded-[10px] border border-line bg-white hover:bg-surface-muted text-ink text-[15px] font-medium transition-colors">
-              Ver demonstração
-            </Link>
-          </div>
+        <div className="relative max-w-[1180px] mx-auto px-6 pt-16 pb-16 text-center">
+          <StaggerIn>
+            {/* barra de anúncio (estilo Attio) */}
+            <Item>
+              <Link
+                to="/recursos#inteligencia"
+                className="group inline-flex items-center gap-2 h-8 pl-1.5 pr-3 rounded-full bg-white border border-line shadow-[0_1px_2px_rgba(13,15,17,.05)] text-[12.5px] text-[#3a3f47] hover:border-line-strong transition-colors"
+              >
+                <span className="inline-flex items-center h-[22px] px-2 rounded-full bg-accent/[0.08] text-accent text-[11px] font-semibold">Novo</span>
+                Voz em PT-BR + WhatsApp oficial
+                <ArrowRight className="w-3.5 h-3.5 text-[#9AA4B2] transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            </Item>
+            <Item>
+              <h1 className="font-display text-balance mt-7 text-[clamp(42px,6.2vw,72px)] font-semibold leading-[1.0] tracking-display text-ink">
+                Seu atendimento no<br className="hidden sm:block" /> piloto automático.
+              </h1>
+            </Item>
+            <Item>
+              <p className="mt-6 text-[18px] leading-relaxed text-[#4a5159] max-w-[600px] mx-auto text-balance">
+                Agentes de IA que conversam, qualificam e cobram em qualquer canal — lembram de
+                cada cliente e chamam um humano só quando precisa.
+              </p>
+            </Item>
+            <Item>
+              <div className="mt-8 flex items-center justify-center gap-2.5">
+                <Link to="/signup" className="h-11 px-5 inline-flex items-center gap-2 rounded-[10px] bg-cta hover:bg-cta-hover text-white text-[15px] font-semibold shadow-[0_1px_2px_rgba(13,15,17,.18)] transition-colors">
+                  Começar grátis <ArrowRight className="w-4 h-4" />
+                </Link>
+                <Link to="/plataforma" className="h-11 px-5 inline-flex items-center rounded-[10px] border border-line bg-white hover:bg-surface-muted text-ink text-[15px] font-medium transition-colors">
+                  Ver demonstração
+                </Link>
+              </div>
+            </Item>
+          </StaggerIn>
 
-          {/* tela do builder — fluxo rodando ao vivo */}
-          <div className="mt-14 relative">
+          {/* tela do builder — sobe com fade ao carregar */}
+          <motion.div
+            className="mt-16 relative"
+            initial={{ opacity: 0, y: 40, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1], delay: 0.35 }}
+          >
             <PlaybookDemo />
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -122,14 +150,14 @@ export default function Landing() {
       {/* ── Pilares (bento blueprint) ───────────────────── */}
       <section className="border-b border-hairline">
         <div className="max-w-[1180px] mx-auto px-6 py-20">
-          <div className="max-w-[600px]">
+          <Reveal className="max-w-[600px]">
             <h2 className="font-display text-[34px] font-semibold tracking-display text-ink leading-tight">
               Um motor técnico forte.<br />Uma tela simples.
             </h2>
             <p className="mt-3 text-[16px] text-[#4a5159] leading-relaxed">
               A profundidade de uma plataforma de automação, com a simplicidade de arrastar blocos.
             </p>
-          </div>
+          </Reveal>
           <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 border border-line rounded-xl overflow-hidden">
             {PILLARS.map((p, i) => (
               <div

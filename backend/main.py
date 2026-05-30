@@ -81,6 +81,9 @@ async def _ensure_message_content_column():
 
         async with db_context() as db:
             await db.execute(_sql_text("ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS content TEXT"))
+            await db.execute(
+                _sql_text("ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb")
+            )
             await db.commit()
         logger.info("ensure_message_content_column ok")
     except Exception:

@@ -28,6 +28,7 @@ interface Conversation {
   msg_count: number;
   last_message_at: string | null;
   last_preview: string | null;
+  tags: string[];
 }
 
 interface Message {
@@ -62,6 +63,8 @@ export default function ConversasPage() {
   const [openConv, setOpenConv] = useState<Conversation | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [tagInput, setTagInput] = useState("");
 
   async function load() {
     setLoading(true);
@@ -92,6 +95,23 @@ export default function ConversasPage() {
       toast.error("Falha ao abrir conversa");
     } finally {
       setLoadingMsgs(false);
+    }
+  }
+
+  async function saveTags(convId: number, tags: string[]) {
+    // normaliza local (igual backend)
+    const norm: string[] = [];
+    for (const t of tags) {
+      const tt = t.trim().toLowerCase().slice(0, 24);
+      if (tt && !norm.includes(tt)) norm.push(tt);
+    }
+    const next = norm.slice(0, 8);
+    setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, tags: next } : prev));
+    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, tags: next } : c)));
+    try {
+      await api.put(`/conversations/${convId}/tags`, { tags: next });
+    } catch {
+      toast.error("Erro ao salvar etiquetas");
     }
   }
 
@@ -130,6 +150,9 @@ export default function ConversasPage() {
     }
   }
 
+  const allTags = Array.from(new Set(convs.flatMap((c) => c.tags || []))).sort();
+  const shownConvs = tagFilter ? convs.filter((c) => (c.tags || []).includes(tagFilter)) : convs;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6 mt-2">
@@ -142,6 +165,33 @@ export default function ConversasPage() {
         </button>
       </div>
 
+      {/* Filtro por etiqueta */}
+      {allTags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          <button
+            onClick={() => setTagFilter(null)}
+            className={`text-[12px] px-2.5 py-1 rounded-full border ${
+              !tagFilter ? "bg-[#003083] text-white border-[#003083]" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+            }`}
+          >
+            Todas
+          </button>
+          {allTags.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTagFilter(t)}
+              className={`text-[12px] px-2.5 py-1 rounded-full border ${
+                tagFilter === t
+                  ? "bg-[#003083] text-white border-[#003083]"
+                  : "border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              #{t}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading && <div className="text-[13px] text-slate-400 py-8 text-center">Carregando...</div>}
 
       {!loading && convs.length === 0 && (
@@ -153,7 +203,7 @@ export default function ConversasPage() {
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
-        {convs.map((c) => (
+        {shownConvs.map((c) => (
           <button
             key={c.id}
             onClick={() => openConversation(c)}
@@ -174,6 +224,15 @@ export default function ConversasPage() {
                 <p className="text-[12px] text-slate-500 truncate flex-1">{c.last_preview || "—"}</p>
                 <span className="text-[11px] text-slate-400 shrink-0">{c.msg_count} msg</span>
               </div>
+              {c.tags && c.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {c.tags.map((t) => (
+                    <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-[#003083]/[0.06] text-[#003083]">
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </button>
         ))}
@@ -227,6 +286,39 @@ export default function ConversasPage() {
                 )}
               </div>
             )}
+            {/* Etiquetas */}
+            {openConv && (
+              <div className="px-5 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-1.5">
+                {(openConv.tags || []).map((t) => (
+                  <span
+                    key={t}
+                    className="text-[11px] px-2 py-0.5 rounded-full bg-[#003083]/[0.08] text-[#003083] inline-flex items-center gap-1"
+                  >
+                    #{t}
+                    <button
+                      onClick={() => saveTags(openConv.id, (openConv.tags || []).filter((x) => x !== t))}
+                      className="hover:text-rose-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && tagInput.trim()) {
+                      e.preventDefault();
+                      saveTags(openConv.id, [...(openConv.tags || []), tagInput]);
+                      setTagInput("");
+                    }
+                  }}
+                  placeholder="+ etiqueta"
+                  className="text-[12px] px-2 py-0.5 w-24 rounded-full border border-dashed border-slate-300 outline-none focus:border-[#003083]"
+                />
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2 bg-slate-50">
               {loadingMsgs && <div className="text-[13px] text-slate-400 text-center py-6">Carregando...</div>}
               {!loadingMsgs && msgs.length === 0 && (
