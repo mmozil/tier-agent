@@ -88,6 +88,15 @@ export default function ConversasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Deep-link ?open=<id> (vindo de Leads → "Ver conversa")
+  useEffect(() => {
+    const openParam = new URLSearchParams(window.location.search).get("open");
+    if (!openParam || convs.length === 0 || openId) return;
+    const target = convs.find((c) => c.id === Number(openParam));
+    if (target) openConversation(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convs]);
+
   async function openConversation(c: Conversation) {
     setOpenId(c.id);
     setOpenConv(c);

@@ -52,7 +52,7 @@ const PILLARS = [
 ];
 
 const PRICING = [
-  { name: "Lite", price: "99", tagline: "Pra começar a automatizar", feats: ["1 agente", "Playbooks até 3 fluxos", "WhatsApp + templates BR", "Memória 7 dias"], cta: "Começar grátis", highlight: false },
+  { name: "Lite", price: "99", tagline: "Pra começar a automatizar", feats: ["1 agente", "Playbooks até 3 fluxos", "WhatsApp + templates BR", "Memória 7 dias"], cta: "Assinar Lite", highlight: false },
   { name: "Pro", price: "199", tagline: "Pro time que escala", feats: ["Multi-agente + specialists", "RAG + memória 30 dias", "Voz (áudio E2E)", "Multicanal completo"], cta: "Assinar Pro", highlight: true },
   { name: "Business", price: "899", tagline: "Operação completa", feats: ["Tudo do Pro, ilimitado", "Guardrails + CodeAct", "Skills auto-evolutivas", "Marketplace + A/B testing"], cta: "Falar com vendas", highlight: false },
 ];
@@ -97,7 +97,7 @@ export default function Landing() {
             <Item>
               <div className="mt-8 flex items-center justify-center gap-2.5">
                 <Link to="/signup" className="h-11 px-5 inline-flex items-center gap-2 rounded-[10px] bg-cta hover:bg-cta-hover text-white text-[15px] font-semibold shadow-[0_1px_2px_rgba(13,15,17,.18)] transition-colors">
-                  Começar grátis <ArrowRight className="w-4 h-4" />
+                  Começar agora <ArrowRight className="w-4 h-4" />
                 </Link>
                 <Link to="/plataforma" className="h-11 px-5 inline-flex items-center rounded-[10px] border border-line bg-white hover:bg-surface-muted text-ink text-[15px] font-medium transition-colors">
                   Ver demonstração
@@ -327,7 +327,7 @@ export default function Landing() {
         <div className="max-w-[1180px] mx-auto px-6 py-20">
           <div className="text-center max-w-[560px] mx-auto">
             <h2 className="font-display text-[34px] font-semibold tracking-display text-ink leading-tight">Preço que cresce com você</h2>
-            <p className="mt-3 text-[16px] text-[#4a5159]">Comece grátis. Suba de plano quando o agente provar valor.</p>
+            <p className="mt-3 text-[16px] text-[#4a5159]">Escolha um plano. Suba quando o agente provar valor.</p>
           </div>
           <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-5 max-w-[940px] mx-auto">
             {PRICING.map((p) => (

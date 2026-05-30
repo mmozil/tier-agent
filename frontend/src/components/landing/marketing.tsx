@@ -242,7 +242,7 @@ export function MarketingNav() {
             to="/signup"
             className="text-[14px] font-semibold text-white bg-cta hover:bg-cta-hover h-9 px-4 inline-flex items-center rounded-[10px] shadow-[0_1px_2px_rgba(13,15,17,.18)] transition-colors"
           >
-            Começar grátis
+            Começar agora
           </Link>
           <button
             className="md:hidden h-9 w-9 inline-flex items-center justify-center rounded-[8px] border border-line text-[#3a3f47]"
@@ -302,7 +302,7 @@ const FOOTER_COLS = [
     links: [
       { l: "tier.finance", to: "https://tier.finance", ext: true },
       { l: "Tier Empresas", to: "https://erp.tier.finance", ext: true },
-      { l: "Começar grátis", to: "/signup" },
+      { l: "Começar agora", to: "/signup" },
     ],
   },
   {
@@ -376,7 +376,7 @@ export function MarketingFooter() {
 // Bloco CTA final reutilizável (fundo dark, dotted)
 export function FinalCTA({
   title = "Coloque seu primeiro agente no ar hoje.",
-  subtitle = "Sem cartão. Conecte o WhatsApp e veja o agente atender em minutos.",
+  subtitle = "Conecte o WhatsApp e veja o agente atender em minutos.",
 }: {
   title?: string;
   subtitle?: string;
@@ -396,7 +396,7 @@ export function FinalCTA({
           to="/signup"
           className="mt-8 h-11 px-6 inline-flex items-center gap-2 rounded-md bg-white text-ink text-[15px] font-medium hover:bg-white/90 transition-colors"
         >
-          Começar grátis <ArrowRight className="w-4 h-4" />
+          Começar agora <ArrowRight className="w-4 h-4" />
         </Link>
       </div>
     </section>

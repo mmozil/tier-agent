@@ -144,6 +144,7 @@ interface Notification {
 const CATEGORY_META: Record<string, { label: string; color: string }> = {
   lead: { label: "Lead", color: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
   handoff: { label: "Atendimento humano", color: "bg-blue-50 text-blue-700 ring-blue-600/20" },
+  sla: { label: "SLA — cliente esperando", color: "bg-amber-50 text-amber-700 ring-amber-600/20" },
   error: { label: "Erro", color: "bg-rose-50 text-rose-700 ring-rose-600/20" },
   info: { label: "Info", color: "bg-slate-100 text-slate-600 ring-slate-500/20" },
 };
@@ -152,6 +153,7 @@ const FILTERS = [
   { key: "all", label: "Todos" },
   { key: "lead", label: "Leads" },
   { key: "handoff", label: "Atendimento humano" },
+  { key: "sla", label: "SLA" },
 ] as const;
 
 function fmtDate(iso: string): string {
@@ -320,7 +322,7 @@ export default function LeadsPage() {
                       </span>
                     )}
                     {n.conversation_id && (
-                      <a href="/admin/conversas" className="inline-flex items-center gap-1 text-[13px] text-[#003083] hover:underline">
+                      <a href={`/admin/conversas?open=${n.conversation_id}`} className="inline-flex items-center gap-1 text-[13px] text-[#003083] hover:underline">
                         <MessageCircle className="w-3.5 h-3.5" /> Ver conversa
                       </a>
                     )}

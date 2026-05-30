@@ -9,7 +9,7 @@ const PLANS = [
     name: "Lite",
     price: "99",
     tagline: "Pra começar a automatizar",
-    cta: "Começar grátis",
+    cta: "Assinar Lite",
     highlight: false,
     feats: ["1 agente", "Playbooks até 3 fluxos", "WhatsApp + templates BR", "Memória 7 dias", "Captura de lead + hand-off"],
   },
@@ -76,7 +76,7 @@ const MATRIX: { group: string; rows: Row[] }[] = [
 ];
 
 const FAQ = [
-  { q: "Preciso de cartão pra começar?", a: "Não. Você cria a conta, conecta o WhatsApp e coloca um agente no ar no plano de entrada sem cartão." },
+  { q: "Como começo?", a: "Você escolhe um plano, conecta o WhatsApp e coloca o agente no ar em minutos — direto pelo painel." },
   { q: "Como funciona o WhatsApp?", a: "Usamos a API Cloud oficial da Meta. Você conecta o seu próprio número via login do Facebook — sem risco de ban e sem número compartilhado." },
   { q: "Posso trocar de plano depois?", a: "Sim, a qualquer momento. O upgrade libera os recursos na hora; o downgrade vale no próximo ciclo." },
   { q: "Quem paga as mensagens de marketing?", a: "O atendimento reativo é livre. Disparos de marketing são cobrados pela Meta na sua própria conta WhatsApp — a Tier não entra nesse custo." },
@@ -106,7 +106,7 @@ export default function Precos() {
               Preço que cresce com você
             </h1>
             <p className="mt-4 text-[17px] text-[#4a5159]">
-              Comece grátis. Suba de plano quando o agente provar valor. Sem fidelidade.
+              Escolha um plano. Suba quando o agente provar valor. Sem fidelidade.
             </p>
           </div>
 
@@ -219,7 +219,7 @@ export default function Precos() {
         </div>
       </section>
 
-      <FinalCTA title="Comece no plano grátis." subtitle="Suba pra Pro quando o agente provar valor. Sem fidelidade, sem cartão." />
+      <FinalCTA title="Pronto pra começar?" subtitle="Escolha seu plano e coloque o agente no ar em minutos. Sem fidelidade." />
       <MarketingFooter />
     </div>
   );
