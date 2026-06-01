@@ -58,7 +58,9 @@ Princípios:
 | negativo (ruim/down) | `#E5484D` | `#fb7185` |
 
 ### 2.5 Tipografia
-- **UI**: Inter (system stack fallback).
+> **Aprendido inspecionando o Firecrawl real (01/jun):** UI = **Suisse Int'l** (paga; alt. grátis próxima: Geist/Hanken Grotesk), **títulos peso 450** (leve!) + `letter-spacing: -0.1px`, mono = **Geist Mono**, nav 16px/400, texto `#262626`. Linha separadora `border-faint` **#EDEDED** (`--border-muted` #E8E8E8). Hover da sidebar = **preto 2–3%** (`black-alpha-2/3`), bem sutil. → No Tier: manter Inter, mas **usar pesos leves (`font-medium`/`font-semibold`, nunca `font-bold` em títulos)**, hairline `#EDEDED`, hover `bg-black/[0.03]`.
+
+- **UI**: Inter (system stack fallback). Pesos leves (≤600 em títulos).
 - **Números / dinheiro / métricas / chaves / código**: `font-mono tabular-nums` (Geist Mono → JetBrains Mono).
 - Hierarquia: KPI valor `text-[24-25px] font-bold`, label `text-[11px] uppercase tracking-wide`, micro-label de seção `text-[10px] font-bold uppercase tracking-wider`.
 
@@ -88,6 +90,8 @@ Princípios:
 - **Home / Visão geral (estilo Chatwoot)** — atalhos em grade (com crosshairs) → **KPI strip** (Conversas abertas / Não atendidas / Resolvidas pela IA / Aguardando humano, com crosshairs) → `[gráfico de conversas | status dos agentes]` → `[heatmap de tráfego 7d×horas | carga por agente (barras)]` → `[API key | CLI]`. Métricas de suporte estilo Chatwoot + métricas de IA (resolução, custo). Tudo seccionado por hairlines.
 - **Lista/Logs** — header (título 26px + subtítulo) → filter bar → **table** (horário mono, evento em pill mono, status = dot semântico + label) → pagination. Sem cards: a página inteira é seccionada por hairlines.
 - **Settings** — header → `[sub-nav 220px | conteúdo]`. Conteúdo = seções `divide-y` (Nome, Convidar membros, Membros). Linha de membro: avatar + email + badge papel (`ADMIN` em azul-tint).
+- **Usage / Consumo** (ref. Firecrawl) — header → seção "Créditos restantes" (número grande + plano + data de renovação + "ver saldos") → seção "Uso recente" (toggle período `1d/7d/30d/Custom` + filtros `Chave: Qualquer` / `Endpoint: Qualquer` + gráfico ou empty state) → seção "Concorrência" (gráfico com eixo de horas + MAX). Tudo entre hairlines.
+- **API Keys** (ref. Firecrawl) — header → seção "Suas chaves" com botão **Criar** (à direita) → lista de cards de chave: nome (`Default`) + menu + chave mascarada `tk-5•••c7a1` + botões show/copy + "Criada em {data}".
 
 ## 4. Motion
 - **Produto** — só feedback (hover, toggle, loading). Sem animação decorativa.

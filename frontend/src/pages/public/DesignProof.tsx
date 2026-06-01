@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Home,
-  Radar,
   Bot,
   MessageSquare,
   Workflow,
@@ -20,8 +19,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Eye,
-  Copy,
   ArrowUpRight,
   Headphones,
   ShoppingCart,
@@ -45,8 +42,6 @@ type View = "overview" | "logs" | "settings";
 
 const NAV: { type: "label" | "item"; label: string; icon?: any; view?: View; active?: boolean; badge?: string }[] = [
   { type: "item", icon: Home, label: "Visão geral", view: "overview" },
-  { type: "label", label: "Novidades" },
-  { type: "item", icon: Radar, label: "Monitorar conversas", badge: "NOVO" },
   { type: "label", label: "Plataforma" },
   { type: "item", icon: Bot, label: "Agentes" },
   { type: "item", icon: MessageSquare, label: "Conversas" },
@@ -125,25 +120,23 @@ function heat(d: number, h: number) {
   return Math.min(1, (mid * 0.75 + eve * 0.5) * (d >= 5 ? 0.45 : 1));
 }
 
-// Crosshairs "+" nas junções da grade (efeito Firecrawl/blueprint)
-function PlusMarks({ cols }: { cols: number }) {
-  const xs = Array.from({ length: cols + 1 }, (_, i) => (i / cols) * 100);
+// CurvyGrid — frame com cantos arredondados (curvy-rect, estilo Firecrawl)
+// + divisórias verticais internas RECUADAS (não encostam topo/base).
+function CurvyGrid({ children, inset = "top-5 bottom-5" }: { children: ReactNode; inset?: string }) {
+  const items = (Array.isArray(children) ? children : [children]).flat();
   return (
-    <>
-      {[0, 100].map((y) =>
-        xs.map((x) => (
-          <span
-            key={`${x}-${y}`}
-            className="absolute z-10 pointer-events-none text-[#CFD4DB] dark:text-[#3a414c]"
-            style={{ left: `${x}%`, top: `${y}%`, transform: "translate(-50%,-50%)" }}
-          >
-            <svg width="9" height="9" viewBox="0 0 9 9" aria-hidden>
-              <path d="M4.5 0.5v8M0.5 4.5h8" stroke="currentColor" strokeWidth="1" />
-            </svg>
-          </span>
-        ))
-      )}
-    </>
+    <div className="rounded-[14px] border border-[#EDEDED] dark:border-[#23272e] overflow-hidden">
+      <div className="grid grid-cols-2 lg:grid-cols-4">
+        {items.map((child, i) => (
+          <div key={i} className="relative">
+            {i % 4 !== 0 && (
+              <span className={`hidden lg:block absolute left-0 ${inset} w-px bg-[#EDEDED] dark:bg-[#23272e]`} />
+            )}
+            {child}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -153,7 +146,7 @@ export default function DesignProof() {
   const A = dark ? "#5b9bff" : "#003083";
 
   // estilos reutilizados
-  const hair = "border-[#EEEFF1] dark:border-[#1e2228]";
+  const hair = "border-[#EDEDED] dark:border-[#1e2228]";
   const sub = "text-[#9AA4B2] dark:text-[#6b7280]";
   const fieldBtn =
     "h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border border-[#E4E7EC] dark:border-[#2a2f37] text-[12.5px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-[#F2F4F7] dark:hover:bg-[#16191f]";
@@ -166,29 +159,29 @@ export default function DesignProof() {
           <div className="h-14 px-5 flex items-center">
             <img src={dark ? "/tier-agent-claro.png" : "/tier-agent-escuro.png"} alt="Tier Agent" className="h-7 w-auto" />
           </div>
-          <nav className="px-3 flex-1 overflow-y-auto pb-3">
+          <nav className="px-3 flex-1 overflow-hidden pb-3">
             {NAV.map((n, i) =>
               n.type === "label" ? (
-                <div key={i} className="px-2 pt-4 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-[#B4BBC6] dark:text-[#565d68]">{n.label}</div>
+                <div key={i} className="px-2 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[#B4BBC6] dark:text-[#565d68]">{n.label}</div>
               ) : (
                 <div
                   key={i}
                   onClick={() => n.view && setView(n.view)}
-                  className={`flex items-center gap-2.5 h-9 px-2.5 rounded-lg text-[13.5px] cursor-pointer transition-colors ${
-                    n.view === view ? "font-semibold" : "text-[#4A5260] dark:text-[#9aa1ab] hover:bg-[#F5F6F8] dark:hover:bg-[#16191f]"
+                  className={`flex items-center gap-2.5 h-8 px-2.5 rounded-lg text-[13.5px] cursor-pointer transition-colors ${
+                    n.view === view ? "font-semibold" : "text-[#4A5260] dark:text-[#9aa1ab] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"
                   }`}
                   style={n.view === view ? { backgroundColor: `${A}12`, color: A } : undefined}
                 >
                   {n.icon && <n.icon className="w-[18px] h-[18px] flex-shrink-0" />}
                   <span className="flex-1">{n.label}</span>
-                  {n.badge && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: A }}>{n.badge}</span>}
+                  {n.badge && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: A }}>{n.badge}</span>}
                 </div>
               )
             )}
           </nav>
           <div className={`border-t ${hair} p-3`}>
             <div className="flex items-center gap-2.5 px-1">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ backgroundColor: A }}>M</div>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white shrink-0" style={{ backgroundColor: A }}>M</div>
               <span className="text-[12px] text-[#6A7385] dark:text-[#9aa1ab] truncate">marcelo@tier.finance</span>
             </div>
           </div>
@@ -198,18 +191,18 @@ export default function DesignProof() {
         <div className="flex-1 min-w-0">
           {/* topbar */}
           <header className={`h-14 px-6 flex items-center gap-3 border-b ${hair}`}>
-            <button className={`flex items-center gap-2 h-9 px-2.5 rounded-lg border ${hair} hover:bg-[#F5F6F8] dark:hover:bg-[#16191f]`}>
-              <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white" style={{ backgroundColor: A }}>T</span>
+            <button className={`flex items-center gap-2 h-9 px-2.5 rounded-lg border ${hair} hover:bg-black/[0.03] dark:hover:bg-[#16191f]`}>
+              <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-semibold text-white" style={{ backgroundColor: A }}>T</span>
               <span className="text-[13px] font-medium">Tier Finance Team</span>
               <ChevronDown className="w-3.5 h-3.5 text-[#9AA4B2]" />
             </button>
             <div className="ml-auto flex items-center gap-1.5">
-              <button className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-[#6A7385] dark:text-[#9aa1ab] hover:bg-[#F5F6F8] dark:hover:bg-[#16191f]"><Bell className="w-[18px] h-[18px]" /></button>
-              <button onClick={() => setDark((d) => !d)} className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-[#6A7385] dark:text-[#9aa1ab] hover:bg-[#F5F6F8] dark:hover:bg-[#16191f]" aria-label="Alternar tema">
+              <button className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-[#6A7385] dark:text-[#9aa1ab] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"><Bell className="w-[18px] h-[18px]" /></button>
+              <button onClick={() => setDark((d) => !d)} className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-[#6A7385] dark:text-[#9aa1ab] hover:bg-black/[0.03] dark:hover:bg-[#16191f]" aria-label="Alternar tema">
                 {dark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
               </button>
-              <button className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-[#F5F6F8] dark:hover:bg-[#16191f]"><HelpCircle className="w-4 h-4" /> Ajuda</button>
-              <button className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-[#F5F6F8] dark:hover:bg-[#16191f]"><FileText className="w-4 h-4" /> Docs</button>
+              <button className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"><HelpCircle className="w-4 h-4" /> Ajuda</button>
+              <button className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"><FileText className="w-4 h-4" /> Docs</button>
               <button className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg text-white text-[13px] font-semibold hover:opacity-90" style={{ backgroundColor: A }}><ArrowUpRight className="w-4 h-4" /> Upgrade</button>
             </div>
           </header>
@@ -218,42 +211,40 @@ export default function DesignProof() {
           {view === "overview" && (
             <>
               <section className="px-8 pt-8 pb-6">
-                <h2 className="text-[26px] font-bold tracking-tight">Visão geral</h2>
+                <h2 className="text-[26px] font-semibold tracking-tight">Visão geral</h2>
                 <p className={`text-[14px] ${sub} mt-1`}>O que está acontecendo com seus agentes agora.</p>
-                {/* atalhos — grade com crosshairs */}
-                <div className="relative mt-5">
-                  <div className={`grid grid-cols-2 lg:grid-cols-4 border-t border-l ${hair}`}>
+                {/* atalhos — curvy-rect (cantos arredondados + divisórias recuadas) */}
+                <div className="mt-5">
+                  <CurvyGrid inset="top-5 bottom-5">
                     {FEATURES.map((f) => (
-                      <div key={f.title} className={`border-r border-b ${hair} p-5 hover:bg-[#FAFBFC] dark:hover:bg-[#101319] transition-colors cursor-pointer`}>
+                      <div key={f.title} className="h-full p-5 hover:bg-black/[0.025] dark:hover:bg-white/[0.03] transition-colors cursor-pointer">
                         <f.icon className="w-5 h-5" style={{ color: A }} />
                         <div className="mt-3 flex items-center gap-2">
                           <span className="text-[14px] font-semibold">{f.title}</span>
-                          {f.badge && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: A }}>{f.badge}</span>}
+                          {f.badge && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: A }}>{f.badge}</span>}
                         </div>
                         <p className={`mt-1 text-[12.5px] ${sub} leading-relaxed`}>{f.desc}</p>
                       </div>
                     ))}
-                  </div>
-                  <PlusMarks cols={4} />
+                  </CurvyGrid>
                 </div>
               </section>
 
-              {/* KPI strip (Chatwoot conversas) — grade com crosshairs */}
-              <div className={`relative border-t ${hair}`}>
-                <div className={`grid grid-cols-2 lg:grid-cols-4 border-l ${hair}`}>
+              {/* KPI strip (Chatwoot conversas) — curvy-rect */}
+              <div className="px-8 pb-6">
+                <CurvyGrid inset="top-4 bottom-4">
                   {KPI2.map((k) => (
-                    <div key={k.label} className={`border-r border-b ${hair} px-6 py-5`}>
+                    <div key={k.label} className="px-6 py-5 h-full">
                       <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9AA4B2] dark:text-[#6b7280]">{k.label}</div>
                       <div
-                        className="mt-2 font-mono tabular-nums text-[28px] font-bold leading-none"
+                        className="mt-2 font-mono tabular-nums text-[28px] font-semibold leading-none"
                         style={{ color: k.tone === "good" ? "#0a8f5a" : k.tone === "warn" ? "#F5A300" : undefined }}
                       >
                         {k.value}
                       </div>
                     </div>
                   ))}
-                </div>
-                <PlusMarks cols={4} />
+                </CurvyGrid>
               </div>
 
               {/* chart + status dos agentes */}
@@ -261,10 +252,10 @@ export default function DesignProof() {
                 <div className={`px-8 py-7 lg:border-r ${hair}`}>
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="text-[15px] font-bold">Conversas — últimos 7 dias</div>
+                      <div className="text-[15px] font-semibold">Conversas — últimos 7 dias</div>
                       <div className={`text-[12.5px] ${sub} mt-0.5`}>resolução pela IA: 78%</div>
                     </div>
-                    <div className="font-mono tabular-nums text-[30px] font-bold leading-none">2.847</div>
+                    <div className="font-mono tabular-nums text-[30px] font-semibold leading-none">2.847</div>
                   </div>
                   <svg viewBox="0 0 600 110" className="mt-6 w-full h-[110px]" preserveAspectRatio="none">
                     <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={A} stopOpacity="0.2" /><stop offset="100%" stopColor={A} stopOpacity="0" /></linearGradient></defs>
@@ -273,7 +264,7 @@ export default function DesignProof() {
                   </svg>
                 </div>
                 <div className="px-8 py-7">
-                  <div className="text-[15px] font-bold">Status dos agentes</div>
+                  <div className="text-[15px] font-semibold">Status dos agentes</div>
                   <div className="mt-3 flex items-center gap-4 text-[12.5px]">
                     <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#0a8f5a]" /> 2 online</span>
                     <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#F5A300]" /> 1 ocupado</span>
@@ -294,7 +285,7 @@ export default function DesignProof() {
               {/* heatmap de tráfego + carga por agente */}
               <div className={`border-t ${hair} grid grid-cols-1 lg:grid-cols-[1fr_360px]`}>
                 <div className={`px-8 py-7 lg:border-r ${hair}`}>
-                  <div className="text-[15px] font-bold">Tráfego de conversas</div>
+                  <div className="text-[15px] font-semibold">Tráfego de conversas</div>
                   <div className={`text-[12.5px] ${sub} mt-0.5`}>Horários mais movimentados (7 dias)</div>
                   <div className="mt-5 space-y-1">
                     {DAYS.map((day, d) => (
@@ -314,7 +305,7 @@ export default function DesignProof() {
                   </div>
                 </div>
                 <div className="px-8 py-7">
-                  <div className="text-[15px] font-bold">Carga por agente</div>
+                  <div className="text-[15px] font-semibold">Carga por agente</div>
                   <div className={`text-[12.5px] ${sub} mt-0.5`}>Conversas ativas agora</div>
                   <div className="mt-4 space-y-3.5">
                     {WORKLOAD.map((w) => (
@@ -332,24 +323,6 @@ export default function DesignProof() {
                 </div>
               </div>
 
-              {/* API key + CLI (rodapé) */}
-              <div className={`border-t ${hair} grid grid-cols-1 lg:grid-cols-2`}>
-                <div className={`px-8 py-6 lg:border-r ${hair}`}>
-                  <div className="text-[15px] font-bold">Chave de API</div>
-                  <div className={`text-[12.5px] ${sub} mt-0.5`}>Conecte agentes externos via OAuth.</div>
-                  <div className="mt-3 flex items-center gap-2 h-10 px-3 rounded-lg border max-w-[420px]" style={{ backgroundColor: `${A}0a`, borderColor: `${A}26` }}>
-                    <span className="font-mono text-[12.5px] flex-1 truncate" style={{ color: A }}>tk-5••••••••••••••••••c7a1</span>
-                    <Eye className="w-4 h-4 text-[#9AA4B2] cursor-pointer" /><Copy className="w-4 h-4 text-[#9AA4B2] cursor-pointer" />
-                  </div>
-                </div>
-                <div className="px-8 py-6">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9AA4B2] dark:text-[#6b7280] mb-1.5">CLI</div>
-                  <div className={`flex items-center gap-2 h-10 px-3 rounded-lg bg-[#F5F6F8] dark:bg-[#14171c] border ${hair} max-w-[420px]`}>
-                    <span className="font-mono text-[12px] flex-1 truncate"><span className="text-[#9AA4B2]">$</span> npx <span style={{ color: A }}>tier-agent</span> init</span>
-                    <Copy className="w-3.5 h-3.5 text-[#9AA4B2] cursor-pointer" />
-                  </div>
-                </div>
-              </div>
             </>
           )}
 
@@ -357,7 +330,7 @@ export default function DesignProof() {
           {view === "logs" && (
             <>
               <section className="px-8 pt-8 pb-6">
-                <h2 className="text-[26px] font-bold tracking-tight">Logs de atividade</h2>
+                <h2 className="text-[26px] font-semibold tracking-tight">Logs de atividade</h2>
                 <p className={`text-[14px] ${sub} mt-1`}>Acompanhe a atividade dos seus agentes em tempo real.</p>
               </section>
               <div className={`px-8 py-4 border-t border-b ${hair} flex flex-wrap items-center gap-2`}>
@@ -399,7 +372,7 @@ export default function DesignProof() {
                 <span className={`text-[12.5px] ${sub}`}>Página 1 · 8 de 1.204 eventos</span>
                 <div className="flex items-center gap-1.5">
                   <button className={`w-8 h-8 inline-flex items-center justify-center rounded-lg border ${hair} ${sub}`}><ChevronLeft className="w-4 h-4" /></button>
-                  <button className={`w-8 h-8 inline-flex items-center justify-center rounded-lg border ${hair} text-[#3f4651] dark:text-[#c5cad1] hover:bg-[#F5F6F8] dark:hover:bg-[#16191f]`}><ChevronRight className="w-4 h-4" /></button>
+                  <button className={`w-8 h-8 inline-flex items-center justify-center rounded-lg border ${hair} text-[#3f4651] dark:text-[#c5cad1] hover:bg-black/[0.03] dark:hover:bg-[#16191f]`}><ChevronRight className="w-4 h-4" /></button>
                 </div>
               </div>
             </>
@@ -409,7 +382,7 @@ export default function DesignProof() {
           {view === "settings" && (
             <>
               <section className="px-8 pt-8 pb-6">
-                <h2 className="text-[26px] font-bold tracking-tight">Configurações</h2>
+                <h2 className="text-[26px] font-semibold tracking-tight">Configurações</h2>
                 <p className={`text-[14px] ${sub} mt-1`}>Gerencie sua equipe, cobrança e preferências da conta.</p>
               </section>
               <div className={`border-t ${hair} grid grid-cols-1 lg:grid-cols-[220px_1fr]`}>
@@ -419,7 +392,7 @@ export default function DesignProof() {
                     {SET_TABS.map((t) => (
                       <div
                         key={t.label}
-                        className={`flex items-center gap-2.5 h-9 px-2.5 rounded-lg text-[13.5px] cursor-pointer ${t.active ? "font-semibold" : "text-[#4A5260] dark:text-[#9aa1ab] hover:bg-[#F5F6F8] dark:hover:bg-[#16191f]"}`}
+                        className={`flex items-center gap-2.5 h-9 px-2.5 rounded-lg text-[13.5px] cursor-pointer ${t.active ? "font-semibold" : "text-[#4A5260] dark:text-[#9aa1ab] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"}`}
                         style={t.active ? { backgroundColor: `${A}12`, color: A } : undefined}
                       >
                         <t.icon className="w-4 h-4" /> {t.label}
@@ -428,9 +401,9 @@ export default function DesignProof() {
                   </div>
                 </div>
                 {/* conteúdo */}
-                <div className={`divide-y ${hair} divide-[#EEEFF1] dark:divide-[#1e2228]`}>
+                <div className={`divide-y ${hair} divide-[#EDEDED] dark:divide-[#1e2228]`}>
                   <div className="px-8 py-6 max-w-[640px]">
-                    <div className="text-[15px] font-bold">Nome da equipe</div>
+                    <div className="text-[15px] font-semibold">Nome da equipe</div>
                     <div className={`text-[12.5px] ${sub} mt-0.5`}>Atualize o nome de exibição da equipe.</div>
                     <div className="mt-3 flex items-center gap-2">
                       <input defaultValue="Tier Finance" className={`flex-1 h-10 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${hair} outline-none focus:border-transparent`} style={{ boxShadow: `inset 0 0 0 0 ${A}` }} />
@@ -438,7 +411,7 @@ export default function DesignProof() {
                     </div>
                   </div>
                   <div className="px-8 py-6 max-w-[640px]">
-                    <div className="text-[15px] font-bold">Convidar membros</div>
+                    <div className="text-[15px] font-semibold">Convidar membros</div>
                     <div className={`text-[12.5px] ${sub} mt-0.5`}>Adicione novos membros à sua equipe.</div>
                     <div className="mt-3 flex items-center gap-2">
                       <input placeholder="email@empresa.com" className={`flex-1 h-10 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${hair} outline-none placeholder:text-[#B4BBC6]`} />
@@ -448,12 +421,12 @@ export default function DesignProof() {
                     <p className={`mt-2 text-[12px] ${sub}`}>Membros convidados recebem um e-mail com instruções pra entrar.</p>
                   </div>
                   <div className="px-8 py-6 max-w-[640px]">
-                    <div className="text-[15px] font-bold">Membros da equipe</div>
+                    <div className="text-[15px] font-semibold">Membros da equipe</div>
                     <div className={`text-[12.5px] ${sub} mt-0.5`}>Gerencie acesso e permissões.</div>
                     <div className={`mt-3 flex items-center gap-3 p-3 rounded-lg border ${hair}`}>
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold text-white" style={{ backgroundColor: A }}>M</div>
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-semibold text-white" style={{ backgroundColor: A }}>M</div>
                       <div className="flex-1">
-                        <div className="text-[13px] font-semibold flex items-center gap-2">marcelo@tier.finance <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${A}14`, color: A }}>ADMIN</span></div>
+                        <div className="text-[13px] font-semibold flex items-center gap-2">marcelo@tier.finance <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${A}14`, color: A }}>ADMIN</span></div>
                         <div className={`text-[11.5px] ${sub}`}>Você</div>
                       </div>
                       <button className="text-[#9AA4B2] hover:text-[#6A7385]"><KeyRound className="w-4 h-4" /></button>
