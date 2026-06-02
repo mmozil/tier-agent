@@ -56,17 +56,19 @@ export function PageFrame({ children, className = "" }: { children: ReactNode; c
 export function Row({
   children,
   last = false,
+  curvy = true,
   className = "",
 }: {
   children: ReactNode;
   last?: boolean;
+  curvy?: boolean; // false = sem os cantos arredondados (CurvyRect)
   className?: string;
 }) {
   return (
     <div className={`relative w-full border-t ${last ? `border-b ${FC.hair}` : ""} ${FC.hair}`}>
       <div className="mx-auto" style={{ maxWidth: CONTENT_MAX }}>
         <div className={`relative border-l border-r ${FC.hair} ${className}`}>
-          <CurvyRect />
+          {curvy && <CurvyRect />}
           {children}
         </div>
       </div>
@@ -74,12 +76,12 @@ export function Row({
   );
 }
 
-// Spacer — faixa vazia FC entre blocos (linhas full-width se cruzam nas bordas,
-// rails + curvy nos cantos). É assim que o Firecrawl dá "respiro" sem soltar as
-// linhas do conteúdo. h = altura da faixa (default 40px).
+// Spacer — faixa vazia FC entre blocos (linhas full-width se cruzam nas bordas +
+// rails). É assim que o Firecrawl dá "respiro" sem soltar as linhas do conteúdo.
+// SEM cantos arredondados (curvy) — é só a faixa/linha. h = altura (default 40px).
 export function Spacer({ h = 40 }: { h?: number }) {
   return (
-    <Row>
+    <Row curvy={false}>
       <div style={{ height: h }} aria-hidden />
     </Row>
   );
