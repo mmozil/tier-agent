@@ -159,13 +159,14 @@ export default function CanaisPage() {
               {selectedAgent ? (
                 <ConnectWhatsAppCloud agentId={selectedAgent} onConnected={load} />
               ) : (
-                <button
+                <Button
+                  variant="secondary"
                   onClick={() => toast.error("Crie um agente primeiro para conectar um canal.")}
-                  className="h-9 px-3.5 bg-[#1877F2]/40 text-white text-[13px] font-medium rounded-lg inline-flex items-center gap-1.5 cursor-not-allowed whitespace-nowrap"
                   title="Crie um agente primeiro para conectar um canal"
+                  className="opacity-60 whitespace-nowrap"
                 >
                   Conectar WhatsApp Oficial
-                </button>
+                </Button>
               )}
               <Button
                 variant="primary"
@@ -250,11 +251,15 @@ export default function CanaisPage() {
                       <td className="px-6 py-2.5">
                         <div className="flex items-center justify-end gap-2">
                           {status !== "connected" ? (
-                            <Button variant="primary" onClick={() => openQR(c.id)} className="h-7 px-2.5 text-[12px] whitespace-nowrap">
+                            <Button variant="primary" size="sm" onClick={() => openQR(c.id)} className="whitespace-nowrap">
                               <QrCode className="w-3 h-3 shrink-0" /> Escanear QR
                             </Button>
                           ) : (
-                            <button
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              title="Desconectar"
+                              className="whitespace-nowrap"
                               onClick={async () => {
                                 if (!confirm("Desconectar este WhatsApp?")) return;
                                 try {
@@ -265,11 +270,9 @@ export default function CanaisPage() {
                                   toast.error("Erro ao desconectar");
                                 }
                               }}
-                              className={`h-7 px-2.5 text-[12px] rounded-lg ${FC.sub} ${FC.hover} inline-flex items-center gap-1 whitespace-nowrap`}
-                              title="Desconectar"
                             >
                               <Unplug className="w-3 h-3 shrink-0" /> Desconectar
-                            </button>
+                            </Button>
                           )}
                           <button onClick={() => onDelete(c.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08]`} title="Remover canal permanentemente">
                             <Trash2 className="w-3.5 h-3.5" />

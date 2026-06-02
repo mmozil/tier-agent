@@ -6,9 +6,9 @@ import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  active: { label: "IA ativa", cls: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
-  handed_off: { label: "Humano no controle", cls: "bg-blue-50 text-blue-700 ring-blue-600/20" },
-  closed: { label: "Resolvida", cls: "bg-slate-100 text-slate-500 ring-slate-400/20" },
+  active: { label: "IA ativa", cls: "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]" },
+  handed_off: { label: "Humano no controle", cls: "bg-[#003083]/[0.10] text-[#003083]" },
+  closed: { label: "Resolvida", cls: "bg-[#262626]/[0.06] text-[#262626]/[0.56]" },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -234,7 +234,7 @@ export default function ConversasPage() {
           <h1 className="text-[20px] font-[450] tracking-[-0.1px] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
           <p className="text-[13px] text-[#262626]/[0.56] dark:text-[#8b93a0] mt-1">Acompanhe as conversas do seu agente e o histórico de mensagens.</p>
         </div>
-        <button onClick={() => load()} className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1">
+        <button onClick={() => load()} className="h-6 px-2 text-[12px] text-[#262626]/[0.72] hover:bg-black/[0.04] rounded-md inline-flex items-center gap-1">
           <RefreshCw className="w-3 h-3" /> Atualizar
         </button>
       </div>
@@ -256,7 +256,7 @@ export default function ConversasPage() {
             className={`px-3 py-2 text-[14px] border-b-2 -mb-px transition-colors ${
               scope === t.k
                 ? "border-[#003083] text-[#262626] font-medium"
-                : "border-transparent text-slate-500 hover:text-slate-700"
+                : "border-transparent text-[#262626]/[0.56] hover:text-[#262626]"
             }`}
           >
             {t.label}
@@ -270,7 +270,7 @@ export default function ConversasPage() {
           <button
             onClick={() => setTagFilter(null)}
             className={`text-[12px] px-2.5 py-1 rounded-full border ${
-              !tagFilter ? "bg-[#003083] text-white border-[#003083]" : "border-[#EDEDED] text-slate-500 hover:bg-slate-50"
+              !tagFilter ? "bg-[#003083] text-white border-[#003083]" : "border-[#EDEDED] text-[#262626]/[0.56] hover:bg-black/[0.03]"
             }`}
           >
             Todas
@@ -282,7 +282,7 @@ export default function ConversasPage() {
               className={`text-[12px] px-2.5 py-1 rounded-full border ${
                 tagFilter === t
                   ? "bg-[#003083] text-white border-[#003083]"
-                  : "border-[#EDEDED] text-slate-600 hover:bg-slate-50"
+                  : "border-[#EDEDED] text-[#262626]/[0.72] hover:bg-black/[0.03]"
               }`}
             >
               #{t}
@@ -291,37 +291,37 @@ export default function ConversasPage() {
         </div>
       )}
 
-      {loading && <div className="text-[13px] text-slate-400 py-8 text-center">Carregando...</div>}
+      {loading && <div className="text-[13px] text-[#262626]/40 py-8 text-center">Carregando...</div>}
 
       {!loading && convs.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <MessageSquare className="w-10 h-10 text-slate-300 mb-3" />
-          <p className="text-[14px] text-slate-500">Nenhuma conversa ainda.</p>
-          <p className="text-[12px] text-slate-400 mt-1">As conversas aparecem aqui assim que clientes falarem com o agente.</p>
+          <MessageSquare className="w-10 h-10 text-[#262626]/30 mb-3" />
+          <p className="text-[14px] text-[#262626]/[0.56]">Nenhuma conversa ainda.</p>
+          <p className="text-[12px] text-[#262626]/40 mt-1">As conversas aparecem aqui assim que clientes falarem com o agente.</p>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#EDEDED] overflow-hidden divide-y divide-slate-100">
+      <div className="bg-white rounded-xl border border-[#EDEDED] overflow-hidden divide-y divide-[#EDEDED]">
         {shownConvs.map((c) => (
           <button
             key={c.id}
             onClick={() => openConversation(c)}
-            className="w-full text-left px-4 py-3 hover:bg-slate-50/70 flex items-center gap-3"
+            className="w-full text-left px-4 py-3 hover:bg-black/[0.03]/70 flex items-center gap-3"
           >
             <div className="w-9 h-9 rounded-full bg-[#003083]/[0.08] flex items-center justify-center shrink-0">
               <User className="w-4 h-4 text-[#003083]" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[14px] font-medium text-slate-900 truncate flex items-center gap-2">
+                <span className="text-[14px] font-medium text-[#262626] truncate flex items-center gap-2">
                   {c.contact_name || fmtPhone(c.external_id)}
                   {c.status !== "active" && <StatusBadge status={c.status} />}
                 </span>
-                <span className="text-[11px] text-slate-400 shrink-0">{fmtDate(c.last_message_at)}</span>
+                <span className="text-[11px] text-[#262626]/40 shrink-0">{fmtDate(c.last_message_at)}</span>
               </div>
               <div className="flex items-center gap-2">
-                <p className="text-[12px] text-slate-500 truncate flex-1">{c.last_preview || "—"}</p>
-                <span className="text-[11px] text-slate-400 shrink-0">{c.msg_count} msg</span>
+                <p className="text-[12px] text-[#262626]/[0.56] truncate flex-1">{c.last_preview || "—"}</p>
+                <span className="text-[11px] text-[#262626]/40 shrink-0">{c.msg_count} msg</span>
               </div>
               {c.tags && c.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1">
@@ -339,26 +339,26 @@ export default function ConversasPage() {
 
       {/* Drawer detalhe */}
       {openId && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30" onClick={() => setOpenId(null)}>
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={() => setOpenId(null)}>
           <div className="w-full max-w-[480px] h-full bg-white shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#EDEDED]">
               <div className="min-w-0">
-                <h2 className="text-[15px] font-semibold text-slate-900 truncate">
+                <h2 className="text-[15px] font-semibold text-[#262626] truncate">
                   {openConv?.contact_name || fmtPhone(openConv?.external_id || "")}
                 </h2>
-                <p className="text-[12px] text-slate-400 flex items-center gap-2">
+                <p className="text-[12px] text-[#262626]/40 flex items-center gap-2">
                   {openConv?.connector_kind || "whatsapp"}
                   {openConv && <StatusBadge status={openConv.status} />}
                 </p>
               </div>
-              <button onClick={() => setOpenId(null)} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
+              <button onClick={() => setOpenId(null)} className="p-1.5 rounded text-[#262626]/40 hover:bg-black/[0.04]">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Ações: assumir / devolver / resolver */}
             {openConv && openConv.status !== "closed" && (
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-[#EDEDED] bg-slate-50/60">
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-[#EDEDED] bg-[#F9F9F9]/60">
                 {openConv.status === "handed_off" ? (
                   <button
                     onClick={() => changeStatus(openConv.id, "resume")}
@@ -369,14 +369,14 @@ export default function ConversasPage() {
                 ) : (
                   <button
                     onClick={() => changeStatus(openConv.id, "handoff")}
-                    className="h-7 px-3 text-[12px] rounded-md bg-blue-600 text-white inline-flex items-center gap-1.5 hover:bg-blue-700"
+                    className="h-7 px-3 text-[12px] rounded-md bg-[#003083] text-white inline-flex items-center gap-1.5 hover:bg-[#002266]"
                   >
                     <Hand className="w-3.5 h-3.5" /> Assumir (pausar IA)
                   </button>
                 )}
                 <button
                   onClick={() => changeStatus(openConv.id, "resolve")}
-                  className="h-7 px-3 text-[12px] rounded-md border border-[#EDEDED] text-slate-600 inline-flex items-center gap-1.5 hover:bg-white"
+                  className="h-7 px-3 text-[12px] rounded-md border border-[#EDEDED] text-[#262626]/[0.72] inline-flex items-center gap-1.5 hover:bg-white"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" /> Resolver
                 </button>
@@ -391,7 +391,7 @@ export default function ConversasPage() {
                   <select
                     value=""
                     onChange={(e) => e.target.value && snoozeConv(openConv.id, Number(e.target.value))}
-                    className="h-7 px-2 text-[12px] rounded-md border border-[#EDEDED] text-slate-600 outline-none"
+                    className="h-7 px-2 text-[12px] rounded-md border border-[#EDEDED] text-[#262626]/[0.72] outline-none"
                   >
                     <option value="">💤 Adiar…</option>
                     <option value="60">1 hora</option>
@@ -400,7 +400,7 @@ export default function ConversasPage() {
                   </select>
                 )}
                 {openConv.status === "handed_off" && (
-                  <span className="text-[11px] text-blue-600 ml-auto">IA pausada — você está no controle</span>
+                  <span className="text-[11px] text-[#003083] ml-auto">IA pausada — você está no controle</span>
                 )}
               </div>
             )}
@@ -408,7 +408,7 @@ export default function ConversasPage() {
             {/* Atribuição + CSAT */}
             {openConv && (
               <div className="px-5 py-2.5 border-b border-[#EDEDED] flex items-center gap-2">
-                <span className="text-[12px] text-slate-500 shrink-0">Atendente:</span>
+                <span className="text-[12px] text-[#262626]/[0.56] shrink-0">Atendente:</span>
                 <select
                   value={openConv.assigned_member_id ?? ""}
                   onChange={(e) => saveAssign(openConv.id, e.target.value ? Number(e.target.value) : null)}
@@ -429,7 +429,7 @@ export default function ConversasPage() {
                   </span>
                 )}
                 {openConv.csat_state === "pending" && (
-                  <span className="ml-auto text-[11px] text-slate-400">aguardando avaliação…</span>
+                  <span className="ml-auto text-[11px] text-[#262626]/40">aguardando avaliação…</span>
                 )}
               </div>
             )}
@@ -462,15 +462,15 @@ export default function ConversasPage() {
                     }
                   }}
                   placeholder="+ etiqueta"
-                  className="text-[12px] px-2 py-0.5 w-24 rounded-full border border-dashed border-slate-300 outline-none focus:border-[#003083]"
+                  className="text-[12px] px-2 py-0.5 w-24 rounded-full border border-dashed border-[#EDEDED] outline-none focus:border-[#003083]"
                 />
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2 bg-slate-50">
-              {loadingMsgs && <div className="text-[13px] text-slate-400 text-center py-6">Carregando...</div>}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2 bg-[#F9F9F9]">
+              {loadingMsgs && <div className="text-[13px] text-[#262626]/40 text-center py-6">Carregando...</div>}
               {!loadingMsgs && msgs.length === 0 && (
-                <div className="text-[12px] text-slate-400 text-center py-6">
+                <div className="text-[12px] text-[#262626]/40 text-center py-6">
                   Sem histórico de texto (mensagens antigas não foram gravadas; novas aparecem aqui).
                 </div>
               )}
@@ -492,16 +492,16 @@ export default function ConversasPage() {
                     <div
                       className={`max-w-[80%] rounded-2xl px-3 py-2 text-[13px] ${
                         isUser
-                          ? "bg-white border border-[#EDEDED] text-slate-700"
+                          ? "bg-white border border-[#EDEDED] text-[#262626]"
                           : isAgent
-                            ? "bg-emerald-600 text-white"
+                            ? "bg-[#003083] text-white"
                             : "bg-[#003083] text-white"
                       }`}
                     >
                       {m.content || <span className="opacity-60 italic">[sem texto]</span>}
                     </div>
-                    {isAgent && <span className="text-[10px] text-emerald-600 mt-0.5 mr-1">Você (atendente)</span>}
-                    {!isUser && !isAgent && <span className="text-[10px] text-slate-400 mt-0.5 mr-1">IA</span>}
+                    {isAgent && <span className="text-[10px] text-[#003083] mt-0.5 mr-1">Você (atendente)</span>}
+                    {!isUser && !isAgent && <span className="text-[10px] text-[#262626]/40 mt-0.5 mr-1">IA</span>}
                   </div>
                 );
               })}
@@ -514,7 +514,7 @@ export default function ConversasPage() {
                   <button
                     onClick={() => setNoteMode(false)}
                     className={`text-[12px] px-2.5 py-1 rounded-md ${
-                      !noteMode ? "bg-emerald-50 text-emerald-700 font-medium" : "text-slate-500 hover:bg-slate-100"
+                      !noteMode ? "bg-[#003083]/[0.08] text-[#003083] font-medium" : "text-[#262626]/[0.56] hover:bg-black/[0.04]"
                     }`}
                   >
                     Responder
@@ -522,7 +522,7 @@ export default function ConversasPage() {
                   <button
                     onClick={() => setNoteMode(true)}
                     className={`text-[12px] px-2.5 py-1 rounded-md ${
-                      noteMode ? "bg-amber-50 text-amber-700 font-medium" : "text-slate-500 hover:bg-slate-100"
+                      noteMode ? "bg-amber-50 text-amber-700 font-medium" : "text-[#262626]/[0.56] hover:bg-black/[0.04]"
                     }`}
                   >
                     📝 Nota interna
@@ -530,7 +530,7 @@ export default function ConversasPage() {
                 </div>
                 {noteMode && members.filter((m) => m.status === "active").length > 0 && (
                   <div className="flex flex-wrap items-center gap-1 mb-2">
-                    <span className="text-[11px] text-slate-400">Marcar:</span>
+                    <span className="text-[11px] text-[#262626]/40">Marcar:</span>
                     {members
                       .filter((m) => m.status === "active")
                       .map((m) => {
@@ -542,7 +542,7 @@ export default function ConversasPage() {
                               setMentions((prev) => (on ? prev.filter((x) => x !== m.id) : [...prev, m.id]))
                             }
                             className={`text-[11px] px-2 py-0.5 rounded-full border ${
-                              on ? "bg-amber-100 text-amber-800 border-amber-300" : "border-[#EDEDED] text-slate-500 hover:bg-slate-50"
+                              on ? "bg-amber-100 text-amber-800 border-amber-300" : "border-[#EDEDED] text-[#262626]/[0.56] hover:bg-black/[0.03]"
                             }`}
                           >
                             @{m.nome}
@@ -582,14 +582,14 @@ export default function ConversasPage() {
                     onClick={sendReply}
                     disabled={sending || !replyText.trim()}
                     className={`h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg text-white disabled:opacity-40 ${
-                      noteMode ? "bg-amber-500 hover:bg-amber-600" : "bg-emerald-600 hover:bg-emerald-700"
+                      noteMode ? "bg-amber-500 hover:bg-amber-600" : "bg-[#003083] hover:bg-[#002266]"
                     }`}
                     title="Enviar"
                   >
                     <Send className="w-4 h-4" />
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">
+                <p className="text-[11px] text-[#262626]/40 mt-1.5">
                   {noteMode
                     ? "A nota fica registrada na conversa, visível só pra equipe."
                     : "Ao responder, você assume a conversa e a IA fica pausada."}

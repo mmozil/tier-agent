@@ -138,28 +138,34 @@ export function HairCells({
 export function Button({
   children,
   variant = "primary",
+  size = "md",
   onClick,
   className = "",
   type = "button",
   disabled = false,
+  title,
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "ghost";
+  size?: "sm" | "md";
   onClick?: () => void;
   className?: string;
   type?: "button" | "submit";
   disabled?: boolean;
+  title?: string;
 }) {
   const base =
-    "h-9 inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium transition-all active:scale-[0.98] select-none disabled:opacity-50 disabled:pointer-events-none";
+    "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-all active:scale-[0.98] select-none disabled:opacity-50 disabled:pointer-events-none";
+  const sz = size === "sm" ? "h-7 text-[12px]" : "h-9 text-[13px]";
+  const padX = size === "sm" ? "px-2.5" : "px-3.5";
   const v =
     variant === "primary"
-      ? "px-3.5 text-white bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] shadow-[0_1px_2px_rgba(0,48,131,0.18)]"
+      ? `${padX} text-white bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] shadow-[0_1px_2px_rgba(0,48,131,0.18)]`
       : variant === "secondary"
-        ? `px-3.5 ${FC.ink} border ${FC.hair} ${FC.hover}`
-        : `px-3 ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
+        ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover}`
+        : `${size === "sm" ? "px-2" : "px-3"} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={`${base} ${v} ${className}`}>
+    <button type={type} onClick={onClick} disabled={disabled} title={title} className={`${base} ${sz} ${v} ${className}`}>
       {children}
     </button>
   );

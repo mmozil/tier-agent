@@ -159,26 +159,26 @@ export default function MetricasPage() {
               <KpiCell
                 icon={DollarSign}
                 label="Custo total"
-                value={`R$ ${overview.cost_brl_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
-                hint={`${overview.tokens_in_total.toLocaleString("pt-BR")} in / ${overview.tokens_out_total.toLocaleString("pt-BR")} out`}
+                value={`R$ ${(overview.cost_brl_total ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+                hint={`${(overview.tokens_in_total ?? 0).toLocaleString("pt-BR")} in / ${(overview.tokens_out_total ?? 0).toLocaleString("pt-BR")} out`}
               />
               <KpiCell
                 icon={MessageSquare}
                 label="Mensagens"
-                value={overview.messages_total.toLocaleString("pt-BR")}
-                hint={`${overview.conversations_count.toLocaleString("pt-BR")} conversas`}
+                value={(overview.messages_total ?? 0).toLocaleString("pt-BR")}
+                hint={`${(overview.conversations_count ?? 0).toLocaleString("pt-BR")} conversas`}
               />
               <KpiCell
                 icon={Clock}
                 label="Latência média"
-                value={`${Math.round(overview.avg_latency_ms)}ms`}
+                value={`${Math.round(overview.avg_latency_ms ?? 0)}ms`}
                 hint="resposta do agente"
               />
               <KpiCell
                 icon={Workflow}
                 label="Execuções playbook"
-                value={overview.playbook_executions_count.toLocaleString("pt-BR")}
-                hint={`${overview.agents_count} agentes ativos`}
+                value={(overview.playbook_executions_count ?? 0).toLocaleString("pt-BR")}
+                hint={`${overview.agents_count ?? 0} agentes ativos`}
               />
               </HairCells>
             </Row>
