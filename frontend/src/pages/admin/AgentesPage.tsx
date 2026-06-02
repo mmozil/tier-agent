@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Spacer, HairCells, Button } from "@/components/ds/fc";
 
 interface Agent {
   id: number;
@@ -131,35 +131,40 @@ export default function AgentesPage() {
   }
 
   return (
-    <div className="max-w-[1232px] mx-auto pt-1 pb-10">
-      {/* Header — divisor simples, sem o efeito de grade (esta página usa cards normais) */}
-      <div className={`flex items-start justify-between gap-4 pb-5 mb-6 border-b ${FC.hair}`}>
-        <div>
-          <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Agentes</h2>
-          <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Crie e gerencie os funcionários digitais do seu workspace.</p>
-        </div>
-        <Button variant="primary" size="sm" onClick={() => setShowForm(!showForm)} className="shrink-0">
-          <Plus className="w-3.5 h-3.5" /> Novo agente
-        </Button>
-      </div>
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start justify-between gap-4 p-6">
+            <div>
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Agentes</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Crie e gerencie os funcionários digitais do seu workspace.</p>
+            </div>
+            <Button variant="primary" size="sm" onClick={() => setShowForm(!showForm)} className="shrink-0">
+              <Plus className="w-3.5 h-3.5" /> Novo agente
+            </Button>
+          </div>
+        </Row>
+
+        <Spacer />
 
       {showForm && (
-        <form onSubmit={onSubmit} className={`mb-6 rounded-xl border ${FC.hair} bg-white dark:bg-[#16191f] p-6 space-y-4`}>
-          <h3 className={`text-[14px] font-medium ${FC.ink}`}>Novo agente</h3>
+        <Row>
+        <form onSubmit={onSubmit} className="p-6 space-y-4">
+          <h2 className="text-[14px] font-medium text-slate-900">Novo agente</h2>
 
           <label className="block">
-            <span className={`text-[12px] ${FC.sub}`}>Nome do agente</span>
+            <span className="text-[12px] text-slate-700">Nome do agente</span>
             <input
               value={form.nome}
               onChange={(e) => setForm({ ...form, nome: e.target.value })}
               placeholder="ex: Atendente principal"
-              className="mt-1 w-full h-7 px-3 text-[14px] rounded-md bg-white dark:bg-[#1e1e1e] outline-none shadow-[0_0_0_1px_#EDEDED] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
+              className="mt-1 w-full h-7 px-3 text-[14px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
               required
             />
           </label>
 
           <div>
-            <span className={`text-[12px] ${FC.sub} block mb-2`}>Template inicial</span>
+            <span className="text-[12px] text-slate-700 block mb-2">Template inicial</span>
             <div className="grid grid-cols-2 gap-2">
               {templates.map((t) => {
                 const Icon = ICONS[t.icon] || ShoppingBag;
@@ -168,7 +173,7 @@ export default function AgentesPage() {
                   <label
                     key={t.key}
                     className={`block cursor-pointer rounded-md border p-3 transition-colors ${
-                      active ? "border-[#003083] bg-[#003083]/[0.05]" : `${FC.hair} hover:border-[#262626]/20`
+                      active ? "border-[#003083] bg-[#003083]/[0.05]" : "border-[#EDEDED] hover:border-slate-300"
                     }`}
                   >
                     <input
@@ -180,17 +185,17 @@ export default function AgentesPage() {
                       className="sr-only"
                     />
                     <div className="flex items-start gap-2.5">
-                      <div className={`p-1.5 rounded ${active ? "bg-[#003083] text-white" : "bg-[#262626]/[0.06] text-[#262626]/[0.56]"}`}>
+                      <div className={`p-1.5 rounded ${active ? "bg-[#003083] text-white" : "bg-slate-100 text-slate-500"}`}>
                         <Icon className="w-3.5 h-3.5" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className={`text-[13px] font-medium ${FC.ink}`}>{t.label}</div>
-                        <div className={`text-[11px] ${FC.mut} mt-0.5`}>{t.description}</div>
+                        <div className="text-[13px] font-medium text-slate-900">{t.label}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{t.description}</div>
                         <div className="mt-1.5 flex gap-1 flex-wrap">
                           {t.suggested_channels.map((c) => (
                             <span
                               key={c}
-                              className="px-1.5 py-0.5 bg-[#262626]/[0.06] text-[#262626]/[0.72] text-[10px] rounded uppercase tracking-wide"
+                              className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[10px] rounded uppercase tracking-wide"
                             >
                               {c}
                             </span>
@@ -203,7 +208,7 @@ export default function AgentesPage() {
               })}
             </div>
             {selectedTemplate && (
-              <p className={`mt-2 text-[11px] ${FC.mut}`}>
+              <p className="mt-2 text-[11px] text-slate-500">
                 💡 A persona e prompt deste template serão aplicados automaticamente (você pode
                 sobrescrever editando depois).
               </p>
@@ -211,54 +216,65 @@ export default function AgentesPage() {
           </div>
 
           <label className="block">
-            <span className={`text-[12px] ${FC.sub}`}>Persona (livre)</span>
+            <span className="text-[12px] text-slate-700">Persona (livre)</span>
             <textarea
               value={form.persona}
               onChange={(e) => setForm({ ...form, persona: e.target.value })}
               placeholder="ex: Você é um atendente cordial e direto, fala em pt-BR..."
               rows={4}
-              className="mt-1 w-full px-3 py-2 text-[13px] rounded-md bg-white dark:bg-[#1e1e1e] outline-none shadow-[0_0_0_1px_#EDEDED] focus:shadow-[0_0_0_2px_#003083] transition-shadow font-mono"
+              className="mt-1 w-full px-3 py-2 text-[13px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow font-mono"
             />
           </label>
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="h-6 px-3 text-[12px] font-medium text-[#404452] rounded-md inline-flex items-center justify-center bg-white shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
+            >
               Cancelar
-            </Button>
-            <Button variant="primary" size="sm" type="submit">
+            </button>
+            <button
+              type="submit"
+              className="h-6 px-3 text-[12px] font-medium bg-[#003083] text-white rounded-md hover:bg-[#002266] inline-flex items-center justify-center"
+            >
               Criar agente
-            </Button>
+            </button>
           </div>
         </form>
+        </Row>
       )}
 
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
-        </div>
-      ) : agents.length === 0 ? (
-        <div className={`rounded-xl border ${FC.hair} bg-white dark:bg-[#16191f] p-12 text-center`}>
-          <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
-            <Bot className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
+      <Row last>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
           </div>
-          <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>Nenhum agente ainda</h3>
-          <p className={`text-[13px] ${FC.sub}`}>Clique em "Novo agente" pra começar.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {agents.map((a) => (
-            <AgentCard
-              key={a.id}
-              agent={a}
-              menuOpen={openMenuId === a.id}
-              onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
-              onClick={() => setSelectedAgentId(a.id)}
-              onToggleActive={() => toggleActive(a)}
-              onDelete={() => deleteAgent(a)}
-            />
-          ))}
-        </div>
-      )}
+        ) : agents.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
+              <Bot className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
+            </div>
+            <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>Nenhum agente ainda</h3>
+            <p className={`text-[13px] ${FC.sub}`}>Clique em "Novo agente" pra começar.</p>
+          </div>
+        ) : (
+          <HairCells cols={3} gridLines>
+            {agents.map((a) => (
+              <AgentCard
+                key={a.id}
+                agent={a}
+                menuOpen={openMenuId === a.id}
+                onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
+                onClick={() => setSelectedAgentId(a.id)}
+                onToggleActive={() => toggleActive(a)}
+                onDelete={() => deleteAgent(a)}
+              />
+            ))}
+          </HairCells>
+        )}
+      </Row>
+      </PageFrame>
 
       {selectedAgent && (
         <AgentDetailsDrawer
@@ -307,7 +323,7 @@ function AgentCard({
   return (
     <div
       onClick={onClick}
-      className={`relative h-full p-5 cursor-pointer rounded-xl border ${FC.hair} bg-white dark:bg-[#16191f] transition-all hover:border-[#003083]/30 hover:shadow-[0_2px_10px_rgba(0,0,0,0.05)]`}
+      className="relative h-full p-5 cursor-pointer transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">

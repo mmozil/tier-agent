@@ -81,10 +81,10 @@ export default function AdminLayout() {
   // estilo FC: item h-34 rounded-10; hover = texto clareia + ícone escurece (sem bg)
   // + active:scale-[0.98] (afunda no clique); ativo = acento azul + bg faint.
   const itemClass = (active: boolean) =>
-    `group flex items-center gap-2.5 rounded-[10px] transition-all duration-200 active:scale-[0.98] h-[34px] text-[13px] px-2.5 ${
+    `group tier-jelly flex items-center gap-2.5 rounded-[10px] transition-colors duration-200 active:scale-[0.98] h-[34px] text-[13px] px-2.5 ${
       active
         ? "text-[#003083] dark:text-[#5b9bff] font-medium bg-[#003083]/[0.06] dark:bg-[#5b9bff]/[0.12]"
-        : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white font-normal hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+        : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white font-normal"
     }`;
 
   return (
