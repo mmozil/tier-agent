@@ -4,13 +4,16 @@ Agrega TaMessageLog + TaUsageDaily + TaPlaybookExecution/StepLog em endpoints
 prontos pra consumo direto pelo frontend (sem agregar no client).
 """
 
+import logging
 from datetime import datetime, timedelta
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import desc, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger("metrics")
 
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
@@ -101,6 +104,26 @@ async def overview(
     since = _period_start(days)
     since_day = since.strftime("%Y-%m-%d")
 
+    try:
+        return await _overview_query(db, tenant_id, days, since, since_day)
+    except SQLAlchemyError as e:
+        await db.rollback()
+        logger.warning("metrics/overview degradou pra zero: %s", e)
+        return OverviewResponse(
+            period_days=days,
+            messages_total=0,
+            tokens_in_total=0,
+            tokens_out_total=0,
+            cost_cents_total=0,
+            cost_brl_total=0.0,
+            avg_latency_ms=0.0,
+            agents_count=0,
+            conversations_count=0,
+            playbook_executions_count=0,
+        )
+
+
+async def _overview_query(db, tenant_id, days, since, since_day) -> "OverviewResponse":
     # Totais via TaUsageDaily (mais barato que sumar TaMessageLog)
     totals = (
         await db.execute(
@@ -176,19 +199,24 @@ async def daily(
     tenant_id = await _ensure_tenant(user)
     since_day = _period_start_str(days)
 
-    rows = (
-        await db.execute(
-            select(
-                TaUsageDaily.day,
-                TaUsageDaily.messages,
-                TaUsageDaily.tokens_in,
-                TaUsageDaily.tokens_out,
-                TaUsageDaily.cost_cents,
+    try:
+        rows = (
+            await db.execute(
+                select(
+                    TaUsageDaily.day,
+                    TaUsageDaily.messages,
+                    TaUsageDaily.tokens_in,
+                    TaUsageDaily.tokens_out,
+                    TaUsageDaily.cost_cents,
+                )
+                .where(TaUsageDaily.tenant_id == tenant_id, TaUsageDaily.day >= since_day)
+                .order_by(TaUsageDaily.day.asc())
             )
-            .where(TaUsageDaily.tenant_id == tenant_id, TaUsageDaily.day >= since_day)
-            .order_by(TaUsageDaily.day.asc())
-        )
-    ).all()
+        ).all()
+    except SQLAlchemyError as e:
+        await db.rollback()
+        logger.warning("metrics/daily degradou pra vazio: %s", e)
+        return []
 
     return [
         DailyPoint(
@@ -212,26 +240,31 @@ async def by_agent(
     tenant_id = await _ensure_tenant(user)
     since = _period_start(days)
 
-    rows = (
-        await db.execute(
-            select(
-                TaAgent.id,
-                TaAgent.nome,
-                func.count(TaMessageLog.id),
-                func.coalesce(func.sum(TaMessageLog.cost_cents), 0),
-                func.coalesce(func.avg(TaMessageLog.latency_ms), 0),
+    try:
+        rows = (
+            await db.execute(
+                select(
+                    TaAgent.id,
+                    TaAgent.nome,
+                    func.count(TaMessageLog.id),
+                    func.coalesce(func.sum(TaMessageLog.cost_cents), 0),
+                    func.coalesce(func.avg(TaMessageLog.latency_ms), 0),
+                )
+                .join(TaConversation, TaConversation.agent_id == TaAgent.id)
+                .join(TaMessageLog, TaMessageLog.conversation_id == TaConversation.id)
+                .where(
+                    TaAgent.tenant_id == tenant_id,
+                    TaMessageLog.created_at >= since,
+                    TaMessageLog.role == "assistant",
+                )
+                .group_by(TaAgent.id, TaAgent.nome)
+                .order_by(desc(func.coalesce(func.sum(TaMessageLog.cost_cents), 0)))
             )
-            .join(TaConversation, TaConversation.agent_id == TaAgent.id)
-            .join(TaMessageLog, TaMessageLog.conversation_id == TaConversation.id)
-            .where(
-                TaAgent.tenant_id == tenant_id,
-                TaMessageLog.created_at >= since,
-                TaMessageLog.role == "assistant",
-            )
-            .group_by(TaAgent.id, TaAgent.nome)
-            .order_by(desc(func.coalesce(func.sum(TaMessageLog.cost_cents), 0)))
-        )
-    ).all()
+        ).all()
+    except SQLAlchemyError as e:
+        await db.rollback()
+        logger.warning("metrics/by-agent degradou pra vazio: %s", e)
+        return []
 
     return [
         ByAgentRow(
@@ -255,27 +288,32 @@ async def by_model(
     tenant_id = await _ensure_tenant(user)
     since = _period_start(days)
 
-    rows = (
-        await db.execute(
-            select(
-                TaMessageLog.model_used,
-                func.count(TaMessageLog.id),
-                func.coalesce(func.sum(TaMessageLog.tokens_in), 0),
-                func.coalesce(func.sum(TaMessageLog.tokens_out), 0),
-                func.coalesce(func.sum(TaMessageLog.cost_cents), 0),
+    try:
+        rows = (
+            await db.execute(
+                select(
+                    TaMessageLog.model_used,
+                    func.count(TaMessageLog.id),
+                    func.coalesce(func.sum(TaMessageLog.tokens_in), 0),
+                    func.coalesce(func.sum(TaMessageLog.tokens_out), 0),
+                    func.coalesce(func.sum(TaMessageLog.cost_cents), 0),
+                )
+                .join(TaConversation, TaConversation.id == TaMessageLog.conversation_id)
+                .join(TaAgent, TaAgent.id == TaConversation.agent_id)
+                .where(
+                    TaAgent.tenant_id == tenant_id,
+                    TaMessageLog.created_at >= since,
+                    TaMessageLog.role == "assistant",
+                    TaMessageLog.model_used.is_not(None),
+                )
+                .group_by(TaMessageLog.model_used)
+                .order_by(desc(func.coalesce(func.sum(TaMessageLog.cost_cents), 0)))
             )
-            .join(TaConversation, TaConversation.id == TaMessageLog.conversation_id)
-            .join(TaAgent, TaAgent.id == TaConversation.agent_id)
-            .where(
-                TaAgent.tenant_id == tenant_id,
-                TaMessageLog.created_at >= since,
-                TaMessageLog.role == "assistant",
-                TaMessageLog.model_used.is_not(None),
-            )
-            .group_by(TaMessageLog.model_used)
-            .order_by(desc(func.coalesce(func.sum(TaMessageLog.cost_cents), 0)))
-        )
-    ).all()
+        ).all()
+    except SQLAlchemyError as e:
+        await db.rollback()
+        logger.warning("metrics/by-model degradou pra vazio: %s", e)
+        return []
 
     return [
         ByModelRow(
@@ -337,7 +375,14 @@ async def ab_tests(
     if playbook_id is not None:
         stmt = stmt.where(TaPlaybookExecution.playbook_id == playbook_id)
 
-    rows = (await db.execute(stmt)).all()
+    try:
+        rows = (await db.execute(stmt)).all()
+    except SQLAlchemyError as e:
+        # A/B testing é feature recente — tabela/coluna pode não existir no tenant.
+        # Analytics read-only degradam pra vazio, nunca derrubam a página de Métricas.
+        await db.rollback()
+        logger.warning("metrics/ab-tests degradou pra vazio: %s", e)
+        return []
     return [
         AbVariantRow(
             playbook_id=int(r[0]),
@@ -362,30 +407,35 @@ async def top_conversations(
     tenant_id = await _ensure_tenant(user)
     since = _period_start(days)
 
-    rows = (
-        await db.execute(
-            select(
-                TaConversation.id,
-                TaConversation.agent_id,
-                TaConversation.contact_name,
-                TaConversation.external_id,
-                func.coalesce(func.sum(TaMessageLog.cost_cents), 0),
-                TaConversation.msg_count,
+    try:
+        rows = (
+            await db.execute(
+                select(
+                    TaConversation.id,
+                    TaConversation.agent_id,
+                    TaConversation.contact_name,
+                    TaConversation.external_id,
+                    func.coalesce(func.sum(TaMessageLog.cost_cents), 0),
+                    TaConversation.msg_count,
+                )
+                .join(TaMessageLog, TaMessageLog.conversation_id == TaConversation.id)
+                .join(TaAgent, TaAgent.id == TaConversation.agent_id)
+                .where(TaAgent.tenant_id == tenant_id, TaMessageLog.created_at >= since)
+                .group_by(
+                    TaConversation.id,
+                    TaConversation.agent_id,
+                    TaConversation.contact_name,
+                    TaConversation.external_id,
+                    TaConversation.msg_count,
+                )
+                .order_by(desc(func.coalesce(func.sum(TaMessageLog.cost_cents), 0)))
+                .limit(limit)
             )
-            .join(TaMessageLog, TaMessageLog.conversation_id == TaConversation.id)
-            .join(TaAgent, TaAgent.id == TaConversation.agent_id)
-            .where(TaAgent.tenant_id == tenant_id, TaMessageLog.created_at >= since)
-            .group_by(
-                TaConversation.id,
-                TaConversation.agent_id,
-                TaConversation.contact_name,
-                TaConversation.external_id,
-                TaConversation.msg_count,
-            )
-            .order_by(desc(func.coalesce(func.sum(TaMessageLog.cost_cents), 0)))
-            .limit(limit)
-        )
-    ).all()
+        ).all()
+    except SQLAlchemyError as e:
+        await db.rollback()
+        logger.warning("metrics/top-conversations degradou pra vazio: %s", e)
+        return []
 
     return [
         TopConversationRow(

@@ -89,27 +89,31 @@ export default function MetricasPage() {
 
   async function load() {
     setLoading(true);
-    try {
-      const [ov, dy, ag, md, tc, ab] = await Promise.all([
-        api.get<Overview>(`/metrics/overview`, { params: { days } }),
-        api.get<DailyPoint[]>(`/metrics/daily`, { params: { days } }),
-        api.get<ByAgent[]>(`/metrics/by-agent`, { params: { days } }),
-        api.get<ByModel[]>(`/metrics/by-model`, { params: { days } }),
-        api.get<TopConv[]>(`/metrics/top-conversations`, { params: { days, limit: 10 } }),
-        api.get<AbRow[]>(`/metrics/ab-tests`, { params: { days } }),
-      ]);
-      setOverview(ov.data);
-      setDaily(dy.data);
-      setByAgent(ag.data);
-      setByModel(md.data);
-      setTopConv(tc.data);
-      setAbRows(ab.data);
-    } catch (e) {
-      console.error(e);
-      toast.error("Falha ao carregar métricas");
-    } finally {
-      setLoading(false);
+    // allSettled: cada endpoint é independente — um 500 num bloco (ex: ab-tests)
+    // não pode zerar a página inteira. Mostra o que carregar, avisa só se TUDO falhar.
+    const [ov, dy, ag, md, tc, ab] = await Promise.allSettled([
+      api.get<Overview>(`/metrics/overview`, { params: { days } }),
+      api.get<DailyPoint[]>(`/metrics/daily`, { params: { days } }),
+      api.get<ByAgent[]>(`/metrics/by-agent`, { params: { days } }),
+      api.get<ByModel[]>(`/metrics/by-model`, { params: { days } }),
+      api.get<TopConv[]>(`/metrics/top-conversations`, { params: { days, limit: 10 } }),
+      api.get<AbRow[]>(`/metrics/ab-tests`, { params: { days } }),
+    ]);
+    if (ov.status === "fulfilled") setOverview(ov.value.data);
+    if (dy.status === "fulfilled") setDaily(dy.value.data);
+    if (ag.status === "fulfilled") setByAgent(ag.value.data);
+    if (md.status === "fulfilled") setByModel(md.value.data);
+    if (tc.status === "fulfilled") setTopConv(tc.value.data);
+    if (ab.status === "fulfilled") setAbRows(ab.value.data);
+
+    const results = [ov, dy, ag, md, tc, ab];
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length) {
+      console.error("métricas: endpoints com falha", failed);
+      // só incomoda o usuário se NADA carregou
+      if (failed.length === results.length) toast.error("Falha ao carregar métricas");
     }
+    setLoading(false);
   }
 
   useEffect(() => {
