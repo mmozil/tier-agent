@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { FC, PageFrame, Row, HairCells, Button } from "@/components/ds/fc";
 
 interface Agent {
   id: number;
@@ -130,22 +131,23 @@ export default function AgentesPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mt-6 mb-2">
-        <h1 className="text-[20px] font-[450] tracking-[-0.1px] text-[#262626] dark:text-[#e6e8eb]">Agentes</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="h-6 px-2 bg-[#003083] hover:bg-[#002266] text-white text-[12px] font-medium rounded-md inline-flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" /> Novo agente
-        </button>
-      </div>
-      <p className="text-[14px] text-[#697386] mb-6">
-        Crie e gerencie os funcionários digitais do seu workspace.
-      </p>
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start justify-between gap-4 p-6">
+            <div>
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Agentes</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Crie e gerencie os funcionários digitais do seu workspace.</p>
+            </div>
+            <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
+              <Plus className="w-3.5 h-3.5" /> Novo agente
+            </Button>
+          </div>
+        </Row>
 
       {showForm && (
-        <form onSubmit={onSubmit} className="bg-white rounded-md shadow-[0_0_0_1px_rgb(226,232,240)] p-6 mb-6 space-y-4">
+        <Row>
+        <form onSubmit={onSubmit} className="p-6 space-y-4">
           <h2 className="text-[14px] font-medium text-slate-900">Novo agente</h2>
 
           <label className="block">
@@ -238,35 +240,39 @@ export default function AgentesPage() {
             </button>
           </div>
         </form>
+        </Row>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {loading && (
-          <div className="col-span-3 flex items-center justify-center py-12">
-            <Loader2 className="w-5 h-5 text-[#003083] animate-spin" />
+      <Row last>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
           </div>
-        )}
-        {!loading && agents.length === 0 && (
-          <div className="col-span-3 bg-[#F9F9F9] dark:bg-[#16191f] rounded-lg p-12 text-center border border-[#EDEDED] dark:border-[#23272e]">
-            <div className="inline-flex w-12 h-12 rounded-md bg-white items-center justify-center mb-4 shadow-[0_0_0_1px_rgb(226,232,240)]">
-              <Bot className="w-6 h-6 text-[#003083]" />
+        ) : agents.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
+              <Bot className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
             </div>
-            <h3 className="text-[16px] font-semibold text-[#262626] mb-1">Nenhum agente ainda</h3>
-            <p className="text-[13px] text-[#697386]">Clique em "Novo agente" pra começar.</p>
+            <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>Nenhum agente ainda</h3>
+            <p className={`text-[13px] ${FC.sub}`}>Clique em "Novo agente" pra começar.</p>
           </div>
+        ) : (
+          <HairCells cols={3} gridLines>
+            {agents.map((a) => (
+              <AgentCard
+                key={a.id}
+                agent={a}
+                menuOpen={openMenuId === a.id}
+                onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
+                onClick={() => setSelectedAgentId(a.id)}
+                onToggleActive={() => toggleActive(a)}
+                onDelete={() => deleteAgent(a)}
+              />
+            ))}
+          </HairCells>
         )}
-        {agents.map((a) => (
-          <AgentCard
-            key={a.id}
-            agent={a}
-            menuOpen={openMenuId === a.id}
-            onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
-            onClick={() => setSelectedAgentId(a.id)}
-            onToggleActive={() => toggleActive(a)}
-            onDelete={() => deleteAgent(a)}
-          />
-        ))}
-      </div>
+      </Row>
+      </PageFrame>
 
       {selectedAgent && (
         <AgentDetailsDrawer
@@ -315,7 +321,7 @@ function AgentCard({
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-md p-5 shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_rgb(180,190,210)] transition-shadow cursor-pointer relative"
+      className="relative h-full p-5 cursor-pointer transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">

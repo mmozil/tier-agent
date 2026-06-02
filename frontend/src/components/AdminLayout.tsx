@@ -1,6 +1,7 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Home,
+  ArrowUpRight,
   Cpu,
   ToggleLeft,
   Users,
@@ -150,22 +151,34 @@ export default function AdminLayout() {
           {/* TOP BAR — 60px, search + ícones (igual Stripe/Tier Empresas) */}
           <div className="h-[60px] flex items-center justify-between">
             <div className="relative w-[320px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#262626]/40 dark:text-[#6b7280] pointer-events-none" />
               <input
                 type="text"
                 placeholder="Buscar..."
-                className="w-full h-7 pl-9 pr-3 text-[14px] rounded-lg bg-[#f4f7fa] text-slate-700 placeholder:text-slate-400 outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
+                className="w-full h-8 pl-9 pr-3 text-[14px] rounded-lg bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
               />
             </div>
             <div className="flex items-center gap-1.5">
               <OnlineToggle />
-              <button className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
-                <HelpCircle className="w-[18px] h-[18px]" />
-              </button>
+              <Link
+                to="/admin/suporte"
+                className="h-9 px-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98]"
+              >
+                <HelpCircle className="w-4 h-4" /> Ajuda
+              </Link>
               <NotificationBell />
-              <button className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+              <Link
+                to="/admin/configuracoes"
+                className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98]"
+              >
                 <Settings className="w-[18px] h-[18px]" />
-              </button>
+              </Link>
+              <Link
+                to="/admin/cobranca"
+                className="h-9 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-lg text-white text-[13px] font-semibold bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] shadow-[0_1px_2px_rgba(0,48,131,0.18)] transition-all active:scale-[0.98]"
+              >
+                <ArrowUpRight className="w-4 h-4" /> Upgrade
+              </Link>
             </div>
           </div>
 
