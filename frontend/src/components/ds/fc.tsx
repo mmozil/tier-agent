@@ -74,6 +74,17 @@ export function Row({
   );
 }
 
+// Spacer — faixa vazia FC entre blocos (linhas full-width se cruzam nas bordas,
+// rails + curvy nos cantos). É assim que o Firecrawl dá "respiro" sem soltar as
+// linhas do conteúdo. h = altura da faixa (default 40px).
+export function Spacer({ h = 40 }: { h?: number }) {
+  return (
+    <Row>
+      <div style={{ height: h }} aria-hidden />
+    </Row>
+  );
+}
+
 // SectionHeader — título (label-x-large 20/450/-0.1) + subtítulo (body-small @56%).
 // `right` recebe ações (toggle de período, botão Create, etc).
 export function SectionHeader({

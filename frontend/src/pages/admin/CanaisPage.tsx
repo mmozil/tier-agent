@@ -4,7 +4,7 @@ import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone } from "luc
 
 import { api } from "@/lib/api";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
-import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Spacer, Button } from "@/components/ds/fc";
 
 function WhatsAppIcon({ className }: { className?: string }) {
   return (
@@ -161,6 +161,7 @@ export default function CanaisPage() {
               ) : (
                 <Button
                   variant="secondary"
+                  size="sm"
                   onClick={() => toast.error("Crie um agente primeiro para conectar um canal.")}
                   title="Crie um agente primeiro para conectar um canal"
                   className="opacity-60 whitespace-nowrap"
@@ -170,6 +171,7 @@ export default function CanaisPage() {
               )}
               <Button
                 variant="primary"
+                size="sm"
                 onClick={() => {
                   if (!selectedAgent) {
                     toast.error("Crie um agente primeiro para conectar um canal.");
@@ -183,6 +185,8 @@ export default function CanaisPage() {
             </div>
           </div>
         </Row>
+
+        <Spacer />
 
         {showProvision && (
           <Row>
