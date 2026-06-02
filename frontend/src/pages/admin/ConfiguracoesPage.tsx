@@ -9,6 +9,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+import { FC, PageFrame, Row } from "@/components/ds/fc";
+
 interface CardItem {
   to: string;
   title: string;
@@ -42,37 +44,39 @@ const SECTIONS: { label: string; items: CardItem[] }[] = [
 
 export default function ConfiguracoesPage() {
   return (
-    <div>
-      <h1 className="text-[28px] font-bold text-[#30313d] mt-6 mb-2">Configurações</h1>
-      <p className="text-[14px] text-[#697386] mb-6">Tudo que controla o comportamento dos seus agentes.</p>
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="p-6">
+            <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Configurações</h2>
+            <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Tudo que controla o comportamento dos seus agentes.</p>
+          </div>
+        </Row>
 
-      <div className="space-y-8">
-        {SECTIONS.map((section) => (
-          <div key={section.label}>
-            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-[#697386] mb-2">
-              {section.label}
-            </h2>
-            <div className="bg-[#f4f7fa] rounded-lg p-3">
-              <div className="bg-white rounded-md divide-y divide-slate-100">
+        {SECTIONS.map((section, si) => (
+          <Row key={section.label} last={si === SECTIONS.length - 1}>
+            <div className="p-6">
+              <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${FC.mut}`}>{section.label}</h3>
+              <div className={`divide-y ${FC.hair} border ${FC.hair} rounded-lg overflow-hidden`}>
                 {section.items.map((item) => (
                   <Link
                     key={item.to}
                     to={item.to}
-                    className="w-full flex items-center px-5 py-4 hover:bg-slate-50 transition-colors group"
+                    className={`group flex items-center px-4 py-3.5 transition-colors ${FC.hover}`}
                   >
-                    <item.icon className="w-[18px] h-[18px] text-[#697386] shrink-0" />
+                    <item.icon className={`w-[18px] h-[18px] shrink-0 ${FC.mut}`} />
                     <div className="flex-1 ml-3">
-                      <div className="text-[14px] font-medium text-[#1a2c44]">{item.title}</div>
-                      <div className="text-[12px] text-[#697386] mt-0.5">{item.desc}</div>
+                      <div className={`text-[14px] font-medium ${FC.ink}`}>{item.title}</div>
+                      <div className={`text-[12px] mt-0.5 ${FC.sub}`}>{item.desc}</div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                    <ChevronRight className={`w-4 h-4 ${FC.mut} group-hover:text-[#262626] dark:group-hover:text-white transition-colors`} />
                   </Link>
                 ))}
               </div>
             </div>
-          </div>
+          </Row>
         ))}
-      </div>
+      </PageFrame>
     </div>
   );
 }

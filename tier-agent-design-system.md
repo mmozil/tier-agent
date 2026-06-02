@@ -1,129 +1,104 @@
 # Tier Agent — Design System
 
-> Doc **canônica e viva** do design do Tier Agent. Atualizar a cada mudança de
-> design (tokens, componentes, decisões). Substitui/consolida os antigos
-> `design-system-tier-agent.md` e `design-system-tier-agent-attio.md`.
+> Doc **canônica e viva** do design do Tier Agent. Atualizar a cada mudança.
 >
-> _Última atualização: 2026-05-30._
+> _Última atualização: 2026-06-02 — direção **Firecrawl × Tier** (valores extraídos do FC real)._
 
 ## 1. Direção / Arquétipo
 
-**"Calm Precision" — estrutura de dashboard Firecrawl × cores Tier.**
+**"Calm Precision" — estrutura de dashboard Firecrawl com a paleta Tier (azul).**
 
-- **Marketing (landing)** — densidade baixa, arejado, Attio-grade. Motion de entrada/reveal (Framer Motion).
-- **Produto (painel /admin)** — densidade alta, estrutura estilo dashboard Firecrawl (grade de hairlines, API-key box, CLI inline, badges), mas com a **paleta Tier** (azul, nunca laranja). Motion só de feedback.
+Extraído do Firecrawl real (DOM/CSS ao vivo, em `D:/Project/DESIGN/firecrawl-ref/`):
+- **Fundo `#F9F9F9`** (`background-base`) — não branco puro. Hairlines `#EDEDED` (`border-faint`).
+- **Linhas full-width**: cada seção é uma `Row` cuja linha horizontal vai até as **extremidades da página**; o **conteúdo fica contido** num container central com rails (`border-l/r`).
+- **`curvy-rect`**: 4 corner brackets SVG 11×11 (fill `#EDEDED`) arredondam os cantos do container; nas junções formam o "+".
+- **Cor só com função** — azul `#003083` = ação/marca/ativo; verde/âmbar/coral = status.
+- **Números** em `font-mono tabular-nums` (assinatura Tier).
 
-Princípios:
-- **Cor só com função** — azul = ação/marca/ativo; verde/âmbar/vermelho = status/performance. Zero gradiente decorativo no produto.
-- **Números sempre `font-mono tabular-nums`** (alinham em coluna, cara de ferramenta séria).
-- **Hairlines + grade** seccionam o conteúdo (não cards flutuantes soltos no produto).
-- **Um sistema, dois contextos** (mesmos tokens, densidade diferente). Os componentes de fluxo (`FlowNode`/pills) são compartilhados entre o demo da landing e o canvas real.
+## 2. Tokens (valores reais FC)
 
-## 2. Tokens
-
-### 2.1 Acento (marca Tier)
-| Token | Light | Dark |
+### 2.1 Cor
+| Papel | Valor | Token FC |
 |---|---|---|
-| accent | `#003083` | `#5b9bff` |
-| accent-hover | `#002266` | `#7eb0ff` |
-| accent-tint (bg ativo) | `#003083` @ 8% (`/[0.08]`) | `#5b9bff` @ ~12% |
+| ink (texto principal) | `#262626` | `accent-black` |
+| secundário (subtítulo/desc) | `#262626` @ **56%** | `black-alpha-56` |
+| sidebar item (idle) | `#262626` @ **72%** | `black-alpha-72` |
+| muted (micro-label/ícone) | `#262626` @ **40%** | `black-alpha-40` |
+| hairline (borda) | `#EDEDED` | `border-faint` |
+| hover de superfície | preto @ **4%** | `black-alpha-4` |
+| fundo (página/cards) | `#F9F9F9` | `background-base` |
+| **acento Tier** | `#003083` (dark `#5b9bff`) | — |
+| positivo / atenção / negativo | `#0a8f5a` / `#F5A300` / `#E5484D` | — |
 
-> No dark o acento clareia (`#5b9bff`) por contraste. Em código JSX usar
-> `const A = dark ? "#5b9bff" : "#003083"`.
+> Hierarquia de cor = **um ink `#262626` com opacidades** (não vários cinzas).
+> Em JSX: `const A = dark ? "#5b9bff" : "#003083"`.
 
-### 2.2 Neutros
-| Papel | Light | Dark |
-|---|---|---|
-| página | `#FFFFFF` / `#FBFBFB` | `#0c0e12` |
-| sidebar | `#FFFFFF` | `#0e1116` |
-| card / superfície | `#FFFFFF` | `#14171c` |
-| hairline (divisória) | `#EEEFF1` | `#1e2228` |
-| border (mais forte) | `#E4E7EC` | `#23272e` |
-| hover bg | `#F5F6F8` / `#F2F4F7` | `#16191f` |
-| input/search bg | `#F1F3F5` | `#16191f` |
+### 2.2 Tipografia (escala exata FC — fonte **Geist** ≈ Suisse Int'l; mono **Geist Mono**)
+| Uso | size / weight / line-height / tracking |
+|---|---|
+| título de página / seção (`label-x-large`) | **20 / 450 / 28 / -0.1px** |
+| título de sub-seção (`label-large`) | **16 / 450 / 24 / 0** |
+| sidebar item / subtítulo / desc (`body-small`) | **13 / 400 / 20 / 0** |
+| body (`body-medium`) | 14 / 400 / 20 / 0.14px |
+| micro-label uppercase (KPI) | 11 / 600 uppercase, cor muted |
+| valor KPI / número | `font-mono tabular-nums` 24 / 500 |
 
-### 2.3 Texto
-| Papel | Light | Dark |
-|---|---|---|
-| primário (ink) | `#0D0F11` | `#e6e8eb` |
-| secundário | `#6A7385` | `#9aa1ab` / `#8b93a0` |
-| muted | `#9AA4B2` | `#6b7280` |
-| micro-label (uppercase) | `#B4BBC6` | `#565d68` |
+> Títulos NUNCA `bold` — peso **450/500**. Títulos de seção **sem ícone** (igual FC).
 
-### 2.4 Semânticas (status/performance — NÃO decorativas)
-| Estado | Light | Dark |
-|---|---|---|
-| positivo (bom/up) | `#0a8f5a` | `#34d399` |
-| atenção | `#F5A300` | `#fbbf24` |
-| negativo (ruim/down) | `#E5484D` | `#fb7185` |
+### 2.3 Forma / sombra
+- **Sem** `border-radius` no frame (cantos vêm do `curvy-rect`). Botões/inputs `rounded-lg` (10px). Cards de fluxo `rounded-[14px]`.
+- Sombra mínima — hairline no lugar de shadow. Botão primário leva `shadow-[0_1px_2px_rgba(0,48,131,0.18)]`.
 
-### 2.5 Tipografia
-> **Aprendido inspecionando o Firecrawl real (01/jun):** UI = **Suisse Int'l** (paga; alt. grátis próxima: Geist/Hanken Grotesk), **títulos peso 450** (leve!) + `letter-spacing: -0.1px`, mono = **Geist Mono**, nav 16px/400, texto `#262626`. Linha separadora `border-faint` **#EDEDED** (`--border-muted` #E8E8E8). Hover da sidebar = **preto 2–3%** (`black-alpha-2/3`), bem sutil. → No Tier: manter Inter, mas **usar pesos leves (`font-medium`/`font-semibold`, nunca `font-bold` em títulos)**, hairline `#EDEDED`, hover `bg-black/[0.03]`.
+## 3. Primitivos (`frontend/src/components/ds/fc.tsx`)
 
-- **UI**: Inter (system stack fallback). Pesos leves (≤600 em títulos).
-- **Números / dinheiro / métricas / chaves / código**: `font-mono tabular-nums` (Geist Mono → JetBrains Mono).
-- Hierarquia: KPI valor `text-[24-25px] font-bold`, label `text-[11px] uppercase tracking-wide`, micro-label de seção `text-[10px] font-bold uppercase tracking-wider`.
+| Primitivo | O quê |
+|---|---|
+| `FC` | objeto de tokens em classe (`ink`, `sub`, `mut`, `dim`, `hair`, `hover`, `base`) |
+| `PageFrame` | wrapper full-width (bg `#F9F9F9`); contém uma pilha de `Row` |
+| `Row` | UMA seção: linha horizontal **full-width** (até as bordas) + conteúdo central nos rails (`border-l/r`) + `CurvyRect`. `last` adiciona a linha de baixo |
+| `CurvyRect` | os 4 corner brackets (overlay `absolute inset-0`, não ocupa célula) |
+| `HairCells` | grade flush (`border-r` entre colunas); ex.: KPIs 4 col |
+| `SectionHeader` | título `label-x-large` + subtítulo `body-small` @56% + `right` (ações) |
+| `SegToggle` | toggle segmentado (7/30/90d): ativo azul, `active:scale-[0.97]` |
+| `Button` | `primary` (azul sólido + sombra) / `secondary` (outline + hover preto 4%) / `ghost`; todos `active:scale-[0.98]` |
 
-### 2.6 Forma
-- Cards/painéis: `rounded-2xl` (produto) · `rounded-[14px]` (cards de fluxo) · landing varia.
-- Botões/inputs/badges: `rounded-lg` (10px) / `rounded-md`.
-- Sombra mínima. **Glow** só no KPI "hero" (`0 8px 24px -12px ${accent}55`) e no border-beam do hero da landing.
+**Padrão de página** (todas as páginas admin):
+```tsx
+<div className="-mx-8 pb-10">      {/* cancela o px-8 do AdminLayout → linhas até a borda */}
+  <PageFrame>
+    <Row>{/* header: h2 label-x-large + sub + ações à direita */}</Row>
+    <Row><HairCells cols={4}>{/* KPIs */}</HairCells></Row>
+    <Row>{/* gráfico / conteúdo, p-6 */}</Row>
+    <Row last>{/* tabela final */}</Row>
+  </PageFrame>
+</div>
+```
 
-## 3. Componentes (contratos)
+## 4. Shell — `AdminLayout`
 
-- **Sidebar** — logo Tier no topo (`/tier-agent-escuro.png` light · `/tier-agent-claro.png` dark), seções com micro-label uppercase, item ativo = pill azul-tint (`bg-accent/[0.08]` + texto/ícone azul). Item idle: texto secundário, ícone `opacity-60`, hover `#F5F6F8`.
-- **Topbar** — workspace switcher (`[T] Nome ▾`), ações (sino, tema, Ajuda, Docs) + **Upgrade** (botão sólido azul). Borda inferior hairline.
-- **KpiCard** — `rounded-2xl` + border hairline. Label uppercase muted + valor mono `text-[24px] font-bold` + delta semântico (`ArrowUpRight/Down` + mono). Variante `hero`: ring + glow azul + radial sutil no canto.
-- **Grade de hairlines** (estilo "Explore endpoints" do Firecrawl) — células num grid com `border-t border-l` no container e `border-r border-b` em cada célula. Ícone + título + desc + badge opcional. Hover `#FAFBFC`.
-- **Table** — header uppercase `text-[11px]` muted + border-b hairline; linhas `text-[13px]`, hover, zebra opcional; números à direita `font-mono tabular-nums`; status = dot 6px semântico.
-- **API-key box** — `bg-accent/[~4%]` + `border-accent/[~15%]`, chave em mono cor accent + ícones eye/copy.
-- **CLI / Code card** — terminal escuro (`#14171c`/`#0a0c10`), 3 dots (1 accent), título mono, badge `200 OK` verde. Conteúdo mono `text-[11-12px]`: prompt `$` muted, comando, accent `#5b9bff` em chaves, `#34d399` em strings. **Dentro do terminal o accent é sempre `#5b9bff`** (contraste no fundo escuro), independente do tema.
-- **Badge NOVO** — pill sólido accent, texto branco, `text-[9px] font-bold uppercase`.
-- **Botões** — primário: sólido accent, texto branco, `rounded-lg`, sombra sutil. Secundário/ghost: hover `#F5F6F8`. Outline: `border-[#E4E7EC]`.
-- **Filter bar** — faixa entre hairlines (`border-t border-b`) com: search pill (`bg-#F1F3F5`) + selects (botões outline `rounded-lg` + `ChevronDown`); filtro de data alinhado à direita (`ml-auto`).
-- **Sub-nav de Settings** — coluna esquerda (~220px) com `border-r` hairline; itens = pills (ativo azul-tint, igual sidebar). Conteúdo à direita em seções separadas por `divide-y` hairline; cada seção: título `text-[15px] font-bold` + desc muted + campo + botão `Salvar` accent.
-- **Pagination** — `Página N · X de Y` muted à esquerda + setas prev/next (botões outline `w-8 h-8`).
-
-- **Crosshairs de junção (`PlusMarks`)** — efeito blueprint Firecrawl: pequenos "+" (svg 9px, cor `#CFD4DB` / dark `#3a414c`) nas interseções da grade hairline. Posicionados em `top:0/100%` × colunas `i/cols`. Wrap a grade em `relative` e renderize `<PlusMarks cols={N}/>` por cima. _(1ª versão — refinar com o detalhe exato do Firecrawl.)_
-
-### 3.1 Arquétipos de página (exemplos em `/design-proof`)
-- **Home / Visão geral (estilo Chatwoot)** — atalhos em grade (com crosshairs) → **KPI strip** (Conversas abertas / Não atendidas / Resolvidas pela IA / Aguardando humano, com crosshairs) → `[gráfico de conversas | status dos agentes]` → `[heatmap de tráfego 7d×horas | carga por agente (barras)]` → `[API key | CLI]`. Métricas de suporte estilo Chatwoot + métricas de IA (resolução, custo). Tudo seccionado por hairlines.
-- **Lista/Logs** — header (título 26px + subtítulo) → filter bar → **table** (horário mono, evento em pill mono, status = dot semântico + label) → pagination. Sem cards: a página inteira é seccionada por hairlines.
-- **Settings** — header → `[sub-nav 220px | conteúdo]`. Conteúdo = seções `divide-y` (Nome, Convidar membros, Membros). Linha de membro: avatar + email + badge papel (`ADMIN` em azul-tint).
-- **Usage / Consumo** (ref. Firecrawl) — header → seção "Créditos restantes" (número grande + plano + data de renovação + "ver saldos") → seção "Uso recente" (toggle período `1d/7d/30d/Custom` + filtros `Chave: Qualquer` / `Endpoint: Qualquer` + gráfico ou empty state) → seção "Concorrência" (gráfico com eixo de horas + MAX). Tudo entre hairlines.
-- **API Keys** (ref. Firecrawl) — header → seção "Suas chaves" com botão **Criar** (à direita) → lista de cards de chave: nome (`Default`) + menu + chave mascarada `tk-5•••c7a1` + botões show/copy + "Criada em {data}".
-
-## 4. Motion
-- **Produto** — só feedback (hover, toggle, loading). Sem animação decorativa.
-- **Marketing** — entrada em stagger no load + reveal ao rolar (Framer Motion, easing `[0.22,1,0.36,1]`). Border-beam/spotlight sutis só no hero.
-- Fluxo do canvas (`PlaybookDemo`): nós acendem em sequência, conector tracejado (`animate-dashflow`), pulso "Running" (`animate-runpulse`).
+- **Sidebar** 240px, bg `#F9F9F9`, `border-r #EDEDED`.
+  - **Logo** em área `h-16` com **`border-b`** (linha sob o logo).
+  - **Seções**: micro-label `11px uppercase tracking-wider` @40%.
+  - **Item**: `h-[34px] rounded-[10px] text-[13px]`, idle texto @72% / ícone opacity-60.
+    **Hover (igual FC, SEM bg)**: `transition-all duration-200` → texto clareia p/ `#262626` + ícone `opacity-100`; clique `active:scale-[0.98]`.
+    **Ativo**: texto/ícone azul `#003083` + bg `#003083/[0.06]`.
+  - Rodapé: user (`border-t`).
+- **Topbar** 60px: busca pill `#F1F3F5` + ações ghost + **Upgrade** primário.
+- **Conteúdo**: `px-8`; páginas usam `-mx-8` no wrapper pra as linhas vazarem até a borda.
 
 ## 5. Dark mode
-- Tailwind `darkMode: "class"`. Alterna classe `dark` no `<html>` (persistir em localStorage).
-- Usar a tabela de neutros/texto/semânticas dark acima.
-- **Regra**: só ligar o dark globalmente quando TODAS as páginas tiverem `dark:` — senão conteúdo claro no shell escuro = quebrado.
+- `darkMode: "class"`. Neutros dark: página `#0c0e12`, hairline `#23272e`, acento clareia `#5b9bff`. Migrar incremental.
 
 ## 6. Do / Don't
-- ✅ Cor só com função · números mono tabular · densidade alta no produto · hairlines pra seccionar · logo Tier no topo da sidebar.
-- ❌ Laranja (é Firecrawl, não Tier) · gradiente/glow decorativo no produto · segunda cor de marca · glassmorphism · ligar dark antes de migrar as páginas · cards flutuantes onde a grade de hairlines cabe.
+- ✅ Fundo `#F9F9F9` · ink `#262626` com opacidades · hairlines `#EDEDED` · linhas até as bordas (Row) + conteúdo contido · títulos de seção **sem ícone** · números mono · hover sidebar sem bg.
+- ❌ Branco puro de fundo · vários cinzas diferentes · `font-bold` em títulos · ícone antes de título de seção · `border-radius` no frame (usar `curvy-rect`) · background no hover da sidebar · laranja (é Firecrawl, não Tier).
 
 ## 7. Onde vive no código
-- **Referência visual**: `frontend/src/pages/public/DesignProof.tsx` (prova `/design-proof`, mock — manter como referência da linha).
-- **Shell do produto**: `frontend/src/components/AdminLayout.tsx`.
-- **Chrome de marketing + componentes de fluxo**: `frontend/src/components/landing/marketing.tsx` (`MarketingNav`, `FlowNode`, `FlowEdge`, `BranchSplit`).
-- **Demos animados**: `landing/PlaybookDemo.tsx`, `AgentResearchDemo.tsx`, `ScaleGlobe.tsx`.
-- **Motion/efeitos**: `landing/motion.tsx`, `landing/effects.tsx`.
-- **Tokens de animação + darkMode**: `frontend/tailwind.config.ts`.
+- **Primitivos**: `frontend/src/components/ds/fc.tsx`
+- **Shell**: `frontend/src/components/AdminLayout.tsx`
+- **Piloto**: `frontend/src/pages/admin/MetricasPage.tsx`
+- **Preview público** (sem login): `frontend/src/pages/public/MetricasPreview.tsx` → `/preview/metricas`
+- **Referência FC extraída**: `D:/Project/DESIGN/firecrawl-ref/` (dashboard.html + CSS reais + DESIGN-SYSTEM-REAL.md)
 
 ## 8. Decisões (log)
-- **2026-05-30** — Direção **"Calm Precision" (Firecrawl × Tier)** travada após iterar (rejeitados: Linear puro azul; Firecrawl laranja). Estrutura de dashboard Firecrawl (grade hairline, API-key box, CLI) **com cores Tier**. Prova em `/design-proof`.
-- **2026-05-30** — `AdminLayout` (casca) migrado pra nova linha em **light** (item ativo azul-tint, hairlines, seções refinadas, ícone do ativo azul). Dark mode e corpos das 19 páginas: migração incremental pendente (coordenar com a sessão paralela que edita o admin).
-- **2026-05-30** — `darkMode: "class"` habilitado no Tailwind + keyframes de motion (borderbeam, spinslow, runpulse, dashflow, revealup).
-- **2026-05-30** — **Sidebar do produto: manter o padrão atual do `AdminLayout`** (logo topo, seções, UserMenu no rodapé). O restyle da casca foi **revertido** — a linha nova (Firecrawl × Tier) aplica-se ao **conteúdo das páginas**, não à sidebar.
-- **2026-05-30** — Adicionados 2 arquétipos de página ao proof: **Logs de atividade** (filter bar + table + pagination) e **Configurações** (sub-nav + seções divide-y). Proof agora tem 3 páginas clicáveis (Visão geral / Logs / Configurações), light + dark.
-
-## 9. Próximos passos da migração
-1. Codificar tokens como CSS variables / util `cn` + primitives (KpiCard, HairlineGrid, DataTable, ApiKeyBox, CodeCard, Badge, Button).
-2. Migrar páginas admin uma a uma pro padrão (começar por **Métricas** — já prototipada) + suporte `dark:`.
-3. Ligar o toggle de dark mode global (ThemeProvider + localStorage) só quando todas as páginas suportarem.
-4. Unificar o `FlowNode` do demo com o canvas real de `/admin/playbooks`.
+- **2026-06-02** — Direção travada como **Firecrawl × Tier** com valores **extraídos do FC real** (logado via Playwright). Criados primitivos `fc.tsx`. Migrados shell + MetricasPage. Removido: corner-bracket mal-implementado, bg branco, ícones em títulos de seção. Padrão `Row` (linhas full-width + conteúdo contido). Hover sidebar replicado do FC (cor + scale, sem bg). Doc anterior ("Calm Precision" estimado no olho) substituída por esta (medida).

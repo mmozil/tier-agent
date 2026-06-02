@@ -120,22 +120,21 @@ function heat(d: number, h: number) {
   return Math.min(1, (mid * 0.75 + eve * 0.5) * (d >= 5 ? 0.45 : 1));
 }
 
-// CurvyGrid — frame com cantos arredondados (curvy-rect, estilo Firecrawl)
-// + divisórias verticais internas RECUADAS (não encostam topo/base).
-function CurvyGrid({ children, inset = "top-5 bottom-5" }: { children: ReactNode; inset?: string }) {
+// HairGrid — grade de células FLUSH. As bordas internas (border-r/border-b) se
+// CRUZAM nas interseções → formam o "+". O container externo é que tem borda
+// arredondada (ver overview). Receita: fundo + linhas que cruzam + container redondo.
+function HairGrid({ children }: { children: ReactNode; cols?: number; inset?: string }) {
   const items = (Array.isArray(children) ? children : [children]).flat();
   return (
-    <div className="rounded-[14px] border border-[#EDEDED] dark:border-[#23272e] overflow-hidden">
-      <div className="grid grid-cols-2 lg:grid-cols-4">
-        {items.map((child, i) => (
-          <div key={i} className="relative">
-            {i % 4 !== 0 && (
-              <span className={`hidden lg:block absolute left-0 ${inset} w-px bg-[#EDEDED] dark:bg-[#23272e]`} />
-            )}
-            {child}
-          </div>
-        ))}
-      </div>
+    <div className="grid grid-cols-2 lg:grid-cols-4">
+      {items.map((child, i) => (
+        <div
+          key={i}
+          className="border-b border-r border-[#EDEDED] dark:border-[#1e2228] [&:nth-child(2n)]:border-r-0 lg:[&:nth-child(2n)]:border-r lg:[&:nth-child(4n)]:border-r-0 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors"
+        >
+          {child}
+        </div>
+      ))}
     </div>
   );
 }
@@ -147,13 +146,18 @@ export default function DesignProof() {
 
   // estilos reutilizados
   const hair = "border-[#EDEDED] dark:border-[#1e2228]";
-  const sub = "text-[#9AA4B2] dark:text-[#6b7280]";
+  // secundário/muted — Firecrawl = ink #262626 com opacidade (não hexes de cinza)
+  const sub = "text-[#262626]/[0.56] dark:text-[#8b93a0]";
+  const mut = "text-[#262626]/40 dark:text-[#6b7280]";
   const fieldBtn =
     "h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border border-[#E4E7EC] dark:border-[#2a2f37] text-[12.5px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-[#F2F4F7] dark:hover:bg-[#16191f]";
 
   return (
     <div className={dark ? "dark" : ""}>
-      <div className="min-h-screen bg-white dark:bg-[#0c0e12] text-[#0D0F11] dark:text-[#e6e8eb] font-sans antialiased flex">
+      <div
+        className="min-h-screen bg-white dark:bg-[#0c0e12] text-[#262626] dark:text-[#e6e8eb] antialiased flex"
+        style={{ fontFamily: "'Geist', 'Inter', -apple-system, sans-serif" }}
+      >
         {/* ── SIDEBAR ── */}
         <aside className={`w-[230px] shrink-0 h-screen sticky top-0 bg-white dark:bg-[#0e1116] border-r ${hair} flex flex-col`}>
           <div className="h-14 px-5 flex items-center">
@@ -207,130 +211,132 @@ export default function DesignProof() {
             </div>
           </header>
 
-          {/* ═══ VISÃO GERAL ═══ */}
+          {/* ═══ VISÃO GERAL — receita REAL Firecrawl ═══ */}
           {view === "overview" && (
-            <>
-              <section className="px-8 pt-8 pb-6">
-                <h2 className="text-[26px] font-semibold tracking-tight">Visão geral</h2>
-                <p className={`text-[14px] ${sub} mt-1`}>O que está acontecendo com seus agentes agora.</p>
-                {/* atalhos — curvy-rect (cantos arredondados + divisórias recuadas) */}
-                <div className="mt-5">
-                  <CurvyGrid inset="top-5 bottom-5">
-                    {FEATURES.map((f) => (
-                      <div key={f.title} className="h-full p-5 hover:bg-black/[0.025] dark:hover:bg-white/[0.03] transition-colors cursor-pointer">
-                        <f.icon className="w-5 h-5" style={{ color: A }} />
-                        <div className="mt-3 flex items-center gap-2">
-                          <span className="text-[14px] font-semibold">{f.title}</span>
-                          {f.badge && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: A }}>{f.badge}</span>}
-                        </div>
-                        <p className={`mt-1 text-[12.5px] ${sub} leading-relaxed`}>{f.desc}</p>
-                      </div>
-                    ))}
-                  </CurvyGrid>
-                </div>
-              </section>
+            <div className="px-6 py-8">
+              {/* FRAME centralizado — valores REAIS Firecrawl (1232, border #EDEDED,
+                  rounded por preferência tua). Linhas internas cruzam = "+". */}
+              <div className="relative mx-auto w-full max-w-[1232px] border border-[#EDEDED] dark:border-[#1e2228] rounded-[10px] overflow-hidden bg-white dark:bg-[#0c0e12]">
 
-              {/* KPI strip (Chatwoot conversas) — curvy-rect */}
-              <div className="px-8 pb-6">
-                <CurvyGrid inset="top-4 bottom-4">
+                {/* header — título 20px/450/-0.1px, sub 13px @56% (real FC) */}
+                <div className="relative border-b border-[#EDEDED] dark:border-[#1e2228] p-6">
+                  <h2 className="text-[20px] font-[450] tracking-[-0.1px] leading-7">Visão geral</h2>
+                  <p className={`text-[13px] leading-5 ${sub} mt-1`}>O que está acontecendo com seus agentes agora.</p>
+                </div>
+
+                {/* atalhos — ícone 16px faint mono; título 16px/400; desc 13px @56% */}
+                <HairGrid>
+                  {FEATURES.map((f) => (
+                    <div key={f.title} className="h-full p-6 cursor-pointer">
+                      <f.icon className="w-4 h-4 text-[#262626]/40 dark:text-white/40" />
+                      <div className="mt-3 flex items-center gap-2">
+                        <span className="text-[16px] font-normal leading-6">{f.title}</span>
+                        {f.badge && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: A }}>{f.badge}</span>}
+                      </div>
+                      <p className={`mt-1 text-[13px] leading-[21px] ${sub}`}>{f.desc}</p>
+                    </div>
+                  ))}
+                </HairGrid>
+
+                {/* KPI strip */}
+                <HairGrid>
                   {KPI2.map((k) => (
-                    <div key={k.label} className="px-6 py-5 h-full">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-[#9AA4B2] dark:text-[#6b7280]">{k.label}</div>
+                    <div key={k.label} className="h-full p-6">
+                      <div className={`text-[11px] font-semibold uppercase tracking-wide ${mut}`}>{k.label}</div>
                       <div
-                        className="mt-2 font-mono tabular-nums text-[28px] font-semibold leading-none"
+                        className="mt-2 font-mono tabular-nums text-[28px] font-medium leading-none"
                         style={{ color: k.tone === "good" ? "#0a8f5a" : k.tone === "warn" ? "#F5A300" : undefined }}
                       >
                         {k.value}
                       </div>
                     </div>
                   ))}
-                </CurvyGrid>
-              </div>
+                </HairGrid>
 
-              {/* chart + status dos agentes */}
-              <div className={`border-t ${hair} grid grid-cols-1 lg:grid-cols-[1fr_360px]`}>
-                <div className={`px-8 py-7 lg:border-r ${hair}`}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-[15px] font-semibold">Conversas — últimos 7 dias</div>
-                      <div className={`text-[12.5px] ${sub} mt-0.5`}>resolução pela IA: 78%</div>
+                {/* chart | status */}
+                <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_360px] border-b border-[#EDEDED] dark:border-[#1e2228]">
+                  <div className="relative p-6 lg:border-r border-[#EDEDED] dark:border-[#1e2228]">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-[16px] font-[450] tracking-[-0.1px]">Conversas — últimos 7 dias</div>
+                        <div className={`text-[12.5px] ${sub} mt-0.5`}>resolução pela IA: 78%</div>
+                      </div>
+                      <div className="font-mono tabular-nums text-[26px] font-medium leading-none">2.847</div>
                     </div>
-                    <div className="font-mono tabular-nums text-[30px] font-semibold leading-none">2.847</div>
+                    <svg viewBox="0 0 600 110" className="mt-6 w-full h-[110px]" preserveAspectRatio="none">
+                      <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={A} stopOpacity="0.2" /><stop offset="100%" stopColor={A} stopOpacity="0" /></linearGradient></defs>
+                      <path d={areaPath(SERIES, 600, 110).area} fill="url(#g)" />
+                      <path d={areaPath(SERIES, 600, 110).line} fill="none" stroke={A} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                    </svg>
                   </div>
-                  <svg viewBox="0 0 600 110" className="mt-6 w-full h-[110px]" preserveAspectRatio="none">
-                    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={A} stopOpacity="0.2" /><stop offset="100%" stopColor={A} stopOpacity="0" /></linearGradient></defs>
-                    <path d={areaPath(SERIES, 600, 110).area} fill="url(#g)" />
-                    <path d={areaPath(SERIES, 600, 110).line} fill="none" stroke={A} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                  </svg>
+                  <div className="relative p-6">
+                    <div className="text-[16px] font-[450] tracking-[-0.1px]">Status dos agentes</div>
+                    <div className="mt-3 flex items-center gap-4 text-[12.5px]">
+                      <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#0a8f5a]" /> 2 online</span>
+                      <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#F5A300]" /> 1 ocupado</span>
+                      <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#9AA4B2]" /> 1 offline</span>
+                    </div>
+                    <div className="mt-4 space-y-1">
+                      {AG_STATUS.map((a) => (
+                        <div key={a.name} className="flex items-center gap-2.5 h-8">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: stColor(a.st) }} />
+                          <span className="text-[13px] font-medium flex-1">{a.name}</span>
+                          <span className="text-[11.5px] capitalize" style={{ color: stColor(a.st) }}>{a.st === "online" ? "online" : a.st === "busy" ? "ocupado" : "offline"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="px-8 py-7">
-                  <div className="text-[15px] font-semibold">Status dos agentes</div>
-                  <div className="mt-3 flex items-center gap-4 text-[12.5px]">
-                    <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#0a8f5a]" /> 2 online</span>
-                    <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#F5A300]" /> 1 ocupado</span>
-                    <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#9AA4B2]" /> 1 offline</span>
+
+                {/* heatmap | workload (última seção — sem border-b) */}
+                <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_360px]">
+                  <div className="relative p-6 lg:border-r border-[#EDEDED] dark:border-[#1e2228]">
+                    <div className="text-[16px] font-[450] tracking-[-0.1px]">Tráfego de conversas</div>
+                    <div className={`text-[12.5px] ${sub} mt-0.5`}>Horários mais movimentados (7 dias)</div>
+                    <div className="mt-5 space-y-1">
+                      {DAYS.map((day, d) => (
+                        <div key={day} className="flex items-center gap-2">
+                          <span className={`w-7 text-[10.5px] ${sub} shrink-0`}>{day}</span>
+                          <div className="flex gap-1 flex-1">
+                            {Array.from({ length: 12 }).map((_, h) => {
+                              const al = Math.round((0.04 + heat(d, h) * 0.6) * 255).toString(16).padStart(2, "0");
+                              return <div key={h} className="h-5 flex-1 rounded-[3px]" style={{ backgroundColor: `${A}${al}` }} />;
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-1 mt-1.5 ml-9 justify-between font-mono text-[10px] text-[#B4BBC6] dark:text-[#565d68]">
+                      <span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>24h</span>
+                    </div>
                   </div>
-                  <div className="mt-4 space-y-1">
-                    {AG_STATUS.map((a) => (
-                      <div key={a.name} className="flex items-center gap-2.5 h-8">
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: stColor(a.st) }} />
-                        <span className="text-[13px] font-medium flex-1">{a.name}</span>
-                        <span className="text-[11.5px] capitalize" style={{ color: stColor(a.st) }}>{a.st === "online" ? "online" : a.st === "busy" ? "ocupado" : "offline"}</span>
-                      </div>
-                    ))}
+                  <div className="relative p-6">
+                    <div className="text-[16px] font-[450] tracking-[-0.1px]">Carga por agente</div>
+                    <div className={`text-[12.5px] ${sub} mt-0.5`}>Conversas ativas agora</div>
+                    <div className="mt-4 space-y-3.5">
+                      {WORKLOAD.map((w) => (
+                        <div key={w.name}>
+                          <div className="flex items-center justify-between text-[13px]">
+                            <span className="font-medium">{w.name}</span>
+                            <span className="font-mono tabular-nums text-[#6A7385] dark:text-[#8b93a0]">{w.n}</span>
+                          </div>
+                          <div className="mt-1.5 h-1.5 rounded-full bg-[#F1F3F5] dark:bg-[#16191f] overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${w.pct}%`, backgroundColor: A }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
-
-              {/* heatmap de tráfego + carga por agente */}
-              <div className={`border-t ${hair} grid grid-cols-1 lg:grid-cols-[1fr_360px]`}>
-                <div className={`px-8 py-7 lg:border-r ${hair}`}>
-                  <div className="text-[15px] font-semibold">Tráfego de conversas</div>
-                  <div className={`text-[12.5px] ${sub} mt-0.5`}>Horários mais movimentados (7 dias)</div>
-                  <div className="mt-5 space-y-1">
-                    {DAYS.map((day, d) => (
-                      <div key={day} className="flex items-center gap-2">
-                        <span className={`w-7 text-[10.5px] ${sub} shrink-0`}>{day}</span>
-                        <div className="flex gap-1 flex-1">
-                          {Array.from({ length: 12 }).map((_, h) => {
-                            const al = Math.round((0.04 + heat(d, h) * 0.6) * 255).toString(16).padStart(2, "0");
-                            return <div key={h} className="h-5 flex-1 rounded-[3px]" style={{ backgroundColor: `${A}${al}` }} />;
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-1 mt-1.5 ml-9 justify-between font-mono text-[10px] text-[#B4BBC6] dark:text-[#565d68]">
-                    <span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>24h</span>
-                  </div>
-                </div>
-                <div className="px-8 py-7">
-                  <div className="text-[15px] font-semibold">Carga por agente</div>
-                  <div className={`text-[12.5px] ${sub} mt-0.5`}>Conversas ativas agora</div>
-                  <div className="mt-4 space-y-3.5">
-                    {WORKLOAD.map((w) => (
-                      <div key={w.name}>
-                        <div className="flex items-center justify-between text-[13px]">
-                          <span className="font-medium">{w.name}</span>
-                          <span className="font-mono tabular-nums text-[#6A7385] dark:text-[#8b93a0]">{w.n}</span>
-                        </div>
-                        <div className="mt-1.5 h-1.5 rounded-full bg-[#F1F3F5] dark:bg-[#16191f] overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${w.pct}%`, backgroundColor: A }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-            </>
+            </div>
           )}
 
           {/* ═══ LOGS ═══ */}
           {view === "logs" && (
             <>
               <section className="px-8 pt-8 pb-6">
-                <h2 className="text-[26px] font-semibold tracking-tight">Logs de atividade</h2>
+                <h2 className="text-[26px] font-medium tracking-[-0.3px]">Logs de atividade</h2>
                 <p className={`text-[14px] ${sub} mt-1`}>Acompanhe a atividade dos seus agentes em tempo real.</p>
               </section>
               <div className={`px-8 py-4 border-t border-b ${hair} flex flex-wrap items-center gap-2`}>
@@ -382,7 +388,7 @@ export default function DesignProof() {
           {view === "settings" && (
             <>
               <section className="px-8 pt-8 pb-6">
-                <h2 className="text-[26px] font-semibold tracking-tight">Configurações</h2>
+                <h2 className="text-[26px] font-medium tracking-[-0.3px]">Configurações</h2>
                 <p className={`text-[14px] ${sub} mt-1`}>Gerencie sua equipe, cobrança e preferências da conta.</p>
               </section>
               <div className={`border-t ${hair} grid grid-cols-1 lg:grid-cols-[220px_1fr]`}>
@@ -403,7 +409,7 @@ export default function DesignProof() {
                 {/* conteúdo */}
                 <div className={`divide-y ${hair} divide-[#EDEDED] dark:divide-[#1e2228]`}>
                   <div className="px-8 py-6 max-w-[640px]">
-                    <div className="text-[15px] font-semibold">Nome da equipe</div>
+                    <div className="text-[16px] font-[450] tracking-[-0.1px]">Nome da equipe</div>
                     <div className={`text-[12.5px] ${sub} mt-0.5`}>Atualize o nome de exibição da equipe.</div>
                     <div className="mt-3 flex items-center gap-2">
                       <input defaultValue="Tier Finance" className={`flex-1 h-10 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${hair} outline-none focus:border-transparent`} style={{ boxShadow: `inset 0 0 0 0 ${A}` }} />
@@ -411,7 +417,7 @@ export default function DesignProof() {
                     </div>
                   </div>
                   <div className="px-8 py-6 max-w-[640px]">
-                    <div className="text-[15px] font-semibold">Convidar membros</div>
+                    <div className="text-[16px] font-[450] tracking-[-0.1px]">Convidar membros</div>
                     <div className={`text-[12.5px] ${sub} mt-0.5`}>Adicione novos membros à sua equipe.</div>
                     <div className="mt-3 flex items-center gap-2">
                       <input placeholder="email@empresa.com" className={`flex-1 h-10 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${hair} outline-none placeholder:text-[#B4BBC6]`} />
@@ -421,7 +427,7 @@ export default function DesignProof() {
                     <p className={`mt-2 text-[12px] ${sub}`}>Membros convidados recebem um e-mail com instruções pra entrar.</p>
                   </div>
                   <div className="px-8 py-6 max-w-[640px]">
-                    <div className="text-[15px] font-semibold">Membros da equipe</div>
+                    <div className="text-[16px] font-[450] tracking-[-0.1px]">Membros da equipe</div>
                     <div className={`text-[12.5px] ${sub} mt-0.5`}>Gerencie acesso e permissões.</div>
                     <div className={`mt-3 flex items-center gap-3 p-3 rounded-lg border ${hair}`}>
                       <div className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-semibold text-white" style={{ backgroundColor: A }}>M</div>

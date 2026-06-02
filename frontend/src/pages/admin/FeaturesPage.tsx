@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
 import { api } from "@/lib/api";
+import { FC, PageFrame, Row } from "@/components/ds/fc";
 
 interface Flag {
   id: number;
@@ -54,38 +55,47 @@ export default function FeaturesPage() {
   }
 
   return (
-    <div>
-      <h1 className="text-[28px] font-bold text-[#30313d] mb-1">Feature Flags</h1>
-      <p className="text-[13px] text-slate-500 mb-6">
-        Liga/desliga capacidades do agente sem deploy. Escopo global = aplica em todos os tenants.
-      </p>
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="p-6">
+            <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Feature Flags</h2>
+            <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+              Liga/desliga capacidades do agente sem deploy. Escopo global = aplica em todos os tenants.
+            </p>
+          </div>
+        </Row>
 
-      {loading && <div className="text-[13px] text-slate-400">Carregando...</div>}
-
-      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-        {known.map((kf) => {
-          const f = getFlag(kf.key);
-          const enabled = f?.enabled ?? false;
-          return (
-            <div key={kf.key} className="flex items-center justify-between px-5 py-3">
-              <div>
-                <div className="text-[13px] font-medium text-slate-900 font-mono">{kf.key}</div>
-                <div className="text-[12px] text-slate-500 mt-0.5">{kf.description}</div>
-              </div>
-              <button
-                onClick={() => toggle(kf.key, !enabled)}
-                className={`relative w-11 h-6 rounded-full transition ${enabled ? "bg-tier" : "bg-slate-300"}`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                    enabled ? "translate-x-5" : ""
-                  }`}
-                />
-              </button>
+        <Row last>
+          <div className="p-6">
+            {loading && <div className={`text-[13px] mb-3 ${FC.mut}`}>Carregando...</div>}
+            <div className={`border ${FC.hair} rounded-lg divide-y ${FC.hair} overflow-hidden`}>
+              {known.map((kf) => {
+                const f = getFlag(kf.key);
+                const enabled = f?.enabled ?? false;
+                return (
+                  <div key={kf.key} className="flex items-center justify-between px-5 py-3.5">
+                    <div>
+                      <div className={`text-[13px] font-medium font-mono ${FC.ink}`}>{kf.key}</div>
+                      <div className={`text-[12px] mt-0.5 ${FC.sub}`}>{kf.description}</div>
+                    </div>
+                    <button
+                      onClick={() => toggle(kf.key, !enabled)}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? "bg-[#003083] dark:bg-[#5b9bff]" : "bg-[#262626]/20 dark:bg-white/20"}`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                          enabled ? "translate-x-5" : ""
+                        }`}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          </div>
+        </Row>
+      </PageFrame>
     </div>
   );
 }

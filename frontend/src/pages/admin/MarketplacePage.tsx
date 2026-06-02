@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { Download, Loader2, Sparkles, Star, Workflow } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { FC, PageFrame, Row, HairCells, Button } from "@/components/ds/fc";
 
 interface MarketplaceItem {
   id: number;
@@ -76,97 +77,95 @@ export default function MarketplacePage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mt-6 mb-2">
-        <h1 className="text-[28px] font-bold text-[#30313d]">Marketplace</h1>
-        {agents.length > 0 && (
-          <div className="flex items-center gap-2">
-            <label className="text-[12px] text-[#697386]">Importar pra:</label>
-            <select
-              value={importing.agentId}
-              onChange={(e) =>
-                setImporting({ ...importing, agentId: Number(e.target.value) })
-              }
-              className="h-7 px-3 text-[13px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083]"
-            >
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.nome}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-      <p className="text-[14px] text-[#697386] mb-6">
-        Templates de playbook publicados pela comunidade Tier. Importe pro seu workspace e adapte.
-      </p>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-5 h-5 text-[#003083] animate-spin" />
-        </div>
-      ) : items.length === 0 ? (
-        <div className="bg-[#f4f7fa] rounded-lg p-12 text-center">
-          <div className="inline-flex w-12 h-12 rounded-md bg-white items-center justify-center mb-4 shadow-[0_0_0_1px_rgb(226,232,240)]">
-            <Sparkles className="w-6 h-6 text-[#003083]" />
-          </div>
-          <h3 className="text-[16px] font-semibold text-[#1a2c44] mb-1">
-            Marketplace ainda vazio
-          </h3>
-          <p className="text-[13px] text-[#697386]">
-            Seja o primeiro a publicar um playbook! No editor → botão "Publicar no marketplace".
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {items.map((it) => (
-            <div
-              key={it.id}
-              className="bg-white rounded-md p-5 shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_rgb(180,190,210)] transition-shadow flex flex-col"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] flex items-center justify-center">
-                  <Workflow className="w-[18px] h-[18px] text-[#003083]" />
-                </div>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600">
-                  <Download className="w-3 h-3" />
-                  {it.marketplace_downloads}
-                </span>
-              </div>
-              <div className="text-[14px] font-semibold text-[#1a2c44] mb-1">
-                {it.public_label || it.nome}
-              </div>
-              {it.public_description && (
-                <p className="text-[12px] text-[#697386] leading-relaxed mb-3 line-clamp-3 flex-1">
-                  {it.public_description}
-                </p>
-              )}
-              <div className="flex items-center justify-between text-[11px] text-[#697386] mb-3">
-                <span>{it.nodes_count} nós</span>
-                {it.marketplace_rating && (
-                  <span className="inline-flex items-center gap-1">
-                    <Star className="w-3 h-3 text-amber-500" />
-                    {it.marketplace_rating.toFixed(1)}
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => importTpl(it)}
-                disabled={importing.tplId === it.id || agents.length === 0}
-                className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-[#003083] text-white hover:bg-[#002266] disabled:opacity-50"
-              >
-                {importing.tplId === it.id ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Download className="w-3 h-3" />
-                )}
-                Importar
-              </button>
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start justify-between gap-4 p-6">
+            <div>
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Marketplace</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                Templates de playbook publicados pela comunidade Tier. Importe pro seu workspace e adapte.
+              </p>
             </div>
-          ))}
-        </div>
-      )}
+            {agents.length > 0 && (
+              <div className="flex items-center gap-2 shrink-0">
+                <label className={`text-[12px] ${FC.sub}`}>Importar pra:</label>
+                <select
+                  value={importing.agentId}
+                  onChange={(e) => setImporting({ ...importing, agentId: Number(e.target.value) })}
+                  className={`h-8 px-2.5 text-[13px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`}
+                >
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </Row>
+
+        {loading ? (
+          <Row last>
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
+            </div>
+          </Row>
+        ) : items.length === 0 ? (
+          <Row last>
+            <div className="p-12 text-center">
+              <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
+                <Sparkles className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
+              </div>
+              <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>Marketplace ainda vazio</h3>
+              <p className={`text-[13px] ${FC.sub}`}>
+                Seja o primeiro a publicar um playbook! No editor → botão "Publicar no marketplace".
+              </p>
+            </div>
+          </Row>
+        ) : (
+          <Row>
+            <HairCells cols={3} gridLines>
+              {items.map((it) => (
+                <div key={it.id} className="p-6 flex flex-col h-full">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center">
+                      <Workflow className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
+                    </div>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#262626]/[0.06] ${FC.sub}`}>
+                      <Download className="w-3 h-3" />
+                      {it.marketplace_downloads}
+                    </span>
+                  </div>
+                  <div className={`text-[14px] font-medium mb-1 ${FC.ink}`}>{it.public_label || it.nome}</div>
+                  {it.public_description && (
+                    <p className={`text-[12px] leading-relaxed mb-3 line-clamp-3 flex-1 ${FC.sub}`}>{it.public_description}</p>
+                  )}
+                  <div className={`flex items-center justify-between text-[11px] mb-3 ${FC.sub}`}>
+                    <span>{it.nodes_count} nós</span>
+                    {it.marketplace_rating && (
+                      <span className="inline-flex items-center gap-1">
+                        <Star className="w-3 h-3 text-[#F5A300]" />
+                        {it.marketplace_rating.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    variant="primary"
+                    onClick={() => importTpl(it)}
+                    disabled={importing.tplId === it.id || agents.length === 0}
+                    className="w-full"
+                  >
+                    {importing.tplId === it.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                    Importar
+                  </Button>
+                </div>
+              ))}
+            </HairCells>
+          </Row>
+        )}
+      </PageFrame>
     </div>
   );
 }

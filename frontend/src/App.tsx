@@ -7,6 +7,7 @@ import Plataforma from "./pages/public/Plataforma";
 import Recursos from "./pages/public/Recursos";
 import Precos from "./pages/public/Precos";
 import DesignProof from "./pages/public/DesignProof";
+import MetricasPreview from "./pages/public/MetricasPreview";
 import Login from "./pages/public/Login";
 import Signup from "./pages/public/Signup";
 import Privacy from "./pages/public/Privacy";
@@ -49,6 +50,7 @@ export default function App() {
       <Route path="/recursos" element={<Recursos />} />
       <Route path="/precos" element={<Precos />} />
       <Route path="/design-proof" element={<DesignProof />} />
+      <Route path="/preview/metricas" element={<MetricasPreview />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/convite/:token" element={<AcceptInvitePage />} />

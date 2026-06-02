@@ -66,29 +66,31 @@ const SECTIONS: NavGroup[] = [
 ];
 
 const SIDEBAR_FONT =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, sans-serif';
+  "'Geist', -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Ubuntu, sans-serif";
 
 export default function AdminLayout() {
   const location = useLocation();
+  // estilo FC: item h-34 rounded-10; hover = texto clareia + ícone escurece (sem bg)
+  // + active:scale-[0.98] (afunda no clique); ativo = acento azul + bg faint.
   const itemClass = (active: boolean) =>
-    `flex items-center gap-2.5 rounded-md transition-colors h-[30px] text-[14px] px-2 ${
+    `group flex items-center gap-2.5 rounded-[10px] transition-all duration-200 active:scale-[0.98] h-[34px] text-[13px] px-2.5 ${
       active
-        ? "text-[#1a2c44] font-semibold bg-[#e8ecf0]"
-        : "text-[#1a2c44] hover:text-slate-900 hover:bg-slate-50 font-normal"
+        ? "text-[#003083] dark:text-[#5b9bff] font-medium bg-[#003083]/[0.06] dark:bg-[#5b9bff]/[0.12]"
+        : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white font-normal"
     }`;
 
   return (
     <div className="min-h-screen bg-white flex">
       <aside
-        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#FAFAFA] border-r border-slate-200"
+        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#F9F9F9] border-r border-[#EDEDED]"
         style={{
           width: 240,
           fontFamily: SIDEBAR_FONT,
           WebkitFontSmoothing: "antialiased",
         }}
       >
-        {/* Logo — padding px-5 py-4, height 28px (igual Tier Empresas) */}
-        <div className="px-5 py-4 shrink-0 flex items-center">
+        {/* Logo — área h-16 com border-b (igual FC: linha sob o logo) */}
+        <div className="h-16 px-5 shrink-0 flex items-center border-b border-[#EDEDED]">
           <img
             src="/tier-agent-escuro.png"
             alt="Tier Agent"
@@ -101,18 +103,23 @@ export default function AdminLayout() {
           {SECTIONS.map((section, sIdx) => (
             <div key={section.label} className={sIdx > 0 ? "mt-5" : ""}>
               <div className="mb-1">
-                <span className="text-[12px] font-normal text-slate-400">{section.label}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#262626]/40 dark:text-[#565d68]">{section.label}</span>
               </div>
               {section.items.map((item) => (
                 <NavLink key={item.to} to={item.to}>
-                  {({ isActive }) => (
-                    <div
-                      className={itemClass(isActive || location.pathname.startsWith(item.to))}
-                    >
-                      <item.icon className="w-4 h-4 flex-shrink-0 opacity-60" />
-                      <span>{item.label}</span>
-                    </div>
-                  )}
+                  {({ isActive }) => {
+                    const act = isActive || location.pathname.startsWith(item.to);
+                    return (
+                      <div className={itemClass(act)}>
+                        <item.icon
+                          className={`w-4 h-4 flex-shrink-0 transition-all duration-200 ${
+                            act ? "opacity-100" : "opacity-60 group-hover:opacity-100"
+                          }`}
+                        />
+                        <span>{item.label}</span>
+                      </div>
+                    );
+                  }}
                 </NavLink>
               ))}
             </div>
@@ -120,13 +127,13 @@ export default function AdminLayout() {
         </nav>
 
         {/* User menu bottom */}
-        <div className="border-t border-slate-200 p-2 shrink-0">
+        <div className="border-t border-[#EDEDED] p-2 shrink-0">
           <UserMenu />
         </div>
       </aside>
 
       <main
-        className="flex-1 ml-[240px] min-h-screen bg-white"
+        className="flex-1 ml-[240px] min-h-screen bg-[#F9F9F9]"
         style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         <div className="px-8 pb-8 max-w-[1400px] mx-auto">

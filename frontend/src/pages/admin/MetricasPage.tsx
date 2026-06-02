@@ -14,6 +14,7 @@ import {
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { api } from "@/lib/api";
+import { FC, PageFrame, Row, HairCells, SegToggle } from "@/components/ds/fc";
 
 interface Overview {
   period_days: number;
@@ -126,207 +127,199 @@ export default function MetricasPage() {
   );
 
   return (
-    <div>
-      <div className="flex items-center justify-between mt-6 mb-2">
-        <h1 className="text-[28px] font-bold text-[#30313d]">Métricas</h1>
-        <div className="flex gap-1">
-          {PERIODS.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => setDays(p.value)}
-              className={`h-7 px-3 rounded-md text-[12px] font-medium transition-colors ${
-                days === p.value
-                  ? "bg-[#003083] text-white shadow-sm shadow-[#003083]/20"
-                  : "bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <p className="text-[14px] text-[#697386] mb-6">
-        Custo, latência, uso por agente e por modelo nos últimos {days} dias.
-      </p>
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start justify-between gap-4 p-6">
+            <div>
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Métricas</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                Custo, latência, uso por agente e por modelo nos últimos {days} dias.
+              </p>
+            </div>
+            <SegToggle value={days} options={PERIODS} onChange={(v) => setDays(v)} />
+          </div>
+        </Row>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-5 h-5 text-[#003083] animate-spin" />
-        </div>
-      ) : !overview ? (
-        <EmptyState />
-      ) : (
-        <>
-          {/* KPI Cards */}
-          <div className="bg-[#f4f7fa] rounded-lg p-2 mb-6">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-              <KpiCard
+        {loading ? (
+          <Row last>
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
+            </div>
+          </Row>
+        ) : !overview ? (
+          <Row last>
+            <EmptyState />
+          </Row>
+        ) : (
+          <>
+            {/* KPI — células flush, bordas cruzam */}
+            <Row>
+              <HairCells cols={4}>
+              <KpiCell
                 icon={DollarSign}
                 label="Custo total"
                 value={`R$ ${overview.cost_brl_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
                 hint={`${overview.tokens_in_total.toLocaleString("pt-BR")} in / ${overview.tokens_out_total.toLocaleString("pt-BR")} out`}
               />
-              <KpiCard
+              <KpiCell
                 icon={MessageSquare}
                 label="Mensagens"
                 value={overview.messages_total.toLocaleString("pt-BR")}
                 hint={`${overview.conversations_count.toLocaleString("pt-BR")} conversas`}
               />
-              <KpiCard
+              <KpiCell
                 icon={Clock}
                 label="Latência média"
                 value={`${Math.round(overview.avg_latency_ms)}ms`}
                 hint="resposta do agente"
               />
-              <KpiCard
+              <KpiCell
                 icon={Workflow}
                 label="Execuções playbook"
                 value={overview.playbook_executions_count.toLocaleString("pt-BR")}
                 hint={`${overview.agents_count} agentes ativos`}
               />
-            </div>
-          </div>
+              </HairCells>
+            </Row>
 
-          {/* Gráfico custo+msgs por dia */}
-          <div className="bg-white rounded-md p-5 mb-6 shadow-[0_0_0_1px_rgb(226,232,240)]">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-[14px] font-semibold text-[#1a2c44]">Volume diário</h3>
-                <p className="text-[12px] text-[#697386]">Mensagens enviadas vs custo (R$)</p>
+            {/* Gráfico volume diário */}
+            <Row>
+              <div className="p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Volume diário</h3>
+                  <p className={`text-[13px] ${FC.sub}`}>Mensagens enviadas vs custo (R$)</p>
+                </div>
               </div>
-            </div>
-            {chartData.length > 0 ? (
-              <div style={{ width: "100%", height: 220 }}>
-                <ResponsiveContainer>
-                  <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#003083" stopOpacity={0.25} />
-                        <stop offset="100%" stopColor="#003083" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity={0.25} />
-                        <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                    <XAxis dataKey="day" stroke="#94a3b8" fontSize={11} axisLine={false} tickLine={false} />
-                    <YAxis stroke="#94a3b8" fontSize={11} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#0f172a",
-                        border: "1px solid rgba(51,65,85,0.4)",
-                        borderRadius: 8,
-                        color: "#fff",
-                        fontSize: 12,
-                      }}
-                      labelStyle={{ color: "#94a3b8", fontSize: 11 }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="Mensagens"
-                      stroke="#003083"
-                      strokeWidth={2}
-                      fill="url(#g1)"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="Custo (R$)"
-                      stroke="#10b981"
-                      strokeWidth={2}
-                      fill="url(#g2)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+              {chartData.length > 0 ? (
+                <div style={{ width: "100%", height: 220 }}>
+                  <ResponsiveContainer>
+                    <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#003083" stopOpacity={0.25} />
+                          <stop offset="100%" stopColor="#003083" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#0a8f5a" stopOpacity={0.25} />
+                          <stop offset="100%" stopColor="#0a8f5a" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#EDEDED" vertical={false} />
+                      <XAxis dataKey="day" stroke="#9AA4B2" fontSize={11} axisLine={false} tickLine={false} />
+                      <YAxis stroke="#9AA4B2" fontSize={11} axisLine={false} tickLine={false} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#fff",
+                          border: "1px solid #EDEDED",
+                          borderRadius: 8,
+                          color: "#262626",
+                          fontSize: 12,
+                          boxShadow: "0 4px 16px -6px rgba(0,0,0,0.12)",
+                        }}
+                        labelStyle={{ color: "#262626", opacity: 0.56, fontSize: 11 }}
+                      />
+                      <Area type="monotone" dataKey="Mensagens" stroke="#003083" strokeWidth={2} fill="url(#g1)" />
+                      <Area type="monotone" dataKey="Custo (R$)" stroke="#0a8f5a" strokeWidth={2} fill="url(#g2)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className={`text-center py-10 text-[13px] ${FC.sub}`}>Sem dados no período</div>
+              )}
               </div>
-            ) : (
-              <div className="text-center py-10 text-[12px] text-[#697386]">
-                Sem dados no período
-              </div>
-            )}
-          </div>
+            </Row>
 
-          {/* Por agente + por modelo */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-            <Card title="Por agente" icon={Bot}>
-              <Table
-                cols={["Agente", "Msgs", "Custo", "Latência"]}
-                rows={byAgent.map((a) => [
-                  a.agent_nome,
-                  a.messages.toLocaleString("pt-BR"),
-                  `R$ ${(a.cost_cents / 100).toFixed(2)}`,
-                  `${Math.round(a.avg_latency_ms)}ms`,
-                ])}
-                emptyMsg="Nenhum agente ativo no período"
-              />
-            </Card>
-            <Card title="Por modelo" icon={Sparkles}>
-              <Table
-                cols={["Modelo", "Msgs", "Tokens (in/out)", "Custo"]}
-                rows={byModel.map((m) => [
-                  <span key="m" className="font-mono text-[11px]">
-                    {m.model}
-                  </span>,
-                  m.messages.toLocaleString("pt-BR"),
-                  `${m.tokens_in.toLocaleString("pt-BR")} / ${m.tokens_out.toLocaleString("pt-BR")}`,
-                  `R$ ${(m.cost_cents / 100).toFixed(2)}`,
-                ])}
-                emptyMsg="Nenhum modelo usado ainda"
-              />
-            </Card>
-          </div>
+            {/* Por agente | Por modelo — 2 células flush */}
+            <Row>
+            <HairCells cols={2}>
+              <CellSection title="Por agente" icon={Bot}>
+                <Table
+                  cols={["Agente", "Msgs", "Custo", "Latência"]}
+                  rows={byAgent.map((a) => [
+                    a.agent_nome,
+                    a.messages.toLocaleString("pt-BR"),
+                    `R$ ${(a.cost_cents / 100).toFixed(2)}`,
+                    `${Math.round(a.avg_latency_ms)}ms`,
+                  ])}
+                  emptyMsg="Nenhum agente ativo no período"
+                />
+              </CellSection>
+              <CellSection title="Por modelo" icon={Sparkles}>
+                <Table
+                  cols={["Modelo", "Msgs", "Tokens (in/out)", "Custo"]}
+                  rows={byModel.map((m) => [
+                    <span key="m" className="font-mono text-[11px]">
+                      {m.model}
+                    </span>,
+                    m.messages.toLocaleString("pt-BR"),
+                    `${m.tokens_in.toLocaleString("pt-BR")} / ${m.tokens_out.toLocaleString("pt-BR")}`,
+                    `R$ ${(m.cost_cents / 100).toFixed(2)}`,
+                  ])}
+                  emptyMsg="Nenhum modelo usado ainda"
+                />
+              </CellSection>
+            </HairCells>
+            </Row>
 
-          {/* Top conversas */}
-          {abRows.length > 0 && (
-            <div className="mb-6">
-              <Card title="A/B testing — performance por variant" icon={Sparkles}>
+            {/* A/B testing (condicional) */}
+            {abRows.length > 0 && (
+              <Row>
+              <div className="p-6">
+                <SectionTitle title="A/B testing — performance por variant" icon={Sparkles} />
                 <Table
                   cols={["Playbook · Node", "Variant", "Runs", "Latência avg", "Custo"]}
                   rows={abRows.map((a) => [
-                    <span key="pl" className="font-mono text-[11px] text-[#697386]">
+                    <span key="pl" className={`font-mono text-[11px] ${FC.sub}`}>
                       #{a.playbook_id} · {a.node_id.slice(0, 12)}
                     </span>,
-                    <span key="v" className="font-mono text-[11px] font-semibold text-[#003083]">
+                    <span key="v" className="font-mono text-[11px] font-semibold text-[#003083] dark:text-[#5b9bff]">
                       {a.variant}
                     </span>,
                     a.runs.toLocaleString("pt-BR"),
                     `${Math.round(a.avg_latency_ms)}ms`,
-                    <span key="c" className="font-medium text-[#1a2c44]">
+                    <span key="c" className={`font-medium ${FC.ink}`}>
                       R$ {(a.total_cost_cents / 100).toFixed(2)}
                     </span>,
                   ])}
                   emptyMsg="Sem variants disparados"
                 />
-              </Card>
-            </div>
-          )}
+              </div>
+              </Row>
+            )}
 
-          <Card title={`Top ${topConv.length} conversas mais caras`} icon={TrendingUp}>
-            <Table
-              cols={["Conversa", "Contato", "Msgs", "Custo"]}
-              rows={topConv.map((c) => [
-                <span key="c" className="font-mono text-[11px] text-[#697386]">
-                  #{c.conversation_id}
-                </span>,
-                <div key="ct">
-                  <div className="text-[12px] text-[#1a2c44]">{c.contact_name || "—"}</div>
-                  <div className="text-[10px] font-mono text-[#697386]">{c.external_id}</div>
-                </div>,
-                c.msg_count.toLocaleString("pt-BR"),
-                <span key="cs" className="font-medium text-[#1a2c44]">
-                  R$ {(c.cost_cents / 100).toFixed(2)}
-                </span>,
-              ])}
-              emptyMsg="Sem conversas no período"
-            />
-          </Card>
-        </>
-      )}
+            {/* Top conversas mais caras */}
+            <Row last>
+            <div className="p-6">
+              <SectionTitle title={`Top ${topConv.length} conversas mais caras`} icon={TrendingUp} />
+              <Table
+                cols={["Conversa", "Contato", "Msgs", "Custo"]}
+                rows={topConv.map((c) => [
+                  <span key="c" className={`font-mono text-[11px] ${FC.sub}`}>
+                    #{c.conversation_id}
+                  </span>,
+                  <div key="ct">
+                    <div className={`text-[12px] ${FC.ink}`}>{c.contact_name || "—"}</div>
+                    <div className={`text-[10px] font-mono ${FC.sub}`}>{c.external_id}</div>
+                  </div>,
+                  c.msg_count.toLocaleString("pt-BR"),
+                  <span key="cs" className={`font-medium ${FC.ink}`}>
+                    R$ {(c.cost_cents / 100).toFixed(2)}
+                  </span>,
+                ])}
+                emptyMsg="Sem conversas no período"
+              />
+            </div>
+            </Row>
+          </>
+        )}
+      </PageFrame>
     </div>
   );
 }
 
-function KpiCard({
+function KpiCell({
   icon: Icon,
   label,
   value,
@@ -338,22 +331,30 @@ function KpiCard({
   hint?: string;
 }) {
   return (
-    <div className="bg-white rounded-md p-5">
+    <div className="p-6">
       <div className="flex items-center gap-2 mb-2">
-        <div className="w-7 h-7 rounded-md bg-[#003083]/[0.08] flex items-center justify-center">
-          <Icon className="w-3.5 h-3.5 text-[#003083]" />
-        </div>
-        <div className="text-[14px] font-medium text-slate-400">{label}</div>
+        <Icon className={`w-4 h-4 ${FC.mut}`} />
+        <div className={`text-[11px] font-semibold uppercase tracking-wide ${FC.mut}`}>{label}</div>
       </div>
-      <div className="text-[24px] font-semibold text-slate-900 leading-tight">{value}</div>
-      {hint && <div className="text-[12px] text-slate-500 mt-0.5">{hint}</div>}
+      <div className={`font-mono tabular-nums text-[24px] font-medium leading-none ${FC.ink}`}>{value}</div>
+      {hint && <div className={`text-[12px] mt-1.5 ${FC.sub}`}>{hint}</div>}
     </div>
   );
 }
 
-function Card({
+function SectionTitle({
   title,
-  icon: Icon,
+}: {
+  title: string;
+  icon?: React.ComponentType<{ className?: string }>;
+}) {
+  // títulos de seção SEM ícone (igual Firecrawl)
+  return <h3 className={`text-[16px] font-[450] tracking-[-0.1px] mb-4 ${FC.ink}`}>{title}</h3>;
+}
+
+function CellSection({
+  title,
+  icon,
   children,
 }: {
   title: string;
@@ -361,11 +362,8 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-md p-5 shadow-[0_0_0_1px_rgb(226,232,240)]">
-      <div className="flex items-center gap-2 mb-4">
-        <Icon className="w-3.5 h-3.5 text-[#697386]" />
-        <h3 className="text-[14px] font-semibold text-[#1a2c44]">{title}</h3>
-      </div>
+    <div className="p-6">
+      <SectionTitle title={title} icon={icon} />
       {children}
     </div>
   );
@@ -381,19 +379,19 @@ function Table({
   emptyMsg: string;
 }) {
   if (!rows.length) {
-    return <div className="text-center py-6 text-[12px] text-[#697386]">{emptyMsg}</div>;
+    return <div className={`text-center py-6 text-[13px] ${FC.sub}`}>{emptyMsg}</div>;
   }
   return (
-    <div className="overflow-x-auto -mx-5">
+    <div className="overflow-x-auto">
       <table className="w-full">
         <thead>
-          <tr className="border-b border-slate-100">
+          <tr className={`border-b ${FC.hair}`}>
             {cols.map((c, i) => (
               <th
                 key={i}
-                className={`px-5 pb-2 text-[11px] font-semibold uppercase tracking-wider text-[#697386] ${
+                className={`pb-2 text-[11px] font-semibold uppercase tracking-wider ${FC.mut} ${
                   i === cols.length - 1 ? "text-right" : "text-left"
-                }`}
+                } ${i === 0 ? "pr-3" : "px-3"}`}
               >
                 {c}
               </th>
@@ -402,13 +400,13 @@ function Table({
         </thead>
         <tbody>
           {rows.map((row, ri) => (
-            <tr key={ri} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50">
+            <tr key={ri} className={`border-b ${FC.hair} last:border-b-0 ${FC.hover}`}>
               {row.map((cell, ci) => (
                 <td
                   key={ci}
-                  className={`px-5 py-2.5 text-[13px] text-[#1a2c44] ${
+                  className={`py-2.5 text-[13px] ${FC.ink} ${
                     ci === row.length - 1 ? "text-right" : "text-left"
-                  }`}
+                  } ${ci === 0 ? "pr-3" : "px-3"}`}
                 >
                   {cell}
                 </td>
@@ -423,12 +421,12 @@ function Table({
 
 function EmptyState() {
   return (
-    <div className="bg-[#f4f7fa] rounded-lg p-12 text-center">
-      <div className="inline-flex w-12 h-12 rounded-md bg-white items-center justify-center mb-4 shadow-[0_0_0_1px_rgb(226,232,240)]">
-        <Zap className="w-6 h-6 text-[#003083]" />
+    <div className="p-12 text-center">
+      <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
+        <Zap className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
       </div>
-      <h3 className="text-[16px] font-semibold text-[#1a2c44] mb-1">Sem métricas ainda</h3>
-      <p className="text-[13px] text-[#697386]">
+      <h3 className={`text-[16px] font-[450] ${FC.ink} mb-1`}>Sem métricas ainda</h3>
+      <p className={`text-[13px] ${FC.sub}`}>
         Conecte um WhatsApp e mande mensagens pra ver custos e estatísticas aqui.
       </p>
     </div>
