@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { Users, Plus, Trash2, RefreshCw, X, Shield, Headphones, Link2 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
 
 interface Member {
   id: number;
@@ -56,7 +57,6 @@ export default function EquipePage() {
     }
     setSaving(true);
     try {
-      // senha vazia → cria convite (atendente define a senha pelo link)
       const payload: any = { nome: form.nome, email: form.email, role: form.role, max_conversas: 0 };
       if (form.password) payload.password = form.password;
       const { data } = await api.post<Member>("/team/members", payload);
@@ -115,147 +115,107 @@ export default function EquipePage() {
     }
   }
 
+  const inputCls = `h-8 px-3 text-[13px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
+  const miniSelect = `h-7 px-2 text-[12px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none`;
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6 mt-2">
-        <div>
-          <h1 className="text-[28px] font-bold text-[#30313d]">Equipe</h1>
-          <p className="text-[13px] text-slate-500 mt-1">
-            Atendentes com login próprio. Entram pela mesma tela de login e veem só este workspace.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={load} className="h-7 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1">
-            <RefreshCw className="w-3 h-3" /> Atualizar
-          </button>
-          <button
-            onClick={() => setShowForm((s) => !s)}
-            className="h-8 px-3 text-[13px] rounded-md bg-[#003083] text-white inline-flex items-center gap-1.5 hover:bg-[#002266]"
-          >
-            <Plus className="w-3.5 h-3.5" /> Novo atendente
-          </button>
-        </div>
-      </div>
-
-      {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[14px] font-semibold text-slate-800">Novo atendente</h3>
-            <button onClick={() => setShowForm(false)} className="p-1 rounded text-slate-400 hover:bg-slate-100">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <input
-              value={form.nome}
-              onChange={(e) => setForm({ ...form, nome: e.target.value })}
-              placeholder="Nome"
-              className="h-8 px-3 text-[13px] rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
-            />
-            <input
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              placeholder="E-mail (login)"
-              className="h-8 px-3 text-[13px] rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
-            />
-            <input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              placeholder="Senha (vazio = enviar convite por link)"
-              className="h-8 px-3 text-[13px] rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083]"
-            />
-            <select
-              value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value })}
-              className="h-8 px-2 text-[13px] rounded-md border border-slate-200 outline-none"
-            >
-              <option value="atendente">Atendente</option>
-              <option value="admin">Admin (gerencia equipe)</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-2 mt-3">
-            <button
-              onClick={create}
-              disabled={saving}
-              className="h-8 px-4 text-[13px] rounded-md bg-[#003083] text-white hover:bg-[#002266] disabled:opacity-50"
-            >
-              {saving ? "Criando..." : "Criar atendente"}
-            </button>
-            <span className="text-[12px] text-slate-400">
-              Com senha: você passa as credenciais. Sem senha: copiamos um <b>link de convite</b> — o
-              atendente define a própria senha.
-            </span>
-          </div>
-        </div>
-      )}
-
-      {loading && <div className="text-[13px] text-slate-400 py-8 text-center">Carregando...</div>}
-
-      {!loading && members.length === 0 && !showForm && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Users className="w-10 h-10 text-slate-300 mb-3" />
-          <p className="text-[14px] text-slate-500">Você ainda atende sozinho.</p>
-          <p className="text-[12px] text-slate-400 mt-1">Adicione atendentes pra distribuir as conversas em fila.</p>
-        </div>
-      )}
-
-      {members.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
-          {members.map((m) => (
-            <div key={m.id} className="px-4 py-3 flex items-center gap-3">
-              <div className="relative">
-                <div className="w-9 h-9 rounded-full bg-[#003083]/[0.08] flex items-center justify-center shrink-0">
-                  {m.role === "admin" ? <Shield className="w-4 h-4 text-[#003083]" /> : <Headphones className="w-4 h-4 text-[#003083]" />}
-                </div>
-                <span
-                  className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${m.online ? "bg-emerald-500" : "bg-slate-300"}`}
-                  title={m.online ? "Online" : "Offline"}
-                />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className={`text-[14px] font-medium ${m.status === "disabled" ? "text-slate-400 line-through" : "text-slate-900"}`}>
-                    {m.nome}
-                  </span>
-                  {m.status === "disabled" && <span className="text-[11px] text-rose-500">desativado</span>}
-                  {m.status === "invited" && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">convite pendente</span>
-                  )}
-                </div>
-                <p className="text-[12px] text-slate-500 truncate">{m.email}</p>
-              </div>
-              {m.status === "invited" && m.invite_token && (
-                <button
-                  onClick={() => copyInvite(m)}
-                  className="h-7 px-2.5 text-[12px] rounded-md border border-slate-200 text-[#003083] hover:bg-slate-50 inline-flex items-center gap-1"
-                >
-                  <Link2 className="w-3.5 h-3.5" /> Copiar link
-                </button>
-              )}
-              <select
-                value={m.role}
-                onChange={(e) => updateRole(m, e.target.value)}
-                className="h-7 px-2 text-[12px] rounded-md border border-slate-200 outline-none"
-              >
-                <option value="atendente">{ROLE_LABEL.atendente}</option>
-                <option value="admin">{ROLE_LABEL.admin}</option>
-              </select>
-              {m.status !== "invited" && (
-                <button
-                  onClick={() => toggleStatus(m)}
-                  className="h-7 px-2.5 text-[12px] rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
-                >
-                  {m.status === "active" ? "Desativar" : "Ativar"}
-                </button>
-              )}
-              <button onClick={() => remove(m)} className="p-1.5 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50" title="Remover">
-                <Trash2 className="w-4 h-4" />
-              </button>
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start justify-between gap-4 p-6">
+            <div>
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Equipe</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                Atendentes com login próprio. Entram pela mesma tela de login e veem só este workspace.
+              </p>
             </div>
-          ))}
-        </div>
-      )}
+            <div className="flex items-center gap-2 shrink-0">
+              <Button variant="ghost" onClick={load}><RefreshCw className="w-3.5 h-3.5" /> Atualizar</Button>
+              <Button variant="primary" onClick={() => setShowForm((s) => !s)}><Plus className="w-3.5 h-3.5" /> Novo atendente</Button>
+            </div>
+          </div>
+        </Row>
+
+        {showForm && (
+          <Row>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Novo atendente</h3>
+                <button onClick={() => setShowForm(false)} className={`p-1 rounded ${FC.mut} hover:bg-black/[0.04]`}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Nome" className={inputCls} />
+                <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="E-mail (login)" className={inputCls} />
+                <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Senha (vazio = enviar convite por link)" className={inputCls} />
+                <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputCls}>
+                  <option value="atendente">Atendente</option>
+                  <option value="admin">Admin (gerencia equipe)</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2 mt-3">
+                <Button variant="primary" onClick={create} disabled={saving}>{saving ? "Criando..." : "Criar atendente"}</Button>
+                <span className={`text-[12px] ${FC.mut}`}>
+                  Com senha: você passa as credenciais. Sem senha: copiamos um <b>link de convite</b> — o atendente define a própria senha.
+                </span>
+              </div>
+            </div>
+          </Row>
+        )}
+
+        {loading ? (
+          <Row last><div className={`text-[13px] py-12 text-center ${FC.mut}`}>Carregando...</div></Row>
+        ) : members.length === 0 && !showForm ? (
+          <Row last>
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Users className={`w-10 h-10 mb-3 ${FC.mut}`} />
+              <p className={`text-[14px] ${FC.sub}`}>Você ainda atende sozinho.</p>
+              <p className={`text-[12px] mt-1 ${FC.mut}`}>Adicione atendentes pra distribuir as conversas em fila.</p>
+            </div>
+          </Row>
+        ) : members.length > 0 ? (
+          <Row last>
+            <div className={`divide-y ${FC.hair}`}>
+              {members.map((m) => (
+                <div key={m.id} className="px-6 py-3 flex items-center gap-3">
+                  <div className="relative">
+                    <div className="w-9 h-9 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center shrink-0">
+                      {m.role === "admin" ? <Shield className="w-4 h-4 text-[#003083] dark:text-[#5b9bff]" /> : <Headphones className="w-4 h-4 text-[#003083] dark:text-[#5b9bff]" />}
+                    </div>
+                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#F9F9F9] ${m.online ? "bg-[#0a8f5a]" : "bg-[#262626]/25"}`} title={m.online ? "Online" : "Offline"} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[14px] font-medium ${m.status === "disabled" ? `${FC.mut} line-through` : FC.ink}`}>{m.nome}</span>
+                      {m.status === "disabled" && <span className="text-[11px] text-[#E5484D]">desativado</span>}
+                      {m.status === "invited" && <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[#F5A300]/[0.12] text-[#9a6700]">convite pendente</span>}
+                    </div>
+                    <p className={`text-[12px] truncate ${FC.sub}`}>{m.email}</p>
+                  </div>
+                  {m.status === "invited" && m.invite_token && (
+                    <button onClick={() => copyInvite(m)} className={`h-7 px-2.5 text-[12px] rounded-lg border ${FC.hair} text-[#003083] dark:text-[#5b9bff] ${FC.hover} inline-flex items-center gap-1`}>
+                      <Link2 className="w-3.5 h-3.5" /> Copiar link
+                    </button>
+                  )}
+                  <select value={m.role} onChange={(e) => updateRole(m, e.target.value)} className={miniSelect}>
+                    <option value="atendente">{ROLE_LABEL.atendente}</option>
+                    <option value="admin">{ROLE_LABEL.admin}</option>
+                  </select>
+                  {m.status !== "invited" && (
+                    <button onClick={() => toggleStatus(m)} className={`h-7 px-2.5 text-[12px] rounded-lg border ${FC.hair} ${FC.sub} ${FC.hover}`}>
+                      {m.status === "active" ? "Desativar" : "Ativar"}
+                    </button>
+                  )}
+                  <button onClick={() => remove(m)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08]`} title="Remover">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Row>
+        ) : null}
+      </PageFrame>
     </div>
   );
 }

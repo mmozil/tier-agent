@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { Plus, Trash2 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
 
 interface Provider {
   id: number;
@@ -80,167 +81,114 @@ export default function LlmProvidersPage() {
     }
   }
 
+  const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
+  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.mut}`;
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-[28px] font-bold text-[#30313d]">LLM Providers</h1>
-          <p className="text-[13px] text-slate-500 mt-1">
-            Cadastre os modelos disponíveis. Cada agente escolhe um na configuração — zero hardcode.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" /> Novo provider
-        </button>
-      </div>
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start justify-between gap-4 p-6">
+            <div>
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>LLM Providers</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                Cadastre os modelos disponíveis. Cada agente escolhe um na configuração — zero hardcode.
+              </p>
+            </div>
+            <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
+              <Plus className="w-3.5 h-3.5" /> Novo provider
+            </Button>
+          </div>
+        </Row>
 
-      {showForm && (
-        <form onSubmit={onSubmit} className="bg-white rounded-xl border border-slate-200 p-6 mb-6 space-y-4">
-          <h2 className="text-[14px] font-medium text-slate-900">Novo LLM provider</h2>
+        {showForm && (
+          <Row>
+            <form onSubmit={onSubmit} className="p-6 space-y-4">
+              <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Novo LLM provider</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="block">
+                  <span className={`text-[12px] ${FC.sub}`}>Provider</span>
+                  <select value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} className={inputCls}>
+                    {supported.map((s) => (
+                      <option key={s.key} value={s.key}>{s.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className={`text-[12px] ${FC.sub}`}>Modelo padrão</span>
+                  <input value={form.default_model} onChange={(e) => setForm({ ...form, default_model: e.target.value })} placeholder="ex: MiniMax-M2, claude-sonnet-4-6, gpt-4o-mini" className={inputCls} required />
+                </label>
+              </div>
+              <label className="block">
+                <span className={`text-[12px] ${FC.sub}`}>API Key</span>
+                <input type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." className={`${inputCls} font-mono`} required />
+                <span className={`text-[11px] mt-1 block ${FC.mut}`}>Encriptada com Fernet at-rest no banco.</span>
+              </label>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="block">
+                  <span className={`text-[12px] ${FC.sub}`}>Temperature</span>
+                  <input type="number" step="0.1" min="0" max="2" value={form.temperature} onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) })} className={inputCls} />
+                </label>
+                <label className="block">
+                  <span className={`text-[12px] ${FC.sub}`}>Max tokens</span>
+                  <input type="number" min="1" value={form.max_tokens} onChange={(e) => setForm({ ...form, max_tokens: parseInt(e.target.value) })} className={inputCls} />
+                </label>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
+                <Button variant="primary" type="submit">Salvar</Button>
+              </div>
+            </form>
+          </Row>
+        )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <label className="block">
-              <span className="text-[12px] text-slate-700">Provider</span>
-              <select
-                value={form.provider}
-                onChange={(e) => setForm({ ...form, provider: e.target.value })}
-                className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
-              >
-                {supported.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
+        <Row last>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className={`border-b ${FC.hair}`}>
+                  <th className={th}>ID</th>
+                  <th className={th}>Provider</th>
+                  <th className={th}>Modelo</th>
+                  <th className={th}>Escopo</th>
+                  <th className={th}>Status</th>
+                  <th className="w-12"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr><td colSpan={6} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Carregando...</td></tr>
+                )}
+                {!loading && providers.length === 0 && (
+                  <tr><td colSpan={6} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</td></tr>
+                )}
+                {providers.map((p) => (
+                  <tr key={p.id} className={`border-b ${FC.hair} last:border-0 ${FC.hover}`}>
+                    <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.mut}`}>{p.id}</td>
+                    <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>{p.provider}</td>
+                    <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>{p.default_model}</td>
+                    <td className="px-6 py-2.5 text-[13px]">
+                      {p.tenant_id === null ? (
+                        <span className="px-1.5 py-0.5 bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff] text-[11px] rounded">Global</span>
+                      ) : (
+                        <span className={FC.sub}>Tenant {p.tenant_id}</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-2.5 text-[13px]">
+                      {p.active ? <span className="text-[#0a8f5a]">● Ativo</span> : <span className={FC.mut}>○ Inativo</span>}
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
                 ))}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="text-[12px] text-slate-700">Modelo padrão</span>
-              <input
-                value={form.default_model}
-                onChange={(e) => setForm({ ...form, default_model: e.target.value })}
-                placeholder="ex: MiniMax-M2, claude-sonnet-4-6, gpt-4o-mini"
-                className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
-                required
-              />
-            </label>
+              </tbody>
+            </table>
           </div>
-
-          <label className="block">
-            <span className="text-[12px] text-slate-700">API Key</span>
-            <input
-              type="password"
-              value={form.api_key}
-              onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-              placeholder="sk-..."
-              className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md font-mono focus:outline-none focus:border-tier"
-              required
-            />
-            <span className="text-[11px] text-slate-500 mt-1 block">Encriptada com Fernet at-rest no banco.</span>
-          </label>
-
-          <div className="grid grid-cols-2 gap-4">
-            <label className="block">
-              <span className="text-[12px] text-slate-700">Temperature</span>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                max="2"
-                value={form.temperature}
-                onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) })}
-                className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[12px] text-slate-700">Max tokens</span>
-              <input
-                type="number"
-                min="1"
-                value={form.max_tokens}
-                onChange={(e) => setForm({ ...form, max_tokens: parseInt(e.target.value) })}
-                className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
-              />
-            </label>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setShowForm(false)}
-              className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1"
-            >
-              Cancelar
-            </button>
-            <button type="submit" className="h-6 px-2 text-[12px] bg-tier text-white rounded-md hover:bg-tier-dark inline-flex items-center gap-1">
-              Salvar
-            </button>
-          </div>
-        </form>
-      )}
-
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">ID</th>
-              <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Provider</th>
-              <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Modelo</th>
-              <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Escopo</th>
-              <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Status</th>
-              <th className="w-12"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-[13px] text-slate-400">
-                  Carregando...
-                </td>
-              </tr>
-            )}
-            {!loading && providers.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-[13px] text-slate-400">
-                  Nenhum provider cadastrado. Clique em "Novo provider".
-                </td>
-              </tr>
-            )}
-            {providers.map((p) => (
-              <tr key={p.id} className="border-b border-slate-100 last:border-0">
-                <td className="px-4 py-2.5 text-[13px] text-slate-500 font-mono">{p.id}</td>
-                <td className="px-4 py-2.5 text-[13px] font-medium text-slate-900">{p.provider}</td>
-                <td className="px-4 py-2.5 text-[13px] text-slate-700 font-mono">{p.default_model}</td>
-                <td className="px-4 py-2.5 text-[13px] text-slate-600">
-                  {p.tenant_id === null ? (
-                    <span className="px-1.5 py-0.5 bg-tier/10 text-tier text-[11px] rounded">Global</span>
-                  ) : (
-                    `Tenant ${p.tenant_id}`
-                  )}
-                </td>
-                <td className="px-4 py-2.5 text-[13px]">
-                  {p.active ? (
-                    <span className="text-emerald-700">● Ativo</span>
-                  ) : (
-                    <span className="text-slate-400">○ Inativo</span>
-                  )}
-                </td>
-                <td className="px-2 py-2.5">
-                  <button
-                    onClick={() => onDelete(p.id)}
-                    className="p-1.5 hover:bg-rose-50 hover:text-rose-600 text-slate-400 rounded"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+        </Row>
+      </PageFrame>
     </div>
   );
 }
