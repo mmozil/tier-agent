@@ -84,7 +84,7 @@ export default function AdminLayout() {
     `group flex items-center gap-2.5 rounded-[10px] transition-all duration-200 active:scale-[0.98] h-[34px] text-[13px] px-2.5 ${
       active
         ? "text-[#003083] dark:text-[#5b9bff] font-medium bg-[#003083]/[0.06] dark:bg-[#5b9bff]/[0.12]"
-        : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white font-normal"
+        : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white font-normal hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
     }`;
 
   return (
