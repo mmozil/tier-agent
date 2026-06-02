@@ -4,6 +4,7 @@ import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone } from "luc
 
 import { api } from "@/lib/api";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
+import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
 
 function WhatsAppIcon({ className }: { className?: string }) {
   return (
@@ -16,51 +17,17 @@ function WhatsAppIcon({ className }: { className?: string }) {
   );
 }
 
-const STATUS_META: Record<
-  string,
-  { color: string; bg: string; label: string; tip: string }
-> = {
-  connected: {
-    color: "bg-emerald-500",
-    bg: "bg-emerald-50",
-    label: "Conectado",
-    tip: "Pareado e recebendo mensagens",
-  },
-  qr: {
-    color: "bg-amber-500",
-    bg: "bg-amber-50",
-    label: "Aguardando pareamento",
-    tip: "Escaneie o QR Code com seu WhatsApp",
-  },
-  pending: {
-    color: "bg-amber-500",
-    bg: "bg-amber-50",
-    label: "Pendente",
-    tip: "Instância criada, aguardando QR Code",
-  },
-  connecting: {
-    color: "bg-amber-500",
-    bg: "bg-amber-50",
-    label: "Conectando",
-    tip: "Estabelecendo conexão",
-  },
-  disconnected: {
-    color: "bg-slate-300",
-    bg: "bg-slate-50",
-    label: "Desconectado",
-    tip: "Conexão encerrada",
-  },
-  unknown: {
-    color: "bg-slate-300",
-    bg: "bg-slate-50",
-    label: "Desconhecido",
-    tip: "Sem resposta da plataforma",
-  },
+const STATUS_META: Record<string, { color: string; label: string; tip: string }> = {
+  connected: { color: "bg-[#0a8f5a]", label: "Conectado", tip: "Pareado e recebendo mensagens" },
+  qr: { color: "bg-[#F5A300]", label: "Aguardando pareamento", tip: "Escaneie o QR Code com seu WhatsApp" },
+  pending: { color: "bg-[#F5A300]", label: "Pendente", tip: "Instância criada, aguardando QR Code" },
+  connecting: { color: "bg-[#F5A300]", label: "Conectando", tip: "Estabelecendo conexão" },
+  disconnected: { color: "bg-[#262626]/25", label: "Desconectado", tip: "Conexão encerrada" },
+  unknown: { color: "bg-[#262626]/25", label: "Desconhecido", tip: "Sem resposta da plataforma" },
 };
 
 function formatPhone(p: string | undefined | null): string {
   if (!p || p === "—") return "—";
-  // remove tudo que não é dígito
   const d = p.replace(/\D/g, "");
   if (d.length === 13) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
   if (d.length === 12) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 8)}-${d.slice(8)}`;
@@ -77,11 +44,7 @@ interface Connector {
   agent_id: number;
   kind: string;
   enabled: boolean;
-  config_summary: {
-    instance_id?: string;
-    phone?: string;
-    status?: string;
-  };
+  config_summary: { instance_id?: string; phone?: string; status?: string };
   last_event_at: string | null;
 }
 
@@ -97,10 +60,7 @@ export default function CanaisPage() {
   async function load() {
     setLoading(true);
     try {
-      const [c, a] = await Promise.all([
-        api.get<Connector[]>("/connectors"),
-        api.get<Agent[]>("/agents"),
-      ]);
+      const [c, a] = await Promise.all([api.get<Connector[]>("/connectors"), api.get<Agent[]>("/agents")]);
       setConns(c.data);
       setAgents(a.data);
       if (!selectedAgent && a.data.length > 0) setSelectedAgent(a.data[0].id);
@@ -124,12 +84,9 @@ export default function CanaisPage() {
     }
     setProvisioning(true);
     try {
-      const { data } = await api.post<Connector>("/connectors/whatsapp/provision", {
-        agent_id: selectedAgent,
-      });
+      const { data } = await api.post<Connector>("/connectors/whatsapp/provision", { agent_id: selectedAgent });
       toast.success("Instância criada — escaneie o QR");
       setShowProvision(false);
-      // Imediatamente abre modal QR
       await openQR(data.id);
       load();
     } catch (err: any) {
@@ -154,7 +111,6 @@ export default function CanaisPage() {
       const { data } = await api.get(`/connectors/${connId}/status`);
       if (qrModal?.connId === connId) {
         if (data.status === "connected" && qrModal.status !== "connected") {
-          // Mostra o estado de sucesso por ~1.4s antes de fechar (feedback claro)
           setQrModal({ ...qrModal, status: "connected" });
           toast.success("WhatsApp conectado!");
           setTimeout(() => {
@@ -170,7 +126,6 @@ export default function CanaisPage() {
     }
   }
 
-  // Poll status quando modal aberto
   useEffect(() => {
     if (!qrModal) return;
     const id = setInterval(() => refreshStatus(qrModal.connId), 4000);
@@ -189,192 +144,153 @@ export default function CanaisPage() {
     }
   }
 
+  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.mut}`;
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-[28px] font-bold text-[#30313d]">Canais</h1>
-          <p className="text-[13px] text-slate-500 mt-1">
-            Conecte WhatsApp, Telegram, Email e outros canais aos seus agentes.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {selectedAgent ? (
-            <ConnectWhatsAppCloud agentId={selectedAgent} onConnected={load} />
-          ) : (
-            <button
-              onClick={() => toast.error("Crie um agente primeiro para conectar um canal.")}
-              className="h-6 px-2 bg-[#1877F2]/40 text-white text-[12px] rounded-md inline-flex items-center gap-1 cursor-not-allowed whitespace-nowrap"
-              title="Crie um agente primeiro para conectar um canal"
-            >
-              Conectar WhatsApp Oficial
-            </button>
-          )}
-          <button
-            onClick={() => {
-              if (!selectedAgent) {
-                toast.error("Crie um agente primeiro para conectar um canal.");
-                return;
-              }
-              setShowProvision(true);
-            }}
-            className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1"
-          >
-            <Plus className="w-3 h-3" /> Conectar WhatsApp
-          </button>
-        </div>
-      </div>
-
-      {showProvision && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6 space-y-4">
-          <h2 className="text-[14px] font-medium text-slate-900">Conectar WhatsApp</h2>
-          <label className="block">
-            <span className="text-[12px] text-slate-700">Vincular ao agente</span>
-            <select
-              value={selectedAgent || ""}
-              onChange={(e) => setSelectedAgent(Number(e.target.value))}
-              className="mt-1 w-full h-7 px-3 text-[14px] border border-slate-300 rounded-md focus:outline-none focus:border-tier"
-            >
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.nome}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="text-[12px] text-slate-500">
-            Cria uma instância isolada do WhatsApp pra esse agente. Você vai escanear um QR code com
-            seu celular pra parear.
-          </p>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setShowProvision(false)}
-              className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={provisionWhatsApp}
-              disabled={provisioning}
-              className="h-6 px-2 bg-tier text-white text-[12px] rounded-md hover:bg-tier-dark disabled:opacity-50 inline-flex items-center gap-1"
-            >
-              {provisioning ? "Criando..." : "Criar e conectar"}
-            </button>
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start justify-between gap-4 p-6">
+            <div>
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Canais</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Conecte WhatsApp, Telegram, Email e outros canais aos seus agentes.</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {selectedAgent ? (
+                <ConnectWhatsAppCloud agentId={selectedAgent} onConnected={load} />
+              ) : (
+                <button
+                  onClick={() => toast.error("Crie um agente primeiro para conectar um canal.")}
+                  className="h-9 px-3.5 bg-[#1877F2]/40 text-white text-[13px] font-medium rounded-lg inline-flex items-center gap-1.5 cursor-not-allowed whitespace-nowrap"
+                  title="Crie um agente primeiro para conectar um canal"
+                >
+                  Conectar WhatsApp Oficial
+                </button>
+              )}
+              <Button
+                variant="primary"
+                onClick={() => {
+                  if (!selectedAgent) {
+                    toast.error("Crie um agente primeiro para conectar um canal.");
+                    return;
+                  }
+                  setShowProvision(true);
+                }}
+              >
+                <Plus className="w-3.5 h-3.5" /> Conectar WhatsApp
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        </Row>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Canal</th>
-              <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Agente</th>
-              <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Telefone</th>
-              <th className="text-left text-[12px] font-medium text-slate-600 px-4 py-2.5">Status</th>
-              <th className="text-right text-[12px] font-medium text-slate-600 px-4 py-2.5 w-[180px]">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-[13px] text-slate-400">
-                  Carregando...
-                </td>
-              </tr>
-            )}
-            {!loading && conns.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-[13px] text-slate-400">
-                  {agents.length === 0
-                    ? "Crie um agente primeiro (menu Agentes) para conectar um canal."
-                    : 'Nenhum canal conectado. Clique em "Conectar WhatsApp".'}
-                </td>
-              </tr>
-            )}
-            {conns.map((c) => {
-              const status = c.config_summary?.status || "unknown";
-              const meta = STATUS_META[status] || STATUS_META.unknown;
-              return (
-                <tr key={c.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
-                  <td className="px-4 py-2.5 text-[13px] font-medium text-slate-900">
-                    <div className="inline-flex items-center gap-2">
-                      <WhatsAppIcon className="w-4 h-4" />
-                      WhatsApp
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-[13px] text-slate-700">
-                    {agents.find((a) => a.id === c.agent_id)?.nome || `Agente #${c.agent_id}`}
-                  </td>
-                  <td className="px-4 py-2.5 text-[13px] text-slate-700 font-mono">
-                    {formatPhone(c.config_summary?.phone)}
-                  </td>
-                  <td className="px-4 py-2.5 text-[13px]">
-                    <span className="group relative inline-flex items-center gap-1.5 cursor-help">
-                      <span className={`w-2 h-2 rounded-full ${meta.color}`} />
-                      <span className="text-slate-700">{meta.label}</span>
-                      <span
-                        className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-75 z-10 shadow-lg"
-                        role="tooltip"
-                      >
-                        {meta.tip}
-                        <span className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-900" />
-                      </span>
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center justify-end gap-2">
-                      {status !== "connected" ? (
-                        <button
-                          onClick={() => openQR(c.id)}
-                          className="h-6 px-2 bg-tier hover:bg-tier-dark text-white text-[12px] rounded-md inline-flex items-center gap-1 whitespace-nowrap"
-                        >
-                          <QrCode className="w-3 h-3 shrink-0" /> Escanear QR
-                        </button>
-                      ) : (
-                        <button
-                          onClick={async () => {
-                            if (!confirm("Desconectar este WhatsApp?")) return;
-                            try {
-                              await api.post(`/connectors/${c.id}/disconnect`);
-                              toast.success("Desconectado");
-                              load();
-                            } catch {
-                              toast.error("Erro ao desconectar");
-                            }
-                          }}
-                          className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1 whitespace-nowrap"
-                          title="Desconectar"
-                        >
-                          <Unplug className="w-3 h-3 shrink-0" /> Desconectar
-                        </button>
-                      )}
-                      <button
-                        onClick={() => onDelete(c.id)}
-                        className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded"
-                        title="Remover canal permanentemente"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
+        {showProvision && (
+          <Row>
+            <div className="p-6 space-y-4">
+              <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Conectar WhatsApp</h3>
+              <label className="block">
+                <span className={`text-[12px] ${FC.sub}`}>Vincular ao agente</span>
+                <select
+                  value={selectedAgent || ""}
+                  onChange={(e) => setSelectedAgent(Number(e.target.value))}
+                  className={`mt-1 w-full h-9 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`}
+                >
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>{a.nome}</option>
+                  ))}
+                </select>
+              </label>
+              <p className={`text-[12px] ${FC.sub}`}>
+                Cria uma instância isolada do WhatsApp pra esse agente. Você vai escanear um QR code com seu celular pra parear.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setShowProvision(false)}>Cancelar</Button>
+                <Button variant="primary" onClick={provisionWhatsApp} disabled={provisioning}>{provisioning ? "Criando..." : "Criar e conectar"}</Button>
+              </div>
+            </div>
+          </Row>
+        )}
+
+        <Row last>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className={`border-b ${FC.hair}`}>
+                  <th className={th}>Canal</th>
+                  <th className={th}>Agente</th>
+                  <th className={th}>Telefone</th>
+                  <th className={th}>Status</th>
+                  <th className={`${th} text-right w-[180px]`}>Ações</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr><td colSpan={5} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Carregando...</td></tr>
+                )}
+                {!loading && conns.length === 0 && (
+                  <tr><td colSpan={5} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>
+                    {agents.length === 0 ? "Crie um agente primeiro (menu Agentes) para conectar um canal." : 'Nenhum canal conectado. Clique em "Conectar WhatsApp".'}
+                  </td></tr>
+                )}
+                {conns.map((c) => {
+                  const status = c.config_summary?.status || "unknown";
+                  const meta = STATUS_META[status] || STATUS_META.unknown;
+                  return (
+                    <tr key={c.id} className={`border-b ${FC.hair} last:border-0 ${FC.hover}`}>
+                      <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>
+                        <div className="inline-flex items-center gap-2"><WhatsAppIcon className="w-4 h-4" /> WhatsApp</div>
+                      </td>
+                      <td className={`px-6 py-2.5 text-[13px] ${FC.sub}`}>{agents.find((a) => a.id === c.agent_id)?.nome || `Agente #${c.agent_id}`}</td>
+                      <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>{formatPhone(c.config_summary?.phone)}</td>
+                      <td className="px-6 py-2.5 text-[13px]">
+                        <span className="inline-flex items-center gap-1.5" title={meta.tip}>
+                          <span className={`w-2 h-2 rounded-full ${meta.color}`} />
+                          <span className={FC.sub}>{meta.label}</span>
+                        </span>
+                      </td>
+                      <td className="px-6 py-2.5">
+                        <div className="flex items-center justify-end gap-2">
+                          {status !== "connected" ? (
+                            <Button variant="primary" onClick={() => openQR(c.id)} className="h-7 px-2.5 text-[12px] whitespace-nowrap">
+                              <QrCode className="w-3 h-3 shrink-0" /> Escanear QR
+                            </Button>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                if (!confirm("Desconectar este WhatsApp?")) return;
+                                try {
+                                  await api.post(`/connectors/${c.id}/disconnect`);
+                                  toast.success("Desconectado");
+                                  load();
+                                } catch {
+                                  toast.error("Erro ao desconectar");
+                                }
+                              }}
+                              className={`h-7 px-2.5 text-[12px] rounded-lg ${FC.sub} ${FC.hover} inline-flex items-center gap-1 whitespace-nowrap`}
+                              title="Desconectar"
+                            >
+                              <Unplug className="w-3 h-3 shrink-0" /> Desconectar
+                            </button>
+                          )}
+                          <button onClick={() => onDelete(c.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08]`} title="Remover canal permanentemente">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Row>
+      </PageFrame>
 
-      {/* QR Modal */}
+      {/* QR Modal (mantido — só tokens FC) */}
       {qrModal &&
         (() => {
           const isConnected = qrModal.status === "connected";
           const isConnecting = qrModal.status === "connecting";
-          const qrSrc = qrModal.qr
-            ? qrModal.qr.startsWith("data:")
-              ? qrModal.qr
-              : `data:image/png;base64,${qrModal.qr}`
-            : "";
+          const qrSrc = qrModal.qr ? (qrModal.qr.startsWith("data:") ? qrModal.qr : `data:image/png;base64,${qrModal.qr}`) : "";
           const steps = [
             "Abra o WhatsApp no seu celular",
             "Toque em Configurações → Aparelhos conectados",
@@ -382,117 +298,81 @@ export default function CanaisPage() {
             "Aponte a câmera para o código ao lado",
           ];
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
-              <div className="w-full max-w-[760px] overflow-hidden rounded-2xl bg-white shadow-[0_24px_60px_-12px_rgba(15,23,42,0.28)] ring-1 ring-slate-900/[0.06]">
-                {/* Header */}
-                <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#25D366]/10">
-                    <WhatsAppIcon className="h-5 w-5" />
-                  </div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+              <div className={`w-full max-w-[760px] overflow-hidden rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair}`}>
+                <div className={`flex items-center gap-3 border-b ${FC.hair} px-6 py-4`}>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#25D366]/10"><WhatsAppIcon className="h-5 w-5" /></div>
                   <div className="flex-1 min-w-0">
-                    <h2 className="text-[15px] font-semibold leading-tight text-slate-900">
-                      Conectar WhatsApp
-                    </h2>
-                    <p className="text-[12px] text-slate-500">Pareie escaneando o código — leva segundos</p>
+                    <h2 className={`text-[15px] font-medium leading-tight ${FC.ink}`}>Conectar WhatsApp</h2>
+                    <p className={`text-[12px] ${FC.sub}`}>Pareie escaneando o código — leva segundos</p>
                   </div>
-                  <button
-                    onClick={() => setQrModal(null)}
-                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  <button onClick={() => setQrModal(null)} className={`rounded-md p-1.5 ${FC.mut} ${FC.hover}`}><X className="h-4 w-4" /></button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr_280px]">
-                  {/* Passos */}
                   <div className="order-2 px-6 py-6 sm:order-1">
-                    <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                    <div className={`mb-4 inline-flex items-center gap-1.5 rounded-full bg-[#262626]/[0.06] px-2.5 py-1 text-[11px] font-medium ${FC.sub}`}>
                       <Smartphone className="h-3 w-3" /> No seu celular
                     </div>
                     <ol className="space-y-3">
                       {steps.map((s, i) => (
                         <li key={i} className="flex items-start gap-3">
-                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-tier/10 text-[11px] font-semibold text-tier">
-                            {i + 1}
-                          </span>
-                          <span className="text-[13px] leading-snug text-slate-700">{s}</span>
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#003083]/10 text-[11px] font-semibold text-[#003083] dark:text-[#5b9bff]">{i + 1}</span>
+                          <span className={`text-[13px] leading-snug ${FC.ink}`}>{s}</span>
                         </li>
                       ))}
                     </ol>
-
-                    {/* Status pill */}
-                    <div className="mt-6 flex items-center gap-2 border-t border-slate-100 pt-4">
+                    <div className={`mt-6 flex items-center gap-2 border-t ${FC.hair} pt-4`}>
                       {isConnected ? (
                         <>
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
-                            <Check className="h-3 w-3 text-white" strokeWidth={3} />
-                          </span>
-                          <span className="text-[13px] font-medium text-emerald-600">Conectado com sucesso!</span>
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0a8f5a]"><Check className="h-3 w-3 text-white" strokeWidth={3} /></span>
+                          <span className="text-[13px] font-medium text-[#0a8f5a]">Conectado com sucesso!</span>
                         </>
                       ) : isConnecting ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin text-tier" />
-                          <span className="text-[13px] font-medium text-slate-700">Conectando…</span>
+                          <Loader2 className="h-4 w-4 animate-spin text-[#003083] dark:text-[#5b9bff]" />
+                          <span className={`text-[13px] font-medium ${FC.ink}`}>Conectando…</span>
                         </>
                       ) : (
                         <>
                           <span className="relative flex h-2.5 w-2.5">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#F5A300] opacity-60" />
+                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#F5A300]" />
                           </span>
-                          <span className="text-[13px] font-medium text-slate-700">Aguardando leitura</span>
-                          <span className="ml-auto text-[11px] text-slate-400">atualiza sozinho</span>
+                          <span className={`text-[13px] font-medium ${FC.ink}`}>Aguardando leitura</span>
+                          <span className={`ml-auto text-[11px] ${FC.mut}`}>atualiza sozinho</span>
                         </>
                       )}
                     </div>
                   </div>
 
-                  {/* QR */}
-                  <div className="order-1 flex items-center justify-center border-b border-slate-100 bg-slate-50/70 p-6 sm:order-2 sm:border-b-0 sm:border-l">
+                  <div className={`order-1 flex items-center justify-center border-b ${FC.hair} bg-[#F9F9F9] dark:bg-[#16191f] p-6 sm:order-2 sm:border-b-0 sm:border-l`}>
                     <div className="relative">
-                      {/* moldura tipo scanner */}
-                      <div className="relative rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-                        {/* cantos */}
-                        <span className="pointer-events-none absolute left-1 top-1 h-4 w-4 rounded-tl-lg border-l-2 border-t-2 border-tier/40" />
-                        <span className="pointer-events-none absolute right-1 top-1 h-4 w-4 rounded-tr-lg border-r-2 border-t-2 border-tier/40" />
-                        <span className="pointer-events-none absolute bottom-1 left-1 h-4 w-4 rounded-bl-lg border-b-2 border-l-2 border-tier/40" />
-                        <span className="pointer-events-none absolute bottom-1 right-1 h-4 w-4 rounded-br-lg border-b-2 border-r-2 border-tier/40" />
-
+                      <div className={`relative rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#EDEDED]`}>
+                        <span className="pointer-events-none absolute left-1 top-1 h-4 w-4 rounded-tl-lg border-l-2 border-t-2 border-[#003083]/40" />
+                        <span className="pointer-events-none absolute right-1 top-1 h-4 w-4 rounded-tr-lg border-r-2 border-t-2 border-[#003083]/40" />
+                        <span className="pointer-events-none absolute bottom-1 left-1 h-4 w-4 rounded-bl-lg border-b-2 border-l-2 border-[#003083]/40" />
+                        <span className="pointer-events-none absolute bottom-1 right-1 h-4 w-4 rounded-br-lg border-b-2 border-r-2 border-[#003083]/40" />
                         <div className="relative h-[208px] w-[208px] overflow-hidden rounded-lg">
                           {qrSrc ? (
-                            <img
-                              src={qrSrc}
-                              alt="QR Code WhatsApp"
-                              className={`h-[208px] w-[208px] transition-all duration-300 ${
-                                isConnected || isConnecting ? "scale-95 opacity-20 blur-sm" : ""
-                              }`}
-                            />
+                            <img src={qrSrc} alt="QR Code WhatsApp" className={`h-[208px] w-[208px] transition-all duration-300 ${isConnected || isConnecting ? "scale-95 opacity-20 blur-sm" : ""}`} />
                           ) : (
-                            <div className="flex h-[208px] w-[208px] flex-col items-center justify-center gap-2 text-slate-400">
+                            <div className={`flex h-[208px] w-[208px] flex-col items-center justify-center gap-2 ${FC.mut}`}>
                               <Loader2 className="h-5 w-5 animate-spin" />
                               <span className="text-[12px]">Gerando código…</span>
                             </div>
                           )}
-
-                          {/* overlay sucesso */}
                           {isConnected && (
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 shadow-lg">
-                                <Check className="h-7 w-7 text-white" strokeWidth={3} />
-                              </span>
+                              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#0a8f5a] shadow-lg"><Check className="h-7 w-7 text-white" strokeWidth={3} /></span>
                             </div>
                           )}
-                          {/* overlay conectando */}
                           {isConnecting && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <Loader2 className="h-8 w-8 animate-spin text-tier" />
-                            </div>
+                            <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-[#003083] dark:text-[#5b9bff]" /></div>
                           )}
                         </div>
                       </div>
-                      <p className="mt-3 text-center text-[11px] text-slate-400">
-                        O código se renova automaticamente
-                      </p>
+                      <p className={`mt-3 text-center text-[11px] ${FC.mut}`}>O código se renova automaticamente</p>
                     </div>
                   </div>
                 </div>
