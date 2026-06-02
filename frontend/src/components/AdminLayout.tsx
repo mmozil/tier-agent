@@ -136,7 +136,9 @@ export default function AdminLayout() {
         className="flex-1 ml-[240px] min-h-screen bg-[#F9F9F9]"
         style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
-        <div className="px-8 pb-8 max-w-[1400px] mx-auto">
+        {/* SEM max-w: o conteúdo é full-width pra as linhas (Row) chegarem nas
+            extremidades; o conteúdo em si fica contido nos rails da Row (1232). */}
+        <div className="px-8 pb-8">
           {/* TOP BAR — 60px, search + ícones (igual Stripe/Tier Empresas) */}
           <div className="h-[60px] flex items-center justify-between">
             <div className="relative w-[320px]">
