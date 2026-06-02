@@ -239,7 +239,7 @@ export default function PlaybookEditorPage() {
       style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif' }}
     >
       {/* TOPBAR */}
-      <div className="h-12 px-4 flex items-center gap-2 bg-white border-b border-slate-200 shrink-0">
+      <div className="h-12 px-4 flex items-center gap-2 bg-white border-b border-[#EDEDED] shrink-0">
         <Link
           to="/admin/playbooks"
           className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
@@ -251,7 +251,7 @@ export default function PlaybookEditorPage() {
         <div className="w-px h-5 bg-slate-200" />
 
         <div className="flex-1 min-w-0 px-1">
-          <div className="text-[13px] font-semibold text-[#1a2c44] truncate leading-tight">{pb.nome}</div>
+          <div className="text-[13px] font-semibold text-[#262626] truncate leading-tight">{pb.nome}</div>
           {pb.descricao && (
             <div className="text-[11px] text-[#697386] truncate leading-tight">{pb.descricao}</div>
           )}
@@ -327,7 +327,7 @@ export default function PlaybookEditorPage() {
                 <div className="inline-flex w-14 h-14 rounded-2xl bg-white shadow-[0_0_0_1px_rgb(226,232,240),0_8px_24px_-4px_rgb(15,23,42,0.08)] items-center justify-center mb-3">
                   <Workflow className="w-7 h-7 text-[#003083]" />
                 </div>
-                <h3 className="text-[15px] font-semibold text-[#1a2c44] mb-1">Comece arrastando um gatilho</h3>
+                <h3 className="text-[15px] font-semibold text-[#262626] mb-1">Comece arrastando um gatilho</h3>
                 <p className="text-[13px] text-[#697386] leading-relaxed">
                   Arraste um nó da paleta à esquerda pra começar. Todo playbook precisa ter pelo menos um gatilho.
                 </p>
@@ -422,9 +422,9 @@ function TestRunDrawer({ playbookId, onClose }: { playbookId: number; onClose: (
         className="w-[500px] bg-white h-full overflow-y-auto shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
+        <div className="px-5 py-4 border-b border-[#EDEDED] flex items-center justify-between sticky top-0 bg-white z-10">
           <div>
-            <h3 className="text-[15px] font-semibold text-[#1a2c44]">Testar playbook</h3>
+            <h3 className="text-[15px] font-semibold text-[#262626]">Testar playbook</h3>
             <p className="text-[11px] text-[#697386] mt-0.5">Simulação — não envia mensagem real ao canal</p>
           </div>
           <button
@@ -435,15 +435,15 @@ function TestRunDrawer({ playbookId, onClose }: { playbookId: number; onClose: (
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-3 border-b border-slate-100">
+        <div className="px-5 py-4 space-y-3 border-b border-[#EDEDED]">
           <div>
-            <label className="block text-[12px] font-medium text-[#1a2c44] mb-1.5">Mensagem do cliente</label>
+            <label className="block text-[12px] font-medium text-[#262626] mb-1.5">Mensagem do cliente</label>
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ex: oi, quanto custa?"
-              className="w-full h-9 px-3 text-[14px] rounded-lg bg-white text-[#1a2c44] outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
+              className="w-full h-9 px-3 text-[14px] rounded-lg bg-white text-[#262626] outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !running) run();
               }}
@@ -460,7 +460,7 @@ function TestRunDrawer({ playbookId, onClose }: { playbookId: number; onClose: (
         </div>
 
         {result && (
-          <div className="px-5 py-4 border-b border-slate-100">
+          <div className="px-5 py-4 border-b border-[#EDEDED]">
             <div className="bg-slate-50 rounded-lg p-3 text-[12px] space-y-1.5">
               <KV label="Status" value={result.status} />
               <KV label="Steps executados" value={String(result.steps_executed)} />
@@ -525,7 +525,7 @@ function KV({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between">
       <span className="text-[#697386]">{label}</span>
-      <span className="font-medium text-[#1a2c44]">{value}</span>
+      <span className="font-medium text-[#262626]">{value}</span>
     </div>
   );
 }

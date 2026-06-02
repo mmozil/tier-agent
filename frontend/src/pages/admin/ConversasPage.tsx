@@ -231,8 +231,8 @@ export default function ConversasPage() {
     <div>
       <div className="flex items-center justify-between mb-6 mt-2">
         <div>
-          <h1 className="text-[28px] font-bold text-[#30313d]">Conversas</h1>
-          <p className="text-[13px] text-slate-500 mt-1">Acompanhe as conversas do seu agente e o histórico de mensagens.</p>
+          <h1 className="text-[20px] font-[450] tracking-[-0.1px] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
+          <p className="text-[13px] text-[#262626]/[0.56] dark:text-[#8b93a0] mt-1">Acompanhe as conversas do seu agente e o histórico de mensagens.</p>
         </div>
         <button onClick={() => load()} className="h-6 px-2 text-[12px] text-slate-600 hover:bg-slate-100 rounded-md inline-flex items-center gap-1">
           <RefreshCw className="w-3 h-3" /> Atualizar
@@ -240,7 +240,7 @@ export default function ConversasPage() {
       </div>
 
       {/* Abas de escopo (fila) */}
-      <div className="flex items-center gap-1 mb-3 border-b border-slate-200">
+      <div className="flex items-center gap-1 mb-3 border-b border-[#EDEDED]">
         {([
           { k: "todas", label: "Todas" },
           { k: "unassigned", label: "Não atribuídas" },
@@ -255,7 +255,7 @@ export default function ConversasPage() {
             }}
             className={`px-3 py-2 text-[14px] border-b-2 -mb-px transition-colors ${
               scope === t.k
-                ? "border-[#003083] text-[#1a2c44] font-medium"
+                ? "border-[#003083] text-[#262626] font-medium"
                 : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -270,7 +270,7 @@ export default function ConversasPage() {
           <button
             onClick={() => setTagFilter(null)}
             className={`text-[12px] px-2.5 py-1 rounded-full border ${
-              !tagFilter ? "bg-[#003083] text-white border-[#003083]" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+              !tagFilter ? "bg-[#003083] text-white border-[#003083]" : "border-[#EDEDED] text-slate-500 hover:bg-slate-50"
             }`}
           >
             Todas
@@ -282,7 +282,7 @@ export default function ConversasPage() {
               className={`text-[12px] px-2.5 py-1 rounded-full border ${
                 tagFilter === t
                   ? "bg-[#003083] text-white border-[#003083]"
-                  : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  : "border-[#EDEDED] text-slate-600 hover:bg-slate-50"
               }`}
             >
               #{t}
@@ -301,7 +301,7 @@ export default function ConversasPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+      <div className="bg-white rounded-xl border border-[#EDEDED] overflow-hidden divide-y divide-slate-100">
         {shownConvs.map((c) => (
           <button
             key={c.id}
@@ -341,7 +341,7 @@ export default function ConversasPage() {
       {openId && (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30" onClick={() => setOpenId(null)}>
           <div className="w-full max-w-[480px] h-full bg-white shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#EDEDED]">
               <div className="min-w-0">
                 <h2 className="text-[15px] font-semibold text-slate-900 truncate">
                   {openConv?.contact_name || fmtPhone(openConv?.external_id || "")}
@@ -358,7 +358,7 @@ export default function ConversasPage() {
 
             {/* Ações: assumir / devolver / resolver */}
             {openConv && openConv.status !== "closed" && (
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-100 bg-slate-50/60">
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-[#EDEDED] bg-slate-50/60">
                 {openConv.status === "handed_off" ? (
                   <button
                     onClick={() => changeStatus(openConv.id, "resume")}
@@ -376,7 +376,7 @@ export default function ConversasPage() {
                 )}
                 <button
                   onClick={() => changeStatus(openConv.id, "resolve")}
-                  className="h-7 px-3 text-[12px] rounded-md border border-slate-200 text-slate-600 inline-flex items-center gap-1.5 hover:bg-white"
+                  className="h-7 px-3 text-[12px] rounded-md border border-[#EDEDED] text-slate-600 inline-flex items-center gap-1.5 hover:bg-white"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" /> Resolver
                 </button>
@@ -391,7 +391,7 @@ export default function ConversasPage() {
                   <select
                     value=""
                     onChange={(e) => e.target.value && snoozeConv(openConv.id, Number(e.target.value))}
-                    className="h-7 px-2 text-[12px] rounded-md border border-slate-200 text-slate-600 outline-none"
+                    className="h-7 px-2 text-[12px] rounded-md border border-[#EDEDED] text-slate-600 outline-none"
                   >
                     <option value="">💤 Adiar…</option>
                     <option value="60">1 hora</option>
@@ -407,12 +407,12 @@ export default function ConversasPage() {
 
             {/* Atribuição + CSAT */}
             {openConv && (
-              <div className="px-5 py-2.5 border-b border-slate-100 flex items-center gap-2">
+              <div className="px-5 py-2.5 border-b border-[#EDEDED] flex items-center gap-2">
                 <span className="text-[12px] text-slate-500 shrink-0">Atendente:</span>
                 <select
                   value={openConv.assigned_member_id ?? ""}
                   onChange={(e) => saveAssign(openConv.id, e.target.value ? Number(e.target.value) : null)}
-                  className="text-[13px] px-2 py-1 rounded-md border border-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083] w-48"
+                  className="text-[13px] px-2 py-1 rounded-md border border-[#EDEDED] outline-none focus:shadow-[0_0_0_2px_#003083] w-48"
                 >
                   <option value="">— ninguém —</option>
                   {members
@@ -436,7 +436,7 @@ export default function ConversasPage() {
 
             {/* Etiquetas */}
             {openConv && (
-              <div className="px-5 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-1.5">
+              <div className="px-5 py-2.5 border-b border-[#EDEDED] flex flex-wrap items-center gap-1.5">
                 {(openConv.tags || []).map((t) => (
                   <span
                     key={t}
@@ -492,7 +492,7 @@ export default function ConversasPage() {
                     <div
                       className={`max-w-[80%] rounded-2xl px-3 py-2 text-[13px] ${
                         isUser
-                          ? "bg-white border border-slate-200 text-slate-700"
+                          ? "bg-white border border-[#EDEDED] text-slate-700"
                           : isAgent
                             ? "bg-emerald-600 text-white"
                             : "bg-[#003083] text-white"
@@ -509,7 +509,7 @@ export default function ConversasPage() {
 
             {/* Caixa de resposta — atendente responde pelo painel ou adiciona nota */}
             {openConv && openConv.status !== "closed" && (
-              <div className="border-t border-slate-200 p-3 bg-white">
+              <div className="border-t border-[#EDEDED] p-3 bg-white">
                 <div className="flex items-center gap-1 mb-2">
                   <button
                     onClick={() => setNoteMode(false)}
@@ -542,7 +542,7 @@ export default function ConversasPage() {
                               setMentions((prev) => (on ? prev.filter((x) => x !== m.id) : [...prev, m.id]))
                             }
                             className={`text-[11px] px-2 py-0.5 rounded-full border ${
-                              on ? "bg-amber-100 text-amber-800 border-amber-300" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                              on ? "bg-amber-100 text-amber-800 border-amber-300" : "border-[#EDEDED] text-slate-500 hover:bg-slate-50"
                             }`}
                           >
                             @{m.nome}
@@ -575,7 +575,7 @@ export default function ConversasPage() {
                     className={`flex-1 resize-none max-h-28 px-3 py-2 text-[13px] rounded-lg border outline-none ${
                       noteMode
                         ? "border-amber-200 bg-amber-50/40 focus:shadow-[0_0_0_2px_#f59e0b]"
-                        : "border-slate-200 focus:shadow-[0_0_0_2px_#003083]"
+                        : "border-[#EDEDED] focus:shadow-[0_0_0_2px_#003083]"
                     }`}
                   />
                   <button

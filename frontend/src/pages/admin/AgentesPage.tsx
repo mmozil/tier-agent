@@ -132,7 +132,7 @@ export default function AgentesPage() {
   return (
     <div>
       <div className="flex items-center justify-between mt-6 mb-2">
-        <h1 className="text-[28px] font-bold text-[#30313d]">Agentes</h1>
+        <h1 className="text-[20px] font-[450] tracking-[-0.1px] text-[#262626] dark:text-[#e6e8eb]">Agentes</h1>
         <button
           onClick={() => setShowForm(!showForm)}
           className="h-6 px-2 bg-[#003083] hover:bg-[#002266] text-white text-[12px] font-medium rounded-md inline-flex items-center gap-1"
@@ -169,7 +169,7 @@ export default function AgentesPage() {
                   <label
                     key={t.key}
                     className={`block cursor-pointer rounded-md border p-3 transition-colors ${
-                      active ? "border-[#003083] bg-[#003083]/[0.05]" : "border-slate-200 hover:border-slate-300"
+                      active ? "border-[#003083] bg-[#003083]/[0.05]" : "border-[#EDEDED] hover:border-slate-300"
                     }`}
                   >
                     <input
@@ -247,11 +247,11 @@ export default function AgentesPage() {
           </div>
         )}
         {!loading && agents.length === 0 && (
-          <div className="col-span-3 bg-[#f4f7fa] rounded-lg p-12 text-center">
+          <div className="col-span-3 bg-[#F9F9F9] dark:bg-[#16191f] rounded-lg p-12 text-center border border-[#EDEDED] dark:border-[#23272e]">
             <div className="inline-flex w-12 h-12 rounded-md bg-white items-center justify-center mb-4 shadow-[0_0_0_1px_rgb(226,232,240)]">
               <Bot className="w-6 h-6 text-[#003083]" />
             </div>
-            <h3 className="text-[16px] font-semibold text-[#1a2c44] mb-1">Nenhum agente ainda</h3>
+            <h3 className="text-[16px] font-semibold text-[#262626] mb-1">Nenhum agente ainda</h3>
             <p className="text-[13px] text-[#697386]">Clique em "Novo agente" pra começar.</p>
           </div>
         )}
@@ -321,7 +321,7 @@ function AgentCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <Bot className="w-4 h-4 text-[#003083] shrink-0" />
-            <div className="text-[14px] font-semibold text-[#1a2c44] truncate">{agent.nome}</div>
+            <div className="text-[14px] font-semibold text-[#262626] truncate">{agent.nome}</div>
           </div>
           <div className="text-[11px] text-[#697386]">
             #{agent.id}
@@ -365,7 +365,7 @@ function AgentCard({
         <div
           ref={menuRef}
           onClick={(e) => e.stopPropagation()}
-          className="absolute right-4 top-12 z-20 w-[180px] bg-white rounded-md shadow-xl border border-slate-200 py-1"
+          className="absolute right-4 top-12 z-20 w-[180px] bg-white rounded-md shadow-xl border border-[#EDEDED] py-1"
         >
           <button
             onClick={(e) => {
@@ -395,7 +395,7 @@ function AgentCard({
             )}
           </button>
           {confirmDelete ? (
-            <div className="px-3 py-2 border-t border-slate-100">
+            <div className="px-3 py-2 border-t border-[#EDEDED]">
               <p className="text-[11px] text-slate-600 mb-2 leading-snug">
                 Excluir <strong>{agent.nome}</strong>? Remove playbooks, conversas, knowledge e canais.
               </p>
@@ -426,7 +426,7 @@ function AgentCard({
                 e.stopPropagation();
                 setConfirmDelete(true);
               }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-red-600 hover:bg-red-50 border-t border-slate-100"
+              className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-red-600 hover:bg-red-50 border-t border-[#EDEDED]"
             >
               <Trash2 className="w-3.5 h-3.5" /> Excluir
             </button>
@@ -515,13 +515,13 @@ function AgentDetailsDrawer({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
+        <div className="px-5 py-4 border-b border-[#EDEDED] flex items-center justify-between sticky top-0 bg-white z-10">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] flex items-center justify-center shrink-0">
               <Bot className="w-[18px] h-[18px] text-[#003083]" />
             </div>
             <div className="min-w-0">
-              <div className="text-[15px] font-semibold text-[#1a2c44] truncate">{agent.nome}</div>
+              <div className="text-[15px] font-semibold text-[#262626] truncate">{agent.nome}</div>
               <div className="text-[11px] text-[#697386]">
                 #{agent.id} · {agent.active ? "Ativo" : "Pausado"}
               </div>
@@ -536,7 +536,7 @@ function AgentDetailsDrawer({
         </div>
 
         {/* Stats */}
-        <div className="px-5 py-4 border-b border-slate-100">
+        <div className="px-5 py-4 border-b border-[#EDEDED]">
           <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#697386] mb-3">
             Visão geral
           </h3>
@@ -569,7 +569,7 @@ function AgentDetailsDrawer({
         </div>
 
         {/* Edit form */}
-        <div className="px-5 py-4 border-b border-slate-100">
+        <div className="px-5 py-4 border-b border-[#EDEDED]">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#697386]">
               Configuração
@@ -627,11 +627,11 @@ function AgentDetailsDrawer({
             <div className="space-y-2 text-[13px]">
               <div>
                 <span className="text-[#697386]">Template: </span>
-                <span className="text-[#1a2c44]">{agent.template_kind || "—"}</span>
+                <span className="text-[#262626]">{agent.template_kind || "—"}</span>
               </div>
               <div>
                 <span className="text-[#697386]">Persona:</span>
-                <p className="text-[#1a2c44] mt-1 leading-relaxed whitespace-pre-wrap">
+                <p className="text-[#262626] mt-1 leading-relaxed whitespace-pre-wrap">
                   {agent.persona || <span className="italic text-[#697386]">—</span>}
                 </p>
               </div>
@@ -718,12 +718,12 @@ function StatCard({
   hint?: string;
 }) {
   return (
-    <div className="bg-[#f4f7fa] rounded-md p-3">
+    <div className="bg-[#F9F9F9] dark:bg-[#16191f] rounded-md p-3 border border-[#EDEDED] dark:border-[#23272e]">
       <div className="flex items-center gap-1.5 text-[11px] text-[#697386] mb-1">
         <Icon className="w-3 h-3" />
         {label}
       </div>
-      <div className="text-[18px] font-semibold text-[#1a2c44] leading-tight">{value}</div>
+      <div className="text-[18px] font-semibold text-[#262626] leading-tight">{value}</div>
       {hint && <div className="text-[10px] text-[#697386] mt-0.5">{hint}</div>}
     </div>
   );
