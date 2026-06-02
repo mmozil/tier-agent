@@ -26,6 +26,7 @@ import PlaybooksPage from "./pages/admin/PlaybooksPage";
 import PlaybookEditorPage from "./pages/admin/PlaybookEditorPage";
 import PlaybookExecutionsPage from "./pages/admin/PlaybookExecutionsPage";
 import MetricasPage from "./pages/admin/MetricasPage";
+import VisaoGeralPage from "./pages/admin/VisaoGeralPage";
 import AgentSkillsPage from "./pages/admin/AgentSkillsPage";
 import MarketplacePage from "./pages/admin/MarketplacePage";
 import LeadsPage from "./pages/admin/LeadsPage";
@@ -60,7 +61,7 @@ export default function App() {
       <Route path="/dashboard" element={<Dashboard />} />
 
       <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={<Navigate to="/admin/agentes" replace />} />
+        <Route index element={<VisaoGeralPage />} />
         <Route path="agentes" element={<AgentesPage />} />
         <Route path="llm" element={<LlmProvidersPage />} />
         <Route path="features" element={<FeaturesPage />} />

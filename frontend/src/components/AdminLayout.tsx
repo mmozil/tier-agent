@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
+  Home,
   Cpu,
   ToggleLeft,
   Users,
@@ -26,6 +27,7 @@ interface NavItem {
   to: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  end?: boolean; // match exato (ex.: /admin index)
 }
 
 interface NavGroup {
@@ -34,6 +36,10 @@ interface NavGroup {
 }
 
 const SECTIONS: NavGroup[] = [
+  {
+    label: "",
+    items: [{ to: "/admin", label: "Visão geral", icon: Home, end: true }],
+  },
   {
     label: "Plataforma",
     items: [
@@ -101,14 +107,16 @@ export default function AdminLayout() {
         {/* Nav — px-5 py-1 */}
         <nav className="flex-1 overflow-y-auto px-5 py-1">
           {SECTIONS.map((section, sIdx) => (
-            <div key={section.label} className={sIdx > 0 ? "mt-5" : ""}>
-              <div className="mb-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#262626]/40 dark:text-[#565d68]">{section.label}</span>
-              </div>
+            <div key={sIdx} className={sIdx > 0 ? "mt-5" : ""}>
+              {section.label && (
+                <div className="mb-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-[#262626]/40 dark:text-[#565d68]">{section.label}</span>
+                </div>
+              )}
               {section.items.map((item) => (
-                <NavLink key={item.to} to={item.to}>
+                <NavLink key={item.to} to={item.to} end={item.end}>
                   {({ isActive }) => {
-                    const act = isActive || location.pathname.startsWith(item.to);
+                    const act = item.end ? isActive : isActive || location.pathname.startsWith(item.to);
                     return (
                       <div className={itemClass(act)}>
                         <item.icon
