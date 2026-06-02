@@ -50,7 +50,7 @@ async def create_instance(tenant_id: int, name: str) -> dict:
         "name": name,
         "webhookUrl": "https://api-agent.tier.finance/api/v1/webhooks/whatsapp-engine",
     }
-    async with httpx.AsyncClient(timeout=30) as cli:
+    async with httpx.AsyncClient(timeout=12) as cli:
         r = await cli.post(url, json=payload, headers=_admin_headers())
     if r.status_code >= 400:
         raise EngineError(
@@ -64,7 +64,7 @@ async def create_instance(tenant_id: int, name: str) -> dict:
 async def connect_instance(instance_id: str, api_key: str) -> dict:
     """Inicia conexão + gera QR code. Body {} obrigatório (Fastify reject empty)."""
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/connect"
-    async with httpx.AsyncClient(timeout=30) as cli:
+    async with httpx.AsyncClient(timeout=12) as cli:
         r = await cli.post(url, json={}, headers=_instance_headers(api_key))
     if r.status_code >= 400:
         raise EngineError(
@@ -78,7 +78,7 @@ async def connect_instance(instance_id: str, api_key: str) -> dict:
 async def get_status(instance_id: str, api_key: str) -> dict:
     """Status atual + QR code (se aguardando pairing)."""
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/status"
-    async with httpx.AsyncClient(timeout=10) as cli:
+    async with httpx.AsyncClient(timeout=6) as cli:
         r = await cli.get(url, headers=_instance_headers(api_key))
     if r.status_code >= 400:
         raise EngineError(f"status falhou: {r.status_code}", status=r.status_code, body=r.text[:200])
@@ -88,7 +88,7 @@ async def get_status(instance_id: str, api_key: str) -> dict:
 async def get_qr(instance_id: str, api_key: str) -> dict:
     """Pega QR code diretamente."""
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/qr"
-    async with httpx.AsyncClient(timeout=10) as cli:
+    async with httpx.AsyncClient(timeout=6) as cli:
         r = await cli.get(url, headers=_instance_headers(api_key))
     if r.status_code >= 400:
         raise EngineError(f"qr falhou: {r.status_code}", status=r.status_code, body=r.text[:200])
@@ -97,7 +97,7 @@ async def get_qr(instance_id: str, api_key: str) -> dict:
 
 async def disconnect_instance(instance_id: str, api_key: str) -> dict:
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/disconnect"
-    async with httpx.AsyncClient(timeout=15) as cli:
+    async with httpx.AsyncClient(timeout=8) as cli:
         r = await cli.post(url, json={}, headers=_instance_headers(api_key))
     if r.status_code >= 400:
         raise EngineError(
@@ -108,7 +108,7 @@ async def disconnect_instance(instance_id: str, api_key: str) -> dict:
 
 async def delete_instance(instance_id: str) -> None:
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}"
-    async with httpx.AsyncClient(timeout=15) as cli:
+    async with httpx.AsyncClient(timeout=8) as cli:
         r = await cli.delete(url, headers=_admin_headers())
     if r.status_code >= 400 and r.status_code != 404:
         raise EngineError(f"delete falhou: {r.status_code}", status=r.status_code, body=r.text[:200])

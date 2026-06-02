@@ -295,6 +295,37 @@ async def sla_watch_job() -> None:
         logger.exception("sla_watch_job falhou")
 
 
+async def _job_lock(name: str, ttl: int) -> bool:
+    """Lock Redis por tick — com >1 worker, só quem pega o lock roda o job.
+    TTL < intervalo do job → próximo tick re-disputa (auto-recupera se 1 worker cai).
+    Fail-open: se o Redis estiver fora, deixa rodar (melhor o job rodar do que parar)."""
+    try:
+        import redis.asyncio as redis_async
+
+        from core.config import settings
+
+        r = redis_async.from_url(settings.redis_url, decode_responses=True)
+        try:
+            ok = await r.set(f"tier-agent:sched:{name}", "1", nx=True, ex=ttl)
+        finally:
+            await r.aclose()
+        return bool(ok)
+    except Exception:
+        return True
+
+
+def _locked(job, name: str, ttl: int):
+    """Envolve um job async com o lock por tick (anti-duplicação multi-worker)."""
+
+    async def wrapper() -> None:
+        if not await _job_lock(name, ttl):
+            return
+        await job()
+
+    wrapper.__name__ = f"{getattr(job, '__name__', name)}_locked"
+    return wrapper
+
+
 def init_scheduler() -> AsyncIOScheduler:
     global _scheduler
     if _scheduler is not None:
@@ -302,28 +333,28 @@ def init_scheduler() -> AsyncIOScheduler:
 
     sched = AsyncIOScheduler(timezone="UTC")
     sched.add_job(
-        resume_waiting_playbooks_job,
+        _locked(resume_waiting_playbooks_job, "resume_waiting", 25),
         trigger=IntervalTrigger(seconds=30),
         id="resume_waiting_playbooks",
         replace_existing=True,
         max_instances=1,
     )
     sched.add_job(
-        fire_cron_triggers_job,
+        _locked(fire_cron_triggers_job, "fire_cron", 55),
         trigger=IntervalTrigger(seconds=60),
         id="fire_cron_triggers",
         replace_existing=True,
         max_instances=1,
     )
     sched.add_job(
-        sla_watch_job,
+        _locked(sla_watch_job, "sla_watch", 110),
         trigger=IntervalTrigger(seconds=120),
         id="sla_watch",
         replace_existing=True,
         max_instances=1,
     )
     sched.start()
-    logger.info("Scheduler iniciado: resume_waiting (30s) + fire_cron (60s) + sla_watch (120s)")
+    logger.info("Scheduler iniciado: resume_waiting (30s) + fire_cron (60s) + sla_watch (120s) [lock Redis por tick]")
     _scheduler = sched
     return sched
 

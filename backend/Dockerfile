@@ -22,7 +22,9 @@ COPY . .
 
 EXPOSE 8100
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=5 \
     CMD curl -fs http://127.0.0.1:8100/api/v1/health || exit 1
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8100"]
+# 2 workers: um pico/travada num worker não congela tudo. Jobs do scheduler são
+# protegidos por lock Redis por tick (scheduler.py) pra não duplicar entre workers.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8100", "--workers", "2"]
