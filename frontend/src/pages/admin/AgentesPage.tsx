@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
+  ArrowRight,
   Bot,
   CheckCircle2,
   DollarSign,
@@ -150,10 +151,10 @@ export default function AgentesPage() {
       {showForm && (
         <Row>
         <form onSubmit={onSubmit} className="p-6 space-y-4">
-          <h2 className="text-[14px] font-medium text-slate-900">Novo agente</h2>
+          <h2 className="text-[14px] font-medium text-[#262626]">Novo agente</h2>
 
           <label className="block">
-            <span className="text-[12px] text-slate-700">Nome do agente</span>
+            <span className="text-[12px] text-[#262626]/[0.72]">Nome do agente</span>
             <input
               value={form.nome}
               onChange={(e) => setForm({ ...form, nome: e.target.value })}
@@ -164,7 +165,7 @@ export default function AgentesPage() {
           </label>
 
           <div>
-            <span className="text-[12px] text-slate-700 block mb-2">Template inicial</span>
+            <span className="text-[12px] text-[#262626]/[0.72] block mb-2">Template inicial</span>
             <div className="grid grid-cols-2 gap-2">
               {templates.map((t) => {
                 const Icon = ICONS[t.icon] || ShoppingBag;
@@ -173,7 +174,7 @@ export default function AgentesPage() {
                   <label
                     key={t.key}
                     className={`block cursor-pointer rounded-md border p-3 transition-colors ${
-                      active ? "border-[#003083] bg-[#003083]/[0.05]" : "border-[#EDEDED] hover:border-slate-300"
+                      active ? "border-[#003083] bg-[#003083]/[0.05]" : "border-[#EDEDED] hover:border-[#262626]/20"
                     }`}
                   >
                     <input
@@ -185,17 +186,17 @@ export default function AgentesPage() {
                       className="sr-only"
                     />
                     <div className="flex items-start gap-2.5">
-                      <div className={`p-1.5 rounded ${active ? "bg-[#003083] text-white" : "bg-slate-100 text-slate-500"}`}>
+                      <div className={`p-1.5 rounded ${active ? "bg-[#003083] text-white" : "bg-[#262626]/[0.06] text-[#262626]/[0.56]"}`}>
                         <Icon className="w-3.5 h-3.5" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium text-slate-900">{t.label}</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">{t.description}</div>
+                        <div className="text-[13px] font-medium text-[#262626]">{t.label}</div>
+                        <div className="text-[11px] text-[#262626]/[0.56] mt-0.5">{t.description}</div>
                         <div className="mt-1.5 flex gap-1 flex-wrap">
                           {t.suggested_channels.map((c) => (
                             <span
                               key={c}
-                              className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[10px] rounded uppercase tracking-wide"
+                              className="px-1.5 py-0.5 bg-[#262626]/[0.06] text-[#262626]/[0.72] text-[10px] rounded uppercase tracking-wide"
                             >
                               {c}
                             </span>
@@ -208,7 +209,7 @@ export default function AgentesPage() {
               })}
             </div>
             {selectedTemplate && (
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-2 text-[11px] text-[#262626]/[0.56]">
                 💡 A persona e prompt deste template serão aplicados automaticamente (você pode
                 sobrescrever editando depois).
               </p>
@@ -216,7 +217,7 @@ export default function AgentesPage() {
           </div>
 
           <label className="block">
-            <span className="text-[12px] text-slate-700">Persona (livre)</span>
+            <span className="text-[12px] text-[#262626]/[0.72]">Persona (livre)</span>
             <textarea
               value={form.persona}
               onChange={(e) => setForm({ ...form, persona: e.target.value })}
@@ -323,51 +324,64 @@ function AgentCard({
   return (
     <div
       onClick={onClick}
-      className="relative h-full p-5 cursor-pointer transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+      className="group relative flex h-full flex-col p-5 cursor-pointer transition-colors hover:bg-black/[0.025] dark:hover:bg-white/[0.03]"
     >
-      <div className="flex items-start justify-between gap-2">
+      {/* Topo: avatar + nome + status + menu */}
+      <div className="flex items-start gap-3">
+        <div
+          className={`w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0 ${
+            agent.active
+              ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
+              : "bg-[#262626]/[0.05] text-[#262626]/40 dark:bg-white/[0.06] dark:text-[#6b7280]"
+          }`}
+        >
+          <Bot className="w-[18px] h-[18px]" />
+        </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <Bot className="w-4 h-4 text-[#003083] shrink-0" />
-            <div className="text-[14px] font-semibold text-[#262626] truncate">{agent.nome}</div>
-          </div>
-          <div className="text-[11px] text-[#697386]">
-            #{agent.id}
-            {agent.template_kind && (
-              <>
-                {" · "}
-                <span className="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px]">
-                  {agent.template_kind}
-                </span>
-              </>
+          <div className="text-[14px] font-semibold text-[#262626] dark:text-[#e6e8eb] truncate leading-5">{agent.nome}</div>
+          <div className="mt-1 flex items-center gap-1.5 text-[11px]">
+            {agent.active ? (
+              <span className="inline-flex items-center gap-1 font-medium text-[#0a8f5a]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#0a8f5a]" /> Ativo
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 font-medium text-[#262626]/40 dark:text-[#6b7280]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#262626]/25" /> Pausado
+              </span>
             )}
+            <span className="text-[#262626]/25">·</span>
+            <span className="text-[#262626]/40 dark:text-[#6b7280] tabular-nums">#{agent.id}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {agent.active ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Ativo
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" /> Pausado
-            </span>
-          )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenMenu(!menuOpen);
-            }}
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenMenu(!menuOpen);
+          }}
+          className="w-7 h-7 -mr-1 -mt-0.5 inline-flex items-center justify-center rounded-md text-[#262626]/40 hover:text-[#262626] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] dark:hover:text-white"
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
       </div>
 
-      {agent.persona && (
-        <p className="mt-3 text-[12px] text-[#697386] line-clamp-3 leading-relaxed">{agent.persona}</p>
-      )}
+      {/* Persona */}
+      <p className="mt-3 text-[12.5px] leading-relaxed text-[#262626]/[0.56] dark:text-[#8b93a0] line-clamp-2 min-h-[36px]">
+        {agent.persona || <span className="italic text-[#262626]/30 dark:text-[#565d68]">Sem persona definida.</span>}
+      </p>
+
+      {/* Rodapé: template + abrir */}
+      <div className="mt-3 pt-3 flex items-center justify-between border-t border-[#EDEDED] dark:border-[#23272e]">
+        {agent.template_kind ? (
+          <span className="inline-flex items-center text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab]">
+            {agent.template_kind}
+          </span>
+        ) : (
+          <span className="text-[10.5px] text-[#262626]/30">sem template</span>
+        )}
+        <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-[#003083] dark:text-[#5b9bff] opacity-0 group-hover:opacity-100 transition-opacity">
+          Abrir <ArrowRight className="w-3 h-3" />
+        </span>
+      </div>
 
       {menuOpen && (
         <div
@@ -381,7 +395,7 @@ function AgentCard({
               onOpenMenu(false);
               onClick();
             }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50"
+            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-[#262626]/[0.72] hover:bg-black/[0.03]"
           >
             <Edit3 className="w-3.5 h-3.5" /> Ver detalhes
           </button>
@@ -390,7 +404,7 @@ function AgentCard({
               e.stopPropagation();
               onToggleActive();
             }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50"
+            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-[#262626]/[0.72] hover:bg-black/[0.03]"
           >
             {agent.active ? (
               <>
@@ -404,7 +418,7 @@ function AgentCard({
           </button>
           {confirmDelete ? (
             <div className="px-3 py-2 border-t border-[#EDEDED]">
-              <p className="text-[11px] text-slate-600 mb-2 leading-snug">
+              <p className="text-[11px] text-[#262626]/[0.72] mb-2 leading-snug">
                 Excluir <strong>{agent.nome}</strong>? Remove playbooks, conversas, knowledge e canais.
               </p>
               <div className="flex gap-1.5">
@@ -413,7 +427,7 @@ function AgentCard({
                     e.stopPropagation();
                     setConfirmDelete(false);
                   }}
-                  className="flex-1 h-6 rounded text-[11px] text-slate-600 bg-slate-100 hover:bg-slate-200"
+                  className="flex-1 h-6 rounded text-[11px] text-[#262626]/[0.72] bg-[#262626]/[0.06] hover:bg-black/[0.06]"
                 >
                   Não
                 </button>
@@ -537,7 +551,7 @@ function AgentDetailsDrawer({
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-[#262626]/40 hover:text-[#262626]/[0.72] hover:bg-black/[0.04]"
           >
             <X className="w-4 h-4" />
           </button>

@@ -228,14 +228,14 @@ export default function ConversasPage() {
   const shownConvs = tagFilter ? convs.filter((c) => (c.tags || []).includes(tagFilter)) : convs;
 
   return (
-    <div>
+    <div className="max-w-[1232px] mx-auto pt-1">
       <div className="flex items-center justify-between mb-6 mt-2">
         <div>
           <h1 className="text-[20px] font-[450] tracking-[-0.1px] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
           <p className="text-[13px] text-[#262626]/[0.56] dark:text-[#8b93a0] mt-1">Acompanhe as conversas do seu agente e o histórico de mensagens.</p>
         </div>
-        <button onClick={() => load()} className="h-6 px-2 text-[12px] text-[#262626]/[0.72] hover:bg-black/[0.04] rounded-md inline-flex items-center gap-1">
-          <RefreshCw className="w-3 h-3" /> Atualizar
+        <button onClick={() => load()} className="h-8 px-3 text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] border border-[#EDEDED] dark:border-[#23272e] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg inline-flex items-center gap-1.5 transition-colors active:scale-[0.98]">
+          <RefreshCw className="w-3.5 h-3.5" /> Atualizar
         </button>
       </div>
 
@@ -293,49 +293,76 @@ export default function ConversasPage() {
 
       {loading && <div className="text-[13px] text-[#262626]/40 py-8 text-center">Carregando...</div>}
 
-      {!loading && convs.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <MessageSquare className="w-10 h-10 text-[#262626]/30 mb-3" />
-          <p className="text-[14px] text-[#262626]/[0.56]">Nenhuma conversa ainda.</p>
-          <p className="text-[12px] text-[#262626]/40 mt-1">As conversas aparecem aqui assim que clientes falarem com o agente.</p>
+      {!loading && shownConvs.length === 0 && (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#16191f] py-16 text-center">
+          <div className="w-12 h-12 rounded-full bg-[#003083]/[0.06] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center mb-4">
+            <MessageSquare className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
+          </div>
+          <p className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb]">
+            {tagFilter ? `Nenhuma conversa com #${tagFilter}` : "Nenhuma conversa ainda"}
+          </p>
+          <p className="text-[12.5px] text-[#262626]/[0.56] dark:text-[#8b93a0] mt-1 max-w-[320px]">
+            As conversas aparecem aqui assim que clientes falarem com o agente.
+          </p>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#EDEDED] overflow-hidden divide-y divide-[#EDEDED]">
-        {shownConvs.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => openConversation(c)}
-            className="w-full text-left px-4 py-3 hover:bg-black/[0.03]/70 flex items-center gap-3"
-          >
-            <div className="w-9 h-9 rounded-full bg-[#003083]/[0.08] flex items-center justify-center shrink-0">
-              <User className="w-4 h-4 text-[#003083]" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[14px] font-medium text-[#262626] truncate flex items-center gap-2">
-                  {c.contact_name || fmtPhone(c.external_id)}
-                  {c.status !== "active" && <StatusBadge status={c.status} />}
-                </span>
-                <span className="text-[11px] text-[#262626]/40 shrink-0">{fmtDate(c.last_message_at)}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <p className="text-[12px] text-[#262626]/[0.56] truncate flex-1">{c.last_preview || "—"}</p>
-                <span className="text-[11px] text-[#262626]/40 shrink-0">{c.msg_count} msg</span>
-              </div>
-              {c.tags && c.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {c.tags.map((t) => (
-                    <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-[#003083]/[0.06] text-[#003083]">
-                      #{t}
-                    </span>
-                  ))}
+      {!loading && shownConvs.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#16191f] divide-y divide-[#EDEDED] dark:divide-[#23272e]">
+          {shownConvs.map((c) => {
+            const assignedM = members.find((x) => x.id === c.assigned_member_id);
+            const name = c.contact_name || fmtPhone(c.external_id);
+            const dot =
+              c.status === "active" ? "bg-[#0a8f5a]" : c.status === "handed_off" ? "bg-[#003083]" : "bg-[#262626]/30";
+            return (
+              <button
+                key={c.id}
+                onClick={() => openConversation(c)}
+                className="group w-full text-left px-4 py-3 flex items-center gap-3 transition-colors hover:bg-black/[0.025] dark:hover:bg-white/[0.03]"
+              >
+                {/* avatar com inicial + dot de status */}
+                <div className="relative shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[14px] font-semibold text-[#003083] dark:text-[#5b9bff]">
+                    {(name || "?").trim().charAt(0).toUpperCase()}
+                  </div>
+                  <span
+                    className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-[#16191f] ${dot}`}
+                    title={STATUS_META[c.status]?.label || ""}
+                  />
                 </div>
-              )}
-            </div>
-          </button>
-        ))}
-      </div>
+                {/* corpo */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{name}</span>
+                    {c.status !== "active" && <StatusBadge status={c.status} />}
+                    <span className="ml-auto shrink-0 text-[11px] text-[#262626]/40 tabular-nums">{fmtDate(c.last_message_at)}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <p className="flex-1 truncate text-[12.5px] text-[#262626]/[0.56] dark:text-[#8b93a0]">
+                      {c.last_preview || <span className="italic text-[#262626]/30">Sem prévia</span>}
+                    </p>
+                    <span className="shrink-0 text-[11px] text-[#262626]/40 tabular-nums">{c.msg_count} msg</span>
+                  </div>
+                  {((c.tags && c.tags.length > 0) || assignedM) && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      {assignedM && (
+                        <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab]">
+                          <User className="w-2.5 h-2.5" /> {assignedM.nome}
+                        </span>
+                      )}
+                      {(c.tags || []).map((t) => (
+                        <span key={t} className="rounded px-1.5 py-0.5 text-[10px] bg-[#003083]/[0.06] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]">
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Drawer detalhe */}
       {openId && (
