@@ -24,14 +24,23 @@ interface Report {
   por_atendente: Record<string, number>;
 }
 interface DailyPoint { day: string; messages: number }
+interface OverviewLive {
+  conversas: { em_aberto: number; sem_atendente: number; aguardando_humano: number; adiadas: number };
+  atendentes: { online: number; total: number };
+  heatmap: { days: { date: string; label: string }[]; cells: number[][]; max: number };
+}
+
+const HOUR_TICKS = [0, 4, 8, 12, 16, 20];
 
 export default function VisaoGeralPage() {
   const [rep, setRep] = useState<Report | null>(null);
   const [daily, setDaily] = useState<DailyPoint[]>([]);
+  const [live, setLive] = useState<OverviewLive | null>(null);
 
   useEffect(() => {
     api.get<Report>("/reports/atendimento", { params: { days: 7 } }).then(({ data }) => setRep(data)).catch(() => {});
     api.get<DailyPoint[]>("/metrics/daily", { params: { days: 7 } }).then(({ data }) => setDaily(data)).catch(() => {});
+    api.get<OverviewLive>("/reports/overview-live").then(({ data }) => setLive(data)).catch(() => {});
   }, []);
 
   const chartData = useMemo(() => daily.map((d) => ({ day: d.day.slice(5), Mensagens: d.messages })), [daily]);
@@ -40,6 +49,10 @@ export default function VisaoGeralPage() {
   const resolPct = total > 0 ? Math.round(((ps.closed || 0) / total) * 100) : 0;
   const workload = Object.entries(rep?.por_atendente || {});
   const maxLoad = Math.max(1, ...workload.map(([, v]) => v));
+
+  const cv = live?.conversas;
+  const at = live?.atendentes;
+  const allOnline = at && at.total > 0 && at.online === at.total;
 
   return (
     <div className="-mx-8 pb-10">
@@ -67,18 +80,24 @@ export default function VisaoGeralPage() {
           </HairCells>
         </Row>
 
-        {/* KPI strip */}
+        {/* Status ao vivo (modelo Chatwoot Overview) */}
         <Row>
           <HairCells cols={4}>
-            <Kpi label="Conversas abertas" value={ps.active ?? total} />
-            <Kpi label="Não atendidas" value={rep?.sla_alertas ?? 0} tone="warn" />
-            <Kpi label="Resolvidas pela IA" value={`${resolPct}%`} tone="good" />
-            <Kpi label="Aguardando humano" value={ps.handed_off ?? rep?.handoffs ?? 0} />
+            <Kpi label="Em aberto" value={cv?.em_aberto ?? ps.active ?? 0} dot="#003083" hint="Conversas ativas agora" />
+            <Kpi label="Sem atendente" value={cv?.sem_atendente ?? 0} dot="#F5A300" tone="warn" hint="Aguardando atribuição" />
+            <Kpi label="Aguardando humano" value={cv?.aguardando_humano ?? ps.handed_off ?? rep?.handoffs ?? 0} dot="#8b5cf6" hint="Handoff pendente" />
+            <Kpi
+              label="Atendentes online"
+              value={at ? `${at.online}/${at.total}` : "—"}
+              dot={allOnline ? "#0a8f5a" : "#9aa1ab"}
+              tone={allOnline ? "good" : undefined}
+              hint={cv?.adiadas ? `${cv.adiadas} adiada(s)` : "Disponíveis na fila"}
+            />
           </HairCells>
         </Row>
 
         {/* gráfico | carga por agente */}
-        <Row last>
+        <Row>
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px]">
             <div className={`relative p-6 lg:border-r ${FC.hair}`}>
               <div className="flex items-start justify-between">
@@ -130,21 +149,105 @@ export default function VisaoGeralPage() {
             </div>
           </div>
         </Row>
+
+        {/* Heatmap de tráfego 7d × hora (modelo Chatwoot) */}
+        <Row last>
+          <div className="p-6">
+            <div className="flex items-end justify-between">
+              <div>
+                <div className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Tráfego de conversas</div>
+                <div className={`text-[12.5px] mt-0.5 ${FC.sub}`}>Horários de pico — últimos 7 dias × hora do dia</div>
+              </div>
+              {live && (
+                <div className={`flex items-center gap-1.5 text-[11px] ${FC.mut}`}>
+                  <span>menos</span>
+                  <span className="inline-flex gap-0.5">
+                    {[0.08, 0.3, 0.55, 0.8, 1].map((o) => (
+                      <span key={o} className="w-3 h-3 rounded-[3px]" style={{ backgroundColor: `rgba(0,48,131,${o})` }} />
+                    ))}
+                  </span>
+                  <span>mais</span>
+                </div>
+              )}
+            </div>
+
+            {live ? (
+              <Heatmap data={live.heatmap} />
+            ) : (
+              <div className={`mt-6 text-[12px] ${FC.mut}`}>Carregando tráfego…</div>
+            )}
+          </div>
+        </Row>
       </PageFrame>
     </div>
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: string | number; tone?: "good" | "warn" }) {
+function Heatmap({ data }: { data: OverviewLive["heatmap"] }) {
+  const max = Math.max(1, data.max);
+  return (
+    <div className="mt-5 overflow-x-auto">
+      <div className="min-w-[640px]">
+        {/* eixo de horas */}
+        <div className="grid items-center" style={{ gridTemplateColumns: "44px repeat(24, 1fr)" }}>
+          <span />
+          {Array.from({ length: 24 }).map((_, h) => (
+            <span key={h} className={`text-center text-[9px] tabular-nums ${FC.mut}`}>
+              {HOUR_TICKS.includes(h) ? `${h}h` : ""}
+            </span>
+          ))}
+        </div>
+        {/* linhas: 1 por dia */}
+        {data.days.map((d, di) => (
+          <div key={d.date} className="grid items-center mt-1" style={{ gridTemplateColumns: "44px repeat(24, 1fr)" }}>
+            <span className={`text-[11px] font-medium ${FC.sub}`} title={d.date}>
+              {d.label}
+            </span>
+            {data.cells[di].map((n, h) => {
+              const o = n === 0 ? 0 : 0.12 + 0.88 * (n / max);
+              return (
+                <div key={h} className="px-[1.5px]">
+                  <div
+                    className="aspect-square w-full rounded-[3px]"
+                    title={`${d.label} ${h}h · ${n} conversa${n === 1 ? "" : "s"}`}
+                    style={{ backgroundColor: n === 0 ? "rgba(38,38,38,0.05)" : `rgba(0,48,131,${o})` }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Kpi({
+  label,
+  value,
+  tone,
+  dot,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  tone?: "good" | "warn";
+  dot?: string;
+  hint?: string;
+}) {
   return (
     <div className="px-6 py-5">
-      <div className={`text-[11px] font-semibold uppercase tracking-wide ${FC.mut}`}>{label}</div>
+      <div className="flex items-center gap-1.5">
+        {dot && <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dot }} />}
+        <div className={`text-[11px] font-semibold uppercase tracking-wide ${FC.mut}`}>{label}</div>
+      </div>
       <div
         className="mt-2 font-mono tabular-nums text-[28px] font-medium leading-none"
         style={{ color: tone === "good" ? "#0a8f5a" : tone === "warn" ? "#F5A300" : undefined }}
       >
         {value}
       </div>
+      {hint && <div className={`mt-1.5 text-[11px] ${FC.mut}`}>{hint}</div>}
     </div>
   );
 }
