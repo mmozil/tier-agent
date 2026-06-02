@@ -1,18 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import {
-  ArrowLeft,
-  Archive,
-  Bot,
-  FileText,
-  Loader2,
-  Sparkles,
-  User,
-  X,
-} from "lucide-react";
+import { ArrowLeft, Archive, Bot, FileText, Loader2, Sparkles, User, X } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { FC, PageFrame, Row, HairCells, Button } from "@/components/ds/fc";
 
 interface Skill {
   path: string;
@@ -78,10 +70,7 @@ export default function AgentSkillsPage() {
     setViewingContent("");
     setViewingLoading(true);
     try {
-      const { data } = await api.get<{ content: string }>(
-        `/agents/${id}/skills/content`,
-        { params: { skill_path: skill.path } },
-      );
+      const { data } = await api.get<{ content: string }>(`/agents/${id}/skills/content`, { params: { skill_path: skill.path } });
       setViewingContent(data.content);
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Falha ao ler skill");
@@ -105,173 +94,118 @@ export default function AgentSkillsPage() {
   if (loading || !agent) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-5 h-5 text-[#003083] animate-spin" />
+        <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-3 mt-6 mb-2">
-        <Link
-          to="/admin/agentes"
-          className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-        <h1 className="text-[28px] font-bold text-[#30313d] flex-1 truncate">
-          Skills · {agent.nome}
-        </h1>
-        <button
-          onClick={load}
-          className="h-7 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1 bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
-        >
-          Atualizar
-        </button>
-      </div>
-      <p className="text-[14px] text-[#697386] mb-6">
-        Skills auto-criadas pelo Hermes Curator e knowledge enviado por você.
-      </p>
-
-      {/* Filtros */}
-      <div className="flex items-center gap-1 mb-4">
-        <FilterTab label="Todas" count={counts.all} active={filter === "all"} onClick={() => setFilter("all")} />
-        <FilterTab
-          label="Auto-aprendidas"
-          count={counts.auto}
-          active={filter === "auto"}
-          onClick={() => setFilter("auto")}
-        />
-        <FilterTab
-          label="Enviadas por mim"
-          count={counts.uploaded}
-          active={filter === "uploaded"}
-          onClick={() => setFilter("uploaded")}
-        />
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="bg-[#f4f7fa] rounded-lg p-12 text-center">
-          <div className="inline-flex w-12 h-12 rounded-md bg-white items-center justify-center mb-4 shadow-[0_0_0_1px_rgb(226,232,240)]">
-            <Sparkles className="w-6 h-6 text-[#003083]" />
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start gap-3 p-6">
+            <Link to="/admin/agentes" className={`w-7 h-7 inline-flex items-center justify-center rounded-md ${FC.mut} ${FC.hover} mt-0.5`}>
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+            <div className="flex-1 min-w-0">
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 truncate ${FC.ink}`}>Skills · {agent.nome}</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Skills auto-criadas pelo Hermes Curator e knowledge enviado por você.</p>
+            </div>
+            <Button variant="secondary" onClick={load} className="shrink-0">Atualizar</Button>
           </div>
-          <h3 className="text-[16px] font-semibold text-[#1a2c44] mb-1">
-            {filter === "auto" ? "Nenhuma skill auto-aprendida ainda" : "Nenhuma skill aqui"}
-          </h3>
-          <p className="text-[13px] text-[#697386]">
-            {filter === "auto"
-              ? "Quando o agente acumular padrões nas conversas, o Hermes Curator cria skills automaticamente."
-              : filter === "uploaded"
-                ? "Envie PDFs/Excel/MD em /admin/knowledge pra agente usar."
-                : "Esse agente ainda não tem skills cadastradas no container."}
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((s) => (
-            <SkillCard key={s.path} skill={s} onView={viewContent} onArchive={archive} />
-          ))}
-        </div>
-      )}
+        </Row>
+
+        <Row>
+          <div className="flex items-center gap-1 p-6">
+            <FilterTab label="Todas" count={counts.all} active={filter === "all"} onClick={() => setFilter("all")} />
+            <FilterTab label="Auto-aprendidas" count={counts.auto} active={filter === "auto"} onClick={() => setFilter("auto")} />
+            <FilterTab label="Enviadas por mim" count={counts.uploaded} active={filter === "uploaded"} onClick={() => setFilter("uploaded")} />
+          </div>
+        </Row>
+
+        {filtered.length === 0 ? (
+          <Row last>
+            <div className="p-12 text-center">
+              <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
+                <Sparkles className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
+              </div>
+              <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>
+                {filter === "auto" ? "Nenhuma skill auto-aprendida ainda" : "Nenhuma skill aqui"}
+              </h3>
+              <p className={`text-[13px] ${FC.sub}`}>
+                {filter === "auto"
+                  ? "Quando o agente acumular padrões nas conversas, o Hermes Curator cria skills automaticamente."
+                  : filter === "uploaded"
+                    ? "Envie PDFs/Excel/MD em /admin/knowledge pra agente usar."
+                    : "Esse agente ainda não tem skills cadastradas no container."}
+              </p>
+            </div>
+          </Row>
+        ) : (
+          <Row last>
+            <HairCells cols={3} gridLines>
+              {filtered.map((s) => (
+                <SkillCard key={s.path} skill={s} onView={viewContent} onArchive={archive} />
+              ))}
+            </HairCells>
+          </Row>
+        )}
+      </PageFrame>
 
       {viewing && (
-        <SkillContentDrawer
-          skill={viewing}
-          content={viewingContent}
-          loading={viewingLoading}
-          onClose={() => setViewing(null)}
-        />
+        <SkillContentDrawer skill={viewing} content={viewingContent} loading={viewingLoading} onClose={() => setViewing(null)} />
       )}
     </div>
   );
 }
 
-function FilterTab({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
+function FilterTab({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className={`h-7 px-3 rounded-md text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors ${
+      className={`h-7 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1.5 transition-all active:scale-[0.97] ${
         active
-          ? "bg-[#003083] text-white shadow-sm shadow-[#003083]/20"
-          : "bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
+          ? "bg-[#003083] text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]"
+          : `border ${FC.hair} ${FC.sub} ${FC.hover}`
       }`}
     >
       {label}
-      <span className={`text-[10px] ${active ? "opacity-80" : "text-[#697386]"}`}>{count}</span>
+      <span className={`text-[10px] ${active ? "opacity-80" : FC.mut}`}>{count}</span>
     </button>
   );
 }
 
-function SkillCard({
-  skill,
-  onView,
-  onArchive,
-}: {
-  skill: Skill;
-  onView: (s: Skill) => void;
-  onArchive: (s: Skill) => void;
-}) {
+function SkillCard({ skill, onView, onArchive }: { skill: Skill; onView: (s: Skill) => void; onArchive: (s: Skill) => void }) {
   const isAuto = !skill.is_user_uploaded;
   return (
-    <div className="bg-white rounded-md p-4 shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_rgb(180,190,210)] transition-shadow flex flex-col">
+    <div className="p-4 flex flex-col h-full">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div
           className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
-          style={{
-            backgroundColor: isAuto ? "#003083" + "14" : "#10b981" + "14",
-          }}
+          style={{ backgroundColor: isAuto ? "#00308314" : "#0a8f5a14" }}
         >
-          {isAuto ? (
-            <Bot className="w-4 h-4 text-[#003083]" />
-          ) : (
-            <User className="w-4 h-4 text-emerald-600" />
-          )}
+          {isAuto ? <Bot className="w-4 h-4 text-[#003083] dark:text-[#5b9bff]" /> : <User className="w-4 h-4 text-[#0a8f5a]" />}
         </div>
         <span
           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${
-            isAuto ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+            isAuto ? "bg-[#003083]/[0.08] text-[#003083] dark:text-[#5b9bff]" : "bg-[#0a8f5a]/[0.10] text-[#0a8f5a]"
           }`}
         >
           {isAuto ? "Auto" : "Manual"}
         </span>
       </div>
-      <div className="text-[13px] font-semibold text-[#1a2c44] mb-1 truncate">{skill.title || skill.name}</div>
-      {skill.description && (
-        <p className="text-[11px] text-[#697386] line-clamp-2 mb-2">{skill.description}</p>
-      )}
-      <div className="text-[10px] text-[#697386] mb-3">
+      <div className={`text-[13px] font-medium mb-1 truncate ${FC.ink}`}>{skill.title || skill.name}</div>
+      {skill.description && <p className={`text-[11px] line-clamp-2 mb-2 ${FC.sub}`}>{skill.description}</p>}
+      <div className={`text-[10px] mb-3 ${FC.mut}`}>
         {skill.relative_dir && <span className="font-mono">{skill.relative_dir}/</span>}
         <span className="font-mono">{(skill.size_bytes / 1024).toFixed(1)}KB</span>
-        {skill.modified_at && (
-          <>
-            {" · "}
-            <span>{new Date(skill.modified_at).toLocaleDateString("pt-BR")}</span>
-          </>
-        )}
+        {skill.modified_at && <>{" · "}<span>{new Date(skill.modified_at).toLocaleDateString("pt-BR")}</span></>}
       </div>
       <div className="mt-auto flex gap-1.5 pt-2">
-        <button
-          onClick={() => onView(skill)}
-          className="flex-1 h-6 px-2 rounded text-[11px] font-medium inline-flex items-center justify-center gap-1 bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
-        >
-          <FileText className="w-3 h-3" />
-          Ver
+        <button onClick={() => onView(skill)} className={`flex-1 h-7 px-2 rounded-lg text-[11px] font-medium inline-flex items-center justify-center gap-1 border ${FC.hair} ${FC.ink} ${FC.hover}`}>
+          <FileText className="w-3 h-3" /> Ver
         </button>
-        <button
-          onClick={() => onArchive(skill)}
-          className="h-6 px-2 rounded text-[11px] font-medium inline-flex items-center justify-center gap-1 bg-white text-red-600 shadow-[0_0_0_1px_rgb(254,202,202)] hover:bg-red-50"
-          title="Arquivar"
-        >
+        <button onClick={() => onArchive(skill)} className={`h-7 px-2 rounded-lg text-[11px] font-medium inline-flex items-center justify-center gap-1 border border-[#E5484D]/30 text-[#E5484D] hover:bg-[#E5484D]/[0.06]`} title="Arquivar">
           <Archive className="w-3 h-3" />
         </button>
       </div>
@@ -279,44 +213,26 @@ function SkillCard({
   );
 }
 
-function SkillContentDrawer({
-  skill,
-  content,
-  loading,
-  onClose,
-}: {
-  skill: Skill;
-  content: string;
-  loading: boolean;
-  onClose: () => void;
-}) {
+function SkillContentDrawer({ skill, content, loading, onClose }: { skill: Skill; content: string; loading: boolean; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="w-[600px] bg-white h-full overflow-y-auto shadow-2xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-[600px] bg-white dark:bg-[#0c0e12] h-full overflow-y-auto shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className={`px-5 py-4 border-b ${FC.hair} flex items-center justify-between sticky top-0 bg-white dark:bg-[#0c0e12] z-10`}>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[14px] font-semibold text-[#1a2c44] truncate">
-              {skill.title || skill.name}
-            </h3>
-            <div className="text-[10px] font-mono text-[#697386] truncate">{skill.path}</div>
+            <h3 className={`text-[14px] font-medium truncate ${FC.ink}`}>{skill.title || skill.name}</h3>
+            <div className={`text-[10px] font-mono truncate ${FC.sub}`}>{skill.path}</div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-          >
+          <button onClick={onClose} className={`w-7 h-7 inline-flex items-center justify-center rounded-md ${FC.mut} ${FC.hover}`}>
             <X className="w-4 h-4" />
           </button>
         </div>
         <div className="flex-1 p-5">
           {loading ? (
             <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-5 h-5 text-[#003083] animate-spin" />
+              <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
             </div>
           ) : (
-            <pre className="text-[11px] font-mono text-[#1a2c44] whitespace-pre-wrap bg-slate-50 p-4 rounded-md overflow-x-auto">
+            <pre className={`text-[11px] font-mono whitespace-pre-wrap bg-[#F1F3F5] dark:bg-[#16191f] p-4 rounded-md overflow-x-auto ${FC.ink}`}>
               {content}
             </pre>
           )}

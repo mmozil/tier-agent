@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
 
 interface Execution {
   id: number;
@@ -78,88 +79,68 @@ export default function PlaybookExecutionsPage() {
   if (loading || !pb) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-5 h-5 text-[#003083] animate-spin" />
+        <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
       </div>
     );
   }
 
+  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.mut}`;
+
   return (
-    <div>
-      <div className="flex items-center gap-3 mt-6 mb-2">
-        <Link
-          to={`/admin/playbooks/${id}`}
-          className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-        <h1 className="text-[28px] font-bold text-[#30313d] flex-1 truncate">
-          Execuções · {pb.nome}
-        </h1>
-        <button
-          onClick={load}
-          className="h-6 px-2 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1 bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
-        >
-          Atualizar
-        </button>
-      </div>
-      <p className="text-[14px] text-[#697386] mb-6">
-        Últimas {execs.length} execuções deste playbook. Clique pra ver os steps.
-      </p>
-
-      {execs.length === 0 ? (
-        <div className="bg-[#f4f7fa] rounded-lg p-12 text-center">
-          <div className="inline-flex w-12 h-12 rounded-md bg-white items-center justify-center mb-4 shadow-[0_0_0_1px_rgb(226,232,240)]">
-            <Clock className="w-6 h-6 text-[#003083]" />
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start gap-3 p-6">
+            <Link
+              to={`/admin/playbooks/${id}`}
+              className={`w-7 h-7 inline-flex items-center justify-center rounded-md ${FC.mut} ${FC.hover} mt-0.5`}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+            <div className="flex-1 min-w-0">
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 truncate ${FC.ink}`}>Execuções · {pb.nome}</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Últimas {execs.length} execuções deste playbook. Clique pra ver os steps.</p>
+            </div>
+            <Button variant="secondary" onClick={load} className="shrink-0">Atualizar</Button>
           </div>
-          <h3 className="text-[16px] font-semibold text-[#1a2c44] mb-1">
-            Nenhuma execução ainda
-          </h3>
-          <p className="text-[13px] text-[#697386]">
-            Quando uma mensagem disparar este playbook, aparecerá aqui.
-          </p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-md shadow-[0_0_0_1px_rgb(226,232,240)] overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left bg-[#f4f7fa] border-b border-slate-200">
-                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#697386]">
-                  ID
-                </th>
-                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#697386]">
-                  Gatilho
-                </th>
-                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#697386]">
-                  Status
-                </th>
-                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#697386]">
-                  Iniciado
-                </th>
-                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#697386]">
-                  Duração
-                </th>
-                <th className="px-4 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {execs.map((exe) => (
-                <ExecutionRow
-                  key={exe.id}
-                  exe={exe}
-                  onSelect={() => setSelectedExecId(exe.id)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        </Row>
 
-      {selectedExecId !== null && (
-        <ExecutionStepsDrawer
-          executionId={selectedExecId}
-          onClose={() => setSelectedExecId(null)}
-        />
-      )}
+        {execs.length === 0 ? (
+          <Row last>
+            <div className="p-12 text-center">
+              <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
+                <Clock className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
+              </div>
+              <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>Nenhuma execução ainda</h3>
+              <p className={`text-[13px] ${FC.sub}`}>Quando uma mensagem disparar este playbook, aparecerá aqui.</p>
+            </div>
+          </Row>
+        ) : (
+          <Row last>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className={`border-b ${FC.hair}`}>
+                    <th className={th}>ID</th>
+                    <th className={th}>Gatilho</th>
+                    <th className={th}>Status</th>
+                    <th className={th}>Iniciado</th>
+                    <th className={th}>Duração</th>
+                    <th className="px-6 py-2.5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {execs.map((exe) => (
+                    <ExecutionRow key={exe.id} exe={exe} onSelect={() => setSelectedExecId(exe.id)} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Row>
+        )}
+      </PageFrame>
+
+      {selectedExecId !== null && <ExecutionStepsDrawer executionId={selectedExecId} onClose={() => setSelectedExecId(null)} />}
     </div>
   );
 }
@@ -167,80 +148,42 @@ export default function PlaybookExecutionsPage() {
 function ExecutionRow({ exe, onSelect }: { exe: Execution; onSelect: () => void }) {
   const dur =
     exe.completed_at && exe.started_at
-      ? `${Math.round(
-          (new Date(exe.completed_at).getTime() - new Date(exe.started_at).getTime()) / 1000,
-        )}s`
+      ? `${Math.round((new Date(exe.completed_at).getTime() - new Date(exe.started_at).getTime()) / 1000)}s`
       : "—";
 
   return (
-    <tr
-      onClick={onSelect}
-      className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50 cursor-pointer"
-    >
-      <td className="px-4 py-3 text-[13px] font-mono text-[#697386]">#{exe.id}</td>
-      <td className="px-4 py-3 text-[13px] text-[#1a2c44]">
-        {exe.trigger_type?.replace("trigger_", "") || "—"}
+    <tr onClick={onSelect} className={`border-b ${FC.hair} last:border-b-0 ${FC.hover} cursor-pointer`}>
+      <td className={`px-6 py-3 text-[13px] font-mono ${FC.sub}`}>#{exe.id}</td>
+      <td className={`px-6 py-3 text-[13px] ${FC.ink}`}>{exe.trigger_type?.replace("trigger_", "") || "—"}</td>
+      <td className="px-6 py-3"><StatusBadge status={exe.status} /></td>
+      <td className={`px-6 py-3 text-[13px] ${FC.sub}`}>
+        {new Date(exe.started_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
       </td>
-      <td className="px-4 py-3">
-        <StatusBadge status={exe.status} />
-      </td>
-      <td className="px-4 py-3 text-[13px] text-[#697386]">
-        {new Date(exe.started_at).toLocaleString("pt-BR", {
-          dateStyle: "short",
-          timeStyle: "short",
-        })}
-      </td>
-      <td className="px-4 py-3 text-[13px] font-mono text-[#697386]">{dur}</td>
-      <td className="px-4 py-3 text-right">
-        <ChevronRight className="w-4 h-4 text-slate-300 inline" />
-      </td>
+      <td className={`px-6 py-3 text-[13px] font-mono ${FC.sub}`}>{dur}</td>
+      <td className="px-6 py-3 text-right"><ChevronRight className={`w-4 h-4 ${FC.mut} inline`} /></td>
     </tr>
   );
 }
 
 function StatusBadge({ status }: { status: Execution["status"] }) {
   const map: Record<Execution["status"], { label: string; cls: string; icon: any }> = {
-    running: {
-      label: "Rodando",
-      cls: "bg-blue-500/15 text-blue-600",
-      icon: Loader2,
-    },
-    completed: {
-      label: "Completo",
-      cls: "bg-emerald-500/15 text-emerald-600",
-      icon: CheckCircle2,
-    },
-    failed: { label: "Falhou", cls: "bg-red-500/15 text-red-600", icon: XCircle },
-    waiting: {
-      label: "Aguardando",
-      cls: "bg-amber-500/15 text-amber-600",
-      icon: PauseCircle,
-    },
-    handed_off: {
-      label: "Humano assumiu",
-      cls: "bg-purple-500/15 text-purple-600",
-      icon: Users,
-    },
+    running: { label: "Rodando", cls: "bg-[#003083]/[0.12] text-[#003083] dark:text-[#5b9bff]", icon: Loader2 },
+    completed: { label: "Completo", cls: "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]", icon: CheckCircle2 },
+    failed: { label: "Falhou", cls: "bg-[#E5484D]/[0.12] text-[#E5484D]", icon: XCircle },
+    waiting: { label: "Aguardando", cls: "bg-[#F5A300]/[0.14] text-[#9a6700]", icon: PauseCircle },
+    handed_off: { label: "Humano assumiu", cls: "bg-[#8B5CF6]/[0.12] text-[#8B5CF6]", icon: Users },
   };
-  const m = map[status] || { label: status, cls: "bg-slate-500/15 text-slate-500", icon: AlertCircle };
+  const m = map[status] || { label: status, cls: "bg-[#262626]/[0.08] text-[#262626]/[0.56]", icon: AlertCircle };
   const Icon = m.icon;
   return (
-    <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${m.cls}`}
-    >
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${m.cls}`}>
       <Icon className={`w-3 h-3 ${status === "running" ? "animate-spin" : ""}`} />
       {m.label}
     </span>
   );
 }
 
-function ExecutionStepsDrawer({
-  executionId,
-  onClose,
-}: {
-  executionId: number;
-  onClose: () => void;
-}) {
+function ExecutionStepsDrawer({ executionId, onClose }: { executionId: number; onClose: () => void }) {
   const [steps, setSteps] = useState<StepLog[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -259,52 +202,39 @@ function ExecutionStepsDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
-      <div
-        className="w-[520px] bg-white h-full overflow-y-auto shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white">
-          <h3 className="text-[16px] font-semibold text-[#1a2c44]">Execução #{executionId}</h3>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-          >
-            ×
-          </button>
+      <div className="w-[520px] bg-white dark:bg-[#0c0e12] h-full overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className={`px-5 py-4 border-b ${FC.hair} flex items-center justify-between sticky top-0 bg-white dark:bg-[#0c0e12]`}>
+          <h3 className={`text-[16px] font-[450] ${FC.ink}`}>Execução #{executionId}</h3>
+          <button onClick={onClose} className={`w-7 h-7 inline-flex items-center justify-center rounded-md ${FC.mut} ${FC.hover}`}>×</button>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-5 h-5 text-[#003083] animate-spin" />
+            <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
           </div>
         ) : steps.length === 0 ? (
-          <div className="p-8 text-center text-[13px] text-[#697386]">Sem steps registrados.</div>
+          <div className={`p-8 text-center text-[13px] ${FC.sub}`}>Sem steps registrados.</div>
         ) : (
           <div className="px-5 py-4 space-y-2">
             {steps.map((s, idx) => (
               <div
                 key={s.id}
                 className={`rounded-md p-3 text-[12px] ${
-                  s.status === "error"
-                    ? "bg-red-50 border border-red-200"
-                    : "bg-white shadow-[0_0_0_1px_rgb(226,232,240)]"
+                  s.status === "error" ? "bg-[#E5484D]/[0.06] border border-[#E5484D]/30" : `border ${FC.hair}`
                 }`}
               >
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-mono text-[11px] text-[#003083]">
-                    {idx + 1}. {s.node_type}
-                  </span>
-                  <span className="text-[10px] text-[#697386]">
-                    {s.latency_ms ?? 0}ms
-                    {s.cost_cents > 0 && ` · R$ ${(s.cost_cents / 100).toFixed(2)}`}
+                  <span className="font-mono text-[11px] text-[#003083] dark:text-[#5b9bff]">{idx + 1}. {s.node_type}</span>
+                  <span className={`text-[10px] ${FC.sub}`}>
+                    {s.latency_ms ?? 0}ms{s.cost_cents > 0 && ` · R$ ${(s.cost_cents / 100).toFixed(2)}`}
                   </span>
                 </div>
                 {s.output_json && Object.keys(s.output_json).length > 0 && (
-                  <pre className="text-[10px] font-mono text-[#697386] overflow-x-auto whitespace-pre-wrap mt-1">
+                  <pre className={`text-[10px] font-mono overflow-x-auto whitespace-pre-wrap mt-1 ${FC.sub}`}>
                     {JSON.stringify(s.output_json, null, 2)}
                   </pre>
                 )}
-                {s.error && <div className="text-[11px] text-red-600 mt-1">⚠ {s.error}</div>}
+                {s.error && <div className="text-[11px] text-[#E5484D] mt-1">⚠ {s.error}</div>}
               </div>
             ))}
           </div>
