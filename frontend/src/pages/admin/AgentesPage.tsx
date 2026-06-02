@@ -245,7 +245,7 @@ export default function AgentesPage() {
         </Row>
       )}
 
-      <Row last>
+      <Row last curvy={false}>
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
