@@ -147,19 +147,70 @@ async def connect(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Inicia pairing + retorna QR code (base64)."""
+    """Inicia pairing + retorna QR code (base64).
+
+    Se a instância atual já está conectada, retorna sem recriar. Caso contrário
+    **reprovisiona uma instância fresca** antes de gerar o QR — uma sessão Baileys
+    nova sempre devolve um QR válido que pareia de primeira. Reusar a instância
+    antiga (sessão expirada/meio-pareada) faz a Engine servir um QR velho que não
+    conecta ("não foi possível conectar o dispositivo"). É o mesmo comportamento
+    do Tier Empresas, que cria instância nova a cada tentativa de pairing.
+    """
     conn = await db.get(TaConnector, connector_id)
     if not conn:
         raise HTTPException(404, "Conector não encontrado")
-    await _ensure_agent_owned(db, conn.agent_id, user)
+    agent = await _ensure_agent_owned(db, conn.agent_id, user)
 
     cfg = json.loads(decrypt(conn.config_json_enc))
+
+    # Já conectado? Não recria — devolve direto.
+    if cfg.get("instance_id") and cfg.get("api_key"):
+        try:
+            st = await engine_client.get_status(cfg["instance_id"], cfg["api_key"])
+            if (st.get("status") or "").lower() in ("connected", "open"):
+                return {"qr_code": None, "status": "connected"}
+        except engine_client.EngineError:
+            # Instância sumiu/stale na Engine — segue pro reprovisionamento.
+            pass
+
+    old_instance_id = cfg.get("instance_id")
+    old_api_key = cfg.get("api_key")
+    label = cfg.get("label") or f"tier-agent-{agent.tenant_id}-{agent.id}"
+
+    # Instância FRESCA → socket Baileys novo → QR que pareia de primeira.
     try:
-        await engine_client.connect_instance(cfg["instance_id"], cfg["api_key"])
+        instance = await engine_client.create_instance(agent.tenant_id, label)
+    except engine_client.EngineError as e:
+        raise HTTPException(502, f"Tier Engine: {e}")
+
+    instance_id = instance.get("id") or instance.get("instance_id")
+    api_key = instance.get("apiKey") or instance.get("api_key")
+    if not instance_id or not api_key:
+        raise HTTPException(502, f"Engine não retornou instance_id/api_key: {instance}")
+
+    cfg.update({"instance_id": instance_id, "api_key": api_key, "label": label, "status": "pending"})
+    conn.config_json_enc = encrypt(json.dumps(cfg))
+    conn.enabled = True
+    await db.commit()
+
+    # Descarta a instância antiga (best-effort — não bloqueia o pairing novo).
+    if old_instance_id and old_instance_id != instance_id:
+        try:
+            if old_api_key:
+                await engine_client.disconnect_instance(old_instance_id, old_api_key)
+        except engine_client.EngineError:
+            pass
+        try:
+            await engine_client.delete_instance(old_instance_id)
+        except engine_client.EngineError:
+            pass
+
+    try:
+        await engine_client.connect_instance(instance_id, api_key)
         # QR pode demorar 1-2s — busca em endpoint separado
         qr_result = {}
         try:
-            qr_result = await engine_client.get_qr(cfg["instance_id"], cfg["api_key"])
+            qr_result = await engine_client.get_qr(instance_id, api_key)
         except engine_client.EngineError:
             pass
     except engine_client.EngineError as e:
