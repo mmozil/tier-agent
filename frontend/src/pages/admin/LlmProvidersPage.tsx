@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
 
@@ -154,7 +154,6 @@ export default function LlmProvidersPage() {
   }
 
   const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
-  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.mut}`;
 
   function scopeLabel(p: Provider) {
     return p.tenant_id === null ? "Global" : `Tenant ${p.tenant_id}`;
@@ -234,148 +233,126 @@ export default function LlmProvidersPage() {
           </Row>
         )}
 
-        <Row last>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className={`border-b ${FC.hair}`}>
-                  <th className={`${th} w-20`}>Ordem</th>
-                  <th className={th}>Provider</th>
-                  <th className={th}>Modelo</th>
-                  <th className={th}>Key</th>
-                  <th className={th}>Ativo</th>
-                  <th className="w-20"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && (
-                  <tr><td colSpan={6} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Carregando...</td></tr>
-                )}
-                {!loading && providers.length === 0 && (
-                  <tr><td colSpan={6} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</td></tr>
-                )}
-                {!loading && (() => {
-                  // Agrupa por escopo: Global primeiro, depois cada Tenant. A ORDEM
-                  // ("1º") só faz sentido DENTRO de um grupo — agrupar elimina a
-                  // confusão de "dois 1º" (eram de escopos diferentes).
-                  const groupsMap = new Map<string, Provider[]>();
-                  providers.forEach((p) => {
-                    const key = p.tenant_id === null ? "__global" : `t${p.tenant_id}`;
-                    if (!groupsMap.has(key)) groupsMap.set(key, []);
-                    groupsMap.get(key)!.push(p);
-                  });
-                  const groups = [...groupsMap.entries()].sort((a, b) =>
-                    a[0] === "__global" ? -1 : b[0] === "__global" ? 1 : a[0].localeCompare(b[0]),
-                  );
-                  return groups.map(([key, items]) => {
-                    const isGlobal = key === "__global";
-                    const multi = items.length > 1;
+        {loading && (
+          <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Carregando…</div></Row>
+        )}
+        {!loading && providers.length === 0 && (
+          <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</div></Row>
+        )}
+        {!loading && providers.length > 0 && (() => {
+          // Agrupa por escopo: Global primeiro, depois cada Tenant. A ORDEM ("1º")
+          // só faz sentido DENTRO de um grupo — agrupar elimina o "dois 1º".
+          const groupsMap = new Map<string, Provider[]>();
+          providers.forEach((p) => {
+            const key = p.tenant_id === null ? "__global" : `t${p.tenant_id}`;
+            if (!groupsMap.has(key)) groupsMap.set(key, []);
+            groupsMap.get(key)!.push(p);
+          });
+          const groups = [...groupsMap.entries()].sort((a, b) =>
+            a[0] === "__global" ? -1 : b[0] === "__global" ? 1 : a[0].localeCompare(b[0]),
+          );
+          return groups.map(([key, items], gi) => {
+            const isGlobal = key === "__global";
+            const multi = items.length > 1;
+            return (
+              <Row key={key} last={gi === groups.length - 1}>
+                {/* Cabeçalho do grupo (escopo) — badge consistente + tooltip */}
+                <div className={`flex items-center gap-2 px-6 py-3 border-b ${FC.hair}`}>
+                  <span
+                    title={
+                      isGlobal
+                        ? "Global: disponível para TODOS os agentes/clientes. É o padrão da Tier — usado quando o cliente não tem uma LLM própria."
+                        : `Tenant ${items[0].tenant_id}: específico deste cliente. As LLMs aqui só valem para os agentes dele e têm prioridade sobre o Global.`
+                    }
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded cursor-help ${
+                      isGlobal
+                        ? "bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff]"
+                        : "bg-[#262626]/[0.06] dark:bg-white/[0.08] " + FC.sub
+                    }`}
+                  >
+                    {isGlobal ? "Global" : `Tenant ${items[0].tenant_id}`}
+                    <HelpCircle className="w-3 h-3 opacity-60" />
+                  </span>
+                  <span className={`text-[12px] ${FC.sub}`}>
+                    {isGlobal ? "vale para todos os agentes" : "usado só por este cliente · prioridade sobre o Global"}
+                  </span>
+                </div>
+
+                {/* Lista de providers do grupo — padrão FC (divide-y + linhas flex) */}
+                <div className={`divide-y ${FC.hair}`}>
+                  {items.map((p, idx) => {
+                    const isFirst = idx === 0;
+                    const isLast = idx === items.length - 1;
+                    const tr = testResults[p.id];
                     return (
-                      <Fragment key={key}>
-                        {/* Cabeçalho do grupo (escopo) — badge consistente + tooltip */}
-                        <tr className={FC.base}>
-                          <td colSpan={6} className="px-6 pt-4 pb-1.5">
-                            <div className="flex items-center gap-2">
-                              <span
-                                title={
-                                  isGlobal
-                                    ? "Global: disponível para TODOS os agentes/clientes. É o padrão da Tier — usado quando o cliente não tem uma LLM própria."
-                                    : `Tenant ${items[0].tenant_id}: específico deste cliente. As LLMs aqui só valem para os agentes dele e têm prioridade sobre o Global.`
-                                }
-                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded cursor-help ${
-                                  isGlobal
-                                    ? "bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff]"
-                                    : "bg-[#262626]/[0.06] dark:bg-white/[0.08] " + FC.sub
-                                }`}
-                              >
-                                {isGlobal ? "Global" : `Tenant ${items[0].tenant_id}`}
-                                <HelpCircle className="w-3 h-3 opacity-60" />
-                              </span>
-                              <span className={`text-[11px] ${FC.mut}`}>
-                                {isGlobal ? "vale para todos os agentes" : "usado só por este cliente · prioridade sobre o Global"}
-                              </span>
-                            </div>
-                          </td>
-                        </tr>
-                        {items.map((p, idx) => {
-                          const isFirst = idx === 0;
-                          const isLast = idx === items.length - 1;
-                          const tr = testResults[p.id];
-                          return (
-                            <tr
-                              key={p.id}
-                              onClick={() => setDetail(p)}
-                              className={`border-b ${FC.hair} ${FC.hover} cursor-pointer ${p.in_use ? "bg-[#0a8f5a]/[0.03]" : ""}`}
-                            >
-                              {/* Ordem — só mostra nº/setas quando há 2+ no grupo */}
-                              <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
-                                {multi ? (
-                                  <div className="flex items-center gap-1">
-                                    <div className="flex flex-col">
-                                      <button disabled={isFirst} onClick={() => move(p, "up")} className={`${isFirst ? "opacity-20 cursor-default" : FC.mut + " hover:text-[#003083]"}`}>
-                                        <ChevronUp className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button disabled={isLast} onClick={() => move(p, "down")} className={`${isLast ? "opacity-20 cursor-default" : FC.mut + " hover:text-[#003083]"}`}>
-                                        <ChevronDown className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                    <span className={`text-[12px] font-mono ${idx === 0 ? FC.ink : FC.mut}`}>{idx + 1}º</span>
-                                  </div>
-                                ) : (
-                                  <span className={`text-[11px] ${FC.mut}`}>única</span>
-                                )}
-                              </td>
-                              {/* Provider + badge Em uso */}
-                              <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>
-                                <div className="flex items-center gap-2">
-                                  {p.provider}
-                                  {p.in_use && (
-                                    <span className="px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
-                                  )}
-                                </div>
-                              </td>
-                              {/* Modelo + fallback */}
-                              <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>
-                                {p.default_model}
-                                {p.fallback_chain && p.fallback_chain.length > 0 && (
-                                  <div className={`text-[11px] mt-0.5 ${FC.mut}`}>↳ fallback: {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
-                                )}
-                              </td>
-                              {/* Key suffix */}
-                              <td className={`px-6 py-2.5 text-[12px] font-mono ${FC.mut}`}>
-                                {p.api_key_suffix ? `••••${p.api_key_suffix}` : "—"}
-                              </td>
-                              {/* Ativo — toggle */}
-                              <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
-                                <Switch on={p.active} onClick={() => toggleActive(p)} title={p.active ? "Ligado — clique pra desligar" : "Desligado — clique pra ligar"} />
-                              </td>
-                              {/* Ações */}
-                              <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex items-center justify-end gap-1">
-                                  <button
-                                    onClick={() => testProvider(p)}
-                                    disabled={testing === p.id}
-                                    title="Testar conexão com o LLM"
-                                    className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
-                                  >
-                                    {testing === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />) : <Zap className="w-3.5 h-3.5" />}
-                                  </button>
-                                  <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </Fragment>
+                      <div
+                        key={p.id}
+                        onClick={() => setDetail(p)}
+                        className={`group flex items-center gap-3 px-6 py-3 cursor-pointer ${FC.hover} ${p.in_use ? "bg-[#0a8f5a]/[0.03]" : ""}`}
+                      >
+                        {/* Ordem — só quando há 2+ no grupo */}
+                        {multi ? (
+                          <div className="flex flex-col -my-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button disabled={isFirst} onClick={() => move(p, "up")} className={isFirst ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
+                              <ChevronUp className="w-4 h-4" />
+                            </button>
+                            <button disabled={isLast} onClick={() => move(p, "down")} className={isLast ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
+                              <ChevronDown className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className={`w-4 shrink-0 text-center text-[11px] font-mono ${FC.mut}`}>·</span>
+                        )}
+
+                        {/* Identidade: provider + Em uso + modelo/fallback */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[14px] font-medium ${FC.ink}`}>{p.provider}</span>
+                            {p.in_use && (
+                              <span className="px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
+                            )}
+                            {multi && <span className={`text-[11px] font-mono ${FC.mut}`}>{idx + 1}º</span>}
+                          </div>
+                          <p className={`text-[12px] font-mono truncate ${FC.sub}`}>
+                            {p.default_model}
+                            {p.fallback_chain && p.fallback_chain.length > 0 && (
+                              <span className={FC.mut}> · fallback: {p.fallback_chain.map((f) => f.model).join(" → ")}</span>
+                            )}
+                          </p>
+                        </div>
+
+                        {/* Key suffix */}
+                        <span className={`hidden sm:block text-[12px] font-mono ${FC.mut} shrink-0`}>
+                          {p.api_key_suffix ? `••••${p.api_key_suffix}` : "—"}
+                        </span>
+
+                        {/* Toggle */}
+                        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <Switch on={p.active} onClick={() => toggleActive(p)} title={p.active ? "Ligado — clique pra desligar" : "Desligado — clique pra ligar"} />
+                        </div>
+
+                        {/* Ações */}
+                        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => testProvider(p)}
+                            disabled={testing === p.id}
+                            title="Testar conexão com o LLM"
+                            className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
+                          >
+                            {testing === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />) : <Zap className="w-4 h-4" />}
+                          </button>
+                          <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
                     );
-                  });
-                })()}
-              </tbody>
-            </table>
-          </div>
-        </Row>
+                  })}
+                </div>
+              </Row>
+            );
+          });
+        })()}
       </PageFrame>
 
       {/* ─── Modal de detalhes (centralizado, consistente com Canais) ─── */}
