@@ -37,6 +37,8 @@ function formatPhone(p: string | undefined | null): string {
 interface Agent {
   id: number;
   nome: string;
+  persona?: string | null;
+  template_kind?: string | null;
 }
 
 interface Connector {
@@ -44,8 +46,24 @@ interface Connector {
   agent_id: number;
   kind: string;
   enabled: boolean;
-  config_summary: { instance_id?: string; phone?: string; status?: string };
+  config_summary: {
+    instance_id?: string;
+    phone?: string;
+    status?: string;
+    tipo?: string;
+    phone_number_id?: string;
+    waba_id?: string;
+  };
   last_event_at: string | null;
+}
+
+// Rótulo amigável do tipo de canal (fallback se o backend não mandar `tipo`)
+function channelType(kind: string): string {
+  if (kind === "whatsapp") return "WhatsApp (Baileys)";
+  if (kind === "whatsapp_cloud") return "WhatsApp Cloud API (oficial)";
+  if (kind === "telegram") return "Telegram";
+  if (kind === "email") return "E-mail";
+  return kind;
 }
 
 export default function CanaisPage() {
@@ -56,6 +74,7 @@ export default function CanaisPage() {
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null);
   const [provisioning, setProvisioning] = useState(false);
   const [qrModal, setQrModal] = useState<{ connId: number; qr: string; status: string } | null>(null);
+  const [detail, setDetail] = useState<Connector | null>(null);
 
   async function load() {
     setLoading(true);
@@ -239,10 +258,26 @@ export default function CanaisPage() {
                 {conns.map((c) => {
                   const status = c.config_summary?.status || "unknown";
                   const meta = STATUS_META[status] || STATUS_META.unknown;
+                  const isCloud = c.kind === "whatsapp_cloud";
+                  const tipoLabel = c.config_summary?.tipo || channelType(c.kind);
                   return (
-                    <tr key={c.id} className={`border-b ${FC.hair} last:border-0 ${FC.hover}`}>
+                    <tr
+                      key={c.id}
+                      onClick={() => setDetail(c)}
+                      className={`border-b ${FC.hair} last:border-0 ${FC.hover} cursor-pointer`}
+                      title="Ver detalhes do canal"
+                    >
                       <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>
-                        <div className="inline-flex items-center gap-2"><WhatsAppIcon className="w-4 h-4" /> WhatsApp</div>
+                        <div className="inline-flex items-center gap-2">
+                          <WhatsAppIcon className="w-4 h-4" />
+                          <span>{c.kind === "telegram" ? "Telegram" : c.kind === "email" ? "E-mail" : "WhatsApp"}</span>
+                          {isCloud && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#003083]/[0.08] text-[#003083]">Oficial</span>
+                          )}
+                          {c.kind === "whatsapp" && (
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#262626]/[0.06] ${FC.mut}`}>Baileys</span>
+                          )}
+                        </div>
                       </td>
                       <td className={`px-6 py-2.5 text-[13px] ${FC.sub}`}>{agents.find((a) => a.id === c.agent_id)?.nome || `Agente #${c.agent_id}`}</td>
                       <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>{formatPhone(c.config_summary?.phone)}</td>
@@ -252,20 +287,22 @@ export default function CanaisPage() {
                           <span className={FC.sub}>{meta.label}</span>
                         </span>
                       </td>
-                      <td className="px-6 py-2.5">
+                      <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
-                          {status !== "connected" ? (
+                          {/* QR só pro Baileys (Cloud conecta via OAuth, não pareia) */}
+                          {c.kind === "whatsapp" && status !== "connected" && (
                             <Button variant="primary" size="sm" onClick={() => openQR(c.id)} className="whitespace-nowrap">
                               <QrCode className="w-3 h-3 shrink-0" /> Escanear QR
                             </Button>
-                          ) : (
+                          )}
+                          {status === "connected" && (
                             <Button
                               variant="secondary"
                               size="sm"
                               title="Desconectar"
                               className="whitespace-nowrap"
                               onClick={async () => {
-                                if (!confirm("Desconectar este WhatsApp?")) return;
+                                if (!confirm(`Desconectar este canal (${tipoLabel})?`)) return;
                                 try {
                                   await api.post(`/connectors/${c.id}/disconnect`);
                                   toast.success("Desconectado");
@@ -382,6 +419,80 @@ export default function CanaisPage() {
                       <p className={`mt-3 text-center text-[11px] ${FC.mut}`}>O código se renova automaticamente</p>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+      {/* Modal de detalhes do canal */}
+      {detail &&
+        (() => {
+          const ag = agents.find((a) => a.id === detail.agent_id);
+          const cs = detail.config_summary || {};
+          const st = cs.status || "unknown";
+          const m = STATUS_META[st] || STATUS_META.unknown;
+          const isCloud = detail.kind === "whatsapp_cloud";
+          const comoFunciona = isCloud
+            ? "Canal oficial via Meta Cloud API. Mensagens chegam pelo webhook da Meta e o agente responde com o token (System User). Não usa QR — conecta via Login Facebook (Embedded Signup)."
+            : detail.kind === "whatsapp"
+            ? "Canal via Baileys (WhatsApp Web). Pareado por QR Code; o número fica vinculado como um aparelho. Passa pelo Tier Engine (whats.tier.finance)."
+            : "Canal conectado ao agente.";
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setDetail(null)}>
+              <div className={`w-full max-w-[560px] overflow-hidden rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair}`} onClick={(e) => e.stopPropagation()}>
+                <div className={`flex items-center gap-3 border-b ${FC.hair} px-6 py-4`}>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#25D366]/10"><WhatsAppIcon className="h-5 w-5" /></div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className={`text-[15px] font-medium leading-tight truncate ${FC.ink}`}>{ag?.nome || `Agente #${detail.agent_id}`}</h2>
+                    <p className={`text-[12px] ${FC.sub}`}>{cs.tipo || channelType(detail.kind)}</p>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 mr-1" title={m.tip}>
+                    <span className={`w-2 h-2 rounded-full ${m.color}`} /><span className={`text-[12px] ${FC.sub}`}>{m.label}</span>
+                  </span>
+                  <button onClick={() => setDetail(null)} className={`rounded-md p-1.5 ${FC.mut} ${FC.hover}`}><X className="h-4 w-4" /></button>
+                </div>
+                <div className="px-6 py-5 space-y-4">
+                  <div className="grid grid-cols-2 gap-3 text-[13px]">
+                    <div><div className={`text-[11px] ${FC.mut}`}>Telefone</div><div className={`font-mono ${FC.ink}`}>{formatPhone(cs.phone)}</div></div>
+                    <div><div className={`text-[11px] ${FC.mut}`}>Agente</div><div className={FC.ink}>{ag?.nome || `#${detail.agent_id}`}</div></div>
+                    {isCloud ? (
+                      <>
+                        <div><div className={`text-[11px] ${FC.mut}`}>Phone Number ID</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.phone_number_id || "—"}</div></div>
+                        <div><div className={`text-[11px] ${FC.mut}`}>WABA ID</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.waba_id || "—"}</div></div>
+                      </>
+                    ) : (
+                      <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Instância (Engine)</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.instance_id || "—"}</div></div>
+                    )}
+                  </div>
+                  {ag?.persona && (
+                    <div><div className={`text-[11px] ${FC.mut} mb-1`}>O que o agente faz</div><p className={`text-[13px] leading-snug ${FC.sub}`}>{ag.persona}</p></div>
+                  )}
+                  <div><div className={`text-[11px] ${FC.mut} mb-1`}>Como funciona</div><p className={`text-[13px] leading-snug ${FC.sub}`}>{comoFunciona}</p></div>
+                </div>
+                <div className={`flex items-center justify-end gap-2 border-t ${FC.hair} px-6 py-4`}>
+                  {detail.kind === "whatsapp" && st !== "connected" && (
+                    <Button variant="primary" size="sm" onClick={() => { setDetail(null); openQR(detail.id); }}><QrCode className="w-3 h-3" /> Escanear QR</Button>
+                  )}
+                  {st === "connected" && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={async () => {
+                        if (!confirm("Desconectar este canal?")) return;
+                        try {
+                          await api.post(`/connectors/${detail.id}/disconnect`);
+                          toast.success("Desconectado");
+                          setDetail(null);
+                          load();
+                        } catch {
+                          toast.error("Erro ao desconectar");
+                        }
+                      }}
+                    >
+                      <Unplug className="w-3 h-3" /> Desconectar
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

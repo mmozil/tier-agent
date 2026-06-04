@@ -31,15 +31,27 @@ class ConnectorOut(BaseModel):
 
 
 def _summary(kind: str, cfg: dict) -> dict:
-    """Resumo seguro pra UI (sem expor api_key)."""
+    """Resumo seguro pra UI (NUNCA expor api_key/token)."""
     if kind == "whatsapp":
         return {
             "instance_id": cfg.get("instance_id"),
             "phone": cfg.get("phone") or "—",
             "status": cfg.get("status") or "pending",
+            "tipo": "WhatsApp (Baileys)",
+        }
+    if kind == "whatsapp_cloud":
+        return {
+            "phone": cfg.get("phone") or cfg.get("display_phone") or "—",
+            "phone_number_id": cfg.get("phone_number_id"),
+            "waba_id": cfg.get("waba_id"),
+            # Cloud não pareia (OAuth): tem token => conectado
+            "status": "connected" if cfg.get("token") else "pending",
+            "tipo": "WhatsApp Cloud API (oficial)",
         }
     if kind == "telegram":
-        return {"bot_username": cfg.get("bot_username") or "—"}
+        return {"bot_username": cfg.get("bot_username") or "—", "tipo": "Telegram"}
+    if kind == "email":
+        return {"email": cfg.get("email") or "—", "tipo": "E-mail"}
     return {}
 
 

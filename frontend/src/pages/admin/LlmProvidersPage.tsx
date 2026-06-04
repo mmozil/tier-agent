@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Power, Loader2, Zap } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
@@ -81,6 +81,32 @@ export default function LlmProvidersPage() {
     }
   }
 
+  // Liga/desliga o provider (active). O provider ativo é o PRIMÁRIO que o agente usa.
+  async function toggleActive(p: Provider) {
+    try {
+      await api.patch(`/llm-providers/${p.id}`, { active: !p.active });
+      toast.success(!p.active ? "Ativado (vira o primário)" : "Desativado");
+      load();
+    } catch {
+      toast.error("Erro ao alterar status");
+    }
+  }
+
+  const [testing, setTesting] = useState<number | null>(null);
+  // Testa a conexão real com o LLM (valida key/endpoint).
+  async function testProvider(p: Provider) {
+    setTesting(p.id);
+    try {
+      const { data } = await api.post<{ ok?: boolean; detail?: string; message?: string }>(`/llm-providers/${p.id}/test`);
+      if (data?.ok === false) toast.error(`Falhou: ${data.detail || data.message || "sem resposta"}`);
+      else toast.success("Conexão OK ✓");
+    } catch (e: any) {
+      toast.error(`Falhou: ${e?.response?.data?.detail || "erro na conexão"}`);
+    } finally {
+      setTesting(null);
+    }
+  }
+
   const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
   const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.mut}`;
 
@@ -92,7 +118,7 @@ export default function LlmProvidersPage() {
             <div>
               <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>LLM Providers</h2>
               <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
-                Cadastre os modelos disponíveis. Cada agente escolhe um na configuração — zero hardcode.
+                Cadastre as LLMs que você tem. O <b>Ligado</b> é o <b>primário</b> (que os agentes usam); os demais ficam de fallback. Use o <b>⚡ Testar</b> pra validar a key. Zero hardcode.
               </p>
             </div>
             <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
@@ -166,7 +192,12 @@ export default function LlmProvidersPage() {
                   <tr key={p.id} className={`border-b ${FC.hair} last:border-0 ${FC.hover}`}>
                     <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.mut}`}>{p.id}</td>
                     <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>{p.provider}</td>
-                    <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>{p.default_model}</td>
+                    <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>
+                      {p.default_model}
+                      {p.fallback_chain && p.fallback_chain.length > 0 && (
+                        <div className={`text-[11px] mt-0.5 ${FC.mut}`}>↳ fallback: {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
+                      )}
+                    </td>
                     <td className="px-6 py-2.5 text-[13px]">
                       {p.tenant_id === null ? (
                         <span className="px-1.5 py-0.5 bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff] text-[11px] rounded">Global</span>
@@ -175,12 +206,29 @@ export default function LlmProvidersPage() {
                       )}
                     </td>
                     <td className="px-6 py-2.5 text-[13px]">
-                      {p.active ? <span className="text-[#0a8f5a]">● Ativo</span> : <span className={FC.mut}>○ Inativo</span>}
+                      <button
+                        onClick={() => toggleActive(p)}
+                        title={p.active ? "Ativo (primário) — clique pra desligar" : "Inativo — clique pra ligar (vira primário)"}
+                        className="inline-flex items-center gap-1.5 hover:opacity-80"
+                      >
+                        <Power className={`w-3.5 h-3.5 ${p.active ? "text-[#0a8f5a]" : FC.mut}`} />
+                        <span className={p.active ? "text-[#0a8f5a]" : FC.mut}>{p.active ? "Ligado" : "Desligado"}</span>
+                      </button>
                     </td>
                     <td className="px-2 py-2.5">
-                      <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => testProvider(p)}
+                          disabled={testing === p.id}
+                          title="Testar conexão com o LLM"
+                          className={`p-1.5 rounded-md ${FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06] transition-colors`}
+                        >
+                          {testing === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                        </button>
+                        <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
