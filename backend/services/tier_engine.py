@@ -24,6 +24,7 @@ Hoje os callers não passam tools (persona-driven), então o default é sem ferr
 """
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
@@ -50,6 +51,14 @@ _DEFAULT_BASE_URL = {
     "local": "http://localhost:8000/v1",
 }
 _MAX_TOOL_ITERATIONS = 6  # trava anti-loop no tool-use
+
+# Modelos de raciocínio (MiniMax-M2, etc.) emitem <think>...</think> na resposta —
+# o cliente NÃO pode ver o raciocínio. Removido antes de devolver.
+_THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_thinking(text: str) -> str:
+    return _THINK_RE.sub("", text or "").strip()
 
 
 @dataclass
@@ -80,22 +89,28 @@ def register_tool(schema: dict, handler: Callable[[dict], Awaitable[str]]) -> No
 
 
 async def _load_provider(db: AsyncSession, tenant_id: int) -> TaLlmProvider:
-    """Config de LLM do tenant; cai pro default global (tenant_id NULL) se não houver."""
+    """Config de LLM do tenant; cai pro default global (tenant_id NULL) se não houver.
+
+    Usa o mais recente (maior id) quando há mais de um ativo — tolera duplicatas
+    de config sem estourar (ex: 2 providers globais).
+    """
     row = (
         await db.execute(
-            select(TaLlmProvider).where(
-                TaLlmProvider.tenant_id == tenant_id, TaLlmProvider.active.is_(True)
-            )
+            select(TaLlmProvider)
+            .where(TaLlmProvider.tenant_id == tenant_id, TaLlmProvider.active.is_(True))
+            .order_by(TaLlmProvider.id.desc())
+            .limit(1)
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if row is None:
         row = (
             await db.execute(
-                select(TaLlmProvider).where(
-                    TaLlmProvider.tenant_id.is_(None), TaLlmProvider.active.is_(True)
-                )
+                select(TaLlmProvider)
+                .where(TaLlmProvider.tenant_id.is_(None), TaLlmProvider.active.is_(True))
+                .order_by(TaLlmProvider.id.desc())
+                .limit(1)
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
     if row is None:
         raise RuntimeError(f"Nenhum TaLlmProvider configurado pra tenant {tenant_id} (nem global)")
     return row
@@ -267,7 +282,7 @@ async def send_message(
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     choice = (data.get("choices") or [{}])[0]
-    text = choice.get("message", {}).get("content", "") or ""
+    text = _strip_thinking(choice.get("message", {}).get("content", "") or "")
     usage = data.get("usage", {})
 
     # 5. Restaura PII na resposta
