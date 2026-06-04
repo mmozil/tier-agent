@@ -225,6 +225,28 @@ async def handle_inbound_message(
     if not agent or not agent.active:
         return {"status": "agent_inactive", "agent_id": connector.agent_id}
 
+    # ─── Comandos de ops (DevSecOps) — resposta determinística, sem LLM ───
+    # Agente marcado como template_kind="devsecops" responde status/health/ping
+    # com a saúde REAL do stack (sem alucinar). Conversa normal segue o fluxo.
+    if agent.template_kind == "devsecops":
+        try:
+            from services import ops_commands
+
+            if ops_commands.is_ops_command(text_content):
+                reply = await ops_commands.handle_ops_command(db, agent, text_content)
+                if reply:
+                    try:
+                        connector_impl = registry.get(connector_kind)
+                        cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
+                        await connector_impl.send(
+                            cfg, OutboundMessage(external_chat_id=external_chat_id, content=reply)
+                        )
+                    except Exception:
+                        logger.exception("envio ops command falhou agent=%s", agent.id)
+                    return {"status": "ops_command", "agent_id": agent.id}
+        except Exception:
+            logger.exception("ops_command falhou agent=%s — segue fluxo normal", agent.id)
+
     # ─── CSAT: resposta de avaliação (0-5) a uma conversa resolvida ───
     # Captura ANTES de ensure_conversation pra não abrir conversa nova.
     try:

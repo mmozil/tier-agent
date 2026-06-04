@@ -16,6 +16,7 @@ Janela 24h: dentro dela manda texto livre; fora, só template aprovado.
 """
 
 import logging
+import os
 
 import httpx
 
@@ -25,6 +26,22 @@ logger = logging.getLogger(__name__)
 
 GRAPH_VERSION = "v21.0"
 GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_VERSION}"
+
+
+def resolve_cloud_creds(config: ConnectorConfig) -> tuple[str | None, str | None]:
+    """Resolve (phone_number_id, token) do conector COM fallback pra env.
+
+    O token Cloud (System User permanente) só vive no config criptografado do
+    conector — se o conector é apagado, o token some junto e o canal morre calado.
+    O fallback via env (`WHATSAPP_CLOUD_TOKEN` / `WHATSAPP_CLOUD_PHONE_NUMBER_ID`,
+    setados no Coolify) mantém o número oficial vivo mesmo nesse cenário. Config
+    sempre tem prioridade; env é só rede de segurança.
+    """
+    pnid = config.data.get("phone_number_id") or os.getenv("WHATSAPP_CLOUD_PHONE_NUMBER_ID")
+    token = config.data.get("token") or os.getenv("WHATSAPP_CLOUD_TOKEN")
+    if not config.data.get("token") and token:
+        logger.warning("Cloud API usando TOKEN de fallback (env) — conector sem token próprio")
+    return pnid, token
 
 
 def normalize_wa_number(chat_id: str | None) -> str:
@@ -37,8 +54,7 @@ class WhatsAppCloudConnector:
     kind = "whatsapp_cloud"
 
     async def send(self, config: ConnectorConfig, msg: OutboundMessage) -> dict:
-        phone_number_id = config.data.get("phone_number_id")
-        token = config.data.get("token")
+        phone_number_id, token = resolve_cloud_creds(config)
         if not phone_number_id or not token:
             raise ConnectorError(
                 "Config Cloud API incompleta (phone_number_id + token)", kind=self.kind
@@ -97,8 +113,7 @@ class WhatsAppCloudConnector:
         components: list | None = None,
     ) -> dict:
         """Envia template aprovado (pra fora da janela 24h / disparo ativo)."""
-        phone_number_id = config.data.get("phone_number_id")
-        token = config.data.get("token")
+        phone_number_id, token = resolve_cloud_creds(config)
         if not phone_number_id or not token:
             raise ConnectorError("Config Cloud API incompleta", kind=self.kind)
         url = f"{GRAPH_BASE}/{phone_number_id}/messages"
@@ -130,8 +145,7 @@ class WhatsAppCloudConnector:
         O indicador some quando você responde OU após 25s (o que vier antes).
         Best practice da Meta: só mostrar digitando se VAI responder. Fire-and-forget.
         """
-        pnid = config.data.get("phone_number_id")
-        token = config.data.get("token")
+        pnid, token = resolve_cloud_creds(config)
         if not pnid or not token or not message_id:
             return
         body = {
@@ -165,8 +179,7 @@ class WhatsAppCloudConnector:
             return None
 
     async def validate_config(self, config: ConnectorConfig) -> bool:
-        phone_number_id = config.data.get("phone_number_id")
-        token = config.data.get("token")
+        phone_number_id, token = resolve_cloud_creds(config)
         if not phone_number_id or not token:
             return False
         try:

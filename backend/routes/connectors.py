@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt, encrypt
-from models import TaAgent, TaConnector
+from models import TaAgent, TaConnector, TaNotification
 from services import engine_client
 
 logger = logging.getLogger(__name__)
@@ -465,14 +465,54 @@ async def delete_connector(
     conn = await db.get(TaConnector, connector_id)
     if not conn:
         raise HTTPException(404, "Conector não encontrado")
-    await _ensure_agent_owned(db, conn.agent_id, user)
+    agent = await _ensure_agent_owned(db, conn.agent_id, user)
 
     try:
         cfg = json.loads(decrypt(conn.config_json_enc))
-        if cfg.get("instance_id"):
-            await engine_client.delete_instance(cfg["instance_id"])
-    except Exception as e:
-        logger.warning("delete engine instance falhou: %s", e)
+    except Exception:
+        cfg = {}
+    kind = conn.kind
+    phone = cfg.get("phone") or cfg.get("phone_number_id") or "—"
+    inst = cfg.get("instance_id")
+
+    # Só deleta a instância no Engine se NENHUM outro conector a usa — evita
+    # derrubar um número COMPARTILHADO (ex: DevSecOps reusa a instância dos alertas).
+    if inst:
+        shared = False
+        others = (await db.execute(select(TaConnector).where(TaConnector.id != conn.id))).scalars().all()
+        for o in others:
+            try:
+                if json.loads(decrypt(o.config_json_enc)).get("instance_id") == inst:
+                    shared = True
+                    break
+            except Exception:
+                continue
+        if shared:
+            logger.info("instância %s compartilhada — NÃO deletada do Engine (preserva o número)", inst)
+        else:
+            try:
+                await engine_client.delete_instance(inst)
+            except Exception as e:
+                logger.warning("delete engine instance falhou: %s", e)
 
     await db.delete(conn)
+
+    # 🔔 Alerta de deleção — canal nunca some calado (lição: conector Cloud apagado
+    # levou o token junto e ninguém soube). Defensivo: nunca bloqueia o delete.
+    try:
+        db.add(
+            TaNotification(
+                tenant_id=agent.tenant_id,
+                agent_id=agent.id,
+                category="connector_deleted",
+                queue="config",
+                title=f"Canal removido: {kind} ({phone})",
+                body=f"O conector {kind} do agente '{agent.nome}' (tel {phone}) foi removido. Se foi sem querer, reconecte em Canais.",
+                payload_json={"connector_id": connector_id, "kind": kind, "phone": phone, "agent_id": agent.id},
+            )
+        )
+    except Exception:
+        logger.exception("falha ao criar notificação de deleção de conector")
+
     await db.commit()
+    logger.warning("CONNECTOR DELETADO id=%s kind=%s agent=%s phone=%s", connector_id, kind, agent.id, phone)
