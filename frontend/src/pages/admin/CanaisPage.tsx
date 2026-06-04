@@ -32,9 +32,10 @@ function formatPhone(p: string | undefined | null): string {
   // Com código do país (55)
   if (d.length === 13) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
   if (d.length === 12) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 8)}-${d.slice(8)}`;
-  // Sem código do país — DDD + número (celular 11 dígitos, fixo 10)
-  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  // Sem código do país — assume BR e prefixa +55 pra manter o mesmo padrão
+  // (celular 11 dígitos, fixo 10) → "+55 (11) 94145-2082"
+  if (d.length === 11) return `+55 (${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `+55 (${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return p;
 }
 
@@ -466,7 +467,7 @@ export default function CanaisPage() {
                 <div className="px-6 py-5 space-y-5">
                   {/* Conexão */}
                   <div>
-                    <div className={`text-[11px] uppercase tracking-wider font-semibold mb-2 ${FC.mut}`}>Conexão</div>
+                    <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2 ${FC.ink}`}>Conexão</div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
                       <div><div className={`text-[11px] ${FC.mut}`}>Telefone</div><div className={`font-mono ${FC.ink}`}>{formatPhone(cs.phone)}</div></div>
                       <div>
@@ -486,7 +487,7 @@ export default function CanaisPage() {
 
                   {/* Técnico */}
                   <div>
-                    <div className={`text-[11px] uppercase tracking-wider font-semibold mb-2 ${FC.mut}`}>Detalhes técnicos</div>
+                    <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2 ${FC.ink}`}>Detalhes técnicos</div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
                       <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Transporte</div><div className={FC.sub}>{cs.transporte || channelType(detail.kind)}</div></div>
                       {cs.host && <div><div className={`text-[11px] ${FC.mut}`}>Host</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.host}</div></div>}
@@ -507,7 +508,7 @@ export default function CanaisPage() {
 
                   {/* Vínculo + como funciona (sem persona — isso vive em Agentes) */}
                   <div>
-                    <div className={`text-[11px] uppercase tracking-wider font-semibold mb-2 ${FC.mut}`}>Agente vinculado</div>
+                    <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2 ${FC.ink}`}>Agente vinculado</div>
                     <div className="flex items-center justify-between gap-2 text-[13px]">
                       <span className={FC.ink}>{ag?.nome || `Agente #${detail.agent_id}`}</span>
                       <a href="/admin/agentes" className="text-[12px] text-[#003083] hover:underline">Ver / editar instruções →</a>
