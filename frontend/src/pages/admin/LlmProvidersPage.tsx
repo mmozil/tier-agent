@@ -241,22 +241,20 @@ export default function LlmProvidersPage() {
           <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</div></Row>
         )}
         {!loading && providers.length > 0 && (() => {
-          // Agrupa por escopo: Global primeiro, depois cada Tenant.
-          const groupsMap = new Map<string, Provider[]>();
-          providers.forEach((p) => {
-            const key = p.tenant_id === null ? "__global" : `t${p.tenant_id}`;
-            if (!groupsMap.has(key)) groupsMap.set(key, []);
-            groupsMap.get(key)!.push(p);
+          // Lista plana ordenada por escopo (Global primeiro) — SEM faixas de grupo.
+          // O escopo vira uma COLUNA (badge + tooltip), mais limpo e tabular.
+          const sorted = [...providers].sort((a, b) => {
+            const sa = a.tenant_id === null ? 0 : 1;
+            const sb = b.tenant_id === null ? 0 : 1;
+            return sa - sb; // sort estável preserva a ordem (priority) dentro do escopo
           });
-          const groups = [...groupsMap.entries()].sort((a, b) =>
-            a[0] === "__global" ? -1 : b[0] === "__global" ? 1 : a[0].localeCompare(b[0]),
-          );
-          // A coluna ORDEM só aparece quando ALGUM grupo tem 2+ providers (só aí
-          // reordenar faz sentido). Com 1 por escopo, ordem é irrelevante → some.
-          const anyMulti = groups.some(([, items]) => items.length > 1);
+          // Coluna ORDEM só quando há 2+ no MESMO escopo (aí reordenar faz sentido).
+          const scopeCount = new Map<number | null, number>();
+          sorted.forEach((p) => scopeCount.set(p.tenant_id, (scopeCount.get(p.tenant_id) ?? 0) + 1));
+          const anyMulti = [...scopeCount.values()].some((n) => n > 1);
           const COLS = anyMulti
-            ? "grid grid-cols-[64px_minmax(0,1.2fr)_minmax(0,1.5fr)_108px_52px_64px] items-center gap-4"
-            : "grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.5fr)_108px_52px_64px] items-center gap-4";
+            ? "grid grid-cols-[56px_minmax(0,1.3fr)_minmax(0,1.4fr)_104px_100px_48px_60px] items-center gap-4"
+            : "grid grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_104px_100px_48px_60px] items-center gap-4";
           return (
             <Row last>
               {/* Cabeçalho de colunas — alinha via MESMO grid das linhas */}
@@ -264,23 +262,68 @@ export default function LlmProvidersPage() {
                 {anyMulti && <span className={colLabel}>Ordem</span>}
                 <span className={colLabel}>Provider</span>
                 <span className={colLabel}>Modelo</span>
+                <span className={colLabel}>Escopo</span>
                 <span className={colLabel}>Key</span>
                 <span className={colLabel}>Ativo</span>
                 <span />
               </div>
 
-              {groups.map(([key, items]) => {
-                const isGlobal = key === "__global";
-                const multi = items.length > 1;
+              {sorted.map((p) => {
+                const isGlobal = p.tenant_id === null;
+                const scopeItems = sorted.filter((x) => x.tenant_id === p.tenant_id);
+                const idx = scopeItems.indexOf(p);
+                const multi = scopeItems.length > 1;
+                const tr = testResults[p.id];
                 return (
-                  <div key={key}>
-                    {/* Banda de grupo (escopo) — discreta, badge + tooltip */}
-                    <div className={`flex items-center gap-2 px-6 py-2 border-b ${FC.hair} bg-[#262626]/[0.015] dark:bg-white/[0.02]`}>
+                  <div
+                    key={p.id}
+                    onClick={() => setDetail(p)}
+                    className={`${COLS} px-6 py-3 border-b ${FC.hair} cursor-pointer ${FC.hover} ${p.in_use ? "bg-[#0a8f5a]/[0.025]" : ""}`}
+                  >
+                    {/* Ordem — só quando há reordenação possível */}
+                    {anyMulti && (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        {multi ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex flex-col -my-1">
+                              <button disabled={idx === 0} onClick={() => move(p, "up")} className={idx === 0 ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
+                                <ChevronUp className="w-4 h-4" />
+                              </button>
+                              <button disabled={idx === scopeItems.length - 1} onClick={() => move(p, "down")} className={idx === scopeItems.length - 1 ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
+                                <ChevronDown className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <span className={`text-[12px] font-mono ${idx === 0 ? FC.ink : FC.mut}`}>{idx + 1}º</span>
+                          </div>
+                        ) : (
+                          <span className={`text-[12px] font-mono ${FC.mut}`}>—</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Provider + Em uso */}
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{p.provider}</span>
+                      {p.in_use && (
+                        <span className="shrink-0 px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
+                      )}
+                    </div>
+
+                    {/* Modelo + fallback */}
+                    <div className="min-w-0">
+                      <div className={`text-[13px] font-mono truncate ${FC.sub}`}>{p.default_model}</div>
+                      {p.fallback_chain && p.fallback_chain.length > 0 && (
+                        <div className={`text-[11px] font-mono truncate ${FC.mut}`}>↳ {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
+                      )}
+                    </div>
+
+                    {/* Escopo — badge + tooltip */}
+                    <div>
                       <span
                         title={
                           isGlobal
-                            ? "Global: disponível para TODOS os agentes/clientes. É o padrão da Tier — usado quando o cliente não tem uma LLM própria."
-                            : `Tenant ${items[0].tenant_id}: específico deste cliente. As LLMs aqui só valem para os agentes dele e têm prioridade sobre o Global.`
+                            ? "Global: disponível para TODOS os agentes/clientes. É o padrão da Tier — usado quando o cliente não tem LLM própria."
+                            : `Tenant ${p.tenant_id}: específico deste cliente. Só vale para os agentes dele e tem prioridade sobre o Global.`
                         }
                         className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded cursor-help ${
                           isGlobal
@@ -288,89 +331,35 @@ export default function LlmProvidersPage() {
                             : "bg-[#262626]/[0.06] dark:bg-white/[0.08] " + FC.sub
                         }`}
                       >
-                        {isGlobal ? "Global" : `Tenant ${items[0].tenant_id}`}
-                        <HelpCircle className="w-3 h-3 opacity-60" />
-                      </span>
-                      <span className={`text-[12px] ${FC.mut}`}>
-                        {isGlobal ? "vale para todos os agentes" : "só deste cliente · prioridade sobre o Global"}
+                        {isGlobal ? "Global" : `Tenant ${p.tenant_id}`}
+                        <HelpCircle className="w-3 h-3 opacity-50" />
                       </span>
                     </div>
 
-                    {/* Linhas — MESMO grid do header → colunas alinhadas */}
-                    {items.map((p, idx) => {
-                      const isFirst = idx === 0;
-                      const isLast = idx === items.length - 1;
-                      const tr = testResults[p.id];
-                      return (
-                        <div
-                          key={p.id}
-                          onClick={() => setDetail(p)}
-                          className={`${COLS} px-6 py-3 border-b ${FC.hair} cursor-pointer ${FC.hover} ${p.in_use ? "bg-[#0a8f5a]/[0.025]" : ""}`}
-                        >
-                          {/* Ordem — só renderiza a coluna quando há reordenação possível */}
-                          {anyMulti && (
-                            <div onClick={(e) => e.stopPropagation()}>
-                              {multi ? (
-                                <div className="flex items-center gap-1.5">
-                                  <div className="flex flex-col -my-1">
-                                    <button disabled={isFirst} onClick={() => move(p, "up")} className={isFirst ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
-                                      <ChevronUp className="w-4 h-4" />
-                                    </button>
-                                    <button disabled={isLast} onClick={() => move(p, "down")} className={isLast ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
-                                      <ChevronDown className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                  <span className={`text-[12px] font-mono ${idx === 0 ? FC.ink : FC.mut}`}>{idx + 1}º</span>
-                                </div>
-                              ) : (
-                                <span className={`text-[12px] font-mono ${FC.mut}`}>1º</span>
-                              )}
-                            </div>
-                          )}
+                    {/* Key */}
+                    <span className={`text-[12px] font-mono ${FC.mut} truncate`}>
+                      {p.api_key_suffix ? `••••${p.api_key_suffix}` : "—"}
+                    </span>
 
-                          {/* Provider + Em uso */}
-                          <div className="min-w-0 flex items-center gap-2">
-                            <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{p.provider}</span>
-                            {p.in_use && (
-                              <span className="shrink-0 px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
-                            )}
-                          </div>
+                    {/* Ativo */}
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <Switch on={p.active} onClick={() => toggleActive(p)} title={p.active ? "Ligado — clique pra desligar" : "Desligado — clique pra ligar"} />
+                    </div>
 
-                          {/* Modelo + fallback */}
-                          <div className="min-w-0">
-                            <div className={`text-[13px] font-mono truncate ${FC.sub}`}>{p.default_model}</div>
-                            {p.fallback_chain && p.fallback_chain.length > 0 && (
-                              <div className={`text-[11px] font-mono truncate ${FC.mut}`}>↳ {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
-                            )}
-                          </div>
-
-                          {/* Key */}
-                          <span className={`text-[12px] font-mono ${FC.mut} truncate`}>
-                            {p.api_key_suffix ? `••••${p.api_key_suffix}` : "—"}
-                          </span>
-
-                          {/* Ativo */}
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <Switch on={p.active} onClick={() => toggleActive(p)} title={p.active ? "Ligado — clique pra desligar" : "Desligado — clique pra ligar"} />
-                          </div>
-
-                          {/* Ações */}
-                          <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => testProvider(p)}
-                              disabled={testing === p.id}
-                              title="Testar conexão com o LLM"
-                              className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
-                            >
-                              {testing === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />) : <Zap className="w-4 h-4" />}
-                            </button>
-                            <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {/* Ações */}
+                    <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => testProvider(p)}
+                        disabled={testing === p.id}
+                        title="Testar conexão com o LLM"
+                        className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
+                      >
+                        {testing === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />) : <Zap className="w-4 h-4" />}
+                      </button>
+                      <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
