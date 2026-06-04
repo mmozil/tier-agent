@@ -154,9 +154,6 @@ export default function LlmProvidersPage() {
   }
 
   const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
-  // Template de grid ÚNICO — header e linhas usam o MESMO → colunas alinhadas
-  // (table-like) sem <table>. Ordem · Provider · Modelo · Key · Ativo · Ações.
-  const COLS = "grid grid-cols-[64px_minmax(0,1.2fr)_minmax(0,1.5fr)_108px_52px_64px] items-center gap-4";
   const colLabel = `text-[11px] uppercase tracking-[0.06em] ${FC.mut}`;
 
   function scopeLabel(p: Provider) {
@@ -243,31 +240,36 @@ export default function LlmProvidersPage() {
         {!loading && providers.length === 0 && (
           <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</div></Row>
         )}
-        {!loading && providers.length > 0 && (
-          <Row last>
-            {/* Cabeçalho de colunas — alinha via MESMO grid das linhas */}
-            <div className={`${COLS} px-6 py-2.5 border-b ${FC.hair}`}>
-              <span className={colLabel}>Ordem</span>
-              <span className={colLabel}>Provider</span>
-              <span className={colLabel}>Modelo</span>
-              <span className={colLabel}>Key</span>
-              <span className={colLabel}>Ativo</span>
-              <span />
-            </div>
+        {!loading && providers.length > 0 && (() => {
+          // Agrupa por escopo: Global primeiro, depois cada Tenant.
+          const groupsMap = new Map<string, Provider[]>();
+          providers.forEach((p) => {
+            const key = p.tenant_id === null ? "__global" : `t${p.tenant_id}`;
+            if (!groupsMap.has(key)) groupsMap.set(key, []);
+            groupsMap.get(key)!.push(p);
+          });
+          const groups = [...groupsMap.entries()].sort((a, b) =>
+            a[0] === "__global" ? -1 : b[0] === "__global" ? 1 : a[0].localeCompare(b[0]),
+          );
+          // A coluna ORDEM só aparece quando ALGUM grupo tem 2+ providers (só aí
+          // reordenar faz sentido). Com 1 por escopo, ordem é irrelevante → some.
+          const anyMulti = groups.some(([, items]) => items.length > 1);
+          const COLS = anyMulti
+            ? "grid grid-cols-[64px_minmax(0,1.2fr)_minmax(0,1.5fr)_108px_52px_64px] items-center gap-4"
+            : "grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.5fr)_108px_52px_64px] items-center gap-4";
+          return (
+            <Row last>
+              {/* Cabeçalho de colunas — alinha via MESMO grid das linhas */}
+              <div className={`${COLS} px-6 py-2.5 border-b ${FC.hair}`}>
+                {anyMulti && <span className={colLabel}>Ordem</span>}
+                <span className={colLabel}>Provider</span>
+                <span className={colLabel}>Modelo</span>
+                <span className={colLabel}>Key</span>
+                <span className={colLabel}>Ativo</span>
+                <span />
+              </div>
 
-            {(() => {
-              // Agrupa por escopo: Global primeiro, depois cada Tenant. A ORDEM ("1º")
-              // só faz sentido DENTRO de um grupo — agrupar elimina o "dois 1º".
-              const groupsMap = new Map<string, Provider[]>();
-              providers.forEach((p) => {
-                const key = p.tenant_id === null ? "__global" : `t${p.tenant_id}`;
-                if (!groupsMap.has(key)) groupsMap.set(key, []);
-                groupsMap.get(key)!.push(p);
-              });
-              const groups = [...groupsMap.entries()].sort((a, b) =>
-                a[0] === "__global" ? -1 : b[0] === "__global" ? 1 : a[0].localeCompare(b[0]),
-              );
-              return groups.map(([key, items]) => {
+              {groups.map(([key, items]) => {
                 const isGlobal = key === "__global";
                 const multi = items.length > 1;
                 return (
@@ -305,24 +307,26 @@ export default function LlmProvidersPage() {
                           onClick={() => setDetail(p)}
                           className={`${COLS} px-6 py-3 border-b ${FC.hair} cursor-pointer ${FC.hover} ${p.in_use ? "bg-[#0a8f5a]/[0.025]" : ""}`}
                         >
-                          {/* Ordem */}
-                          <div onClick={(e) => e.stopPropagation()}>
-                            {multi ? (
-                              <div className="flex items-center gap-1.5">
-                                <div className="flex flex-col -my-1">
-                                  <button disabled={isFirst} onClick={() => move(p, "up")} className={isFirst ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
-                                    <ChevronUp className="w-4 h-4" />
-                                  </button>
-                                  <button disabled={isLast} onClick={() => move(p, "down")} className={isLast ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
-                                    <ChevronDown className="w-4 h-4" />
-                                  </button>
+                          {/* Ordem — só renderiza a coluna quando há reordenação possível */}
+                          {anyMulti && (
+                            <div onClick={(e) => e.stopPropagation()}>
+                              {multi ? (
+                                <div className="flex items-center gap-1.5">
+                                  <div className="flex flex-col -my-1">
+                                    <button disabled={isFirst} onClick={() => move(p, "up")} className={isFirst ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
+                                      <ChevronUp className="w-4 h-4" />
+                                    </button>
+                                    <button disabled={isLast} onClick={() => move(p, "down")} className={isLast ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
+                                      <ChevronDown className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                  <span className={`text-[12px] font-mono ${idx === 0 ? FC.ink : FC.mut}`}>{idx + 1}º</span>
                                 </div>
-                                <span className={`text-[12px] font-mono ${idx === 0 ? FC.ink : FC.mut}`}>{idx + 1}º</span>
-                              </div>
-                            ) : (
-                              <span className={`text-[13px] ${FC.mut}`}>—</span>
-                            )}
-                          </div>
+                              ) : (
+                                <span className={`text-[12px] font-mono ${FC.mut}`}>1º</span>
+                              )}
+                            </div>
+                          )}
 
                           {/* Provider + Em uso */}
                           <div className="min-w-0 flex items-center gap-2">
@@ -369,10 +373,10 @@ export default function LlmProvidersPage() {
                     })}
                   </div>
                 );
-              });
-            })()}
-          </Row>
-        )}
+              })}
+            </Row>
+          );
+        })()}
       </PageFrame>
 
       {/* ─── Modal de detalhes (centralizado, consistente com Canais) ─── */}
