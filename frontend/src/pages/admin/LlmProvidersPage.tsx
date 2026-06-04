@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
@@ -182,9 +182,9 @@ export default function LlmProvidersPage() {
             <div>
               <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>LLM Providers</h2>
               <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
-                As LLMs que os agentes usam, <b>na ordem</b>. O <b>1º ligado</b> de cada escopo é o que o motor pega
-                (<span className="text-[#0a8f5a] font-medium">Em uso</span>); use <b>↑↓</b> pra reordenar, o <b>toggle</b> pra ligar/desligar
-                e <b>⚡</b> pra testar a key. Clique na linha pra ver tudo.
+                As LLMs agrupadas por <b>escopo</b>. Dentro de cada grupo, o <b>1º ligado</b> é o que o motor pega
+                (<span className="text-[#0a8f5a] font-medium">Em uso</span>). <b>Tenant</b> tem prioridade sobre <b>Global</b>.
+                Reordene com <b>↑↓</b>, ligue/desligue no <b>toggle</b>, teste a key no <b>⚡</b>. Clique na linha pra ver tudo.
               </p>
             </div>
             <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
@@ -239,114 +239,154 @@ export default function LlmProvidersPage() {
             <table className="w-full">
               <thead>
                 <tr className={`border-b ${FC.hair}`}>
-                  <th className={`${th} w-16`}>Ordem</th>
+                  <th className={`${th} w-20`}>Ordem</th>
                   <th className={th}>Provider</th>
                   <th className={th}>Modelo</th>
                   <th className={th}>Key</th>
-                  <th className={th}>Escopo</th>
                   <th className={th}>Ativo</th>
                   <th className="w-20"></th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
-                  <tr><td colSpan={7} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Carregando...</td></tr>
+                  <tr><td colSpan={6} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Carregando...</td></tr>
                 )}
                 {!loading && providers.length === 0 && (
-                  <tr><td colSpan={7} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</td></tr>
+                  <tr><td colSpan={6} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</td></tr>
                 )}
-                {providers.map((p) => {
-                  const scope = providers.filter((x) => x.tenant_id === p.tenant_id);
-                  const posInScope = scope.findIndex((x) => x.id === p.id);
-                  const isFirst = posInScope === 0;
-                  const isLast = posInScope === scope.length - 1;
-                  const tr = testResults[p.id];
-                  return (
-                    <tr
-                      key={p.id}
-                      onClick={() => setDetail(p)}
-                      className={`border-b ${FC.hair} last:border-0 ${FC.hover} cursor-pointer ${p.in_use ? "bg-[#0a8f5a]/[0.03]" : ""}`}
-                    >
-                      {/* Ordem — setas reordenam dentro do escopo */}
-                      <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1">
-                          <div className="flex flex-col">
-                            <button disabled={isFirst} onClick={() => move(p, "up")} className={`${isFirst ? "opacity-20 cursor-default" : FC.mut + " hover:text-[#003083]"}`}>
-                              <ChevronUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button disabled={isLast} onClick={() => move(p, "down")} className={`${isLast ? "opacity-20 cursor-default" : FC.mut + " hover:text-[#003083]"}`}>
-                              <ChevronDown className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                          <span className={`text-[12px] font-mono ${FC.mut}`}>{posInScope + 1}º</span>
-                        </div>
-                      </td>
-                      {/* Provider + badge Em uso */}
-                      <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>
-                        <div className="flex items-center gap-2">
-                          {p.provider}
-                          {p.in_use && (
-                            <span className="px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
-                          )}
-                        </div>
-                      </td>
-                      {/* Modelo + fallback */}
-                      <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>
-                        {p.default_model}
-                        {p.fallback_chain && p.fallback_chain.length > 0 && (
-                          <div className={`text-[11px] mt-0.5 ${FC.mut}`}>↳ fallback: {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
-                        )}
-                      </td>
-                      {/* Key suffix — diferencia duplicatas */}
-                      <td className={`px-6 py-2.5 text-[12px] font-mono ${FC.mut}`}>
-                        {p.api_key_suffix ? `••••${p.api_key_suffix}` : "—"}
-                      </td>
-                      {/* Escopo */}
-                      <td className="px-6 py-2.5 text-[13px]">
-                        {p.tenant_id === null ? (
-                          <span className="px-1.5 py-0.5 bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff] text-[11px] rounded">Global</span>
-                        ) : (
-                          <span className={FC.sub}>Tenant {p.tenant_id}</span>
-                        )}
-                      </td>
-                      {/* Ativo — toggle switch */}
-                      <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
-                        <Switch on={p.active} onClick={() => toggleActive(p)} title={p.active ? "Ligado — clique pra desligar" : "Desligado — clique pra ligar"} />
-                      </td>
-                      {/* Ações */}
-                      <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => testProvider(p)}
-                            disabled={testing === p.id}
-                            title="Testar conexão com o LLM"
-                            className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
-                          >
-                            {testing === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />) : <Zap className="w-3.5 h-3.5" />}
-                          </button>
-                          <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                {!loading && (() => {
+                  // Agrupa por escopo: Global primeiro, depois cada Tenant. A ORDEM
+                  // ("1º") só faz sentido DENTRO de um grupo — agrupar elimina a
+                  // confusão de "dois 1º" (eram de escopos diferentes).
+                  const groupsMap = new Map<string, Provider[]>();
+                  providers.forEach((p) => {
+                    const key = p.tenant_id === null ? "__global" : `t${p.tenant_id}`;
+                    if (!groupsMap.has(key)) groupsMap.set(key, []);
+                    groupsMap.get(key)!.push(p);
+                  });
+                  const groups = [...groupsMap.entries()].sort((a, b) =>
+                    a[0] === "__global" ? -1 : b[0] === "__global" ? 1 : a[0].localeCompare(b[0]),
                   );
-                })}
+                  return groups.map(([key, items]) => {
+                    const isGlobal = key === "__global";
+                    const multi = items.length > 1;
+                    return (
+                      <Fragment key={key}>
+                        {/* Cabeçalho do grupo (escopo) — badge consistente + tooltip */}
+                        <tr className={FC.base}>
+                          <td colSpan={6} className="px-6 pt-4 pb-1.5">
+                            <div className="flex items-center gap-2">
+                              <span
+                                title={
+                                  isGlobal
+                                    ? "Global: disponível para TODOS os agentes/clientes. É o padrão da Tier — usado quando o cliente não tem uma LLM própria."
+                                    : `Tenant ${items[0].tenant_id}: específico deste cliente. As LLMs aqui só valem para os agentes dele e têm prioridade sobre o Global.`
+                                }
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded cursor-help ${
+                                  isGlobal
+                                    ? "bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff]"
+                                    : "bg-[#262626]/[0.06] dark:bg-white/[0.08] " + FC.sub
+                                }`}
+                              >
+                                {isGlobal ? "Global" : `Tenant ${items[0].tenant_id}`}
+                                <HelpCircle className="w-3 h-3 opacity-60" />
+                              </span>
+                              <span className={`text-[11px] ${FC.mut}`}>
+                                {isGlobal ? "vale para todos os agentes" : "usado só por este cliente · prioridade sobre o Global"}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {items.map((p, idx) => {
+                          const isFirst = idx === 0;
+                          const isLast = idx === items.length - 1;
+                          const tr = testResults[p.id];
+                          return (
+                            <tr
+                              key={p.id}
+                              onClick={() => setDetail(p)}
+                              className={`border-b ${FC.hair} ${FC.hover} cursor-pointer ${p.in_use ? "bg-[#0a8f5a]/[0.03]" : ""}`}
+                            >
+                              {/* Ordem — só mostra nº/setas quando há 2+ no grupo */}
+                              <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
+                                {multi ? (
+                                  <div className="flex items-center gap-1">
+                                    <div className="flex flex-col">
+                                      <button disabled={isFirst} onClick={() => move(p, "up")} className={`${isFirst ? "opacity-20 cursor-default" : FC.mut + " hover:text-[#003083]"}`}>
+                                        <ChevronUp className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button disabled={isLast} onClick={() => move(p, "down")} className={`${isLast ? "opacity-20 cursor-default" : FC.mut + " hover:text-[#003083]"}`}>
+                                        <ChevronDown className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                    <span className={`text-[12px] font-mono ${idx === 0 ? FC.ink : FC.mut}`}>{idx + 1}º</span>
+                                  </div>
+                                ) : (
+                                  <span className={`text-[11px] ${FC.mut}`}>única</span>
+                                )}
+                              </td>
+                              {/* Provider + badge Em uso */}
+                              <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>
+                                <div className="flex items-center gap-2">
+                                  {p.provider}
+                                  {p.in_use && (
+                                    <span className="px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
+                                  )}
+                                </div>
+                              </td>
+                              {/* Modelo + fallback */}
+                              <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>
+                                {p.default_model}
+                                {p.fallback_chain && p.fallback_chain.length > 0 && (
+                                  <div className={`text-[11px] mt-0.5 ${FC.mut}`}>↳ fallback: {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
+                                )}
+                              </td>
+                              {/* Key suffix */}
+                              <td className={`px-6 py-2.5 text-[12px] font-mono ${FC.mut}`}>
+                                {p.api_key_suffix ? `••••${p.api_key_suffix}` : "—"}
+                              </td>
+                              {/* Ativo — toggle */}
+                              <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
+                                <Switch on={p.active} onClick={() => toggleActive(p)} title={p.active ? "Ligado — clique pra desligar" : "Desligado — clique pra ligar"} />
+                              </td>
+                              {/* Ações */}
+                              <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    onClick={() => testProvider(p)}
+                                    disabled={testing === p.id}
+                                    title="Testar conexão com o LLM"
+                                    className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
+                                  >
+                                    {testing === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />) : <Zap className="w-3.5 h-3.5" />}
+                                  </button>
+                                  <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           </div>
         </Row>
       </PageFrame>
 
-      {/* ─── Drawer de detalhes ─── */}
+      {/* ─── Modal de detalhes (centralizado, consistente com Canais) ─── */}
       {detail && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={() => setDetail(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setDetail(null)}>
           <div
-            className={`h-full w-full max-w-[460px] overflow-y-auto bg-white dark:bg-[#0f1115] border-l ${FC.hair} shadow-2xl`}
+            className={`w-full max-w-[520px] max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#0c0e12] border ${FC.hair} shadow-2xl`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className={`sticky top-0 flex items-center justify-between gap-3 border-b ${FC.hair} bg-white dark:bg-[#0f1115] px-5 py-4`}>
+            <div className={`sticky top-0 z-10 flex items-center justify-between gap-3 border-b ${FC.hair} bg-white dark:bg-[#0c0e12] px-5 py-4`}>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 className={`text-[16px] font-medium leading-tight ${FC.ink}`}>{detail.provider}</h2>
@@ -392,7 +432,7 @@ export default function LlmProvidersPage() {
 
               {/* Fallback chain */}
               <div>
-                <div className={`text-[11px] uppercase tracking-wider font-semibold mb-1.5 ${FC.mut}`}>Cadeia de fallback</div>
+                <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-1.5 ${FC.ink}`}>Cadeia de fallback</div>
                 {detail.fallback_chain && detail.fallback_chain.length > 0 ? (
                   <div className={`text-[13px] font-mono ${FC.sub}`}>
                     {detail.default_model} {detail.fallback_chain.map((f) => ` → ${f.model}`).join("")}
