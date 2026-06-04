@@ -29,8 +29,12 @@ const STATUS_META: Record<string, { color: string; label: string; tip: string }>
 function formatPhone(p: string | undefined | null): string {
   if (!p || p === "—") return "—";
   const d = p.replace(/\D/g, "");
+  // Com código do país (55)
   if (d.length === 13) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
   if (d.length === 12) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 8)}-${d.slice(8)}`;
+  // Sem código do país — DDD + número (celular 11 dígitos, fixo 10)
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return p;
 }
 
@@ -53,6 +57,13 @@ interface Connector {
     tipo?: string;
     phone_number_id?: string;
     waba_id?: string;
+    oficial?: boolean;
+    transporte?: string;
+    host?: string;
+    webhook?: string;
+    pareamento?: string;
+    janela?: string;
+    tem_token?: boolean;
   };
   last_event_at: string | null;
 }
@@ -452,23 +463,57 @@ export default function CanaisPage() {
                   </span>
                   <button onClick={() => setDetail(null)} className={`rounded-md p-1.5 ${FC.mut} ${FC.hover}`}><X className="h-4 w-4" /></button>
                 </div>
-                <div className="px-6 py-5 space-y-4">
-                  <div className="grid grid-cols-2 gap-3 text-[13px]">
-                    <div><div className={`text-[11px] ${FC.mut}`}>Telefone</div><div className={`font-mono ${FC.ink}`}>{formatPhone(cs.phone)}</div></div>
-                    <div><div className={`text-[11px] ${FC.mut}`}>Agente</div><div className={FC.ink}>{ag?.nome || `#${detail.agent_id}`}</div></div>
-                    {isCloud ? (
-                      <>
-                        <div><div className={`text-[11px] ${FC.mut}`}>Phone Number ID</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.phone_number_id || "—"}</div></div>
-                        <div><div className={`text-[11px] ${FC.mut}`}>WABA ID</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.waba_id || "—"}</div></div>
-                      </>
-                    ) : (
-                      <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Instância (Engine)</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.instance_id || "—"}</div></div>
-                    )}
+                <div className="px-6 py-5 space-y-5">
+                  {/* Conexão */}
+                  <div>
+                    <div className={`text-[11px] uppercase tracking-wider font-semibold mb-2 ${FC.mut}`}>Conexão</div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+                      <div><div className={`text-[11px] ${FC.mut}`}>Telefone</div><div className={`font-mono ${FC.ink}`}>{formatPhone(cs.phone)}</div></div>
+                      <div>
+                        <div className={`text-[11px] ${FC.mut}`}>Tipo</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className={FC.ink}>{isCloud ? "Oficial" : "Não-oficial"}</span>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${isCloud ? "bg-[#003083]/[0.08] text-[#003083]" : "bg-[#262626]/[0.06] " + FC.mut}`}>{isCloud ? "Meta Cloud API" : "Baileys"}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className={`text-[11px] ${FC.mut}`}>Status</div>
+                        <div className="inline-flex items-center gap-1.5" title={m.tip}><span className={`w-2 h-2 rounded-full ${m.color}`} /><span className={FC.ink}>{m.label}</span></div>
+                      </div>
+                      <div><div className={`text-[11px] ${FC.mut}`}>Último evento</div><div className={FC.ink}>{detail.last_event_at ? new Date(detail.last_event_at).toLocaleString("pt-BR") : "—"}</div></div>
+                    </div>
                   </div>
-                  {ag?.persona && (
-                    <div><div className={`text-[11px] ${FC.mut} mb-1`}>O que o agente faz</div><p className={`text-[13px] leading-snug ${FC.sub}`}>{ag.persona}</p></div>
-                  )}
-                  <div><div className={`text-[11px] ${FC.mut} mb-1`}>Como funciona</div><p className={`text-[13px] leading-snug ${FC.sub}`}>{comoFunciona}</p></div>
+
+                  {/* Técnico */}
+                  <div>
+                    <div className={`text-[11px] uppercase tracking-wider font-semibold mb-2 ${FC.mut}`}>Detalhes técnicos</div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+                      <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Transporte</div><div className={FC.sub}>{cs.transporte || channelType(detail.kind)}</div></div>
+                      {cs.host && <div><div className={`text-[11px] ${FC.mut}`}>Host</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.host}</div></div>}
+                      <div><div className={`text-[11px] ${FC.mut}`}>Pareamento</div><div className={`text-[12px] ${FC.sub}`}>{cs.pareamento || "—"}</div></div>
+                      {isCloud ? (
+                        <>
+                          <div><div className={`text-[11px] ${FC.mut}`}>Phone Number ID</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.phone_number_id || "—"}</div></div>
+                          <div><div className={`text-[11px] ${FC.mut}`}>WABA ID</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.waba_id || "—"}</div></div>
+                          <div><div className={`text-[11px] ${FC.mut}`}>Token</div><div className={FC.sub}>{cs.tem_token ? "✓ configurado" : "—"}</div></div>
+                          {cs.janela && <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Janela de mensagem</div><div className={`text-[12px] ${FC.sub}`}>{cs.janela}</div></div>}
+                        </>
+                      ) : (
+                        <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Instância (Engine)</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.instance_id || "—"}</div></div>
+                      )}
+                      {cs.webhook && <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Webhook de entrada</div><div className={`font-mono text-[11px] ${FC.sub} break-all`}>{cs.webhook}</div></div>}
+                    </div>
+                  </div>
+
+                  {/* Vínculo + como funciona (sem persona — isso vive em Agentes) */}
+                  <div>
+                    <div className={`text-[11px] uppercase tracking-wider font-semibold mb-2 ${FC.mut}`}>Agente vinculado</div>
+                    <div className="flex items-center justify-between gap-2 text-[13px]">
+                      <span className={FC.ink}>{ag?.nome || `Agente #${detail.agent_id}`}</span>
+                      <a href="/admin/agentes" className="text-[12px] text-[#003083] hover:underline">Ver / editar instruções →</a>
+                    </div>
+                    <p className={`text-[12px] leading-snug mt-2 ${FC.sub}`}>{comoFunciona}</p>
+                  </div>
                 </div>
                 <div className={`flex items-center justify-end gap-2 border-t ${FC.hair} px-6 py-4`}>
                   {detail.kind === "whatsapp" && st !== "connected" && (

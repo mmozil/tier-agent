@@ -38,6 +38,11 @@ def _summary(kind: str, cfg: dict) -> dict:
             "phone": cfg.get("phone") or "—",
             "status": cfg.get("status") or "pending",
             "tipo": "WhatsApp (Baileys)",
+            "oficial": False,
+            "transporte": "Tier WhatsApp Engine (Baileys / WhatsApp Web)",
+            "host": "whats.tier.finance",
+            "webhook": "https://api-agent.tier.finance/api/v1/webhooks/whatsapp-engine",
+            "pareamento": "QR Code (vincula como aparelho)",
         }
     if kind == "whatsapp_cloud":
         return {
@@ -47,6 +52,13 @@ def _summary(kind: str, cfg: dict) -> dict:
             # Cloud não pareia (OAuth): tem token => conectado
             "status": "connected" if cfg.get("token") else "pending",
             "tipo": "WhatsApp Cloud API (oficial)",
+            "oficial": True,
+            "transporte": "Meta Graph API v21.0",
+            "host": "graph.facebook.com",
+            "webhook": "Meta → webhook oficial (Cloud API)",
+            "pareamento": "Login Facebook / Embedded Signup (sem QR)",
+            "janela": "Janela 24h: texto livre dentro; fora, só template aprovado",
+            "tem_token": bool(cfg.get("token")),
         }
     if kind == "telegram":
         return {"bot_username": cfg.get("bot_username") or "—", "tipo": "Telegram"}
