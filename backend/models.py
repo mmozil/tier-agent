@@ -108,6 +108,9 @@ class TaLlmProvider(Base):
     # pra providers OpenAI-compatible customizados
 
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    # Ordem de uso: MENOR = usado primeiro. O motor pega o ativo de menor priority
+    # no escopo (tenant antes de global). Empate → maior id.
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

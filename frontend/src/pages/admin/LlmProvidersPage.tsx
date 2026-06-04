@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Power, Loader2, Zap } from "lucide-react";
+import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
@@ -12,8 +12,16 @@ interface Provider {
   fallback_chain: { provider: string; model: string }[];
   temperature: number;
   max_tokens: number;
+  timeout_s: number;
+  cost_input_per_1m: number | null;
+  cost_output_per_1m: number | null;
+  base_url: string | null;
   tenant_id: number | null;
   active: boolean;
+  priority: number;
+  api_key_suffix: string | null;
+  created_at: string | null;
+  in_use: boolean;
 }
 
 interface SupportedProvider {
@@ -21,11 +29,23 @@ interface SupportedProvider {
   label: string;
 }
 
+interface TestResult {
+  ok: boolean;
+  provider: string;
+  model: string;
+  latency_ms?: number;
+  sample?: string;
+  detail?: string;
+}
+
 export default function LlmProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [supported, setSupported] = useState<SupportedProvider[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState<Provider | null>(null);
+  const [testing, setTesting] = useState<number | null>(null);
+  const [testResults, setTestResults] = useState<Record<number, TestResult>>({});
 
   const [form, setForm] = useState({
     provider: "minimax",
@@ -75,33 +95,59 @@ export default function LlmProvidersPage() {
     try {
       await api.delete(`/llm-providers/${id}`);
       toast.success("Removido");
+      setDetail(null);
       load();
-    } catch (err) {
+    } catch {
       toast.error("Erro ao deletar");
     }
   }
 
-  // Liga/desliga o provider (active). O provider ativo é o PRIMÁRIO que o agente usa.
+  // Liga/desliga o provider (active). Ligado = entra no rodízio; o de menor ordem vira o primário.
   async function toggleActive(p: Provider) {
     try {
       await api.patch(`/llm-providers/${p.id}`, { active: !p.active });
-      toast.success(!p.active ? "Ativado (vira o primário)" : "Desativado");
+      toast.success(!p.active ? "Ativado" : "Desativado");
       load();
     } catch {
       toast.error("Erro ao alterar status");
     }
   }
 
-  const [testing, setTesting] = useState<number | null>(null);
-  // Testa a conexão real com o LLM (valida key/endpoint).
+  // Reordena (prioridade): sobe/desce dentro do MESMO escopo (global ou tenant).
+  // Quem tem MENOR priority é usado primeiro. Swap dos valores entre vizinhos.
+  async function move(p: Provider, dir: "up" | "down") {
+    const scope = providers.filter((x) => x.tenant_id === p.tenant_id);
+    const idx = scope.findIndex((x) => x.id === p.id);
+    const j = dir === "up" ? idx - 1 : idx + 1;
+    if (j < 0 || j >= scope.length) return;
+    const other = scope[j];
+    try {
+      if (p.priority === other.priority) {
+        // empate (ex: ambos default 100) — desempata movendo só este
+        const np = dir === "up" ? other.priority - 1 : other.priority + 1;
+        await api.patch(`/llm-providers/${p.id}`, { priority: np });
+      } else {
+        await api.patch(`/llm-providers/${p.id}`, { priority: other.priority });
+        await api.patch(`/llm-providers/${other.id}`, { priority: p.priority });
+      }
+      load();
+    } catch {
+      toast.error("Erro ao reordenar");
+    }
+  }
+
+  // Testa a conexão real com o LLM (valida key/endpoint + latência).
   async function testProvider(p: Provider) {
     setTesting(p.id);
     try {
-      const { data } = await api.post<{ ok?: boolean; detail?: string; message?: string }>(`/llm-providers/${p.id}/test`);
-      if (data?.ok === false) toast.error(`Falhou: ${data.detail || data.message || "sem resposta"}`);
-      else toast.success("Conexão OK ✓");
+      const { data } = await api.post<TestResult>(`/llm-providers/${p.id}/test`);
+      setTestResults((r) => ({ ...r, [p.id]: data }));
+      if (data.ok) toast.success(`Conexão OK ✓ (${data.latency_ms}ms)`);
+      else toast.error(`Falhou: ${data.detail || "sem resposta"}`);
     } catch (e: any) {
-      toast.error(`Falhou: ${e?.response?.data?.detail || "erro na conexão"}`);
+      const detail = e?.response?.data?.detail || "erro na conexão";
+      setTestResults((r) => ({ ...r, [p.id]: { ok: false, provider: p.provider, model: p.default_model, detail } }));
+      toast.error(`Falhou: ${detail}`);
     } finally {
       setTesting(null);
     }
@@ -109,6 +155,24 @@ export default function LlmProvidersPage() {
 
   const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
   const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.mut}`;
+
+  function scopeLabel(p: Provider) {
+    return p.tenant_id === null ? "Global" : `Tenant ${p.tenant_id}`;
+  }
+
+  // ─── Toggle switch reutilizável (track + knob) ───
+  function Switch({ on, onClick, title }: { on: boolean; onClick: () => void; title?: string }) {
+    return (
+      <button
+        type="button"
+        title={title}
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        className={`relative inline-flex h-[18px] w-[32px] shrink-0 items-center rounded-full transition-colors ${on ? "bg-[#0a8f5a]" : "bg-slate-300 dark:bg-[#3a3a3a]"}`}
+      >
+        <span className={`inline-block h-[14px] w-[14px] transform rounded-full bg-white shadow transition-transform ${on ? "translate-x-[16px]" : "translate-x-[2px]"}`} />
+      </button>
+    );
+  }
 
   return (
     <div className="-mx-8 pb-10">
@@ -118,7 +182,9 @@ export default function LlmProvidersPage() {
             <div>
               <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>LLM Providers</h2>
               <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
-                Cadastre as LLMs que você tem. O <b>Ligado</b> é o <b>primário</b> (que os agentes usam); os demais ficam de fallback. Use o <b>⚡ Testar</b> pra validar a key. Zero hardcode.
+                As LLMs que os agentes usam, <b>na ordem</b>. O <b>1º ligado</b> de cada escopo é o que o motor pega
+                (<span className="text-[#0a8f5a] font-medium">Em uso</span>); use <b>↑↓</b> pra reordenar, o <b>toggle</b> pra ligar/desligar
+                e <b>⚡</b> pra testar a key. Clique na linha pra ver tudo.
               </p>
             </div>
             <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
@@ -173,70 +239,213 @@ export default function LlmProvidersPage() {
             <table className="w-full">
               <thead>
                 <tr className={`border-b ${FC.hair}`}>
-                  <th className={th}>ID</th>
+                  <th className={`${th} w-16`}>Ordem</th>
                   <th className={th}>Provider</th>
                   <th className={th}>Modelo</th>
+                  <th className={th}>Key</th>
                   <th className={th}>Escopo</th>
-                  <th className={th}>Status</th>
-                  <th className="w-12"></th>
+                  <th className={th}>Ativo</th>
+                  <th className="w-20"></th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
-                  <tr><td colSpan={6} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Carregando...</td></tr>
+                  <tr><td colSpan={7} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Carregando...</td></tr>
                 )}
                 {!loading && providers.length === 0 && (
-                  <tr><td colSpan={6} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</td></tr>
+                  <tr><td colSpan={7} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</td></tr>
                 )}
-                {providers.map((p) => (
-                  <tr key={p.id} className={`border-b ${FC.hair} last:border-0 ${FC.hover}`}>
-                    <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.mut}`}>{p.id}</td>
-                    <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>{p.provider}</td>
-                    <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>
-                      {p.default_model}
-                      {p.fallback_chain && p.fallback_chain.length > 0 && (
-                        <div className={`text-[11px] mt-0.5 ${FC.mut}`}>↳ fallback: {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
-                      )}
-                    </td>
-                    <td className="px-6 py-2.5 text-[13px]">
-                      {p.tenant_id === null ? (
-                        <span className="px-1.5 py-0.5 bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff] text-[11px] rounded">Global</span>
-                      ) : (
-                        <span className={FC.sub}>Tenant {p.tenant_id}</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-2.5 text-[13px]">
-                      <button
-                        onClick={() => toggleActive(p)}
-                        title={p.active ? "Ativo (primário) — clique pra desligar" : "Inativo — clique pra ligar (vira primário)"}
-                        className="inline-flex items-center gap-1.5 hover:opacity-80"
-                      >
-                        <Power className={`w-3.5 h-3.5 ${p.active ? "text-[#0a8f5a]" : FC.mut}`} />
-                        <span className={p.active ? "text-[#0a8f5a]" : FC.mut}>{p.active ? "Ligado" : "Desligado"}</span>
-                      </button>
-                    </td>
-                    <td className="px-2 py-2.5">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => testProvider(p)}
-                          disabled={testing === p.id}
-                          title="Testar conexão com o LLM"
-                          className={`p-1.5 rounded-md ${FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06] transition-colors`}
-                        >
-                          {testing === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                        </button>
-                        <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {providers.map((p) => {
+                  const scope = providers.filter((x) => x.tenant_id === p.tenant_id);
+                  const posInScope = scope.findIndex((x) => x.id === p.id);
+                  const isFirst = posInScope === 0;
+                  const isLast = posInScope === scope.length - 1;
+                  const tr = testResults[p.id];
+                  return (
+                    <tr
+                      key={p.id}
+                      onClick={() => setDetail(p)}
+                      className={`border-b ${FC.hair} last:border-0 ${FC.hover} cursor-pointer ${p.in_use ? "bg-[#0a8f5a]/[0.03]" : ""}`}
+                    >
+                      {/* Ordem — setas reordenam dentro do escopo */}
+                      <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1">
+                          <div className="flex flex-col">
+                            <button disabled={isFirst} onClick={() => move(p, "up")} className={`${isFirst ? "opacity-20 cursor-default" : FC.mut + " hover:text-[#003083]"}`}>
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button disabled={isLast} onClick={() => move(p, "down")} className={`${isLast ? "opacity-20 cursor-default" : FC.mut + " hover:text-[#003083]"}`}>
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <span className={`text-[12px] font-mono ${FC.mut}`}>{posInScope + 1}º</span>
+                        </div>
+                      </td>
+                      {/* Provider + badge Em uso */}
+                      <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>
+                        <div className="flex items-center gap-2">
+                          {p.provider}
+                          {p.in_use && (
+                            <span className="px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
+                          )}
+                        </div>
+                      </td>
+                      {/* Modelo + fallback */}
+                      <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>
+                        {p.default_model}
+                        {p.fallback_chain && p.fallback_chain.length > 0 && (
+                          <div className={`text-[11px] mt-0.5 ${FC.mut}`}>↳ fallback: {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
+                        )}
+                      </td>
+                      {/* Key suffix — diferencia duplicatas */}
+                      <td className={`px-6 py-2.5 text-[12px] font-mono ${FC.mut}`}>
+                        {p.api_key_suffix ? `••••${p.api_key_suffix}` : "—"}
+                      </td>
+                      {/* Escopo */}
+                      <td className="px-6 py-2.5 text-[13px]">
+                        {p.tenant_id === null ? (
+                          <span className="px-1.5 py-0.5 bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff] text-[11px] rounded">Global</span>
+                        ) : (
+                          <span className={FC.sub}>Tenant {p.tenant_id}</span>
+                        )}
+                      </td>
+                      {/* Ativo — toggle switch */}
+                      <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <Switch on={p.active} onClick={() => toggleActive(p)} title={p.active ? "Ligado — clique pra desligar" : "Desligado — clique pra ligar"} />
+                      </td>
+                      {/* Ações */}
+                      <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => testProvider(p)}
+                            disabled={testing === p.id}
+                            title="Testar conexão com o LLM"
+                            className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
+                          >
+                            {testing === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />) : <Zap className="w-3.5 h-3.5" />}
+                          </button>
+                          <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </Row>
       </PageFrame>
+
+      {/* ─── Drawer de detalhes ─── */}
+      {detail && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={() => setDetail(null)}>
+          <div
+            className={`h-full w-full max-w-[460px] overflow-y-auto bg-white dark:bg-[#0f1115] border-l ${FC.hair} shadow-2xl`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className={`sticky top-0 flex items-center justify-between gap-3 border-b ${FC.hair} bg-white dark:bg-[#0f1115] px-5 py-4`}>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2 className={`text-[16px] font-medium leading-tight ${FC.ink}`}>{detail.provider}</h2>
+                  {detail.in_use && (
+                    <span className="px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
+                  )}
+                </div>
+                <p className={`text-[12px] ${FC.sub}`}>{scopeLabel(detail)} · {detail.default_model}</p>
+              </div>
+              <button onClick={() => setDetail(null)} className={`rounded-md p-1.5 ${FC.mut} ${FC.hover}`}><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              {/* O que é / como funciona */}
+              <div className={`rounded-lg border ${FC.hair} p-3.5 text-[13px] leading-relaxed ${FC.sub}`}>
+                {detail.in_use ? (
+                  <>Este é o provider <b className="text-[#0a8f5a]">em uso</b> no escopo <b>{scopeLabel(detail)}</b> — é a 1ª LLM ligada na ordem, então é o que os agentes chamam de fato.</>
+                ) : detail.active ? (
+                  <>Ligado, mas <b>não é o 1º</b> da fila neste escopo — só entra se o de cima for desligado ou falhar (via fallback). Use <b>↑</b> pra promover.</>
+                ) : (
+                  <>Desligado — não é usado por nenhum agente. Ligue o <b>toggle</b> pra colocá-lo na fila.</>
+                )}
+              </div>
+
+              {/* Grid de campos */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+                <Field label="Ordem (priority)" value={`${detail.priority}`} mono />
+                <Field label="Status" value={detail.active ? "Ligado" : "Desligado"} />
+                <Field label="Modelo" value={detail.default_model} mono />
+                <Field label="API Key" value={detail.api_key_suffix ? `••••${detail.api_key_suffix}` : "—"} mono />
+                <Field label="Temperature" value={`${detail.temperature}`} mono />
+                <Field label="Max tokens" value={`${detail.max_tokens}`} mono />
+                <Field label="Timeout" value={`${detail.timeout_s}s`} mono />
+                <Field label="Escopo" value={scopeLabel(detail)} />
+                {detail.base_url && <Field label="Base URL" value={detail.base_url} mono full />}
+                {(detail.cost_input_per_1m != null || detail.cost_output_per_1m != null) && (
+                  <Field label="Custo /1M (in/out)" value={`$${detail.cost_input_per_1m ?? "?"} / $${detail.cost_output_per_1m ?? "?"}`} mono full />
+                )}
+                {detail.created_at && (
+                  <Field label="Criado em" value={new Date(detail.created_at).toLocaleString("pt-BR")} full />
+                )}
+              </div>
+
+              {/* Fallback chain */}
+              <div>
+                <div className={`text-[11px] uppercase tracking-wider font-semibold mb-1.5 ${FC.mut}`}>Cadeia de fallback</div>
+                {detail.fallback_chain && detail.fallback_chain.length > 0 ? (
+                  <div className={`text-[13px] font-mono ${FC.sub}`}>
+                    {detail.default_model} {detail.fallback_chain.map((f) => ` → ${f.model}`).join("")}
+                  </div>
+                ) : (
+                  <div className={`text-[13px] ${FC.mut}`}>Sem fallback — usa só {detail.default_model}.</div>
+                )}
+              </div>
+
+              {/* Teste de conexão */}
+              <div className={`rounded-lg border ${FC.hair} p-3.5`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className={`text-[13px] font-medium ${FC.ink}`}>Testar conexão</div>
+                    <div className={`text-[11px] ${FC.mut}`}>Faz um ping real validando a key + endpoint.</div>
+                  </div>
+                  <Button variant="primary" size="sm" onClick={() => testProvider(detail)} disabled={testing === detail.id}>
+                    {testing === detail.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />} Testar
+                  </Button>
+                </div>
+                {testResults[detail.id] && (
+                  <div className={`mt-3 rounded-md p-2.5 text-[12px] ${testResults[detail.id].ok ? "bg-[#0a8f5a]/[0.08] text-[#0a8f5a]" : "bg-[#E5484D]/[0.08] text-[#E5484D]"}`}>
+                    {testResults[detail.id].ok ? (
+                      <>✓ OK em {testResults[detail.id].latency_ms}ms · resposta: "{testResults[detail.id].sample || "—"}"</>
+                    ) : (
+                      <>✗ {testResults[detail.id].detail}</>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Ações */}
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <Button variant="ghost" size="sm" onClick={() => toggleActive(detail)}>
+                  {detail.active ? "Desligar" : "Ligar"}
+                </Button>
+                <button onClick={() => onDelete(detail.id)} className="text-[12px] text-[#E5484D] hover:underline inline-flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Deletar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  function Field({ label, value, mono, full }: { label: string; value: string; mono?: boolean; full?: boolean }) {
+    return (
+      <div className={full ? "col-span-2" : ""}>
+        <div className={`text-[11px] ${FC.mut}`}>{label}</div>
+        <div className={`${mono ? "font-mono" : ""} ${FC.ink} break-all`}>{value}</div>
+      </div>
+    );
+  }
 }

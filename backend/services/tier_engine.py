@@ -98,7 +98,7 @@ async def _load_provider(db: AsyncSession, tenant_id: int) -> TaLlmProvider:
         await db.execute(
             select(TaLlmProvider)
             .where(TaLlmProvider.tenant_id == tenant_id, TaLlmProvider.active.is_(True))
-            .order_by(TaLlmProvider.id.desc())
+            .order_by(TaLlmProvider.priority.asc(), TaLlmProvider.id.desc())
             .limit(1)
         )
     ).scalars().first()

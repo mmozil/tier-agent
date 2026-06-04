@@ -4,6 +4,8 @@ Cliente cadastra provider + API key + modelo + fallback chain via UI.
 API key é Fernet-encrypted no DB.
 """
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -51,6 +53,24 @@ class LlmProviderIn(BaseModel):
     base_url: str | None = None
     tenant_id: int | None = None  # NULL = global default Tier
     active: bool = True
+    priority: int = 100  # menor = usado primeiro
+
+
+class LlmProviderPatch(BaseModel):
+    """Patch parcial — todos opcionais (toggle, reorder, edição pontual)."""
+
+    provider: str | None = None
+    api_key: str | None = None
+    default_model: str | None = None
+    fallback_chain: list[dict] | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    timeout_s: int | None = None
+    cost_input_per_1m: float | None = None
+    cost_output_per_1m: float | None = None
+    base_url: str | None = None
+    active: bool | None = None
+    priority: int | None = None
 
 
 class LlmProviderOut(BaseModel):
@@ -66,7 +86,12 @@ class LlmProviderOut(BaseModel):
     base_url: str | None
     tenant_id: int | None
     active: bool
+    priority: int = 100
     has_api_key: bool = True
+    # Campos computados (preenchidos no list, não vêm direto do ORM):
+    api_key_suffix: str | None = None  # últimos 4 chars da key, pra diferenciar duplicatas
+    created_at: datetime | None = None
+    in_use: bool = False  # True = é o provider que o motor REALMENTE usa neste escopo
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -82,16 +107,45 @@ async def list_providers(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lista providers do tenant + globais (NULL tenant_id)."""
+    """Lista providers do tenant + globais (NULL tenant_id).
+
+    Ordenado por priority (menor primeiro) — a MESMA ordem que o motor usa pra
+    escolher. Marca `in_use=True` no provider que o motor realmente pega em cada
+    escopo (o ativo de menor priority; empate → maior id), pra acabar com a dúvida
+    de "qual das duas configs idênticas está valendo".
+    """
     stmt = select(TaLlmProvider)
     if not user.is_admin:
         stmt = stmt.where(
             (TaLlmProvider.tenant_id == user.tenant_id) | (TaLlmProvider.tenant_id.is_(None))
         )
-    result = await db.execute(stmt.order_by(TaLlmProvider.id.desc()))
+    rows = list(
+        (
+            await db.execute(stmt.order_by(TaLlmProvider.priority.asc(), TaLlmProvider.id.desc()))
+        ).scalars().all()
+    )
+
+    # Determina o "em uso" por escopo (tenant_id). Em cada escopo, o 1º ativo na
+    # ordem (priority asc, id desc) é o que o motor pega.
+    in_use_ids: set[int] = set()
+    by_scope: dict[int | None, list[TaLlmProvider]] = {}
+    for r in rows:
+        by_scope.setdefault(r.tenant_id, []).append(r)
+    for scope_rows in by_scope.values():
+        winner = next((r for r in scope_rows if r.active), None)
+        if winner:
+            in_use_ids.add(winner.id)
+
     items = []
-    for row in result.scalars().all():
+    for row in rows:
         out = LlmProviderOut.model_validate(row)
+        out.in_use = row.id in in_use_ids
+        out.created_at = row.created_at
+        try:
+            raw = decrypt(row.api_key_enc) or ""
+            out.api_key_suffix = raw[-4:] if len(raw) >= 4 else "••••"
+        except Exception:
+            out.api_key_suffix = None
         items.append(out)
     return items
 
@@ -136,7 +190,7 @@ async def create_provider(
 @router.patch("/{provider_id}", response_model=LlmProviderOut)
 async def update_provider(
     provider_id: int,
-    payload: LlmProviderIn,
+    payload: LlmProviderPatch,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -190,10 +244,40 @@ async def test_provider_connection(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Faz uma chamada teste pro provider pra validar credenciais. (TODO: implementar por provider)"""
+    """Valida a key/endpoint fazendo um ping real no provider (sem fallback).
+
+    Usa o motor (`tier_engine._complete`) com um prompt mínimo. Devolve
+    `{ok, latency_ms, model, sample}` em sucesso, ou `{ok: false, detail}` no erro
+    — assim o botão ⚡ na UI dá um veredito honesto da credencial.
+    """
+    import time
+
+    from services import tier_engine
+
     item = await db.get(TaLlmProvider, provider_id)
     if not item:
         raise HTTPException(404, "Provider não encontrado")
-    # Decrypt da chave fica disponível pra service futuro
-    _ = decrypt(item.api_key_enc)
-    return {"status": "not_implemented_yet", "provider": item.provider, "model": item.default_model}
+
+    messages = [
+        {"role": "system", "content": "Você é um teste de conexão. Responda só 'ok'."},
+        {"role": "user", "content": "ping"},
+    ]
+    started = time.perf_counter()
+    try:
+        data = await tier_engine._complete(item, item.default_model, messages, None)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        sample = ((data.get("choices") or [{}])[0].get("message", {}).get("content") or "")[:80]
+        return {
+            "ok": True,
+            "provider": item.provider,
+            "model": item.default_model,
+            "latency_ms": latency_ms,
+            "sample": sample.strip(),
+        }
+    except Exception as e:  # noqa: BLE001
+        return {
+            "ok": False,
+            "provider": item.provider,
+            "model": item.default_model,
+            "detail": str(e)[:300],
+        }
