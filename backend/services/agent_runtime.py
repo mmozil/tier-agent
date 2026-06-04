@@ -1,10 +1,10 @@
-"""Agent runtime — orquestra recepção de mensagem → Hermes → envio de volta no canal.
+"""Agent runtime — orquestra recepção de mensagem → Engine → envio de volta no canal.
 
 Fluxo:
 1. Webhook channel chega
 2. resolve_agent_from_connector identifica o agente
 3. ensure_conversation cria/atualiza TaConversation
-4. hermes_proxy.send_message → Hermes responde
+4. tier_engine.send_message → Engine responde
 5. connectors.registry.send → envia resposta de volta no canal
 6. log usage em TaMessageLog + TaUsageDaily
 """
@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.encryption import decrypt
 from models import TaAgent, TaConnector, TaConversation, TaMessageLog, TaUsageDaily
-from services import hermes_proxy, playbook_executor, playbook_router
+from services import tier_engine, playbook_executor, playbook_router
 from services.connectors import registry
 from services.connectors.base import ConnectorConfig, OutboundMessage
 
@@ -216,7 +216,7 @@ async def handle_inbound_message(
     text_content: str,
     attachments: list | None = None,
 ) -> dict:
-    """Pipeline completo: webhook → Hermes → resposta no canal."""
+    """Pipeline completo: webhook → Engine → resposta no canal."""
     connector = await resolve_connector_by_instance(db, connector_kind, instance_id)
     if not connector:
         return {"status": "no_connector", "instance_id": instance_id}
@@ -403,13 +403,13 @@ async def handle_inbound_message(
         logger.exception("handoff/escalation check falhou agent=%s — segue fluxo normal", agent.id)
 
     # ─── Playbook router (Sprint 1) ───
-    # Intercepta antes do Hermes. Se nenhuma trigger matchou, cai pro fluxo padrão.
+    # Intercepta antes do Engine. Se nenhuma trigger matchou, cai pro fluxo padrão.
     try:
         match = await playbook_router.match_inbound_message(
             db, agent_id=agent.id, text=text_content
         )
     except Exception:
-        logger.exception("playbook_router falhou agent=%s — fallback pro Hermes", agent.id)
+        logger.exception("playbook_router falhou agent=%s — fallback pro Engine", agent.id)
         match = None
 
     if match:
@@ -440,10 +440,10 @@ async def handle_inbound_message(
             }
         except Exception as e:
             logger.exception(
-                "playbook_executor falhou playbook=%s agent=%s — fallback pro Hermes",
+                "playbook_executor falhou playbook=%s agent=%s — fallback pro Engine",
                 match.playbook_id, agent.id,
             )
-            # cai pro Hermes free como fallback
+            # cai pro Engine free como fallback
 
     # Memory cross-session: busca fatos relevantes do contato + injeta no system
     from services import memory_service
@@ -482,9 +482,9 @@ async def handle_inbound_message(
     )
     system_prompt = f"{system_prompt}\n\n" + "\n".join(_contact)
 
-    # Hermes responde (com vision se attachment image presente)
+    # Engine responde (com vision se attachment image presente)
     try:
-        reply = await hermes_proxy.send_message(
+        reply = await tier_engine.send_message(
             tenant_id=agent.tenant_id,
             user_content=text_content,
             db=db,
@@ -495,8 +495,8 @@ async def handle_inbound_message(
             use_cache=not memory_block,  # cache desliga quando há memory custom no system
         )
     except Exception as e:
-        logger.exception("Hermes falhou tenant=%s agent=%s", agent.tenant_id, agent.id)
-        return {"status": "hermes_error", "error": str(e)}
+        logger.exception("Engine falhou tenant=%s agent=%s", agent.tenant_id, agent.id)
+        return {"status": "engine_error", "error": str(e)}
 
     # Calcula custo real via TaLlmProvider lookup
     from services import cost_calculator

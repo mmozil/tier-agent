@@ -1,4 +1,4 @@
-"""Knowledge upload — PDF/Sheets/Texto → skill markdown no container Hermes do tenant."""
+"""Knowledge upload — PDF/Sheets/Texto → skill markdown no container Engine do tenant."""
 
 import logging
 from datetime import datetime
@@ -80,7 +80,7 @@ async def upload(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload de PDF/Sheet → extrai texto → gera skill → instala no Hermes do tenant."""
+    """Upload de PDF/Sheet → extrai texto → gera skill → instala no Engine do tenant."""
     agent = await _ensure_agent_owned(db, agent_id, user)
     content = await file.read()
     if not content:
@@ -134,7 +134,7 @@ async def upload(
         record.indexed_at = datetime.utcnow()
         await db.commit()
 
-        # Indexa no pgvector pra RAG real (em paralelo ao skill no container Hermes)
+        # Indexa no pgvector pra RAG real (em paralelo ao skill no container Engine)
         try:
             from services import rag_engine
 

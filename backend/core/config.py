@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     r2_public_url: str = ""
 
     docker_host: str = "unix:///var/run/docker.sock"
-    hermes_image: str = "tier/hermes:0.14.0-tier1"
-    hermes_port_range_start: int = 7100
-    hermes_port_range_end: int = 9100
+    engine_image: str = "tier/engine:0.14.0-tier1"
+    engine_port_range_start: int = 7100
+    engine_port_range_end: int = 9100
 
     # SSH para orchestrar Docker no host (em vez de mountar /var/run/docker.sock)
     tier_agent_ssh_host: str = "46.224.220.223"

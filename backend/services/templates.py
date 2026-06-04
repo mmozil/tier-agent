@@ -4,7 +4,7 @@ Cada template traz:
 - nome / descrição / ícone (kind)
 - system_prompt (persona detalhada otimizada)
 - canais sugeridos
-- skills bundle (markdown content instalado no container Hermes ao aplicar)
+- skills bundle (markdown content instalado no container Engine ao aplicar)
 """
 
 from dataclasses import dataclass, field

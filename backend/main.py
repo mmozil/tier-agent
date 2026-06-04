@@ -18,7 +18,7 @@ logger = logging.getLogger("tier-agent")
 
 app = FastAPI(
     title="Tier Agent — Control Plane",
-    description="SaaS de agentes IA configuráveis. Multi-tenant via 1 container Hermes por cliente.",
+    description="SaaS de agentes IA configuráveis. Multi-tenant via 1 container Engine por cliente.",
     version="0.1.0",
 )
 

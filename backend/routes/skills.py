@@ -1,4 +1,4 @@
-"""Routes pra skills auto-criadas pelo Hermes Curator (Q3.2).
+"""Routes pra skills auto-criadas pelo Engine Curator (Q3.2).
 
 Cliente vê o que o agente "aprendeu" sozinho. Pode arquivar skills ruins
 ou ver conteúdo full pra entender o aprendizado.
@@ -34,7 +34,7 @@ async def list_agent_skills(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lista TODAS as skills no container Hermes do agente (auto + uploaded)."""
+    """Lista TODAS as skills no container Engine do agente (auto + uploaded)."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
     agent = await db.get(TaAgent, agent_id)
@@ -83,8 +83,8 @@ async def archive_skill(
 
     from services import skill_extractor
 
-    # Safety: skill_path deve começar com /opt/data/.hermes/skills
-    if not payload.skill_path.startswith("/opt/data/.hermes/skills"):
+    # Safety: skill_path deve começar com /opt/data/.engine/skills
+    if not payload.skill_path.startswith("/opt/data/.engine/skills"):
         raise HTTPException(400, "skill_path inválido")
 
     ok = skill_extractor.archive_skill_in_container(agent.tenant_id, payload.skill_path)
@@ -111,7 +111,7 @@ async def get_skill_content(
     agent = await db.get(TaAgent, agent_id)
     if not agent or agent.tenant_id != user.tenant_id:
         raise HTTPException(404, "Agente não encontrado")
-    if not skill_path.startswith("/opt/data/.hermes/skills"):
+    if not skill_path.startswith("/opt/data/.engine/skills"):
         raise HTTPException(400, "skill_path inválido")
 
     from services import skill_extractor

@@ -985,7 +985,7 @@ function SpecialistsEditor({
               <textarea
                 value={s.system_prompt}
                 onChange={(e) => update(idx, { system_prompt: e.target.value })}
-                placeholder="Persona/instrução pro Hermes quando este specialist responder"
+                placeholder="Persona/instrução pro motor quando este specialist responder"
                 rows={2}
                 className="w-full px-2 py-1.5 text-[11px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] resize-none font-mono"
               />

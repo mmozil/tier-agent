@@ -1,7 +1,7 @@
 """Nó route_to_specialist — multi-agent visual.
 
-Lead agent classifica intent via Hermes → escolhe specialist (sub-persona com
-system_prompt próprio) → executa Hermes com esse system_prompt sobrescrito.
+Lead agent classifica intent via Engine → escolhe specialist (sub-persona com
+system_prompt próprio) → executa Engine com esse system_prompt sobrescrito.
 
 Cada specialist tem:
 - name (vendas, suporte, financeiro, etc) — vira sourceHandle do nó
@@ -12,7 +12,7 @@ Engine roteia retornando `next_handle = name_specialist` — executor segue a ed
 do canvas com `sourceHandle === name` (handles dinâmicos por specialist).
 
 Se especialista escolhido tem `auto_reply=true` (default), o nó também responde
-imediatamente via Hermes; senão só roteia e o playbook continua.
+imediatamente via Engine; senão só roteia e o playbook continua.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ async def execute_route_to_specialist(ctx: ExecutionContext, config: dict) -> No
             vars_update={save_as: chosen["name"]},
         )
 
-    # Classifica via Hermes (modelo barato — sem cache pois prompt varia)
+    # Classifica via Engine (modelo barato — sem cache pois prompt varia)
     spec_block = "\n".join(f"- {s['name']}: {s['description']}" for s in specs)
     classifier_prompt = ROUTER_PROMPT.format(
         specialists_block=spec_block, message=message_text
@@ -89,10 +89,10 @@ async def execute_route_to_specialist(ctx: ExecutionContext, config: dict) -> No
 
     try:
         from core.db import db_context
-        from services import hermes_proxy
+        from services import tier_engine
 
         async with db_context() as db:
-            reply = await hermes_proxy.send_message(
+            reply = await tier_engine.send_message(
                 tenant_id=ctx.tenant_id,
                 user_content=classifier_prompt,
                 db=db,
@@ -133,12 +133,12 @@ async def execute_route_to_specialist(ctx: ExecutionContext, config: dict) -> No
     }
     vars_update = {save_as: chosen["name"]}
 
-    # Auto-reply: executa Hermes com system_prompt do specialist e envia texto
+    # Auto-reply: executa Engine com system_prompt do specialist e envia texto
     if chosen["auto_reply"] and chosen["system_prompt"]:
         try:
             sp = render_string(chosen["system_prompt"], ctx.template_context)
             async with db_context() as db:
-                reply = await hermes_proxy.send_message(
+                reply = await tier_engine.send_message(
                     tenant_id=ctx.tenant_id,
                     user_content=message_text,
                     db=db,

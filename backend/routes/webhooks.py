@@ -1,7 +1,7 @@
 """Webhooks inbound — Tier WhatsApp Engine, Telegram, etc.
 
 Cada webhook valida assinatura/secret, faz idempotency via TaWebhookEvent,
-encaminha pra agent_runtime via hermes_proxy.
+encaminha pra agent_runtime via tier_engine.
 """
 
 import hashlib

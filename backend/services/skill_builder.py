@@ -1,6 +1,6 @@
-"""Skill builder — converte PDF/Sheet/texto em skill markdown e injeta no container Hermes.
+"""Skill builder — converte PDF/Sheet/texto em skill markdown e injeta no container Engine.
 
-Skill format (agentskills.io padrão usado pelo Hermes):
+Skill format (agentskills.io padrão usado pelo Engine):
 
 ```markdown
 ---
@@ -8,7 +8,7 @@ name: knowledge-<slug>
 description: <1 linha resumo>
 version: 1.0
 metadata:
-  hermes:
+  engine:
     tags: [knowledge, user-uploaded]
 ---
 
@@ -17,7 +17,7 @@ metadata:
 <conteúdo extraído do arquivo>
 ```
 
-Skills custom vão pra `~/.hermes/skills/knowledge/` dentro do container Hermes.
+Skills custom vão pra `~/.engine/skills/knowledge/` dentro do container Engine.
 """
 
 import logging
@@ -73,7 +73,7 @@ def extract_xlsx_text(content: bytes) -> str:
 
 
 def build_skill_md(*, title: str, body: str, description: str | None = None) -> str:
-    """Gera markdown no formato esperado pelo Hermes."""
+    """Gera markdown no formato esperado pelo Engine."""
     slug = _slug(title)
     desc = description or f"Conhecimento importado: {title}"
     desc = desc.replace("\n", " ")[:200]
@@ -83,7 +83,7 @@ name: knowledge-{slug}
 description: {desc}
 version: 1.0
 metadata:
-  hermes:
+  engine:
     tags: [knowledge, user-uploaded]
 ---
 
@@ -94,18 +94,18 @@ metadata:
 
 
 def install_skill_in_container(tenant_id: int, skill_filename: str, skill_md: str) -> str:
-    """Escreve skill no ~/.hermes/skills/knowledge/{filename} dentro do container.
+    """Escreve skill no ~/.engine/skills/knowledge/{filename} dentro do container.
 
     Retorna o path completo dentro do container.
     """
     cname = container_name(tenant_id)
-    skills_dir = "/opt/data/.hermes/skills/knowledge"
+    skills_dir = "/opt/data/.engine/skills/knowledge"
     file_path = f"{skills_dir}/{skill_filename}"
 
     # 1) cria dir
     _ssh_run(
         f"docker exec {shlex.quote(cname)} mkdir -p {shlex.quote(skills_dir)} "
-        f"&& docker exec {shlex.quote(cname)} chown -R 10000:10000 /opt/data/.hermes/skills"
+        f"&& docker exec {shlex.quote(cname)} chown -R 10000:10000 /opt/data/.engine/skills"
     )
     # 2) escreve via stdin (base64 pra evitar escape hell)
     import base64

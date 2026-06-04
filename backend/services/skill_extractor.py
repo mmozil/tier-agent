@@ -1,9 +1,9 @@
-"""Self-improving skills — lê skills auto-criadas pelo Hermes Curator FSM.
+"""Self-improving skills — lê skills auto-criadas pelo Engine Curator FSM.
 
-Hermes salva skills em `/opt/data/.hermes/skills/` (ou subdirs). Skills criadas
+Engine salva skills em `/opt/data/.engine/skills/` (ou subdirs). Skills criadas
 manualmente via Tier (upload knowledge) ficam em `knowledge/`. Skills
-auto-criadas pelo Curator do Hermes ficam em outros subdirs (e.g. `learned/`,
-`auto/`). Vamos listar TUDO em `.hermes/skills/**/*.md` exceto `knowledge/`
+auto-criadas pelo Curator do Engine ficam em outros subdirs (e.g. `learned/`,
+`auto/`). Vamos listar TUDO em `.engine/skills/**/*.md` exceto `knowledge/`
 (que é doc do cliente, não auto-aprendido).
 
 Cada skill é arquivo markdown com YAML frontmatter:
@@ -12,7 +12,7 @@ Cada skill é arquivo markdown com YAML frontmatter:
     description: ...
     version: 1.0
     metadata:
-      hermes:
+      engine:
         created_at: ...
         tags: [...]
     ---
@@ -32,7 +32,7 @@ from services.container_orchestrator import _ssh_run, container_name
 
 logger = logging.getLogger(__name__)
 
-SKILLS_ROOT = "/opt/data/.hermes/skills"
+SKILLS_ROOT = "/opt/data/.engine/skills"
 KNOWLEDGE_PREFIX = "knowledge/"  # exclui — são uploads do cliente
 
 
@@ -49,7 +49,7 @@ class SkillInfo:
 
 
 def list_skills_in_container(tenant_id: int) -> list[SkillInfo]:
-    """Lista todas skills `.md` dentro do container Hermes do tenant."""
+    """Lista todas skills `.md` dentro do container Engine do tenant."""
     cname = container_name(tenant_id)
     # find + stat — formato saída: <path>|<size>|<mtime_epoch>
     cmd = (
@@ -122,7 +122,7 @@ def _parse_frontmatter(text: str) -> tuple[str | None, str | None]:
 
 
 def archive_skill_in_container(tenant_id: int, skill_path: str) -> bool:
-    """Move skill pra `.hermes/skills_archive/` (não deleta — permite restore)."""
+    """Move skill pra `.engine/skills_archive/` (não deleta — permite restore)."""
     cname = container_name(tenant_id)
     archive_dir = f"{SKILLS_ROOT}_archive"
     filename = skill_path.rsplit("/", 1)[-1]

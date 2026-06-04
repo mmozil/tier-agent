@@ -1,7 +1,7 @@
 """Router de playbooks — match de triggers contra mensagem inbound.
 
 Decide se uma mensagem deve disparar um playbook (e qual) em vez de
-ir direto pro Hermes. Consulta `ta_playbook_trigger_index`.
+ir direto pro Engine. Consulta `ta_playbook_trigger_index`.
 """
 
 from __future__ import annotations

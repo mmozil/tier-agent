@@ -109,7 +109,7 @@ export default function AgentSkillsPage() {
             </Link>
             <div className="flex-1 min-w-0">
               <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 truncate ${FC.ink}`}>Skills · {agent.nome}</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Skills auto-criadas pelo Hermes Curator e knowledge enviado por você.</p>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Skills auto-criadas pelo Curator do agente e knowledge enviado por você.</p>
             </div>
             <Button variant="secondary" onClick={load} className="shrink-0">Atualizar</Button>
           </div>
@@ -134,7 +134,7 @@ export default function AgentSkillsPage() {
               </h3>
               <p className={`text-[13px] ${FC.sub}`}>
                 {filter === "auto"
-                  ? "Quando o agente acumular padrões nas conversas, o Hermes Curator cria skills automaticamente."
+                  ? "Quando o agente acumular padrões nas conversas, o Curator do agente cria skills automaticamente."
                   : filter === "uploaded"
                     ? "Envie PDFs/Excel/MD em /admin/knowledge pra agente usar."
                     : "Esse agente ainda não tem skills cadastradas no container."}

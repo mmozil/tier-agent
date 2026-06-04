@@ -1,4 +1,4 @@
-"""Routes admin pra gerenciar containers Hermes (provision/restart/health)."""
+"""Routes admin pra gerenciar containers Engine (provision/restart/health)."""
 
 from datetime import datetime
 
@@ -34,7 +34,7 @@ async def provision_container(
     _admin: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Cria ou recria container Hermes pro tenant lendo config LLM ativa."""
+    """Cria ou recria container Engine pro tenant lendo config LLM ativa."""
     spec = await orch.build_spec_from_db(tenant_id, db)
     record = await orch.create_container(spec, db)
     return record

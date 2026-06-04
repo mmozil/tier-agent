@@ -1,6 +1,6 @@
 """Nós LLM — llm_step + intent_classifier + knowledge_lookup.
 
-Todos chamam o container Hermes do tenant via hermes_proxy.send_message.
+Todos chamam o container Engine do tenant via tier_engine.send_message.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ import json
 import logging
 import re
 
-from services import hermes_proxy
+from services import tier_engine
 from services.playbook_template_engine import render_string
 
 from .base import ExecutionContext, NodeResult
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 async def execute_llm_step(ctx: ExecutionContext, config: dict) -> NodeResult:
-    """Chama Hermes pra gerar texto contextual.
+    """Chama Engine pra gerar texto contextual.
 
     Config:
         system_prompt (str): instrução system, suporta vars
@@ -67,7 +67,7 @@ async def execute_llm_step(ctx: ExecutionContext, config: dict) -> NodeResult:
         from core.db import db_context
 
         async with db_context() as db:
-            reply = await hermes_proxy.send_message(
+            reply = await tier_engine.send_message(
                 tenant_id=ctx.tenant_id,
                 user_content=user_prompt,
                 db=db,
@@ -120,11 +120,11 @@ async def execute_llm_step(ctx: ExecutionContext, config: dict) -> NodeResult:
 
 
 async def execute_intent_classifier(ctx: ExecutionContext, config: dict) -> NodeResult:
-    """Classifica intent da mensagem via Hermes.
+    """Classifica intent da mensagem via Engine.
 
     Config:
         intents (list[str]): lista de intents possíveis
-        threshold (float): score mínimo pra match (não usado quando Hermes retorna 1 label)
+        threshold (float): score mínimo pra match (não usado quando Engine retorna 1 label)
         save_as (str): salva intent classificado em vars[save_as] (default: 'intent')
 
     Resultado:
@@ -152,7 +152,7 @@ async def execute_intent_classifier(ctx: ExecutionContext, config: dict) -> Node
         from core.db import db_context
 
         async with db_context() as db:
-            reply = await hermes_proxy.send_message(
+            reply = await tier_engine.send_message(
                 tenant_id=ctx.tenant_id,
                 user_content=text,
                 db=db,
@@ -188,7 +188,7 @@ async def execute_knowledge_lookup(ctx: ExecutionContext, config: dict) -> NodeR
         save_as (str): variável onde salvar texto consolidado (default: 'kb_result')
         save_sources_as (str): variável com lista de sources [{title, position, score}] (default: 'kb_sources')
         send_text (bool): se true, envia resposta pelo canal (default false)
-        synthesize (bool): se true, chama Hermes pra sintetizar uma resposta usando os chunks
+        synthesize (bool): se true, chama Engine pra sintetizar uma resposta usando os chunks
                            como context (default true). Se false, só retorna chunks brutos.
     """
     query_raw = (config.get("query") or "{{message.text}}").strip()
@@ -231,7 +231,7 @@ async def execute_knowledge_lookup(ctx: ExecutionContext, config: dict) -> NodeR
             vars_update={save_as: out_text, save_sources_as: []},
         )
 
-    # Synthesize: chama Hermes com chunks como context
+    # Synthesize: chama Engine com chunks como context
     if synthesize:
         context_block = "\n\n".join(
             f"[Fonte: {h.knowledge_title or f'#{h.knowledge_id}'} · trecho {h.position}]\n{h.text}"
@@ -245,7 +245,7 @@ async def execute_knowledge_lookup(ctx: ExecutionContext, config: dict) -> NodeR
         )
         try:
             async with db_context() as db:
-                reply = await hermes_proxy.send_message(
+                reply = await tier_engine.send_message(
                     tenant_id=ctx.tenant_id,
                     user_content=query,
                     db=db,

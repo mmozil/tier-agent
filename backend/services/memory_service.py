@@ -6,15 +6,15 @@ ficam disponíveis em conversas FUTURAS — agente "lembra do cliente".
 
 Fluxo:
 1. Mensagem inbound chega → agent_runtime busca memórias relevantes (search)
-2. Memórias top-K viram context block no system prompt do Hermes
-3. Após resposta do Hermes, extract_facts() chama LLM pra identificar info
+2. Memórias top-K viram context block no system prompt do Engine
+3. Após resposta do Engine, extract_facts() chama LLM pra identificar info
    nova que vale guardar → embed + INSERT pgvector
 4. Pruning periódico (V2): max_facts_per_contact + retention_days expira
 
 Stack:
 - pgvector vector(768) — Gemini text-embedding-004 (mesmo do RAG)
 - Cosine search via HNSW index
-- Extração via Hermes (modelo barato — Gemini Flash padrão)
+- Extração via Engine (modelo barato — Gemini Flash padrão)
 """
 
 from __future__ import annotations
@@ -221,11 +221,11 @@ async def add(
         parts.append(f"Agente: {assistant_text}")
     conversation = "\n".join(parts)
 
-    # Chama Hermes pra extrair fatos
+    # Chama Engine pra extrair fatos
     try:
-        from services import hermes_proxy
+        from services import tier_engine
 
-        reply = await hermes_proxy.send_message(
+        reply = await tier_engine.send_message(
             tenant_id=tenant_id,
             user_content=EXTRACT_PROMPT.format(conversation=conversation),
             db=db,

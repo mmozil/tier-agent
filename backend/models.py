@@ -1,7 +1,7 @@
 """Models do Tier Agent control plane.
 
 Multi-tenant via tenant_id em toda query. Detalhe de runtime do agente
-(memória, skills, FTS5, sessions) fica isolado no SQLite do container Hermes
+(memória, skills, FTS5, sessions) fica isolado no SQLite do container Engine
 do tenant. Aqui guardamos só: configuração, billing, audit, agregação leve.
 """
 
@@ -188,7 +188,7 @@ class TaKnowledge(Base):
     r2_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     skill_md_path: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # path dentro do container Hermes do tenant
+    # path dentro do container Engine do tenant
 
     status: Mapped[str] = mapped_column(String(32), default="indexing", nullable=False)
     # status: indexing | ready | failed
@@ -201,7 +201,7 @@ class TaKnowledge(Base):
 
 
 # ============================================================
-# 8. Conversation log — agregação leve (detalhe fica no SQLite Hermes)
+# 8. Conversation log — agregação leve (detalhe fica no SQLite Engine)
 # ============================================================
 class TaConversation(Base):
     __tablename__ = "ta_conversation"
@@ -319,7 +319,7 @@ class TaWebhookEvent(Base):
 
 
 # ============================================================
-# 13. Container health — orquestração Hermes
+# 13. Container health — orquestração Engine
 # ============================================================
 class TaContainer(Base):
     __tablename__ = "ta_container"
@@ -348,7 +348,7 @@ class TaPlaybook(Base):
     """Fluxo de atendimento desenhado em canvas drag-and-drop.
 
     Quando publicado, popula ta_playbook_trigger_index e passa a
-    interceptar mensagens antes do Hermes via agent_runtime.
+    interceptar mensagens antes do Engine via agent_runtime.
     """
     __tablename__ = "ta_playbook"
 

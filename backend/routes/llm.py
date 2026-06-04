@@ -33,7 +33,7 @@ SUPPORTED_PROVIDERS = {
     "anthropic": "Anthropic Claude (claude-sonnet-4-6, claude-opus-4-7)",
     "openai": "OpenAI (gpt-4o, gpt-4o-mini)",
     "openrouter": "OpenRouter (300+ modelos via 1 chave)",
-    "nous": "Nous Portal (Hermes-2/3, DeepHermes)",
+    "nous": "Nous Portal (Engine-2/3, DeepEngine)",
     "local": "Endpoint OpenAI-compatible custom (Ollama/vLLM/LM Studio)",
 }
 

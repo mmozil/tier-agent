@@ -1,11 +1,11 @@
-"""Orquestra containers Hermes — 1 por tenant — via SSH no host Docker daemon.
+"""Orquestra containers Engine — 1 por tenant — via SSH no host Docker daemon.
 
 Por que SSH e não Docker SDK direto:
 - Coolify não mounta /var/run/docker.sock no container backend
 - SSH é portável (funciona em qualquer host Docker)
 - Backend tem chave SSH com authorized_keys no host
 
-Isolamento total via Docker volume + HERMES_HOME por tenant. Cada container
+Isolamento total via Docker volume + ENGINE_HOME por tenant. Cada container
 expõe REST API OpenAI-compatible (porta 8642 interna) numa porta dinâmica.
 """
 
@@ -113,11 +113,11 @@ async def _redis() -> redis_async.Redis:
 
 async def acquire_port() -> int:
     r = await _redis()
-    for port in range(settings.hermes_port_range_start, settings.hermes_port_range_end + 1):
+    for port in range(settings.engine_port_range_start, settings.engine_port_range_end + 1):
         key = f"{_PORT_POOL_KEY}:{port}"
         if await r.set(key, "1", nx=True, ex=86400 * 30):
             return port
-    raise RuntimeError("No free ports in Hermes range")
+    raise RuntimeError("No free ports in Engine range")
 
 
 async def release_port(port: int) -> None:
@@ -129,18 +129,18 @@ async def release_port(port: int) -> None:
 # Naming helpers
 # ============================================================
 def container_name(tenant_id: int) -> str:
-    return f"tier-hermes-tenant-{tenant_id}"
+    return f"tier-engine-tenant-{tenant_id}"
 
 
 def volume_name(tenant_id: int) -> str:
-    return f"tier-hermes-vol-{tenant_id}"
+    return f"tier-engine-vol-{tenant_id}"
 
 
 # ============================================================
 # Container lifecycle (via SSH)
 # ============================================================
 async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer:
-    """Cria volume + container Hermes pra um tenant. Idempotente."""
+    """Cria volume + container Engine pra um tenant. Idempotente."""
     name = container_name(spec.tenant_id)
     vol = volume_name(spec.tenant_id)
 
@@ -154,8 +154,8 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
     api_server_key = secrets.token_hex(32)
 
     env_pairs = {
-        "HERMES_UID": "10000",
-        "HERMES_GID": "10000",
+        "ENGINE_UID": "10000",
+        "ENGINE_GID": "10000",
         "TIER_LLM_PROVIDER": spec.llm_provider,
         "TIER_LLM_MODEL": spec.llm_model,
         "TIER_LLM_API_KEY": spec.llm_api_key,
@@ -175,9 +175,9 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
         f"-v {shlex.quote(vol)}:/opt/data "
         f"-p {port}:8642 "
         f"--label tier.tenant_id={spec.tenant_id} "
-        f"--label tier.image_version={shlex.quote(settings.hermes_image)} "
+        f"--label tier.image_version={shlex.quote(settings.engine_image)} "
         f"{env_args} "
-        f"{shlex.quote(settings.hermes_image)}"
+        f"{shlex.quote(settings.engine_image)}"
     )
     rc, out, err = _ssh_run(cmd, timeout=60)
     if rc != 0:
@@ -185,10 +185,10 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
         raise RuntimeError(f"docker run falhou: {err.strip()[:400]}")
     container_id = out.strip()
 
-    # Persiste API key no Redis pra hermes_proxy ler
+    # Persiste API key no Redis pra tier_engine ler
     r = await _redis()
     await r.set(
-        f"tier_agent:hermes_key:{spec.tenant_id}", encrypt(api_server_key), ex=86400 * 90
+        f"tier_agent:engine_key:{spec.tenant_id}", encrypt(api_server_key), ex=86400 * 90
     )
 
     # Upsert TaContainer
@@ -197,7 +197,7 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
         existing.docker_container_id = container_id
         existing.status = "starting"
         existing.port = port
-        existing.image_version = settings.hermes_image
+        existing.image_version = settings.engine_image
         existing.restart_count = 0
         record = existing
     else:
@@ -207,7 +207,7 @@ async def create_container(spec: ContainerSpec, db: AsyncSession) -> TaContainer
             status="starting",
             host=settings.tier_agent_ssh_host,
             port=port,
-            image_version=settings.hermes_image,
+            image_version=settings.engine_image,
         )
         db.add(record)
     await db.commit()
@@ -262,7 +262,7 @@ async def restart_container(tenant_id: int, db: AsyncSession) -> None:
 
 
 async def health_check(tenant_id: int, db: AsyncSession) -> bool:
-    """Health via REST do container Hermes."""
+    """Health via REST do container Engine."""
     import httpx
 
     record = await get_container_by_tenant(db, tenant_id)

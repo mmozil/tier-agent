@@ -4,7 +4,9 @@ Guia pra Claude Code trabalhar neste repositório.
 
 ## Resumo
 
-**Tier Agent** = 5º produto Tier (`agent.tier.finance`): SaaS de **agentes de IA configuráveis** que atendem clientes via WhatsApp e outros canais. Multi-tenant (1 container Hermes por tenant). Inspirado em Hermes Agent (NousResearch) sem fork.
+**Tier Agent** = 5º produto Tier (`agent.tier.finance`): SaaS de **agentes de IA configuráveis** que atendem clientes via WhatsApp e outros canais. Multi-tenant.
+
+> 🔄 **REFACTOR 04/jun/2026 — motor próprio `tier_engine` (Hermes removido).** O Tier Agent NÃO depende mais do Hermes. A execução de IA agora é **in-process** via `backend/services/tier_engine.py` (client LLM multi-provider lendo `TaLlmProvider` + cache + PII + tool-use), substituindo o antigo `hermes_proxy` + container Hermes por tenant. **Todos os nomes "hermes" foram removidos do código** (`hermes_proxy`→`tier_engine`, `HermesReply`→`EngineReply`, palavra `hermes`→`engine` em ~19 arquivos). Código de orquestração de container (`container_orchestrator.py`, `routes/containers.py`, `ENGINE_IMAGE` ex-`HERMES_IMAGE`, model `TaContainer`) está **dormente** (não usado pelo motor in-process) — remover em limpeza futura. **Pendente: validação runtime + cutover só após shadow (TRAVA: App Review Meta em andamento). Não deployado.** Detalhe: `REFACTOR-HERMES-TIER-ENGINE.md` + Obsidian `[[202606041700 - Refactor Tier Engine (remove Hermes)]]`. As gotchas abaixo sobre "container Hermes / imagem tier/hermes / thinking blocks opus" são **históricas** (do motor antigo).
 
 - **Repo:** `mmozil/tier-agent` (branch `master`)
 - **Stack:** FastAPI + Postgres + Redis + React/Vite + Tailwind. Backend porta 8100; frontend 5174 (dev).

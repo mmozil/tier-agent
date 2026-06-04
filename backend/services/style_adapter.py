@@ -1,7 +1,7 @@
 """Style adapter — detecta tom do contato e injeta hint pro agente espelhar.
 
 Nas primeiras N mensagens do contato (TaConversation.msg_count <= 3),
-classifica via Hermes barato:
+classifica via Engine barato:
 - formality: formal | casual
 - pronoun: voce | tu | senhor
 - emoji_use: nenhum | pouco | muito
@@ -68,11 +68,11 @@ async def maybe_extract_style(
     except Exception:
         pass
 
-    # Classifica via Hermes
+    # Classifica via Engine
     try:
-        from services import hermes_proxy
+        from services import tier_engine
 
-        reply = await hermes_proxy.send_message(
+        reply = await tier_engine.send_message(
             tenant_id=tenant_id,
             user_content=STYLE_PROMPT.format(text=text[:500]),
             db=db,

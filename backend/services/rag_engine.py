@@ -1,6 +1,6 @@
 """RAG engine real — chunk + embed (Gemini text-embedding-004) + pgvector cosine + Cohere Rerank opt.
 
-Substitui delegação 100% pro SQLite FTS5 do Hermes por stack RAG própria.
+Substitui delegação 100% pro SQLite FTS5 do Engine por stack RAG própria.
 Hybrid? Hoje só dense (cosine pgvector). BM25 sparse fica pra V2 (precisa
 adicionar tsvector column ou usar lib externa).
 
