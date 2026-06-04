@@ -169,13 +169,20 @@ export function Button({
 }) {
   const base =
     "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-all active:scale-[0.98] select-none disabled:opacity-50 disabled:pointer-events-none";
-  const sz = size === "sm" ? "h-7 text-[12px]" : "h-9 text-[13px]";
+  // Altura ÚNICA padrão (a menor: h-7 / 28px) pros dois tamanhos — só a largura
+  // (padding) varia. Mantém todos os botões na mesma linha de base.
+  const sz = `h-7 ${size === "sm" ? "text-[12px]" : "text-[13px]"}`;
   const padX = size === "sm" ? "px-2.5" : "px-3.5";
+  // Acabamento Firecrawl (azul Tier): micro-sombras empilhadas + inset glow na base
+  // (profundidade/textura) + highlight sutil no topo. Mesmo tratamento do botão
+  // "Start crawling" do Firecrawl, na cor da marca Tier (#003083).
+  const primaryShadow =
+    "shadow-[inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-6px_12px_rgba(0,20,60,0.28),0_2px_4px_rgba(0,48,131,0.16),0_1px_1px_rgba(0,48,131,0.14),0_0.5px_0.5px_rgba(0,48,131,0.18),0_0.25px_0.25px_rgba(0,48,131,0.20)]";
   const v =
     variant === "primary"
-      ? `${padX} text-white bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] shadow-[0_1px_2px_rgba(0,48,131,0.18)]`
+      ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${primaryShadow}`
       : variant === "secondary"
-        ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover}`
+        ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)]`
         : `${size === "sm" ? "px-2" : "px-3"} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
   return (
     <button type={type} onClick={onClick} disabled={disabled} title={title} className={`${base} ${sz} ${v} ${className}`}>
