@@ -206,6 +206,30 @@ async def log_message(
     await db.commit()
 
 
+async def load_history(db: AsyncSession, conversation_id: int, limit: int = 16) -> list[dict]:
+    """Carrega os últimos turnos (user/assistant) da conversa pra dar MEMÓRIA ao
+    modelo. Sem isso o agente trata cada mensagem isolada e "esquece" o cliente
+    (responde "nao" com saudação genérica). Exclui a mensagem atual do usuário
+    (já gravada antes de chamar o engine) — ela vai separada como user_content.
+    """
+    rows = (
+        await db.execute(
+            select(TaMessageLog)
+            .where(
+                TaMessageLog.conversation_id == conversation_id,
+                TaMessageLog.role.in_(["user", "assistant"]),
+                TaMessageLog.content.isnot(None),
+            )
+            .order_by(TaMessageLog.id.desc())
+            .limit(limit + 1)
+        )
+    ).scalars().all()
+    rows = list(reversed(rows))  # ordem cronológica
+    if rows:
+        rows = rows[:-1]  # remove o turno atual (acabou de ser logado)
+    return [{"role": r.role, "content": r.content} for r in rows]
+
+
 async def handle_inbound_message(
     db: AsyncSession,
     *,
@@ -504,6 +528,13 @@ async def handle_inbound_message(
     )
     system_prompt = f"{system_prompt}\n\n" + "\n".join(_contact)
 
+    # Histórico da conversa → memória do modelo (senão "esquece" o cliente)
+    history: list[dict] = []
+    try:
+        history = await load_history(db, conv.id)
+    except Exception:
+        logger.exception("load_history falhou agent=%s — segue sem histórico", agent.id)
+
     # Engine responde (com vision se attachment image presente)
     try:
         reply = await tier_engine.send_message(
@@ -514,6 +545,7 @@ async def handle_inbound_message(
             system_override=system_prompt,
             attachments=attachments or [],
             agent_id=agent.id,
+            history=history,
             use_cache=not memory_block,  # cache desliga quando há memory custom no system
         )
     except Exception as e:

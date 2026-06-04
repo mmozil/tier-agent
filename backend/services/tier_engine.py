@@ -206,16 +206,22 @@ async def send_message(
     agent_id: int | None = None,
     use_cache: bool = True,
     tools: list[dict] | None = None,
+    history: list[dict] | None = None,
 ) -> EngineReply:
     """Gera a resposta do agente in-process (drop-in do antigo engine_proxy.send_message).
 
     Multimodal: attachments com kind=image viram content OpenAI Vision. Tool-use:
     se `tools` vier (ou houver tools registradas), roda o loop de function calling.
+    `history`: turnos anteriores [{role, content}] pra o modelo manter contexto da
+    conversa (senão "nao"/"sim" viram saudação genérica — agente "esquece" o cliente).
     """
     has_attachments = bool(attachments)
+    has_history = bool(history)
 
-    # 1. Cache exact-match (pula se há imagem ou cache off)
-    if use_cache and not has_attachments:
+    # 1. Cache exact-match (pula se há imagem, histórico ou cache off).
+    # Conversa com histórico NÃO é cacheável: o mesmo "nao"/"ok" significa coisas
+    # diferentes em contextos diferentes — cache exact-match colidiria.
+    if use_cache and not has_attachments and not has_history:
         from services import llm_cache
 
         cached = await llm_cache.get(
@@ -240,6 +246,13 @@ async def send_message(
     messages: list[dict] = []
     if system_override:
         messages.append({"role": "system", "content": system_override})
+    # Histórico da conversa (turnos anteriores) ANTES do turno atual — dá memória
+    # ao modelo. Só roles user/assistant com texto entram.
+    for h in history or []:
+        role = h.get("role")
+        content = h.get("content")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
     image_atts = [a for a in (attachments or [])
                   if getattr(a, "kind", None) == "image" and getattr(a, "url", None)]
     if image_atts:
@@ -291,8 +304,8 @@ async def send_message(
 
         text = pii_redactor.restore(text, pii_mapping)
 
-    # 6. Salva no cache
-    if use_cache and not has_attachments and text:
+    # 6. Salva no cache (nunca quando há histórico — resposta é contextual)
+    if use_cache and not has_attachments and not has_history and text:
         from services import llm_cache
 
         await llm_cache.put(
