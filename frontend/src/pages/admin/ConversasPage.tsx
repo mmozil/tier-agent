@@ -4,6 +4,7 @@ import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send } from
 
 import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
+import { btnPrimary } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   active: { label: "IA ativa", cls: "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]" },
@@ -389,14 +390,14 @@ export default function ConversasPage() {
                 {openConv.status === "handed_off" ? (
                   <button
                     onClick={() => changeStatus(openConv.id, "resume")}
-                    className="h-7 px-3 text-[12px] rounded-md bg-[#003083] text-white inline-flex items-center gap-1.5 hover:bg-[#002266]"
+                    className={btnPrimary}
                   >
                     <Bot className="w-3.5 h-3.5" /> Devolver para a IA
                   </button>
                 ) : (
                   <button
                     onClick={() => changeStatus(openConv.id, "handoff")}
-                    className="h-7 px-3 text-[12px] rounded-md bg-[#003083] text-white inline-flex items-center gap-1.5 hover:bg-[#002266]"
+                    className={btnPrimary}
                   >
                     <Hand className="w-3.5 h-3.5" /> Assumir (pausar IA)
                   </button>

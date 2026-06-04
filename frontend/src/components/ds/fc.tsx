@@ -22,6 +22,18 @@ export const FC = {
   base: "bg-[#F9F9F9] dark:bg-[#0c0e12]", // background-base (o "cinza" do FC)
 };
 
+// Acabamento Firecrawl (azul Tier): micro-sombras empilhadas + inset glow na base
+// (profundidade/textura) + highlight sutil no topo. Mesmo tratamento do botão
+// "Start crawling" do Firecrawl, na cor da marca Tier (#003083).
+export const PRIMARY_SHADOW =
+  "shadow-[inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-6px_12px_rgba(0,20,60,0.28),0_2px_4px_rgba(0,48,131,0.16),0_1px_1px_rgba(0,48,131,0.14),0_0.5px_0.5px_rgba(0,48,131,0.18),0_0.25px_0.25px_rgba(0,48,131,0.20)]";
+
+// btnPrimary — classe única do botão primário (altura h-7, azul Tier + acabamento
+// Firecrawl). Use em <button> crus pra ficarem idênticos ao componente <Button>.
+// Prefixe "w-full" quando precisar largura cheia.
+export const btnPrimary =
+  `h-7 px-3.5 rounded-lg text-[13px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
+
 // CurvyRect — os 4 corner brackets do Firecrawl (classe .curvy-rect). 11×11,
 // preenchidos com border-faint (#EDEDED). Arredondam o canto do container e,
 // nas junções de seções/células, formam o "+" — É O EFEITO do Firecrawl.
@@ -173,14 +185,9 @@ export function Button({
   // (padding) varia. Mantém todos os botões na mesma linha de base.
   const sz = `h-7 ${size === "sm" ? "text-[12px]" : "text-[13px]"}`;
   const padX = size === "sm" ? "px-2.5" : "px-3.5";
-  // Acabamento Firecrawl (azul Tier): micro-sombras empilhadas + inset glow na base
-  // (profundidade/textura) + highlight sutil no topo. Mesmo tratamento do botão
-  // "Start crawling" do Firecrawl, na cor da marca Tier (#003083).
-  const primaryShadow =
-    "shadow-[inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-6px_12px_rgba(0,20,60,0.28),0_2px_4px_rgba(0,48,131,0.16),0_1px_1px_rgba(0,48,131,0.14),0_0.5px_0.5px_rgba(0,48,131,0.18),0_0.25px_0.25px_rgba(0,48,131,0.20)]";
   const v =
     variant === "primary"
-      ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${primaryShadow}`
+      ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`
       : variant === "secondary"
         ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)]`
         : `${size === "sm" ? "px-2" : "px-3"} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;

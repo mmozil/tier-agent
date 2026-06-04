@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 import { Plus, Workflow, Loader2, CheckCircle2, Archive, FileText } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, Button, btnPrimary } from "@/components/ds/fc";
 
 interface PlaybookListItem {
   id: number;
@@ -276,7 +276,7 @@ function EmptyState({ hasAgents, onCreate }: { hasAgents: boolean; onCreate: () 
       {hasAgents ? (
         <Button variant="primary" onClick={onCreate} className="mx-auto"><Plus className="w-3.5 h-3.5" /> Criar playbook</Button>
       ) : (
-        <Link to="/admin/agentes" className="h-9 px-3.5 rounded-lg text-[13px] font-medium inline-flex items-center justify-center gap-1 bg-[#003083] text-white hover:bg-[#002266]">Ir para Agentes</Link>
+        <Link to="/admin/agentes" className={btnPrimary}>Ir para Agentes</Link>
       )}
     </div>
   );

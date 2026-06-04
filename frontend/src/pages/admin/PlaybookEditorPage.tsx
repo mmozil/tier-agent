@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { btnPrimary } from "@/components/ds/fc";
 import {
   emptyCanvas,
   type NodeKindMeta,
@@ -296,7 +297,7 @@ export default function PlaybookEditorPage() {
         <button
           onClick={publish}
           disabled={publishing}
-          className="h-7 px-3.5 rounded-md text-[12px] font-semibold inline-flex items-center justify-center gap-1.5 bg-[#003083] text-white hover:bg-[#002266] disabled:opacity-50 shadow-sm shadow-[#003083]/20 transition-all"
+          className={btnPrimary}
         >
           {publishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
           {pb.status === "published" ? "Republicar" : "Publicar"}
@@ -452,7 +453,7 @@ function TestRunDrawer({ playbookId, onClose }: { playbookId: number; onClose: (
           <button
             onClick={run}
             disabled={running}
-            className="w-full h-9 rounded-lg text-[13px] font-semibold inline-flex items-center justify-center gap-2 bg-[#003083] text-white hover:bg-[#002266] disabled:opacity-50 shadow-sm shadow-[#003083]/20 transition-all"
+            className={`w-full ${btnPrimary}`}
           >
             {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
             Rodar simulação

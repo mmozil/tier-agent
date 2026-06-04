@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Spacer, HairCells, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Spacer, HairCells, Button, btnPrimary } from "@/components/ds/fc";
 
 interface Agent {
   id: number;
@@ -237,7 +237,7 @@ export default function AgentesPage() {
             </button>
             <button
               type="submit"
-              className="h-6 px-3 text-[12px] font-medium bg-[#003083] text-white rounded-md hover:bg-[#002266] inline-flex items-center justify-center"
+              className={btnPrimary}
             >
               Criar agente
             </button>
@@ -638,7 +638,7 @@ function AgentDetailsDrawer({
                 <button
                   onClick={save}
                   disabled={saving}
-                  className="h-6 px-3 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1 bg-[#003083] text-white hover:bg-[#002266] disabled:opacity-50"
+                  className={btnPrimary}
                 >
                   {saving && <Loader2 className="w-3 h-3 animate-spin" />}
                   Salvar
