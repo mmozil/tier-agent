@@ -79,9 +79,31 @@ async def atendimento(
 
     csat_avg = round(sum(csat_scores) / len(csat_scores), 2) if csat_scores else None
 
+    # Deflection — % de conversas resolvidas SEM humano (o número que prova a IA).
+    # "Precisou de humano" = conversa distinta com notificação de handoff no período.
+    handoff_conv_ids = (
+        await db.execute(
+            select(func.count(func.distinct(TaNotification.conversation_id))).where(
+                TaNotification.tenant_id == user.tenant_id,
+                TaNotification.category == "handoff",
+                TaNotification.created_at >= since,
+                TaNotification.conversation_id.isnot(None),
+            )
+        )
+    ).scalar() or 0
+    _total = len(convs)
+    _sem_humano = max(_total - handoff_conv_ids, 0)
+    _taxa = round(_sem_humano / _total, 3) if _total else None
+
     return {
         "days": days,
         "total_conversas": len(convs),
+        "deflection": {
+            "total_conversas": _total,
+            "precisaram_humano": handoff_conv_ids,
+            "resolvidas_pela_ia": _sem_humano,
+            "taxa": _taxa,  # 0..1 (None se sem conversas)
+        },
         "por_status": by_status,
         "handoffs": by_category.get("handoff", 0),
         "leads": by_category.get("lead", 0),

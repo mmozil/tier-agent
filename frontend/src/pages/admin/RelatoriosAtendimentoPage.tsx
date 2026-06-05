@@ -9,6 +9,12 @@ interface Report {
   days: number;
   empty?: boolean;
   total_conversas: number;
+  deflection?: {
+    total_conversas: number;
+    precisaram_humano: number;
+    resolvidas_pela_ia: number;
+    taxa: number | null;
+  };
   por_status: Record<string, number>;
   handoffs: number;
   leads: number;
@@ -112,6 +118,34 @@ export default function RelatoriosAtendimentoPage() {
           </Row>
         ) : data ? (
           <>
+            {/* Deflection — o número que prova a IA */}
+            {data.deflection && (
+              <Row>
+                <div className="flex items-center gap-6 p-6">
+                  <div className="shrink-0">
+                    <div className={`text-[40px] font-[450] leading-none tracking-[-1px] ${data.deflection.taxa != null && data.deflection.taxa >= 0.5 ? "text-[#0a8f5a]" : FC.ink}`}>
+                      {data.deflection.taxa != null ? `${Math.round(data.deflection.taxa * 100)}%` : "—"}
+                    </div>
+                    <div className={`text-[12px] mt-1 ${FC.sub}`}>resolvido pela IA</div>
+                  </div>
+                  <div className={`h-12 w-px ${FC.hairBg}`} />
+                  <div className="flex-1 grid grid-cols-3 gap-4">
+                    <div>
+                      <div className={`text-[20px] font-mono font-medium ${FC.ink}`}>{data.deflection.resolvidas_pela_ia}</div>
+                      <div className={`text-[12px] ${FC.mut}`}>sem humano</div>
+                    </div>
+                    <div>
+                      <div className={`text-[20px] font-mono font-medium ${FC.ink}`}>{data.deflection.precisaram_humano}</div>
+                      <div className={`text-[12px] ${FC.mut}`}>precisaram de humano</div>
+                    </div>
+                    <div>
+                      <div className={`text-[20px] font-mono font-medium ${FC.ink}`}>{data.deflection.total_conversas}</div>
+                      <div className={`text-[12px] ${FC.mut}`}>total de conversas</div>
+                    </div>
+                  </div>
+                </div>
+              </Row>
+            )}
             <Row>
               <HairCells cols={5}>
                 <Kpi icon={MessageSquare} label="Conversas" value={data.total_conversas} color="#003083" />
