@@ -18,6 +18,11 @@ COPY requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
 
+# STT local (whisper) — pré-baixa o modelo PRA DENTRO da imagem (sem cache mount,
+# senão não fica na camada final) pra o 1º áudio não esperar download em runtime.
+ENV WHISPER_MODEL=small
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
+
 COPY . .
 
 EXPOSE 8100

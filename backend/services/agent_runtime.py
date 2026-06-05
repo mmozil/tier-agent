@@ -249,6 +249,32 @@ async def handle_inbound_message(
     if not agent or not agent.active:
         return {"status": "agent_inactive", "agent_id": connector.agent_id}
 
+    # ─── Transcrição de áudio (STT local, grátis) — vale pra TODOS os canais ───
+    # Se chegou áudio sem texto real (ou só placeholder "[audio]"), transcreve
+    # local via whisper. Centralizado aqui pra Cloud (Maria Luiza) + Baileys.
+    try:
+        _audio = next(
+            (a for a in (attachments or [])
+             if getattr(a, "kind", None) == "audio" and getattr(a, "url", None)),
+            None,
+        )
+        _needs_stt = (not text_content) or text_content.strip().startswith("[")
+        if _audio and _needs_stt:
+            from services.voice import whisper_local
+
+            _tr = await whisper_local.transcribe_url(_audio.url, language="pt")
+            if _tr.ok and _tr.text:
+                text_content = _tr.text
+                logger.info(
+                    "ASR ok agent=%s (%.1fs) text='%s'",
+                    agent.id, _tr.duration_seconds, _tr.text[:80],
+                )
+            else:
+                logger.warning("ASR falhou agent=%s: %s", agent.id, _tr.error)
+                text_content = "[áudio não compreendido]"
+    except Exception:
+        logger.exception("ASR exception agent=%s — segue sem transcrição", agent.id)
+
     # ─── Comandos de ops (DevSecOps) — resposta determinística, sem LLM ───
     # Agente marcado como template_kind="devsecops" responde status/health/ping
     # com a saúde REAL do stack (sem alucinar). Conversa normal segue o fluxo.

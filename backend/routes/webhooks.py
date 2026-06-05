@@ -163,27 +163,9 @@ async def whatsapp_engine_webhook(
     if not external_chat_id:
         return {"status": "missing_fields", "event": event}
 
-    # Q2.3: ASR — se inbound é áudio sem texto, transcrever via Deepgram PT-BR
-    audio_att = next((a for a in attachments if a.kind == "audio" and a.url), None)
-    if audio_att and not text_content:
-        try:
-            from services.voice import deepgram_client
-
-            tr = await deepgram_client.transcribe_url(audio_att.url, language="pt-BR")
-            if tr.ok and tr.text:
-                text_content = tr.text
-                logger.info(
-                    "voice ASR ok confidence=%.2f duration=%.1fs text='%s'",
-                    tr.confidence, tr.duration_seconds, tr.text[:80],
-                )
-            else:
-                logger.warning("voice ASR falhou: %s", tr.error or "vazio")
-                text_content = "[áudio — transcrição falhou]"
-        except Exception:
-            logger.exception("voice ASR exception")
-            text_content = "[áudio]"
-
-    # Permite mensagem só com mídia (sem texto) — placeholder
+    # Áudio/mídia: a transcrição (STT local) é centralizada em
+    # agent_runtime.handle_inbound_message (vale pra todos os canais). Aqui só
+    # garante um placeholder pra mensagem que vem só com mídia.
     if not text_content and attachments:
         text_content = f"[{attachments[0].kind}]"
 
@@ -260,6 +242,7 @@ async def _process_cloud_message_humanized(
     sender_name: str | None,
     text_content: str,
     attachments: list,
+    audio_media_id: str | None = None,
 ) -> None:
     """Processa 1 mensagem inbound do WhatsApp Cloud com timing humano.
 
@@ -271,6 +254,7 @@ async def _process_cloud_message_humanized(
     """
     import asyncio
     import json as _json
+    import os as _os
     import random
 
     from core.db import db_context
@@ -284,7 +268,7 @@ async def _process_cloud_message_humanized(
         await asyncio.sleep(random.uniform(_CLOUD_READ_DELAY_MIN, _CLOUD_READ_DELAY_MAX))
 
         async with db_context() as db:
-            # 2. marca lido + "digitando…"
+            # 2. marca lido + "digitando…" + (se for áudio) transcreve com token
             try:
                 conn = await agent_runtime.resolve_connector_by_instance(
                     db, "whatsapp_cloud", phone_number_id
@@ -293,8 +277,27 @@ async def _process_cloud_message_humanized(
                     cloud = _reg.get("whatsapp_cloud")
                     cfg = ConnectorConfig(data=_json.loads(decrypt(conn.config_json_enc)))
                     await cloud.mark_read_and_typing(cfg, mid)
+
+                    # STT: áudio do cliente → texto (baixa com token + whisper local)
+                    if audio_media_id:
+                        token = cfg.data.get("token") or _os.getenv("WHATSAPP_CLOUD_TOKEN")
+                        if token:
+                            audio_bytes = await cloud.download_media(token, audio_media_id)
+                            if audio_bytes:
+                                from services.voice import whisper_local
+
+                                _tr = await whisper_local.transcribe_bytes(audio_bytes, language="pt")
+                                if _tr.ok and _tr.text:
+                                    text_content = _tr.text
+                                    logger.info(
+                                        "cloud ASR ok from=%s (%.1fs) text='%s'",
+                                        from_id, _tr.duration_seconds, _tr.text[:80],
+                                    )
+                                else:
+                                    logger.warning("cloud ASR falhou from=%s: %s", from_id, _tr.error)
+                                    text_content = "[áudio não compreendido]"
             except Exception:
-                logger.debug("typing indicator whatsapp-cloud falhou (ignorando)")
+                logger.exception("typing/ASR whatsapp-cloud falhou (segue)")
 
             # 3+4. gera e envia (latência do LLM = tempo de digitação percebido)
             await agent_runtime.handle_inbound_message(
@@ -362,6 +365,7 @@ async def whatsapp_cloud_webhook(
                 mtype = m.get("type")
                 text_content = ""
                 attachments: list[ConnectorAttachment] = []
+                audio_media_id = None
 
                 if mtype == "text":
                     text_content = (m.get("text") or {}).get("body") or ""
@@ -374,8 +378,10 @@ async def whatsapp_cloud_webhook(
                 elif mtype in ("image", "audio", "video", "document"):
                     media = m.get(mtype) or {}
                     text_content = media.get("caption") or ""
-                    # mídia recebida tem só `id` — baixar exige token; tratado como
-                    # follow-up (por ora placeholder pra não travar o fluxo de texto)
+                    # Áudio: guarda o media_id pra transcrever no processor (baixa
+                    # com token → whisper local). Demais mídias: placeholder por ora.
+                    if mtype == "audio":
+                        audio_media_id = media.get("id")
                     if not text_content:
                         text_content = f"[{mtype}]"
 
@@ -395,6 +401,7 @@ async def whatsapp_cloud_webhook(
                         sender_name=sender_name,
                         text_content=text_content,
                         attachments=attachments,
+                        audio_media_id=audio_media_id,
                     )
                 )
                 _BG_TASKS.add(_task)

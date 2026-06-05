@@ -178,6 +178,23 @@ class WhatsAppCloudConnector:
             logger.warning("resolve_media_url falhou: %s", e)
             return None
 
+    async def download_media(self, token: str, media_id: str) -> bytes | None:
+        """Baixa os bytes de uma mídia recebida (áudio/imagem). Resolve o id → URL
+        temporária da Meta e baixa COM o token (a URL exige Authorization)."""
+        url = await self.resolve_media_url(token, media_id)
+        if not url:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=30) as cli:
+                r = await cli.get(url, headers={"Authorization": f"Bearer {token}"})
+            if r.status_code != 200:
+                logger.warning("download_media HTTP %s", r.status_code)
+                return None
+            return r.content
+        except Exception as e:
+            logger.warning("download_media falhou: %s", e)
+            return None
+
     async def validate_config(self, config: ConnectorConfig) -> bool:
         phone_number_id, token = resolve_cloud_creds(config)
         if not phone_number_id or not token:
