@@ -127,14 +127,19 @@ async def ensure_conversation(
     contact_name: str | None = None,
 ) -> TaConversation:
     result = await db.execute(
-        select(TaConversation).where(
+        select(TaConversation)
+        .where(
             TaConversation.agent_id == agent_id,
             TaConversation.connector_kind == connector_kind,
             TaConversation.external_id == external_id,
             TaConversation.status == "active",
         )
+        # .first() (não scalar_one_or_none): tolera conversas ativas duplicadas
+        # (race de 2 mensagens quase simultâneas) sem quebrar o atendimento.
+        .order_by(TaConversation.id.desc())
+        .limit(1)
     )
-    conv = result.scalar_one_or_none()
+    conv = result.scalars().first()
     if conv:
         conv.last_message_at = datetime.utcnow()
         conv.msg_count += 1
@@ -184,9 +189,12 @@ async def log_message(
     # Atualiza usage daily (upsert)
     today = datetime.utcnow().strftime("%Y-%m-%d")
     result = await db.execute(
-        select(TaUsageDaily).where(TaUsageDaily.tenant_id == tenant_id, TaUsageDaily.day == today)
+        select(TaUsageDaily)
+        .where(TaUsageDaily.tenant_id == tenant_id, TaUsageDaily.day == today)
+        .order_by(TaUsageDaily.id.desc())
+        .limit(1)
     )
-    usage = result.scalar_one_or_none()
+    usage = result.scalars().first()  # .first() tolera linhas duplicadas sem quebrar
     if usage:
         usage.messages += 1
         usage.tokens_in += tokens_in
