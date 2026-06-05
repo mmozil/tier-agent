@@ -367,26 +367,31 @@ export default function ConversasPage() {
 
       {/* Drawer detalhe */}
       {openId && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={() => setOpenId(null)}>
-          <div className="w-full max-w-[480px] h-full bg-white shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-[#EDEDED]">
-              <div className="min-w-0">
-                <h2 className="text-[15px] font-semibold text-[#262626] truncate">
-                  {openConv?.contact_name || fmtPhone(openConv?.external_id || "")}
-                </h2>
-                <p className="text-[12px] text-[#262626]/40 flex items-center gap-2">
-                  {openConv?.connector_kind || "whatsapp"}
-                  {openConv && <StatusBadge status={openConv.status} />}
-                </p>
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={() => setOpenId(null)}>
+          <div className="w-full max-w-[760px] h-full bg-white dark:bg-[#0c0e12] shadow-2xl flex flex-col border-l border-[#EDEDED] dark:border-[#23272e]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#EDEDED] dark:border-[#23272e]">
+              <div className="min-w-0 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[13px] font-semibold text-[#003083] dark:text-[#5b9bff] shrink-0">
+                  {(openConv?.contact_name || "?").slice(0, 1).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-[15px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate leading-tight">
+                    {openConv?.contact_name || fmtPhone(openConv?.external_id || "")}
+                  </h2>
+                  <p className="text-[12px] text-[#262626]/40 dark:text-[#6b7280] flex items-center gap-2">
+                    {openConv?.connector_kind || "whatsapp"}
+                    {openConv && <StatusBadge status={openConv.status} />}
+                  </p>
+                </div>
               </div>
-              <button onClick={() => setOpenId(null)} className="p-1.5 rounded text-[#262626]/40 hover:bg-black/[0.04]">
+              <button onClick={() => setOpenId(null)} className="p-1.5 rounded-md text-[#262626]/40 dark:text-[#6b7280] hover:bg-black/[0.04] dark:hover:bg-white/[0.04]">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Ações: assumir / devolver / resolver */}
             {openConv && openConv.status !== "closed" && (
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-[#EDEDED] bg-[#F9F9F9]/60">
+              <div className="flex items-center gap-2 px-6 py-3 border-b border-[#EDEDED] dark:border-[#23272e] bg-[#F9F9F9]/60 dark:bg-white/[0.02]">
                 {openConv.status === "handed_off" ? (
                   <button
                     onClick={() => changeStatus(openConv.id, "resume")}
@@ -435,8 +440,8 @@ export default function ConversasPage() {
 
             {/* Atribuição + CSAT */}
             {openConv && (
-              <div className="px-5 py-2.5 border-b border-[#EDEDED] flex items-center gap-2">
-                <span className="text-[12px] text-[#262626]/[0.56] shrink-0">Atendente:</span>
+              <div className="px-6 py-2.5 border-b border-[#EDEDED] dark:border-[#23272e] flex items-center gap-2">
+                <span className="text-[12px] text-[#262626]/[0.56] dark:text-[#8b93a0] shrink-0">Atendente:</span>
                 <select
                   value={openConv.assigned_member_id ?? ""}
                   onChange={(e) => saveAssign(openConv.id, e.target.value ? Number(e.target.value) : null)}
@@ -464,7 +469,7 @@ export default function ConversasPage() {
 
             {/* Etiquetas */}
             {openConv && (
-              <div className="px-5 py-2.5 border-b border-[#EDEDED] flex flex-wrap items-center gap-1.5">
+              <div className="px-6 py-2.5 border-b border-[#EDEDED] dark:border-[#23272e] flex flex-wrap items-center gap-1.5">
                 {(openConv.tags || []).map((t) => (
                   <span
                     key={t}
@@ -495,7 +500,7 @@ export default function ConversasPage() {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2 bg-[#F9F9F9]">
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-2.5 bg-[#F9F9F9] dark:bg-[#0f1115]">
               {loadingMsgs && <div className="text-[13px] text-[#262626]/40 text-center py-6">Carregando...</div>}
               {!loadingMsgs && msgs.length === 0 && (
                 <div className="text-[12px] text-[#262626]/40 text-center py-6">
@@ -537,7 +542,7 @@ export default function ConversasPage() {
 
             {/* Caixa de resposta — atendente responde pelo painel ou adiciona nota */}
             {openConv && openConv.status !== "closed" && (
-              <div className="border-t border-[#EDEDED] p-3 bg-white">
+              <div className="border-t border-[#EDEDED] dark:border-[#23272e] px-6 py-3 bg-white dark:bg-[#0c0e12]">
                 <div className="flex items-center gap-1 mb-2">
                   <button
                     onClick={() => setNoteMode(false)}
@@ -600,10 +605,10 @@ export default function ConversasPage() {
                         ? "Nota visível só pra equipe (não vai pro cliente)…"
                         : "Responder ao cliente… (Enter envia, Shift+Enter quebra linha)"
                     }
-                    className={`flex-1 resize-none max-h-28 px-3 py-2 text-[13px] rounded-lg border outline-none ${
+                    className={`flex-1 resize-none max-h-28 px-3 py-2 text-[13px] rounded-lg border outline-none dark:bg-[#14171c] dark:text-[#e6e8eb] ${
                       noteMode
-                        ? "border-amber-200 bg-amber-50/40 focus:shadow-[0_0_0_2px_#f59e0b]"
-                        : "border-[#EDEDED] focus:shadow-[0_0_0_2px_#003083]"
+                        ? "border-amber-200 dark:border-amber-700/50 bg-amber-50/40 dark:bg-amber-900/10 focus:shadow-[0_0_0_2px_#f59e0b]"
+                        : "border-[#EDEDED] dark:border-[#23272e] focus:shadow-[0_0_0_2px_#003083]"
                     }`}
                   />
                   <button

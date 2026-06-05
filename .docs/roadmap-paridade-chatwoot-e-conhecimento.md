@@ -46,9 +46,9 @@
 | Caixas de Entrada (canais) | ✅ | `/admin/canais` |
 | Etiquetas (gestão de tags) | ⚠️ | Usamos tags; confirmar tela de gestão (criar/editar/cor) |
 | **Atributos Personalizados** (custom fields no contato/conversa) | ❌ | **Falta** |
-| **Automação** (regras: se X então Y — auto-tag, auto-atribuir, auto-resposta) | ⚠️ | Temos Playbooks (parecido mas diferente). **Falta** automação estilo "regra simples" |
+| **Automação** (regras: se X então Y — auto-tag, auto-atribuir, auto-resposta) | ✅ | **Coberto pelos Playbooks** — eles SÃO nosso motor de automação por gatilho→ação. (Opcional: uma UX de "regra simples" pra casos operacionais sem abrir o canvas.) |
 | Robôs (bots) | ✅ | Agentes IA |
-| **Macros** (sequência de ações pré-definida pra o atendente) | ❌ | **Falta** |
+| **Macros** (sequência de ações que o ATENDENTE clica manualmente) | ❌ | **Falta — e NÃO é Playbook.** Playbook = automático por gatilho; macro = atalho MANUAL do humano (ex: botão "Reembolso" → etiqueta + atribui + resposta pronta + status). Simples de fazer. |
 | Respostas Prontas (canned) | ✅ | |
 | Integrações | ⚠️ | Temos MCP/marketplace; confirmar catálogo de integrações |
 | **Auditoria** (audit log de ações) | ❌ | **Falta** log de auditoria por usuário |
