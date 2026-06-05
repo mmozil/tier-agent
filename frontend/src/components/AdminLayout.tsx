@@ -19,6 +19,7 @@ import {
   Settings,
   Store,
   Inbox,
+  BellRing,
 } from "lucide-react";
 
 import UserMenu from "./UserMenu";
@@ -45,6 +46,7 @@ const SECTIONS: NavGroup[] = [
   {
     label: "Plataforma",
     items: [
+      { to: "/admin/atencao", label: "Precisa de você", icon: BellRing },
       { to: "/admin/agentes", label: "Agentes", icon: Bot },
       { to: "/admin/conversas", label: "Conversas", icon: MessageSquare },
       { to: "/admin/leads", label: "Leads", icon: Inbox },
