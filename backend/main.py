@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import agents, attention, auth, billing, canned_responses, connectors, containers, conversations, features, health, knowledge, llm, mcp_server, metrics, notifications, playbooks, reports, skills, team, templates, tenants, tier_pay, webhooks
+from routes import agents, attention, auth, billing, canned_responses, connectors, containers, conversations, features, health, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, reports, skills, team, templates, tenants, tier_pay, webhooks
 
 settings = get_settings()
 
@@ -64,6 +64,7 @@ app.include_router(playbooks.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api/v1")
 app.include_router(attention.router, prefix="/api/v1")
+app.include_router(macros.router, prefix="/api/v1")
 app.include_router(metrics.router, prefix="/api/v1")
 app.include_router(skills.router, prefix="/api/v1")
 app.include_router(tier_pay.router, prefix="/api/v1")
@@ -99,6 +100,23 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_llm_provider ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 100",
             ):
                 await db.execute(_sql_text(ddl))
+            # Macros (paridade Chatwoot) — tabela criada em runtime (sem Alembic)
+            await db.execute(
+                _sql_text(
+                    """
+                    CREATE TABLE IF NOT EXISTS ta_macro (
+                        id SERIAL PRIMARY KEY,
+                        tenant_id INTEGER NOT NULL REFERENCES ta_tenant(id) ON DELETE CASCADE,
+                        name VARCHAR(120) NOT NULL,
+                        actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        created_at TIMESTAMP DEFAULT now()
+                    )
+                    """
+                )
+            )
+            await db.execute(
+                _sql_text("CREATE INDEX IF NOT EXISTS ix_ta_macro_tenant ON ta_macro (tenant_id)")
+            )
             await db.commit()
         logger.info("ensure_message_content_column ok")
     except Exception:

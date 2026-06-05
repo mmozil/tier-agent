@@ -33,6 +33,7 @@ import MarketplacePage from "./pages/admin/MarketplacePage";
 import LeadsPage from "./pages/admin/LeadsPage";
 import ConversasPage from "./pages/admin/ConversasPage";
 import AtencaoPage from "./pages/admin/AtencaoPage";
+import MacrosPage from "./pages/admin/MacrosPage";
 import RelatoriosAtendimentoPage from "./pages/admin/RelatoriosAtendimentoPage";
 import EquipePage from "./pages/admin/EquipePage";
 
@@ -77,6 +78,7 @@ export default function App() {
         <Route path="llm" element={<LlmProvidersPage />} />
         <Route path="features" element={<FeaturesPage />} />
         <Route path="atencao" element={<AtencaoPage />} />
+        <Route path="macros" element={<MacrosPage />} />
         <Route path="conversas" element={<ConversasPage />} />
         <Route path="canais" element={<CanaisPage />} />
         <Route path="leads" element={<LeadsPage />} />

@@ -72,6 +72,7 @@ export default function ConversasPage() {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState<number | null>(null);
+  const [macros, setMacros] = useState<{ id: number; name: string }[]>([]);
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [openConv, setOpenConv] = useState<Conversation | null>(null);
@@ -125,6 +126,7 @@ export default function ConversasPage() {
     load();
     api.get<Member[]>("/team/members").then(({ data }) => setMembers(data)).catch(() => {});
     api.get<{ role: string; member_id: number | null }>("/team/me").then(({ data }) => setMe(data)).catch(() => {});
+    api.get<{ id: number; name: string }[]>("/macros").then(({ data }) => setMacros(data)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -222,6 +224,18 @@ export default function ConversasPage() {
       toast.success(labels[action]);
     } catch {
       toast.error("Não foi possível atualizar");
+    }
+  }
+
+  async function applyMacro(macroId: number) {
+    if (!openId) return;
+    try {
+      const { data } = await api.post<{ executed: string[] }>(`/macros/${macroId}/apply?conversation_id=${openId}`);
+      toast.success(`Macro aplicada: ${(data.executed || []).join(", ") || "ok"}`);
+      if (openConv) openConversation(openConv);
+      load();
+    } catch {
+      toast.error("Erro ao aplicar macro");
     }
   }
 
@@ -430,6 +444,19 @@ export default function ConversasPage() {
                     <option value="60">1 hora</option>
                     <option value="240">4 horas</option>
                     <option value="1440">Amanhã (24h)</option>
+                  </select>
+                )}
+                {macros.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(e) => e.target.value && applyMacro(Number(e.target.value))}
+                    className="h-7 px-2 text-[12px] rounded-md border border-[#EDEDED] dark:border-[#23272e] dark:bg-[#14171c] text-[#262626]/[0.72] dark:text-[#9aa1ab] outline-none"
+                    title="Aplicar macro"
+                  >
+                    <option value="">⚡ Macro…</option>
+                    {macros.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
                   </select>
                 )}
                 {openConv.status === "handed_off" && (

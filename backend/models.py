@@ -564,3 +564,22 @@ class TaCannedResponse(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class TaMacro(Base):
+    """Macro — sequência de ações que o atendente aplica numa conversa com 1 clique
+    (ex: etiqueta + atribui + resposta pronta + resolve). Paridade Chatwoot.
+
+    actions (JSON): lista ordenada de {type, ...}:
+      {"type":"tag","value":"reembolso"} · {"type":"assign","member_id":3}
+      {"type":"reply","content":"..."} · {"type":"status","value":"resolve"|"handoff"}
+    """
+    __tablename__ = "ta_macro"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("ta_tenant.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    actions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
