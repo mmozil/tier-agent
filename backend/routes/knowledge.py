@@ -125,9 +125,15 @@ async def upload(
         if not body.strip():
             raise RuntimeError("Não foi possível extrair texto do arquivo")
 
-        skill_md = skill_builder.build_skill_md(title=final_title, body=body)
-        filename = f"{skill_builder._slug(final_title)}-{record.id}.md"
-        skill_path = skill_builder.install_skill_in_container(agent.tenant_id, filename, skill_md)
+        # Instalação de skill no container Hermes é legado (motor agora é in-process).
+        # Não-fatal: o que importa é o RAG (pgvector) abaixo.
+        skill_path = None
+        try:
+            skill_md = skill_builder.build_skill_md(title=final_title, body=body)
+            filename = f"{skill_builder._slug(final_title)}-{record.id}.md"
+            skill_path = skill_builder.install_skill_in_container(agent.tenant_id, filename, skill_md)
+        except Exception:
+            logger.warning("install_skill_in_container falhou (legado, ignorado) — segue só com RAG")
 
         record.skill_md_path = skill_path
         record.status = "ready"

@@ -547,6 +547,33 @@ async def handle_inbound_message(
     if memory_block:
         system_prompt = f"{system_prompt}\n\n{memory_block}".strip()
 
+    # RAG: busca conhecimento relevante na Base e injeta no system. Só embeda a
+    # query se o agente tiver conhecimento indexado (evita chamada de embed à toa).
+    rag_block = ""
+    try:
+        from sqlalchemy import text as _sa_text
+
+        _has_kb = (
+            await db.execute(
+                _sa_text("SELECT 1 FROM ta_knowledge_chunk WHERE agent_id = :aid LIMIT 1"),
+                {"aid": agent.id},
+            )
+        ).first()
+        if _has_kb:
+            from services import rag_engine
+
+            hits = await rag_engine.search(db, agent_id=agent.id, query=text_content, top_k=4)
+            if hits:
+                rag_block = (
+                    "# Base de conhecimento (responda com base nisto; não invente além)\n"
+                    + "\n\n".join(f"- {h.text.strip()}" for h in hits)
+                )
+                logger.info("rag agent=%s hits=%s", agent.id, len(hits))
+    except Exception:
+        logger.exception("rag search falhou agent=%s — segue sem RAG", agent.id)
+    if rag_block:
+        system_prompt = f"{system_prompt}\n\n{rag_block}"
+
     # Contexto do contato — o agente JÁ tem nome + telefone pelo canal (WhatsApp).
     # Evita pedir ao cliente dados que já temos (irrita + cada atendente re-pergunta).
     _is_wa = connector_kind in ("whatsapp", "whatsapp_cloud")
@@ -580,7 +607,7 @@ async def handle_inbound_message(
             attachments=attachments or [],
             agent_id=agent.id,
             history=history,
-            use_cache=not memory_block,  # cache desliga quando há memory custom no system
+            use_cache=not (memory_block or rag_block),  # contextual → sem cache
         )
     except Exception as e:
         logger.exception("Engine falhou tenant=%s agent=%s", agent.tenant_id, agent.id)
