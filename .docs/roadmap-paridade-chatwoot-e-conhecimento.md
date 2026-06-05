@@ -72,11 +72,17 @@
 
 ### 1.5 Prioridade sugerida (gap → valor)
 
-1. **Fila de atenção clara** ("Precisa de você": handoff + leads + não atendidas num lugar) — operacional crítico.
-2. **Relatórios faltantes** (bot/deflection, por etiqueta, por canal, por time, heatmap resoluções).
-3. **Automação simples** (regra se→então) + **Macros**.
-4. **Contatos** (CRM) + **Atributos personalizados**.
-5. **Auditoria**, **Funções personalizadas**, **Central de Ajuda**, **Campanhas**.
+1. ✅ **FEITO — Fila de atenção** ("Precisa de você"): `/admin/atencao` + `GET /attention`. 3 buckets (aguardando humano, não atribuídas, leads/alertas), auto-refresh, clique abre a conversa.
+2. ⏳ **Relatórios faltantes** — ✅ **deflection FEITO** (`/reports/atendimento` bloco deflection + card na Relatórios; % resolvido pela IA). Falta: por canal, por time, heatmap resoluções.
+3. ✅ **FEITO — Macros**: `/admin/macros` + `ta_macro` + `POST /macros/{id}/apply`. Builder (etiqueta/atribuir/responder/status) + botão "⚡ Macro…" no drawer. *(Automação já é coberta pelos Playbooks.)*
+4. ⬜ **Contatos** (CRM) + **Atributos personalizados**.
+5. ⬜ **Auditoria**, **Funções personalizadas**, **Central de Ajuda**, **Campanhas**.
+
+### Entregue nesta rodada (05/jun/2026 madrugada)
+- **#1 Fila de atenção** ✅ — backend + frontend + nav.
+- **#2 Deflection** ✅ — % de conversas resolvidas pela IA (prova o ROI).
+- **#3 Macros** ✅ — atalho manual do atendente.
+- **RAG real** ✅ (sessão anterior) — embeddings Gemini free + busca ligada na resposta + 10 artigos da Tier na Base.
 
 ---
 
