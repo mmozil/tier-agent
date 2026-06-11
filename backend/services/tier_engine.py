@@ -267,7 +267,23 @@ async def send_message(
 
     # 4. Chama o LLM (com fallback) + loop de tool-use se houver ferramentas
     provider = await _load_provider(db, tenant_id)
-    active_tools = tools if tools is not None else (_TOOL_SCHEMAS or None)
+
+    # Tools = registry global do Tier + federação MCP por agente (TaToolProvider).
+    # Só federa no caminho persona-driven (tools=None); se o caller passa tools
+    # explícitas (ex: nó de playbook), respeita e não injeta as remotas.
+    base_tools: list[dict] = list(tools) if tools is not None else list(_TOOL_SCHEMAS)
+    remote_handlers: dict[str, Callable[[dict], Awaitable[str]]] = {}
+    if agent_id is not None and tools is None:
+        try:
+            from services import tool_provider_service
+
+            remote_schemas, remote_handlers = await tool_provider_service.discover_agent_tools(db, agent_id)
+            if remote_schemas:
+                base_tools = base_tools + remote_schemas
+        except Exception:
+            logger.exception("tier_engine: descoberta de tool-providers MCP falhou agent=%s", agent_id)
+    active_tools = base_tools or None
+
     started = time.perf_counter()
     tool_calls_made: list = []
 
@@ -287,7 +303,7 @@ async def send_message(
                 args = _json.loads(fn.get("arguments") or "{}")
             except Exception:
                 args = {}
-            handler = _TOOL_REGISTRY.get(name)
+            handler = _TOOL_REGISTRY.get(name) or remote_handlers.get(name)
             result = await handler(args) if handler else f"[ferramenta {name} indisponível]"
             tool_calls_made.append({"name": name, "args": args})
             messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": str(result)})

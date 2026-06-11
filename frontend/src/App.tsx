@@ -15,6 +15,7 @@ import AcceptInvitePage from "./pages/public/AcceptInvitePage";
 import DataDeletion from "./pages/public/DataDeletion";
 import AgentesPage from "./pages/admin/AgentesPage";
 import LlmProvidersPage from "./pages/admin/LlmProvidersPage";
+import FontesDadosPage from "./pages/admin/FontesDadosPage";
 import FeaturesPage from "./pages/admin/FeaturesPage";
 import CanaisPage from "./pages/admin/CanaisPage";
 import KnowledgePage from "./pages/admin/KnowledgePage";
@@ -76,6 +77,7 @@ export default function App() {
         <Route index element={<VisaoGeralPage />} />
         <Route path="agentes" element={<AgentesPage />} />
         <Route path="llm" element={<LlmProvidersPage />} />
+        <Route path="fontes-dados" element={<FontesDadosPage />} />
         <Route path="features" element={<FeaturesPage />} />
         <Route path="atencao" element={<AtencaoPage />} />
         <Route path="macros" element={<MacrosPage />} />

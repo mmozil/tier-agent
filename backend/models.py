@@ -73,6 +73,9 @@ class TaAgent(Base):
     tenant: Mapped["TaTenant"] = relationship(back_populates="agents")
     connectors: Mapped[list["TaConnector"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
     knowledge: Mapped[list["TaKnowledge"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+    tool_providers: Mapped[list["TaToolProvider"]] = relationship(
+        back_populates="agent", cascade="all, delete-orphan"
+    )
 
 
 # ============================================================
@@ -583,3 +586,42 @@ class TaMacro(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     actions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ============================================================
+# 19. Tool Provider — fonte de ferramentas MCP externa (federação)
+# ============================================================
+class TaToolProvider(Base):
+    """Servidor MCP externo plugado a um agente — federação de ferramentas.
+
+    Cada linha = uma fonte de dados/ações (ex: ERP Tier Empresas, Hovio Pet) que o
+    agente passa a poder consultar via tool-use. O motor (`tier_engine`) descobre as
+    tools remotas em runtime (`mcp_client.list_tools`) e injeta no LLM. Plug =
+    inserir/ativar; unplug = desativar/remover. Auth POR-PROVIDER via `bearer_enc`
+    (token OAuth Tier escopado p/ ERP, token HMAC próprio p/ Pet).
+    """
+    __tablename__ = "ta_tool_provider"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_id: Mapped[int] = mapped_column(
+        ForeignKey("ta_agent.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    # denorm (FK lógica ta_tenant) — query rápida por tenant + isolamento
+
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)  # display: "Tier Empresas ERP"
+    mcp_server_url: Mapped[str] = mapped_column(Text, nullable=False)
+    bearer_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Fernet-encrypted bearer (OAuth Tier p/ ERP, HMAC p/ Pet). NULL = sem auth.
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=100, nullable=False)  # MENOR = primeiro
+
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_tools_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    agent: Mapped["TaAgent"] = relationship(back_populates="tool_providers")

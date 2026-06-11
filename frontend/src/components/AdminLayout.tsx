@@ -21,6 +21,7 @@ import {
   Inbox,
   BellRing,
   Zap,
+  Database,
 } from "lucide-react";
 
 import UserMenu from "./UserMenu";
@@ -61,6 +62,7 @@ const SECTIONS: NavGroup[] = [
     label: "Configuração",
     items: [
       { to: "/admin/llm", label: "LLM Providers", icon: Cpu },
+      { to: "/admin/fontes-dados", label: "Fontes de Dados", icon: Database },
       { to: "/admin/macros", label: "Macros", icon: Zap },
       { to: "/admin/features", label: "Feature Flags", icon: ToggleLeft },
       { to: "/admin/params", label: "Parâmetros", icon: Sliders },

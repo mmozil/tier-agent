@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import agents, attention, auth, billing, canned_responses, connectors, containers, conversations, features, health, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, reports, skills, team, templates, tenants, tier_pay, webhooks
+from routes import agents, attention, auth, billing, canned_responses, connectors, containers, conversations, features, health, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, reports, skills, team, templates, tenants, tier_pay, tool_providers, webhooks
 
 settings = get_settings()
 
@@ -68,6 +68,7 @@ app.include_router(macros.router, prefix="/api/v1")
 app.include_router(metrics.router, prefix="/api/v1")
 app.include_router(skills.router, prefix="/api/v1")
 app.include_router(tier_pay.router, prefix="/api/v1")
+app.include_router(tool_providers.router, prefix="/api/v1")
 app.include_router(mcp_server.router, prefix="/api/v1")
 app.include_router(canned_responses.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
@@ -199,12 +200,57 @@ async def _ensure_member_table():
         logger.exception("ensure_member_table falhou (segue mesmo assim)")
 
 
+async def _ensure_tool_provider_table():
+    """Runtime DDL idempotente — cria ta_tool_provider (federação MCP).
+
+    Servidores MCP externos plugados por agente (ERP Tier Empresas, Hovio Pet, etc).
+    Sem Alembic porque o deploy não roda migrations (mesmo padrão de ta_member/ta_macro)."""
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            await db.execute(
+                _sql_text(
+                    """
+                    CREATE TABLE IF NOT EXISTS ta_tool_provider (
+                        id SERIAL PRIMARY KEY,
+                        agent_id INTEGER NOT NULL REFERENCES ta_agent(id) ON DELETE CASCADE,
+                        tenant_id INTEGER NOT NULL,
+                        nome VARCHAR(120) NOT NULL,
+                        mcp_server_url TEXT NOT NULL,
+                        bearer_enc TEXT,
+                        enabled BOOLEAN NOT NULL DEFAULT true,
+                        priority INTEGER NOT NULL DEFAULT 100,
+                        last_test_at TIMESTAMP,
+                        last_test_ok BOOLEAN,
+                        last_tools_count INTEGER NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT now(),
+                        updated_at TIMESTAMP DEFAULT now()
+                    )
+                    """
+                )
+            )
+            await db.execute(
+                _sql_text(
+                    "CREATE INDEX IF NOT EXISTS ix_ta_tool_provider_agent_enabled "
+                    "ON ta_tool_provider (agent_id, enabled, priority)"
+                )
+            )
+            await db.commit()
+        logger.info("ensure_tool_provider_table ok")
+    except Exception:
+        logger.exception("ensure_tool_provider_table falhou (segue mesmo assim)")
+
+
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
     await _ensure_message_content_column()
     await _ensure_canned_response_table()
     await _ensure_member_table()
+    await _ensure_tool_provider_table()
     from scheduler import init_scheduler
     init_scheduler()
 
