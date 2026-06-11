@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Loader2, Zap, X, CheckCircle2, XCircle } from "lucide-react";
+import { Trash2, Loader2, Zap, X, CheckCircle2, XCircle, Check } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, HairCells } from "@/components/ds/fc";
 
-// Fontes de Dados (MCP) — servidores MCP externos plugados a um agente (federação).
-// O agente passa a poder consultar essas fontes via tool-use (ex: ERP Tier Empresas).
+// Integrações (MCP) — catálogo de plataformas que o agente pode consultar/agir via
+// tool-use. Padrão "página de integrações": cards conhecidos (Conectar com URL
+// pré-preenchida) + opção avançada de servidor MCP customizado. Pós-conexão, testa
+// automático e mostra "o que o agente pode fazer" em linguagem humana.
 
 interface Agent {
   id: number;
@@ -28,10 +30,72 @@ interface ToolProvider {
   last_tools_count: number;
 }
 
+interface ToolInfo {
+  name: string;
+  description: string;
+}
+
 interface TestResult {
   ok: boolean;
   tools_count: number;
   tools: string[];
+  tools_detail?: ToolInfo[];
+}
+
+interface Preset {
+  key: string;
+  nome: string;
+  desc: string;
+  url: string;
+  badge: string | null;
+  available: boolean;
+  color: string;
+  initials: string;
+  tokenHelp: string;
+  urlLocked: boolean;
+}
+
+const PRESETS: Preset[] = [
+  {
+    key: "tier-erp",
+    nome: "Tier Empresas (ERP)",
+    desc: "Financeiro do seu ERP: DRE, fluxo de caixa, KPIs, contas a receber e a pagar.",
+    url: "https://api.tier.finance/api/mcp/erp/server",
+    badge: "Somente leitura",
+    available: true,
+    color: "#003083",
+    initials: "TE",
+    tokenHelp: "Cole o access token OAuth do Tier (client tier-agent, escopo financeiro:read).",
+    urlLocked: true,
+  },
+  {
+    key: "hovio-pet",
+    nome: "Hovio Pet",
+    desc: "Clientes, pets, agenda e WhatsApp do petshop — consultar e agir.",
+    url: "",
+    badge: "Em breve",
+    available: false,
+    color: "#0a8f5a",
+    initials: "HP",
+    tokenHelp: "",
+    urlLocked: true,
+  },
+  {
+    key: "custom",
+    nome: "Servidor MCP personalizado",
+    desc: "Avançado: conecte qualquer servidor MCP (JSON-RPC 2.0) por URL + token.",
+    url: "",
+    badge: null,
+    available: true,
+    color: "#262626",
+    initials: "MCP",
+    tokenHelp: "Token Bearer da fonte (opcional, se ela exigir auth).",
+    urlLocked: false,
+  },
+];
+
+function presetFor(p: ToolProvider): Preset | undefined {
+  return PRESETS.find((pr) => pr.url && p.mcp_server_url.startsWith(pr.url));
 }
 
 export default function FontesDadosPage() {
@@ -39,7 +103,7 @@ export default function FontesDadosPage() {
   const [agentId, setAgentId] = useState<number | null>(null);
   const [providers, setProviders] = useState<ToolProvider[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [formPreset, setFormPreset] = useState<Preset | null>(null);
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<ToolProvider | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
@@ -65,7 +129,7 @@ export default function FontesDadosPage() {
       setProviders(data);
     } catch (e) {
       console.error(e);
-      toast.error("Falha ao carregar fontes");
+      toast.error("Falha ao carregar integrações");
     } finally {
       setLoading(false);
     }
@@ -79,23 +143,57 @@ export default function FontesDadosPage() {
     if (agentId !== null) loadProviders(agentId);
   }, [agentId]);
 
+  function openConnect(preset: Preset) {
+    if (!preset.available) return;
+    setFormPreset(preset);
+    setForm({ nome: preset.key === "custom" ? "" : preset.nome, mcp_server_url: preset.url, bearer: "" });
+  }
+
+  function connectedProvider(preset: Preset): ToolProvider | undefined {
+    if (!preset.url) return undefined;
+    return providers.find((p) => p.mcp_server_url.startsWith(preset.url));
+  }
+
+  // Testa a conexão MCP (lista as tools). Retorna o resultado pra encadear no fluxo de criação.
+  async function testProvider(p: ToolProvider): Promise<TestResult | null> {
+    if (agentId === null) return null;
+    setTesting(p.id);
+    try {
+      const { data } = await api.post<TestResult>(`/agents/${agentId}/tool-providers/${p.id}/test`);
+      setTestResults((r) => ({ ...r, [p.id]: data }));
+      if (!data.ok) toast.error("Nenhuma ferramenta encontrada — verifique URL e token");
+      loadProviders(agentId);
+      return data;
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || "erro na conexão";
+      setTestResults((r) => ({ ...r, [p.id]: { ok: false, tools_count: 0, tools: [] } }));
+      toast.error(`Falhou: ${msg}`);
+      return null;
+    } finally {
+      setTesting(null);
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (agentId === null) return;
     setSaving(true);
     try {
-      await api.post(`/agents/${agentId}/tool-providers`, {
+      const { data: created } = await api.post<ToolProvider>(`/agents/${agentId}/tool-providers`, {
         nome: form.nome.trim(),
         mcp_server_url: form.mcp_server_url.trim(),
         bearer: form.bearer || null,
       });
-      toast.success("Fonte conectada");
-      setShowForm(false);
+      setFormPreset(null);
       setForm({ nome: "", mcp_server_url: "", bearer: "" });
-      loadProviders(agentId);
+      await loadProviders(agentId);
+      // Auto-testa e abre o detalhe: o usuário vê NA HORA o que o agente ganhou.
+      setDetail(created);
+      const tr = await testProvider(created);
+      if (tr?.ok) toast.success(`Conectado ✓ — ${tr.tools_count} ferramentas disponíveis`);
     } catch (err) {
       console.error(err);
-      toast.error("Erro ao salvar");
+      toast.error("Erro ao conectar");
     } finally {
       setSaving(false);
     }
@@ -103,14 +201,14 @@ export default function FontesDadosPage() {
 
   async function onDelete(p: ToolProvider) {
     if (agentId === null) return;
-    if (!confirm(`Remover a fonte "${p.nome}"?`)) return;
+    if (!confirm(`Desconectar "${p.nome}"? O agente perde acesso a essas ferramentas.`)) return;
     try {
       await api.delete(`/agents/${agentId}/tool-providers/${p.id}`);
-      toast.success("Removida");
+      toast.success("Desconectada");
       setDetail(null);
       loadProviders(agentId);
     } catch {
-      toast.error("Erro ao remover");
+      toast.error("Erro ao desconectar");
     }
   }
 
@@ -118,29 +216,10 @@ export default function FontesDadosPage() {
     if (agentId === null) return;
     try {
       await api.patch(`/agents/${agentId}/tool-providers/${p.id}`, { enabled: !p.enabled });
-      toast.success(!p.enabled ? "Ativada" : "Desativada");
+      toast.success(!p.enabled ? "Ativada" : "Pausada");
       loadProviders(agentId);
     } catch {
       toast.error("Erro ao alterar status");
-    }
-  }
-
-  // Testa a conexão MCP (lista as tools expostas pela fonte).
-  async function testProvider(p: ToolProvider) {
-    if (agentId === null) return;
-    setTesting(p.id);
-    try {
-      const { data } = await api.post<TestResult>(`/agents/${agentId}/tool-providers/${p.id}/test`);
-      setTestResults((r) => ({ ...r, [p.id]: data }));
-      if (data.ok) toast.success(`Conexão OK ✓ (${data.tools_count} tools)`);
-      else toast.error("Nenhuma tool encontrada — verifique URL e token");
-      loadProviders(agentId);
-    } catch (e: any) {
-      const msg = e?.response?.data?.detail || "erro na conexão";
-      setTestResults((r) => ({ ...r, [p.id]: { ok: false, tools_count: 0, tools: [] } }));
-      toast.error(`Falhou: ${msg}`);
-    } finally {
-      setTesting(null);
     }
   }
 
@@ -161,43 +240,105 @@ export default function FontesDadosPage() {
     );
   }
 
+  function Avatar({ preset, nome }: { preset?: Preset; nome: string }) {
+    const color = preset?.color || "#262626";
+    const initials = preset?.initials || nome.slice(0, 2).toUpperCase();
+    return (
+      <span
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold text-white"
+        style={{ backgroundColor: color }}
+      >
+        {initials}
+      </span>
+    );
+  }
+
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div className="min-w-0">
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Fontes de Dados (MCP)</h2>
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Integrações (MCP)</h2>
               <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
-                Plugue servidores <b>MCP</b> externos a um agente — ele passa a consultar essas fontes (ex:{" "}
-                <b>ERP Tier Empresas</b>, <b>Hovio Pet</b>) via tool-use. Ligue/desligue no <b>toggle</b>,
-                teste a conexão no <b>⚡</b>. O token é guardado encriptado e nunca exibido.
+                Conecte o agente a outras plataformas — ele passa a <b>consultar dados e agir</b> nelas
+                durante a conversa (via ferramentas MCP). Escolha uma integração abaixo ou conecte um
+                servidor personalizado.
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {agents.length > 0 && (
+            {agents.length > 0 && (
+              <label className="shrink-0">
+                <span className={`block text-[11px] mb-1 ${FC.mut}`}>Agente</span>
                 <select
                   value={agentId ?? ""}
                   onChange={(e) => setAgentId(Number(e.target.value))}
                   className={`h-7 px-3 text-[13px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`}
-                  title="Agente"
                 >
                   {agents.map((a) => (
                     <option key={a.id} value={a.id}>{a.nome}</option>
                   ))}
                 </select>
-              )}
-              <Button variant="primary" onClick={() => setShowForm(!showForm)} disabled={agentId === null}>
-                <Plus className="w-3.5 h-3.5" /> Nova fonte
-              </Button>
-            </div>
+              </label>
+            )}
           </div>
         </Row>
 
-        {showForm && (
+        {/* ─── Catálogo de integrações ─── */}
+        <Row>
+          <HairCells cols={3}>
+            {PRESETS.map((pr) => {
+              const conn = connectedProvider(pr);
+              return (
+                <div key={pr.key} className="p-5 flex flex-col gap-3 min-h-[150px]">
+                  <div className="flex items-center gap-2.5">
+                    <Avatar preset={pr} nome={pr.nome} />
+                    <div className="min-w-0">
+                      <div className={`text-[14px] font-medium ${FC.ink}`}>{pr.nome}</div>
+                      {pr.badge && (
+                        <span className={`inline-block mt-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide ${
+                          pr.available ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.12] dark:text-[#5b9bff]" : "bg-[#F5A300]/[0.12] text-[#b87a00]"
+                        }`}>
+                          {pr.badge}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className={`text-[12.5px] leading-5 flex-1 ${FC.sub}`}>{pr.desc}</p>
+                  <div>
+                    {conn ? (
+                      <button
+                        onClick={() => setDetail(conn)}
+                        className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#0a8f5a] hover:underline"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Conectada — ver detalhes
+                      </button>
+                    ) : (
+                      <Button
+                        variant={pr.available ? "secondary" : "ghost"}
+                        size="sm"
+                        disabled={!pr.available || agentId === null}
+                        onClick={() => openConnect(pr)}
+                      >
+                        {pr.available ? "Conectar" : "Em breve"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </HairCells>
+        </Row>
+
+        {/* ─── Form de conexão (abre ao clicar Conectar) ─── */}
+        {formPreset && (
           <Row>
             <form onSubmit={onSubmit} className="p-6 space-y-4">
-              <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Conectar fonte MCP</h3>
+              <div className="flex items-center gap-2.5">
+                <Avatar preset={formPreset} nome={formPreset.nome} />
+                <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>
+                  Conectar {formPreset.key === "custom" ? "servidor MCP" : formPreset.nome}
+                </h3>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <label className="block">
                   <span className={`text-[12px] ${FC.sub}`}>Nome</span>
@@ -205,81 +346,90 @@ export default function FontesDadosPage() {
                 </label>
                 <label className="block">
                   <span className={`text-[12px] ${FC.sub}`}>URL do MCP server</span>
-                  <input value={form.mcp_server_url} onChange={(e) => setForm({ ...form, mcp_server_url: e.target.value })} placeholder="https://api.tier.finance/api/mcp/erp/server" className={`${inputCls} font-mono`} required />
+                  <input
+                    value={form.mcp_server_url}
+                    onChange={(e) => setForm({ ...form, mcp_server_url: e.target.value })}
+                    placeholder="https://..."
+                    className={`${inputCls} font-mono ${formPreset.urlLocked ? "opacity-60" : ""}`}
+                    readOnly={formPreset.urlLocked}
+                    required
+                  />
+                  {formPreset.urlLocked && (
+                    <span className={`text-[11px] mt-1 block ${FC.mut}`}>Endereço oficial — já preenchido.</span>
+                  )}
                 </label>
               </div>
               <label className="block">
                 <span className={`text-[12px] ${FC.sub}`}>Token (Bearer)</span>
-                <input type="password" value={form.bearer} onChange={(e) => setForm({ ...form, bearer: e.target.value })} placeholder="opcional — deixe vazio se a fonte não exige auth" className={`${inputCls} font-mono`} />
-                <span className={`text-[11px] mt-1 block ${FC.mut}`}>Encriptado com Fernet at-rest. Use o access_token OAuth da fonte (read-only).</span>
+                <input type="password" value={form.bearer} onChange={(e) => setForm({ ...form, bearer: e.target.value })} placeholder={formPreset.key === "custom" ? "opcional" : "cole o token aqui"} className={`${inputCls} font-mono`} />
+                <span className={`text-[11px] mt-1 block ${FC.mut}`}>
+                  {formPreset.tokenHelp} Guardado encriptado — nunca é exibido de novo.
+                </span>
               </label>
               <div className="flex items-center justify-end gap-2 pt-2">
-                <Button variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
+                <Button variant="ghost" onClick={() => setFormPreset(null)}>Cancelar</Button>
                 <Button variant="primary" type="submit" disabled={saving}>
-                  {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Salvar
+                  {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Conectar e testar
                 </Button>
               </div>
             </form>
           </Row>
         )}
 
-        {agents.length === 0 && !loading && (
-          <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Nenhum agente — crie um agente primeiro em "Agentes".</div></Row>
-        )}
+        {/* ─── Conectadas ─── */}
         {loading && (
           <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Carregando…</div></Row>
         )}
+        {!loading && agents.length === 0 && (
+          <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Nenhum agente — crie um agente primeiro em "Agentes".</div></Row>
+        )}
         {!loading && agents.length > 0 && providers.length === 0 && (
-          <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Nenhuma fonte conectada a este agente. Clique em "Nova fonte".</div></Row>
+          <Row last>
+            <div className={`px-6 py-10 text-center text-[13px] ${FC.mut}`}>
+              Nenhuma integração conectada a este agente ainda — escolha uma no catálogo acima.
+            </div>
+          </Row>
         )}
         {!loading && providers.length > 0 && (
           <Row last>
             <div className={`${COLS} px-6 py-2.5 border-b ${FC.hair}`}>
-              <span className={colLabel}>Fonte</span>
-              <span className={colLabel}>URL</span>
-              <span className={colLabel}>Auth</span>
+              <span className={colLabel}>Integração</span>
+              <span className={colLabel}>Servidor</span>
+              <span className={colLabel}>Ferramentas</span>
               <span className={colLabel}>Ativa</span>
               <span />
             </div>
 
             {providers.map((p) => {
               const tr = testResults[p.id];
+              const pr = presetFor(p);
               return (
                 <div
                   key={p.id}
                   onClick={() => setDetail(p)}
                   className={`${COLS} px-6 py-3 border-b ${FC.hair} cursor-pointer ${FC.hover}`}
                 >
-                  {/* Fonte + nº de tools */}
-                  <div className="min-w-0 flex items-center gap-2">
+                  <div className="min-w-0 flex items-center gap-2.5">
+                    <Avatar preset={pr} nome={p.nome} />
                     <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{p.nome}</span>
-                    {p.last_tools_count > 0 && (
-                      <span className="shrink-0 px-1.5 py-0.5 bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff] text-[10px] font-semibold rounded">{p.last_tools_count} tools</span>
-                    )}
                   </div>
-
-                  {/* URL */}
                   <span className={`text-[12px] font-mono truncate ${FC.sub}`}>{p.mcp_server_url}</span>
-
-                  {/* Auth */}
-                  <span className={`text-[11px] ${p.has_bearer ? FC.sub : FC.mut}`}>{p.has_bearer ? "Bearer" : "sem auth"}</span>
-
-                  {/* Ativa */}
+                  <span className={`text-[12px] ${p.last_tools_count > 0 ? FC.sub : FC.mut}`}>
+                    {p.last_tools_count > 0 ? `${p.last_tools_count} disponíveis` : "—"}
+                  </span>
                   <div onClick={(e) => e.stopPropagation()}>
-                    <Switch on={p.enabled} onClick={() => toggleEnabled(p)} title={p.enabled ? "Ativa — clique pra desativar" : "Inativa — clique pra ativar"} />
+                    <Switch on={p.enabled} onClick={() => toggleEnabled(p)} title={p.enabled ? "Ativa — clique pra pausar" : "Pausada — clique pra ativar"} />
                   </div>
-
-                  {/* Ações */}
                   <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => testProvider(p)}
                       disabled={testing === p.id}
-                      title="Testar conexão MCP"
+                      title="Testar conexão"
                       className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
                     >
                       {testing === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />) : <Zap className="w-4 h-4" />}
                     </button>
-                    <button onClick={() => onDelete(p)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
+                    <button onClick={() => onDelete(p)} title="Desconectar" className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -290,63 +440,72 @@ export default function FontesDadosPage() {
         )}
       </PageFrame>
 
-      {/* ─── Modal de detalhes ─── */}
+      {/* ─── Modal de detalhes — "o que o agente pode fazer" ─── */}
       {detail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setDetail(null)}>
           <div
-            className={`w-full max-w-[520px] max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#0c0e12] border ${FC.hair} shadow-2xl`}
+            className={`w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#0c0e12] border ${FC.hair} shadow-2xl`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className={`sticky top-0 z-10 flex items-center justify-between gap-3 border-b ${FC.hair} bg-white dark:bg-[#0c0e12] px-5 py-4`}>
-              <div className="min-w-0">
-                <h2 className={`text-[16px] font-medium leading-tight ${FC.ink}`}>{detail.nome}</h2>
-                <p className={`text-[12px] ${FC.sub}`}>{detail.enabled ? "Ativa" : "Inativa"} · {detail.has_bearer ? "Bearer" : "sem auth"}</p>
+              <div className="min-w-0 flex items-center gap-2.5">
+                <Avatar preset={presetFor(detail)} nome={detail.nome} />
+                <div>
+                  <h2 className={`text-[16px] font-medium leading-tight ${FC.ink}`}>{detail.nome}</h2>
+                  <p className={`text-[12px] ${FC.sub}`}>{detail.enabled ? "Ativa" : "Pausada"} · {detail.has_bearer ? "autenticada" : "sem auth"}</p>
+                </div>
               </div>
               <button onClick={() => setDetail(null)} className={`rounded-md p-1.5 ${FC.mut} ${FC.hover}`}><X className="h-4 w-4" /></button>
             </div>
 
             <div className="p-5 space-y-5">
-              <div className="grid grid-cols-1 gap-y-3 text-[13px]">
-                <Field label="URL do MCP server" value={detail.mcp_server_url} mono />
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                  <Field label="Status" value={detail.enabled ? "Ativa" : "Inativa"} />
-                  <Field label="Auth" value={detail.has_bearer ? "Bearer (encriptado)" : "sem auth"} />
-                  <Field label="Prioridade" value={`${detail.priority}`} mono />
-                  <Field label="Tools (último teste)" value={`${detail.last_tools_count}`} mono />
-                  {detail.last_test_at && (
-                    <Field label="Último teste" value={`${new Date(detail.last_test_at).toLocaleString("pt-BR")} ${detail.last_test_ok ? "✓" : "✗"}`} full />
-                  )}
-                </div>
-              </div>
-
-              {/* Teste de conexão + tools descobertas */}
+              {/* O que o agente pode fazer */}
               <div className={`rounded-lg border ${FC.hair} p-3.5`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className={`text-[13px] font-medium ${FC.ink}`}>Testar conexão</div>
-                    <div className={`text-[11px] ${FC.mut}`}>Lista as ferramentas expostas pela fonte.</div>
-                  </div>
-                  <Button variant="primary" size="sm" onClick={() => testProvider(detail)} disabled={testing === detail.id}>
-                    {testing === detail.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />} Testar
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <div className={`text-[13px] font-medium ${FC.ink}`}>O que o agente pode fazer com esta integração</div>
+                  <Button variant="secondary" size="sm" onClick={() => testProvider(detail)} disabled={testing === detail.id}>
+                    {testing === detail.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />} Atualizar
                   </Button>
                 </div>
-                {testResults[detail.id] && (
-                  <div className={`mt-3 rounded-md p-2.5 text-[12px] ${testResults[detail.id].ok ? "bg-[#0a8f5a]/[0.08] text-[#0a8f5a]" : "bg-[#E5484D]/[0.08] text-[#E5484D]"}`}>
-                    {testResults[detail.id].ok ? (
-                      <>✓ {testResults[detail.id].tools_count} tools: <span className="font-mono">{testResults[detail.id].tools.join(", ")}</span></>
-                    ) : (
-                      <>✗ nenhuma tool — verifique URL e token</>
-                    )}
+                {testResults[detail.id]?.ok && testResults[detail.id].tools_detail?.length ? (
+                  <ul className="mt-2 space-y-1.5">
+                    {testResults[detail.id].tools_detail!.map((t) => (
+                      <li key={t.name} className="flex items-start gap-2">
+                        <Check className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[#0a8f5a]" />
+                        <span className={`text-[12.5px] leading-5 ${FC.sub}`}>
+                          {t.description || <span className="font-mono">{t.name}</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : testResults[detail.id] && !testResults[detail.id].ok ? (
+                  <div className="mt-2 rounded-md p-2.5 text-[12px] bg-[#E5484D]/[0.08] text-[#E5484D]">
+                    ✗ Não foi possível listar as ferramentas — verifique a URL e o token.
                   </div>
+                ) : (
+                  <div className={`mt-1 text-[12px] ${FC.mut}`}>
+                    {detail.last_tools_count > 0
+                      ? `${detail.last_tools_count} ferramentas no último teste — clique em "Atualizar" pra ver a lista.`
+                      : 'Clique em "Atualizar" pra descobrir as ferramentas.'}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+                <Field label="Servidor MCP" value={detail.mcp_server_url} mono full />
+                <Field label="Status" value={detail.enabled ? "Ativa" : "Pausada"} />
+                <Field label="Auth" value={detail.has_bearer ? "Bearer (encriptado)" : "sem auth"} />
+                {detail.last_test_at && (
+                  <Field label="Último teste" value={`${new Date(detail.last_test_at).toLocaleString("pt-BR")} ${detail.last_test_ok ? "✓" : "✗"}`} full />
                 )}
               </div>
 
               <div className="flex items-center justify-between gap-2 pt-1">
                 <Button variant="ghost" size="sm" onClick={() => toggleEnabled(detail)}>
-                  {detail.enabled ? "Desativar" : "Ativar"}
+                  {detail.enabled ? "Pausar" : "Ativar"}
                 </Button>
                 <button onClick={() => onDelete(detail)} className="text-[12px] text-[#E5484D] hover:underline inline-flex items-center gap-1">
-                  <Trash2 className="w-3 h-3" /> Remover
+                  <Trash2 className="w-3 h-3" /> Desconectar
                 </button>
               </div>
             </div>

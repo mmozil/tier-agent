@@ -197,6 +197,13 @@ async def test_provider(
         "ok": bool(tools),
         "tools_count": len(tools),
         "tools": [t.get("name") for t in tools if isinstance(t, dict)],
+        # nome + descrição (PT, vem do próprio MCP server) — a UI mostra
+        # "o que o agente pode fazer" em linguagem humana
+        "tools_detail": [
+            {"name": t.get("name"), "description": (t.get("description") or "")[:200]}
+            for t in tools
+            if isinstance(t, dict) and t.get("name")
+        ],
     }
 
 
