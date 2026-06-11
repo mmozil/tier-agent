@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     default_llm_model: str = "MiniMax-M2"
     default_llm_api_key: str = ""
 
+    # OAuth client do Tier Agent no servidor OAuth do Tier (federação MCP —
+    # fluxo Conectar→Autorizar sem token manual). Secret vem do env Coolify.
+    tier_oauth_client_id: str = "tier-agent"
+    tier_oauth_client_secret: str = ""
+    tier_oauth_redirect_uri: str = "https://agent.tier.finance/integracoes/tier/callback"
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"

@@ -16,6 +16,7 @@ import DataDeletion from "./pages/public/DataDeletion";
 import AgentesPage from "./pages/admin/AgentesPage";
 import LlmProvidersPage from "./pages/admin/LlmProvidersPage";
 import FontesDadosPage from "./pages/admin/FontesDadosPage";
+import McpOAuthCallback from "./pages/public/McpOAuthCallback";
 import FeaturesPage from "./pages/admin/FeaturesPage";
 import CanaisPage from "./pages/admin/CanaisPage";
 import KnowledgePage from "./pages/admin/KnowledgePage";
@@ -72,6 +73,9 @@ export default function App() {
       <Route path="/privacidade" element={<Privacy />} />
       <Route path="/data-deletion" element={<DataDeletion />} />
       <Route path="/dashboard" element={<Dashboard />} />
+      {/* Callback do OAuth das Integrações MCP (popup) — precisa casar com o
+          redirect_uri registrado no servidor OAuth do Tier */}
+      <Route path="/integracoes/tier/callback" element={<McpOAuthCallback />} />
 
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<VisaoGeralPage />} />

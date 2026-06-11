@@ -69,6 +69,7 @@ app.include_router(metrics.router, prefix="/api/v1")
 app.include_router(skills.router, prefix="/api/v1")
 app.include_router(tier_pay.router, prefix="/api/v1")
 app.include_router(tool_providers.router, prefix="/api/v1")
+app.include_router(tool_providers.oauth_router, prefix="/api/v1")
 app.include_router(mcp_server.router, prefix="/api/v1")
 app.include_router(canned_responses.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
@@ -238,6 +239,13 @@ async def _ensure_tool_provider_table():
                     "ON ta_tool_provider (agent_id, enabled, priority)"
                 )
             )
+            # Conexão OAuth (Conectar→Autorizar): refresh automático de tokens
+            for ddl in (
+                "ALTER TABLE ta_tool_provider ADD COLUMN IF NOT EXISTS refresh_enc TEXT",
+                "ALTER TABLE ta_tool_provider ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMP",
+                "ALTER TABLE ta_tool_provider ADD COLUMN IF NOT EXISTS token_url TEXT",
+            ):
+                await db.execute(_sql_text(ddl))
             await db.commit()
         logger.info("ensure_tool_provider_table ok")
     except Exception:

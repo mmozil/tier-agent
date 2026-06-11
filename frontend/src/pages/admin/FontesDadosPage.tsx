@@ -53,6 +53,7 @@ interface Preset {
   initials: string;
   tokenHelp: string;
   urlLocked: boolean;
+  connectVia: "oauth" | "form";
 }
 
 const PRESETS: Preset[] = [
@@ -65,8 +66,9 @@ const PRESETS: Preset[] = [
     available: true,
     color: "#003083",
     initials: "TE",
-    tokenHelp: "Cole o access token OAuth do Tier (client tier-agent, escopo financeiro:read).",
+    tokenHelp: "",
     urlLocked: true,
+    connectVia: "oauth", // Conectar → janela de autorização do ERP → pronto (sem token)
   },
   {
     key: "hovio-pet",
@@ -79,6 +81,7 @@ const PRESETS: Preset[] = [
     initials: "HP",
     tokenHelp: "",
     urlLocked: true,
+    connectVia: "oauth",
   },
   {
     key: "custom",
@@ -91,6 +94,7 @@ const PRESETS: Preset[] = [
     initials: "MCP",
     tokenHelp: "Token Bearer da fonte (opcional, se ela exigir auth).",
     urlLocked: false,
+    connectVia: "form",
   },
 ];
 
@@ -143,11 +147,62 @@ export default function FontesDadosPage() {
     if (agentId !== null) loadProviders(agentId);
   }, [agentId]);
 
-  function openConnect(preset: Preset) {
-    if (!preset.available) return;
-    setFormPreset(preset);
-    setForm({ nome: preset.key === "custom" ? "" : preset.nome, mcp_server_url: preset.url, bearer: "" });
+  const [oauthConnecting, setOauthConnecting] = useState<string | null>(null);
+
+  // Conectar: presets OAuth abrem a janela de autorização da fonte (padrão
+  // "Entrar com Google" — sem token, sem form). Só o custom usa formulário.
+  async function openConnect(preset: Preset) {
+    if (!preset.available || agentId === null) return;
+    if (preset.connectVia === "form") {
+      setFormPreset(preset);
+      setForm({ nome: "", mcp_server_url: preset.url, bearer: "" });
+      return;
+    }
+    setOauthConnecting(preset.key);
+    try {
+      const { data } = await api.post<{ authorize_url: string }>(
+        `/agents/${agentId}/tool-providers/oauth/start`,
+        { preset: preset.key },
+      );
+      const w = 520, h = 760;
+      const left = window.screenX + (window.outerWidth - w) / 2;
+      const top = window.screenY + (window.outerHeight - h) / 2;
+      window.open(data.authorize_url, "mcp-oauth", `width=${w},height=${h},left=${left},top=${top}`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao iniciar conexão");
+      setOauthConnecting(null);
+    }
   }
+
+  // O popup avisa via postMessage quando a autorização termina.
+  useEffect(() => {
+    async function onMessage(ev: MessageEvent) {
+      if (ev.origin !== window.location.origin) return;
+      if (!ev.data || ev.data.type !== "mcp-oauth") return;
+      setOauthConnecting(null);
+      if (!ev.data.ok) {
+        if (ev.data.error !== "access_denied") toast.error(`Conexão falhou: ${ev.data.error}`);
+        return;
+      }
+      const aid = ev.data.agent_id ?? agentId;
+      if (aid === null) return;
+      try {
+        const { data } = await api.get<ToolProvider[]>(`/agents/${aid}/tool-providers`);
+        setProviders(data);
+        const p = data.find((x) => x.id === ev.data.provider_id);
+        if (p) {
+          toast.success(`${p.nome} conectada ✓`);
+          setDetail(p);
+          testProvider(p);
+        }
+      } catch {
+        if (agentId !== null) loadProviders(agentId);
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId]);
 
   function connectedProvider(preset: Preset): ToolProvider | undefined {
     if (!preset.url) return undefined;
@@ -316,10 +371,16 @@ export default function FontesDadosPage() {
                       <Button
                         variant={pr.available ? "secondary" : "ghost"}
                         size="sm"
-                        disabled={!pr.available || agentId === null}
+                        disabled={!pr.available || agentId === null || oauthConnecting === pr.key}
                         onClick={() => openConnect(pr)}
                       >
-                        {pr.available ? "Conectar" : "Em breve"}
+                        {oauthConnecting === pr.key ? (
+                          <><Loader2 className="w-3 h-3 animate-spin" /> Autorizando…</>
+                        ) : pr.available ? (
+                          "Conectar"
+                        ) : (
+                          "Em breve"
+                        )}
                       </Button>
                     )}
                   </div>

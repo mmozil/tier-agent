@@ -21,6 +21,9 @@ from models import TaAgent, TaToolProvider
 
 router = APIRouter(prefix="/agents/{agent_id}/tool-providers", tags=["tool-providers"])
 
+# Callback OAuth (popup volta sem agent_id na URL — o state carrega o contexto)
+oauth_router = APIRouter(prefix="/tool-providers/oauth", tags=["tool-providers"])
+
 
 # ─── Schemas
 class ToolProviderCreate(BaseModel):
@@ -173,6 +176,63 @@ async def delete_provider(
     await db.delete(p)
     await db.commit()
     _invalidate_discovery()
+
+
+class OAuthStartRequest(BaseModel):
+    preset: str  # ex: "tier-erp"
+
+
+@router.post("/oauth/start")
+async def oauth_start(
+    agent_id: int,
+    payload: OAuthStartRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Inicia a conexão OAuth de um preset: devolve a URL de autorização pro
+    frontend abrir em popup (PKCE + state gerados aqui). Usuário nunca vê token."""
+    agent = await _load_agent(agent_id, user, db)
+    from services import oauth_connect
+
+    try:
+        url = oauth_connect.start_connect(
+            agent_id=agent.id, tenant_id=agent.tenant_id, preset_key=payload.preset
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    return {"authorize_url": url}
+
+
+class OAuthCallbackRequest(BaseModel):
+    state: str
+    code: str
+
+
+@oauth_router.post("/callback", response_model=ToolProviderOut)
+async def oauth_callback(
+    payload: OAuthCallbackRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Popup voltou da tela de autorização: troca o code por tokens e salva o provider."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Usuário sem tenant")
+    from services import oauth_connect, tool_provider_service
+
+    try:
+        provider = await oauth_connect.complete_connect(
+            db, state=payload.state, code=payload.code, tenant_id=user.tenant_id
+        )
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(502, f"Falha ao trocar código por token: {e}") from e
+    tool_provider_service.invalidate_cache()
+    return _to_out(provider)
 
 
 @router.post("/{provider_id}/test")

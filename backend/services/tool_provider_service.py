@@ -138,6 +138,14 @@ async def discover_agent_tools(
     handlers: dict[str, Callable[[dict], Awaitable[str]]] = {}
 
     for p in rows:
+        # Conexão OAuth: renova o access_token se está pra expirar (refresh c/ rotação).
+        # Token novo muda o cache-key do discovery automaticamente (hash do auth).
+        try:
+            from services import oauth_connect
+
+            await oauth_connect.ensure_fresh_token(db, p)
+        except Exception:
+            logger.exception("tool_provider %s: refresh check falhou", p.id)
         headers = build_headers(p)
         try:
             tools = await _list_tools_cached(p.mcp_server_url, headers)

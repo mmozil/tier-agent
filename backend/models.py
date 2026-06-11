@@ -614,6 +614,13 @@ class TaToolProvider(Base):
     bearer_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Fernet-encrypted bearer (OAuth Tier p/ ERP, HMAC p/ Pet). NULL = sem auth.
 
+    # Conexão OAuth (fluxo Conectar→Autorizar, sem token manual): refresh + expiry
+    # permitem renovação automática. NULL = token estático (caso custom/HMAC).
+    refresh_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    token_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # endpoint OAuth /token da fonte (pra refresh). NULL = sem refresh.
+
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=100, nullable=False)  # MENOR = primeiro
 
