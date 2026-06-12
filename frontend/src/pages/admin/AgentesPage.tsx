@@ -28,6 +28,7 @@ interface Agent {
   nome: string;
   persona: string | null;
   template_kind: string | null;
+  avatar_url?: string | null;
   active: boolean;
 }
 
@@ -473,13 +474,13 @@ function AgentDetailsDrawer({
   const [stats, setStats] = useState<AgentStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ nome: agent.nome, persona: agent.persona || "" });
+  const [form, setForm] = useState({ nome: agent.nome, persona: agent.persona || "", avatar_url: agent.avatar_url || "" });
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    setForm({ nome: agent.nome, persona: agent.persona || "" });
+    setForm({ nome: agent.nome, persona: agent.persona || "", avatar_url: agent.avatar_url || "" });
     setEditing(false);
     (async () => {
       setStatsLoading(true);
@@ -625,11 +626,37 @@ function AgentDetailsDrawer({
                   className="w-full px-3 py-2 text-[13px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow font-mono"
                 />
               </div>
+              <div>
+                <label className="block text-[12px] font-medium text-[#697386] mb-1">Foto do agente (URL)</label>
+                <div className="flex items-center gap-3">
+                  {form.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={form.avatar_url}
+                      alt=""
+                      className="w-12 h-12 rounded-full object-cover border border-[#EDEDED] shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-[#003083]/[0.08] flex items-center justify-center text-[#003083] shrink-0">
+                      <Bot className="w-5 h-5" />
+                    </div>
+                  )}
+                  <input
+                    value={form.avatar_url}
+                    onChange={(e) => setForm({ ...form, avatar_url: e.target.value })}
+                    placeholder="https://.../foto.png"
+                    className="flex-1 h-7 px-3 text-[13px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-[#697386]">
+                  Aparece nas conversas (ex: no Hovio Pet). Cole a URL de uma imagem hospedada.
+                </p>
+              </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   onClick={() => {
                     setEditing(false);
-                    setForm({ nome: agent.nome, persona: agent.persona || "" });
+                    setForm({ nome: agent.nome, persona: agent.persona || "", avatar_url: agent.avatar_url || "" });
                   }}
                   className="h-6 px-3 rounded-md text-[12px] font-medium bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)]"
                 >

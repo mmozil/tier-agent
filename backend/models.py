@@ -65,6 +65,8 @@ class TaAgent(Base):
     persona: Mapped[str | None] = mapped_column(Text, nullable=True)
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     template_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # URL de foto/avatar do agente (mostrada nas conversas espelhadas no Pet, etc)
+    avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # template_kind: atendente_loja | sdr | suporte | cobranca | custom
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

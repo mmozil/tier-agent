@@ -16,6 +16,7 @@ class AgentCreate(BaseModel):
     persona: str | None = None
     system_prompt: str | None = None
     template_kind: str | None = None
+    avatar_url: str | None = None
 
 
 class AgentOut(BaseModel):
@@ -25,6 +26,7 @@ class AgentOut(BaseModel):
     persona: str | None
     system_prompt: str | None
     template_kind: str | None
+    avatar_url: str | None = None
     active: bool
 
     model_config = {"from_attributes": True}
@@ -93,6 +95,7 @@ class AgentUpdate(BaseModel):
     persona: str | None = None
     system_prompt: str | None = None
     template_kind: str | None = None
+    avatar_url: str | None = None
     active: bool | None = None
 
 
@@ -114,7 +117,7 @@ async def update_agent(
         if not nome:
             raise HTTPException(400, "Nome não pode ser vazio")
         agent.nome = nome
-    for k in ("persona", "system_prompt", "template_kind", "active"):
+    for k in ("persona", "system_prompt", "template_kind", "active", "avatar_url"):
         if k in data:
             setattr(agent, k, data[k])
     await db.commit()
