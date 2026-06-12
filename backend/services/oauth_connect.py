@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
+import os
 import secrets
 import time
 from datetime import datetime, timedelta
@@ -38,9 +39,35 @@ PRESETS: dict[str, dict] = {
         "token_url": "https://api.tier.finance/api/oauth/token",
         "mcp_url": "https://api.tier.finance/api/mcp/erp/server",
         "scope": "financeiro:read vendas:read conversas:read clientes:read",
+        "client_id": "tier-agent",
+        "secret_env": "TIER_OAUTH_CLIENT_SECRET",
     },
-    # "hovio-pet": entra na Fase 3 (MCP server do Pet + client OAuth próprio)
+    "hovio-pet": {
+        "nome": "Hovio Pet",
+        # O Pet é servidor OAuth próprio (separado do Tier) — authorize/token no pet.hovio.com.br
+        "authorize_url": "https://pet.hovio.com.br/oauth/authorize",
+        "token_url": "https://pet.hovio.com.br/oauth/token",
+        "mcp_url": "https://pet.hovio.com.br/api/mcp",
+        "scope": "pet:read pet:write pet:whatsapp",
+        "client_id": "tier-agent",
+        "secret_env": "HOVIO_PET_OAUTH_CLIENT_SECRET",
+    },
 }
+
+
+def _preset_client_id(preset: dict) -> str:
+    return preset.get("client_id") or settings.tier_oauth_client_id
+
+
+def _preset_secret(preset: dict) -> str:
+    return os.getenv(preset.get("secret_env", "") or "", "") or ""
+
+
+def _creds_for_token_url(token_url: str) -> tuple[str, str]:
+    for p in PRESETS.values():
+        if p["token_url"] == token_url:
+            return _preset_client_id(p), _preset_secret(p)
+    return settings.tier_oauth_client_id, settings.tier_oauth_client_secret
 
 # Handshakes pendentes (state → contexto). In-process com TTL — backend single-process;
 # restart no meio do popup = usuário clica Conectar de novo.
@@ -59,8 +86,8 @@ def start_connect(*, agent_id: int, tenant_id: int, preset_key: str) -> str:
     preset = PRESETS.get(preset_key)
     if not preset:
         raise ValueError(f"preset desconhecido: {preset_key}")
-    if not settings.tier_oauth_client_secret:
-        raise RuntimeError("TIER_OAUTH_CLIENT_SECRET não configurado no backend")
+    if not _preset_secret(preset):
+        raise RuntimeError(f"secret do preset '{preset_key}' não configurado (env {preset.get('secret_env')})")
 
     _purge_pending()
     verifier = secrets.token_urlsafe(48)  # 64 chars (43-128 exigido pelo PKCE)
@@ -79,7 +106,7 @@ def start_connect(*, agent_id: int, tenant_id: int, preset_key: str) -> str:
     }
 
     params = {
-        "client_id": settings.tier_oauth_client_id,
+        "client_id": _preset_client_id(preset),
         "redirect_uri": settings.tier_oauth_redirect_uri,
         "scope": preset["scope"],
         "code_challenge": challenge,
@@ -110,6 +137,8 @@ async def complete_connect(
             "redirect_uri": settings.tier_oauth_redirect_uri,
             "code_verifier": pending["verifier"],
         },
+        _preset_client_id(preset),
+        _preset_secret(preset),
     )
 
     expires_at = datetime.utcnow() + timedelta(seconds=int(tokens.get("expires_in") or 86400))
@@ -149,9 +178,12 @@ async def ensure_fresh_token(db: AsyncSession, provider: TaToolProvider) -> None
     if provider.token_expires_at > datetime.utcnow() + timedelta(minutes=10):
         return
     try:
+        cid, sec = _creds_for_token_url(provider.token_url)
         tokens = await _token_request(
             provider.token_url,
             {"grant_type": "refresh_token", "refresh_token": decrypt(provider.refresh_enc)},
+            cid,
+            sec,
         )
         provider.bearer_enc = encrypt(tokens["access_token"])
         if tokens.get("refresh_token"):
@@ -165,12 +197,12 @@ async def ensure_fresh_token(db: AsyncSession, provider: TaToolProvider) -> None
         logger.exception("oauth_connect: refresh falhou provider=%s", provider.id)
 
 
-async def _token_request(token_url: str, data: dict) -> dict:
+async def _token_request(token_url: str, data: dict, client_id: str, client_secret: str) -> dict:
     """POST form no endpoint /token (client creds no corpo, RFC 6749)."""
     payload = {
         **data,
-        "client_id": settings.tier_oauth_client_id,
-        "client_secret": settings.tier_oauth_client_secret,
+        "client_id": client_id,
+        "client_secret": client_secret,
     }
     async with httpx.AsyncClient(timeout=20) as cli:
         r = await cli.post(token_url, data=payload)
