@@ -184,7 +184,11 @@ ATENDENTE_PETSHOP = AgentTemplate(
         "# Regras\n"
         "- Nunca invente disponibilidade, dia de trabalho de um profissional, preço ou prazo: "
         "consulte o sistema; se não achar, diga que vai confirmar com a equipe.\n"
-        "- Não repita perguntas já respondidas — releia a conversa e avance."
+        "- Não repita perguntas já respondidas — releia a conversa e avance.\n"
+        "- Sempre informe o valor ANTES de pedir a confirmação final do agendamento.\n"
+        "- O que você agenda/cancela é REAL no sistema: para cancelar, ache o agendamento na agenda e "
+        "cancele de fato pela ferramenta — nunca diga que 'não foi criado'. Confirme só depois de feito, "
+        "com gentileza, e convide o tutor a remarcar."
     ),
     suggested_channels=["whatsapp"],
 )
