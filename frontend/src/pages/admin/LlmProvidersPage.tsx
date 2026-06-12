@@ -91,6 +91,10 @@ export default function LlmProvidersPage() {
   }
 
   async function onDelete(id: number) {
+    if (providers.find((x) => x.id === id)?.tenant_id === null) {
+      toast.error("Provider global da Tier — gerenciado pela plataforma, não pode ser removido aqui.");
+      return;
+    }
     if (!confirm("Deletar este provider?")) return;
     try {
       await api.delete(`/llm-providers/${id}`);
@@ -104,6 +108,12 @@ export default function LlmProvidersPage() {
 
   // Liga/desliga o provider (active). Ligado = entra no rodízio; o de menor ordem vira o primário.
   async function toggleActive(p: Provider) {
+    // Provider GLOBAL (tenant_id null) é o padrão compartilhado da Tier — só admin Tier
+    // pode mexer (o backend retorna 403). Desligá-lo deixaria TODOS os agentes sem LLM.
+    if (p.tenant_id === null) {
+      toast.error("Provider global da Tier — gerenciado pela plataforma. Pra usar outro modelo, cadastre um provider do seu workspace.");
+      return;
+    }
     try {
       await api.patch(`/llm-providers/${p.id}`, { active: !p.active });
       toast.success(!p.active ? "Ativado" : "Desativado");
