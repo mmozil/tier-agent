@@ -12,7 +12,8 @@ Stack: AsyncIOScheduler dentro do event loop do FastAPI.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -295,6 +296,111 @@ async def sla_watch_job() -> None:
         logger.exception("sla_watch_job falhou")
 
 
+async def mirror_pet_conversations_job() -> None:
+    """Espelha as conversas de WhatsApp dos agentes conectados ao Hovio Pet de volta
+    pro Pet, pra o petshop ver o atendimento da IA no próprio painel ('Conversas').
+
+    Push periódico (NÃO toca o hot-path de mensagem). Janela de 20min; o Pet deduplica
+    por (conversa, criadaEm), então reenvio é inofensivo. Best-effort: falha só loga."""
+    try:
+        import httpx
+
+        from core.encryption import decrypt
+        from models import TaToolProvider
+        from services import oauth_connect
+
+        wa_kinds = ("whatsapp", "whatsapp_cloud")
+        async with db_context() as db:
+            providers = (
+                await db.execute(
+                    select(TaToolProvider).where(
+                        TaToolProvider.enabled.is_(True),
+                        TaToolProvider.mcp_server_url.like("%pet.hovio.com.br%"),
+                    )
+                )
+            ).scalars().all()
+            if not providers:
+                return
+
+            now = _now_utc_naive()
+            since = now - timedelta(minutes=20)
+
+            for provider in providers:
+                try:
+                    await oauth_connect.ensure_fresh_token(db, provider)
+                    if not provider.bearer_enc:
+                        continue
+                    token = decrypt(provider.bearer_enc)
+                    base = provider.mcp_server_url.split("/api/mcp")[0]
+                    url = f"{base}/api/agent/mirror"
+
+                    convs = (
+                        await db.execute(
+                            select(TaConversation)
+                            .where(
+                                TaConversation.agent_id == provider.agent_id,
+                                TaConversation.connector_kind.in_(wa_kinds),
+                                TaConversation.last_message_at.isnot(None),
+                                TaConversation.last_message_at > since,
+                            )
+                            .limit(100)
+                        )
+                    ).scalars().all()
+                    if not convs:
+                        continue
+
+                    payload_msgs: list[dict] = []
+                    for c in convs:
+                        tel = re.sub(r"\D", "", (c.external_id or "").split("@")[0])
+                        if not tel:
+                            continue
+                        rows = (
+                            await db.execute(
+                                select(TaMessageLog)
+                                .where(
+                                    TaMessageLog.conversation_id == c.id,
+                                    TaMessageLog.created_at > since,
+                                    TaMessageLog.role.in_(("user", "assistant", "agent")),
+                                    TaMessageLog.content.isnot(None),
+                                )
+                                .order_by(TaMessageLog.id.asc())
+                                .limit(80)
+                            )
+                        ).scalars().all()
+                        for m in rows:
+                            payload_msgs.append(
+                                {
+                                    "telefone": tel,
+                                    "nome": c.contact_name,
+                                    "papel": "user" if m.role == "user" else "assistant",
+                                    "conteudo": m.content,
+                                    "criadaEm": m.created_at.isoformat() + "Z",
+                                }
+                            )
+                    if not payload_msgs:
+                        continue
+
+                    async with httpx.AsyncClient(timeout=20) as cli:
+                        r = await cli.post(
+                            url,
+                            headers={"Authorization": f"Bearer {token}"},
+                            json={"messages": payload_msgs},
+                        )
+                    if r.status_code >= 400:
+                        logger.warning(
+                            "mirror_pet: push %s falhou %s: %s", url, r.status_code, r.text[:200]
+                        )
+                    else:
+                        logger.info(
+                            "mirror_pet: provider=%s convs=%s msgs=%s ok",
+                            provider.id, len(convs), len(payload_msgs),
+                        )
+                except Exception:
+                    logger.exception("mirror_pet: provider=%s falhou", provider.id)
+    except Exception:
+        logger.exception("mirror_pet_conversations_job falhou")
+
+
 async def _job_lock(name: str, ttl: int) -> bool:
     """Lock Redis por tick — com >1 worker, só quem pega o lock roda o job.
     TTL < intervalo do job → próximo tick re-disputa (auto-recupera se 1 worker cai).
@@ -353,8 +459,18 @@ def init_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         max_instances=1,
     )
+    sched.add_job(
+        _locked(mirror_pet_conversations_job, "mirror_pet", 160),
+        trigger=IntervalTrigger(seconds=180),
+        id="mirror_pet_conversations",
+        replace_existing=True,
+        max_instances=1,
+    )
     sched.start()
-    logger.info("Scheduler iniciado: resume_waiting (30s) + fire_cron (60s) + sla_watch (120s) [lock Redis por tick]")
+    logger.info(
+        "Scheduler iniciado: resume_waiting (30s) + fire_cron (60s) + sla_watch (120s) "
+        "+ mirror_pet (180s) [lock Redis por tick]"
+    )
     _scheduler = sched
     return sched
 
