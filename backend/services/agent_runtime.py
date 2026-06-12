@@ -55,6 +55,26 @@ def _sanitize_reply(text: str | None) -> str:
     return cleaned.strip()
 
 
+def _format_for_whatsapp(text: str) -> str:
+    """Normaliza markdown que o modelo às vezes gera para a formatação NATIVA do
+    WhatsApp. Markdown cru (`**negrito**`, `## título`, `- item`) aparece LITERAL no
+    WhatsApp, e um `**` ou asterisco solto quebra o negrito da mensagem inteira."""
+    if not text:
+        return text or ""
+    t = text
+    # Cabeçalhos markdown (#, ##, ...) → *negrito*
+    t = _re.sub(r"(?m)^[ \t]{0,3}#{1,6}[ \t]*(.+?)[ \t]*$", r"*\1*", t)
+    # Negrito markdown **x** / ***x*** / __x__ → *x* (WhatsApp usa UM asterisco)
+    t = _re.sub(r"\*\*+(.+?)\*\*+", r"*\1*", t)
+    t = _re.sub(r"__(.+?)__", r"*\1*", t)
+    # Marcadores de lista no início da linha (-, *, ·, •, –) → "• " (limpa espaço à esquerda)
+    t = _re.sub(r"(?m)^[ \t]*[-*·•–][ \t]+", "• ", t)
+    # Limpa espaço à direita e colapsa 3+ quebras de linha em 2
+    t = _re.sub(r"[ \t]+\n", "\n", t)
+    t = _re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
+
+
 def _split_into_bubbles(text: str, max_len: int = 700) -> list[str]:
     """Divide resposta longa em até 4 balões (mais humano no WhatsApp).
 
@@ -641,6 +661,15 @@ async def handle_inbound_message(
         "erro de boa, e deixe a porta aberta — NUNCA encerre de forma abrupta ('cancelei, tchau').\n"
         "- Encerre fazendo o cliente se sentir bem-vindo de volta, mesmo que não tenha comprado."
     )
+    if _is_wa:
+        _base += (
+            "\n\n# Formatação no WhatsApp\n"
+            "- Use SÓ a formatação nativa do WhatsApp: *negrito* (UM asterisco), _itálico_. "
+            "NUNCA use markdown (**, ##, ###, ou '-' como marcador).\n"
+            "- Listas: uma linha por item começando com '• ' (bullet). Nada de '-' nem '*' como marcador.\n"
+            "- Emoji com parcimônia (no máximo 1 por mensagem, e nunca como marcador de lista).\n"
+            "- Mensagens curtas e escaneáveis; evite blocos longos de texto."
+        )
     system_prompt = f"{system_prompt}\n\n{_base}"
 
     # Histórico da conversa → memória do modelo (senão "esquece" o cliente)
@@ -697,6 +726,8 @@ async def handle_inbound_message(
         connector_impl = registry.get(connector_kind)
         cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
         _clean = _sanitize_reply(reply.text)
+        if connector_kind in ("whatsapp", "whatsapp_cloud"):
+            _clean = _format_for_whatsapp(_clean)
         _bubbles = _split_into_bubbles(_clean)
         if len(_bubbles) <= 1:
             await connector_impl.send(
