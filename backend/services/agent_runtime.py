@@ -35,16 +35,23 @@ _CJK_RE = _re.compile(
 )
 
 
+# Emoji de bandeira = "regional indicators" (U+1F1E6–U+1F1FF) que o MiniMax às vezes
+# injeta aleatoriamente (ex: as bandeiras depois de "Perfeito!"). Nunca intencionais
+# no atendimento → remove antes do envio.
+_FLAG_RE = _re.compile(r"[\U0001F1E6-\U0001F1FF]")
+
+
 def _sanitize_reply(text: str | None) -> str:
-    """Remove caracteres CJK vazados e limpa espaços/pontuação resultantes."""
+    """Remove CJK vazado + emoji de bandeira aleatório e limpa espaços/pontuação."""
     if not text:
         return text or ""
-    if not _CJK_RE.search(text):
+    if not _CJK_RE.search(text) and not _FLAG_RE.search(text):
         return text
     cleaned = _CJK_RE.sub("", text)
+    cleaned = _FLAG_RE.sub("", cleaned)
     cleaned = _re.sub(r"[ \t]{2,}", " ", cleaned)  # espaços duplos
     cleaned = _re.sub(r"\s+([.,!?;:])", r"\1", cleaned)  # espaço antes de pontuação
-    logger.warning("resposta tinha CJK vazado — caracteres removidos antes do envio")
+    logger.warning("resposta tinha CJK/bandeira vazado — caracteres removidos antes do envio")
     return cleaned.strip()
 
 
