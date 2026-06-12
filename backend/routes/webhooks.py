@@ -169,20 +169,55 @@ async def whatsapp_engine_webhook(
     if not text_content and attachments:
         text_content = f"[{attachments[0].kind}]"
 
-    result = await agent_runtime.handle_inbound_message(
-        db,
-        connector_kind="whatsapp",
-        instance_id=instance_id,
-        external_chat_id=external_chat_id,
-        sender_name=sender_name,
-        text_content=text_content,
-        attachments=attachments,
+    # Processa em BACKGROUND (sessão de DB própria) pra devolver o 200 na hora. Se
+    # processar inline, o webhook segura a resposta durante o delay + LLM + envio; o
+    # Engine estoura o timeout, acha que falhou e REENVIA (loop) / o WhatsApp mostra
+    # "aguardando mensagem". A idempotência (acima) já protege contra reprocessar.
+    import asyncio as _asyncio
+
+    _asyncio.create_task(
+        _process_engine_message(
+            instance_id=instance_id,
+            external_chat_id=external_chat_id,
+            sender_name=sender_name,
+            text_content=text_content,
+            attachments=attachments,
+        )
     )
-    logger.info(
-        "webhook WhatsApp processed: agent=%s status=%s attachments=%s",
-        result.get("agent_id"), result.get("status"), len(attachments),
-    )
-    return result
+    logger.info("webhook WhatsApp Engine aceito chat=%s attachments=%s", external_chat_id, len(attachments))
+    return {"status": "accepted"}
+
+
+async def _process_engine_message(
+    *,
+    instance_id: str | None,
+    external_chat_id: str,
+    sender_name: str | None,
+    text_content: str,
+    attachments: list,
+) -> None:
+    """Processa 1 mensagem inbound do Tier WhatsApp Engine em background, com sessão de
+    DB própria — não segura o 200 do webhook (evita timeout/retry do Engine)."""
+    from core.db import db_context
+    from services import agent_runtime
+
+    try:
+        async with db_context() as db:
+            result = await agent_runtime.handle_inbound_message(
+                db,
+                connector_kind="whatsapp",
+                instance_id=instance_id,
+                external_chat_id=external_chat_id,
+                sender_name=sender_name,
+                text_content=text_content,
+                attachments=attachments,
+            )
+            logger.info(
+                "Engine msg processada: agent=%s status=%s",
+                result.get("agent_id"), result.get("status"),
+            )
+    except Exception:
+        logger.exception("processamento Engine em background falhou chat=%s", external_chat_id)
 
 
 # ============================================================
