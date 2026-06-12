@@ -589,6 +589,40 @@ async def handle_inbound_message(
     )
     system_prompt = f"{system_prompt}\n\n" + "\n".join(_contact)
 
+    # Data/hora atual + diretrizes base de atendimento — herdadas por TODO agente.
+    # A persona acima TEM PRIORIDADE; isto só preenche lacunas (não sobrescreve tom
+    # nem regras de quem já está calibrado). Resolve "não sei a data" + loop de
+    # perguntas repetidas + alucinação de horário/preço + não-uso de ferramentas.
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _ZoneInfo
+
+    _DIAS = [
+        "segunda-feira",
+        "terça-feira",
+        "quarta-feira",
+        "quinta-feira",
+        "sexta-feira",
+        "sábado",
+        "domingo",
+    ]
+    _agora = _dt.now(_ZoneInfo("America/Sao_Paulo"))
+    _base = (
+        "# Data e hora atuais (fuso de São Paulo — use SEMPRE isto como referência)\n"
+        f"- Hoje é {_DIAS[_agora.weekday()]}, {_agora.strftime('%d/%m/%Y')}, {_agora.strftime('%H:%M')}.\n"
+        "- Ao falar de 'hoje', 'amanhã', 'esta semana' ou dias da semana, calcule a partir "
+        "desta data. NUNCA diga que não sabe a data.\n\n"
+        "# Diretrizes de atendimento (sua persona acima tem prioridade)\n"
+        "- Releia o histórico antes de responder. NUNCA repita uma pergunta cuja resposta o "
+        "cliente já deu.\n"
+        "- Se você tem ferramentas disponíveis, USE-AS para consultar dados (serviços, preços, "
+        "horários, agenda, cadastro) em vez de perguntar ao cliente o que você mesma pode descobrir.\n"
+        "- NUNCA invente dados que não tem: horário disponível, dia de trabalho de um profissional, "
+        "preço, prazo. Se não tiver via ferramenta ou contexto, diga que vai confirmar.\n"
+        "- Avance a conversa a cada mensagem: confirme o que já sabe e pergunte só o que falta.\n"
+        "- Responda em pt-BR, de forma concisa e natural, sem excesso de emoji."
+    )
+    system_prompt = f"{system_prompt}\n\n{_base}"
+
     # Histórico da conversa → memória do modelo (senão "esquece" o cliente)
     history: list[dict] = []
     try:
