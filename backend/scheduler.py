@@ -333,6 +333,8 @@ async def mirror_pet_conversations_job() -> None:
                     token = decrypt(provider.bearer_enc)
                     base = provider.mcp_server_url.split("/api/mcp")[0]
                     url = f"{base}/api/agent/mirror"
+                    agente = await db.get(TaAgent, provider.agent_id)
+                    agente_nome = (agente.nome if agente else None) or "Assistente"
 
                     convs = (
                         await db.execute(
@@ -384,7 +386,7 @@ async def mirror_pet_conversations_job() -> None:
                         r = await cli.post(
                             url,
                             headers={"Authorization": f"Bearer {token}"},
-                            json={"messages": payload_msgs},
+                            json={"messages": payload_msgs, "agente_nome": agente_nome},
                         )
                     if r.status_code >= 400:
                         logger.warning(
