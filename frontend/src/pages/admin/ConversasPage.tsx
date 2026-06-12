@@ -56,7 +56,13 @@ interface Message {
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    // Backend manda UTC, às vezes SEM 'Z' (datetime naive). Sem isso o new Date
+    // interpreta como horário local → fica ~3h adiantado. Força UTC + renderiza SP.
+    const norm = /[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`;
+    return new Date(norm).toLocaleString("pt-BR", {
+      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+      timeZone: "America/Sao_Paulo",
+    });
   } catch {
     return iso;
   }

@@ -173,7 +173,12 @@ const FILTERS = [
 
 function fmtDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    // Backend manda UTC (às vezes naive) — força UTC + horário de Brasília.
+    const norm = /[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`;
+    return new Date(norm).toLocaleString("pt-BR", {
+      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+      timeZone: "America/Sao_Paulo",
+    });
   } catch {
     return iso;
   }
