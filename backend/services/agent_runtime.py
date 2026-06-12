@@ -729,6 +729,12 @@ async def handle_inbound_message(
         if connector_kind in ("whatsapp", "whatsapp_cloud"):
             _clean = _format_for_whatsapp(_clean)
         _bubbles = _split_into_bubbles(_clean)
+        # Delay humanizado antes de responder no WhatsApp (parecido com o agente do
+        # Tier Empresas) — dá uma sensação mais natural, sem resposta instantânea de robô.
+        if connector_kind in ("whatsapp", "whatsapp_cloud"):
+            import asyncio as _asyncio
+
+            await _asyncio.sleep(3)
         if len(_bubbles) <= 1:
             await connector_impl.send(
                 cfg, OutboundMessage(external_chat_id=external_chat_id, content=_clean)
