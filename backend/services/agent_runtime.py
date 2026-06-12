@@ -748,6 +748,17 @@ async def handle_inbound_message(
         logger.exception("Falha enviando resposta agent=%s channel=%s", agent.id, connector_kind)
         return {"status": "send_error", "agent_id": agent.id, "error": str(e)}
 
+    # Espelho em TEMPO REAL pro Hovio Pet (se o agente estiver conectado a um petshop).
+    # Fire-and-forget — não bloqueia. O job periódico (60s) fica só como backstop.
+    try:
+        import asyncio as _aio_mirror
+
+        from services import pet_mirror
+
+        _aio_mirror.create_task(pet_mirror.mirror_recent_to_pet(agent.id, conv.id))
+    except Exception:
+        logger.exception("agendar mirror realtime falhou agent=%s", agent.id)
+
     # Captura de lead — se o cliente demonstrou intenção de compra ou informou
     # telefone, registra um lead pra equipe (não perder oportunidades). Não bloqueia.
     try:

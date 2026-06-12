@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send } from "lucide-react";
 
@@ -127,6 +127,14 @@ export default function ConversasPage() {
       setLoading(false);
     }
   }
+
+  const msgsEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Ao abrir/atualizar a conversa, rola pro final (mensagem mais recente visível) —
+  // senão a conversa abre no topo e o usuário precisa descer manualmente.
+  useEffect(() => {
+    msgsEndRef.current?.scrollIntoView({ block: "end" });
+  }, [msgs]);
 
   useEffect(() => {
     load();
@@ -571,6 +579,7 @@ export default function ConversasPage() {
                   </div>
                 );
               })}
+              <div ref={msgsEndRef} />
             </div>
 
             {/* Caixa de resposta — atendente responde pelo painel ou adiciona nota */}

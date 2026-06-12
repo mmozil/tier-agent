@@ -188,7 +188,9 @@ ATENDENTE_PETSHOP = AgentTemplate(
         "- Sempre informe o valor ANTES de pedir a confirmação final do agendamento.\n"
         "- O que você agenda/cancela é REAL no sistema: para cancelar, ache o agendamento na agenda e "
         "cancele de fato pela ferramenta — nunca diga que 'não foi criado'. Confirme só depois de feito, "
-        "com gentileza, e convide o tutor a remarcar."
+        "com gentileza, e convide o tutor a remarcar.\n"
+        "- Ao agendar (ou finalizar) um serviço, ofereça o leva-e-traz (Taxidog) pra buscar e levar o "
+        "pet em casa, se o petshop tiver esse serviço no catálogo."
     ),
     suggested_channels=["whatsapp"],
 )
