@@ -197,12 +197,37 @@ async def _process_engine_message(
     attachments: list,
 ) -> None:
     """Processa 1 mensagem inbound do Tier WhatsApp Engine em background, com sessão de
-    DB própria — não segura o 200 do webhook (evita timeout/retry do Engine)."""
+    DB própria — não segura o 200 do webhook (evita timeout/retry do Engine).
+
+    Timing humano (igual ao path Cloud): pausa curta de leitura → mostra '…digitando'
+    no WhatsApp do cliente → o agente gera (a latência do LLM é o tempo de digitação)
+    → envia. Sem delay aditivo (era o 'demora demais')."""
+    import asyncio
+    import json as _json
+    import random
+
     from core.db import db_context
+    from core.encryption import decrypt
     from services import agent_runtime
+    from services.connectors.base import ConnectorConfig
+    from services.connectors.registry import registry as _reg
 
     try:
+        # 1. pausa curta de "leitura" — não responder no mesmo instante
+        await asyncio.sleep(random.uniform(0.6, 1.4))
+
         async with db_context() as db:
+            # 2. marca '…digitando' (3 pontinhos no WhatsApp do cliente)
+            try:
+                conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)
+                if conn:
+                    wa = _reg.get("whatsapp")
+                    cfg = ConnectorConfig(data=_json.loads(decrypt(conn.config_json_enc)))
+                    await wa.send_typing(cfg, external_chat_id, "composing")
+            except Exception:
+                logger.debug("typing whatsapp-engine falhou (segue)")
+
+            # 3+4. gera e envia (latência do LLM = tempo de digitação percebido)
             result = await agent_runtime.handle_inbound_message(
                 db,
                 connector_kind="whatsapp",

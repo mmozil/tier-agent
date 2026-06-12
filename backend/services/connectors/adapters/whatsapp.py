@@ -65,6 +65,24 @@ class WhatsAppConnector:
             )
         return r.json()
 
+    async def send_typing(self, config: ConnectorConfig, to: str, state: str = "composing") -> None:
+        """Envia presença pro contato. `composing` = o cliente vê '…digitando' no
+        WhatsApp dele. Best-effort: falha só loga (não bloqueia a resposta)."""
+        instance_id = config.data.get("instance_id")
+        api_key = config.data.get("api_key")
+        if not instance_id or not api_key or not to:
+            return
+        url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/presence"
+        try:
+            async with httpx.AsyncClient(timeout=8) as cli:
+                await cli.post(
+                    url,
+                    json={"to": to, "state": state},
+                    headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+                )
+        except Exception as e:
+            logger.debug("send_typing falhou (ignora): %s", e)
+
     async def validate_config(self, config: ConnectorConfig) -> bool:
         instance_id = config.data.get("instance_id")
         api_key = config.data.get("api_key")

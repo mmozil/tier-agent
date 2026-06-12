@@ -467,8 +467,8 @@ def init_scheduler() -> AsyncIOScheduler:
         max_instances=1,
     )
     sched.add_job(
-        _locked(mirror_pet_conversations_job, "mirror_pet", 160),
-        trigger=IntervalTrigger(seconds=180),
+        _locked(mirror_pet_conversations_job, "mirror_pet", 50),
+        trigger=IntervalTrigger(seconds=60),
         id="mirror_pet_conversations",
         replace_existing=True,
         max_instances=1,
@@ -476,7 +476,7 @@ def init_scheduler() -> AsyncIOScheduler:
     sched.start()
     logger.info(
         "Scheduler iniciado: resume_waiting (30s) + fire_cron (60s) + sla_watch (120s) "
-        "+ mirror_pet (180s) [lock Redis por tick]"
+        "+ mirror_pet (60s) [lock Redis por tick]"
     )
     _scheduler = sched
     return sched
