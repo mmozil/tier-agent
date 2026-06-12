@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
+  ArrowDownRight,
+  ArrowUpRight,
   Bot,
   Clock,
   DollarSign,
-  Loader2,
   MessageSquare,
+  Plug,
   Sparkles,
   TrendingUp,
   Workflow,
@@ -14,7 +17,7 @@ import {
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, SegToggle } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, SegToggle, btnPrimary } from "@/components/ds/fc";
 
 interface Overview {
   period_days: number;
@@ -93,14 +96,15 @@ export default function MetricasPage() {
     // não pode zerar a página inteira. Mostra o que carregar, avisa só se TUDO falhar.
     const [ov, dy, ag, md, tc, ab] = await Promise.allSettled([
       api.get<Overview>(`/metrics/overview`, { params: { days } }),
-      api.get<DailyPoint[]>(`/metrics/daily`, { params: { days } }),
+      // 2x a janela: a metade anterior alimenta o comparativo "vs período anterior" dos KPIs
+      api.get<DailyPoint[]>(`/metrics/daily`, { params: { days: days * 2 } }),
       api.get<ByAgent[]>(`/metrics/by-agent`, { params: { days } }),
       api.get<ByModel[]>(`/metrics/by-model`, { params: { days } }),
       api.get<TopConv[]>(`/metrics/top-conversations`, { params: { days, limit: 10 } }),
       api.get<AbRow[]>(`/metrics/ab-tests`, { params: { days } }),
     ]);
     if (ov.status === "fulfilled") setOverview(ov.value.data);
-    if (dy.status === "fulfilled") setDaily(dy.value.data);
+    if (dy.status === "fulfilled") setDaily([...dy.value.data].sort((a, b) => a.day.localeCompare(b.day)));
     if (ag.status === "fulfilled") setByAgent(ag.value.data);
     if (md.status === "fulfilled") setByModel(md.value.data);
     if (tc.status === "fulfilled") setTopConv(tc.value.data);
@@ -120,14 +124,33 @@ export default function MetricasPage() {
     load();
   }, [days]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Split da série 2x por DATA (robusto a dias sem linha): janela atual vs anterior.
+  // Alimenta sparklines + delta "vs período anterior" dos KPIs de custo/mensagens.
+  const { cur, deltaMsgs, deltaCost, sparkMsgs, sparkCost } = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffISO = cutoff.toISOString().slice(0, 10);
+    const cur = daily.filter((d) => d.day >= cutoffISO);
+    const prev = daily.filter((d) => d.day < cutoffISO);
+    const sum = (rows: DailyPoint[], k: "messages" | "cost_cents") => rows.reduce((s, r) => s + (r[k] || 0), 0);
+    const pct = (c: number, p: number) => (p > 0 ? ((c - p) / p) * 100 : null);
+    return {
+      cur,
+      deltaMsgs: pct(sum(cur, "messages"), sum(prev, "messages")),
+      deltaCost: pct(sum(cur, "cost_cents"), sum(prev, "cost_cents")),
+      sparkMsgs: cur.map((d) => d.messages),
+      sparkCost: cur.map((d) => d.cost_cents),
+    };
+  }, [daily, days]);
+
   const chartData = useMemo(
     () =>
-      daily.map((d) => ({
+      cur.map((d) => ({
         day: d.day.slice(5), // MM-DD
         Mensagens: d.messages,
         "Custo (R$)": +(d.cost_cents / 100).toFixed(2),
       })),
-    [daily],
+    [cur],
   );
 
   return (
@@ -146,11 +169,7 @@ export default function MetricasPage() {
         </Row>
 
         {loading ? (
-          <Row last>
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
-            </div>
-          </Row>
+          <MetricsSkeleton />
         ) : !overview ? (
           <Row last>
             <EmptyState />
@@ -165,12 +184,18 @@ export default function MetricasPage() {
                 label="Custo total"
                 value={`R$ ${(overview.cost_brl_total ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
                 hint={`${(overview.tokens_in_total ?? 0).toLocaleString("pt-BR")} in / ${(overview.tokens_out_total ?? 0).toLocaleString("pt-BR")} out`}
+                spark={sparkCost}
+                delta={deltaCost}
+                deltaNote={`vs ${days} dias anteriores`}
               />
               <KpiCell
                 icon={MessageSquare}
                 label="Mensagens"
                 value={(overview.messages_total ?? 0).toLocaleString("pt-BR")}
                 hint={`${(overview.conversations_count ?? 0).toLocaleString("pt-BR")} conversas`}
+                spark={sparkMsgs}
+                delta={deltaMsgs}
+                deltaNote={`vs ${days} dias anteriores`}
               />
               <KpiCell
                 icon={Clock}
@@ -230,7 +255,12 @@ export default function MetricasPage() {
                   </ResponsiveContainer>
                 </div>
               ) : (
-                <div className={`text-center py-10 text-[13px] ${FC.sub}`}>Sem dados no período</div>
+                <EmptyHint
+                  icon={MessageSquare}
+                  text="Nenhuma mensagem no período — o gráfico nasce na primeira conversa."
+                  ctaLabel="Conectar canal"
+                  ctaTo="/admin/canais"
+                />
               )}
               </div>
             </Row>
@@ -247,7 +277,9 @@ export default function MetricasPage() {
                     `R$ ${(a.cost_cents / 100).toFixed(2)}`,
                     `${Math.round(a.avg_latency_ms)}ms`,
                   ])}
-                  emptyMsg="Nenhum agente ativo no período"
+                  emptyMsg={
+                    <EmptyHint icon={Bot} text="Nenhum agente ativo no período." ctaLabel="Ver agentes" ctaTo="/admin/agentes" />
+                  }
                 />
               </CellSection>
               <CellSection title="Por modelo" icon={Sparkles}>
@@ -261,7 +293,14 @@ export default function MetricasPage() {
                     `${m.tokens_in.toLocaleString("pt-BR")} / ${m.tokens_out.toLocaleString("pt-BR")}`,
                     `R$ ${(m.cost_cents / 100).toFixed(2)}`,
                   ])}
-                  emptyMsg="Nenhum modelo usado ainda"
+                  emptyMsg={
+                    <EmptyHint
+                      icon={Sparkles}
+                      text="Nenhuma chamada de modelo no período."
+                      ctaLabel="Configurar providers"
+                      ctaTo="/admin/llm"
+                    />
+                  }
                 />
               </CellSection>
             </HairCells>
@@ -296,7 +335,10 @@ export default function MetricasPage() {
             {/* Top conversas mais caras */}
             <Row last>
             <div className="p-6">
-              <SectionTitle title={`Top ${topConv.length} conversas mais caras`} icon={TrendingUp} />
+              <SectionTitle
+                title={topConv.length ? `Top ${topConv.length} conversas mais caras` : "Conversas mais caras"}
+                icon={TrendingUp}
+              />
               <Table
                 cols={["Conversa", "Contato", "Msgs", "Custo"]}
                 rows={topConv.map((c) => [
@@ -312,7 +354,7 @@ export default function MetricasPage() {
                     R$ {(c.cost_cents / 100).toFixed(2)}
                   </span>,
                 ])}
-                emptyMsg="Sem conversas no período"
+                emptyMsg={<EmptyHint icon={TrendingUp} text="Sem conversas no período." />}
               />
             </div>
             </Row>
@@ -328,21 +370,142 @@ function KpiCell({
   label,
   value,
   hint,
+  spark,
+  delta,
+  deltaNote,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   hint?: string;
+  /** série diária da janela atual → mini-tendência inline */
+  spark?: number[];
+  /** variação % vs janela anterior (null = sem base de comparação) */
+  delta?: number | null;
+  deltaNote?: string;
 }) {
+  const hasDelta = delta !== undefined && delta !== null && Number.isFinite(delta);
+  const DeltaIcon = (delta ?? 0) >= 0 ? ArrowUpRight : ArrowDownRight;
   return (
     <div className="p-6">
+      {/* label em sub (56%) e não mut (40%): 11px precisa de contraste de texto pequeno */}
       <div className="flex items-center gap-2 mb-2">
-        <Icon className={`w-4 h-4 ${FC.mut}`} />
-        <div className={`text-[11px] font-semibold uppercase tracking-wide ${FC.mut}`}>{label}</div>
+        <Icon className={`w-4 h-4 ${FC.sub}`} />
+        <div className={`text-[11px] font-semibold uppercase tracking-wide ${FC.sub}`}>{label}</div>
       </div>
-      <div className={`font-mono tabular-nums text-[24px] font-medium leading-none ${FC.ink}`}>{value}</div>
-      {hint && <div className={`text-[12px] mt-1.5 ${FC.sub}`}>{hint}</div>}
+      <div className="flex items-end justify-between gap-3">
+        {/* sans + tabular (não mono): número de negócio, não terminal */}
+        <div className={`tabular-nums text-[24px] font-medium leading-none tracking-[-0.2px] ${FC.ink}`}>{value}</div>
+        {spark && spark.length >= 2 && <MiniSpark data={spark} />}
+      </div>
+      <div className={`text-[12px] mt-1.5 flex items-center gap-1.5 ${FC.sub}`}>
+        {hint && <span>{hint}</span>}
+        {hasDelta && (
+          <span className="inline-flex items-center gap-0.5 tabular-nums" title={deltaNote}>
+            <span aria-hidden>·</span>
+            <DeltaIcon className="w-3 h-3" />
+            {Math.abs(delta!).toFixed(0)}%
+          </span>
+        )}
+      </div>
     </div>
+  );
+}
+
+// MiniSpark — área inline 64×22 na cor da marca; só a forma da tendência, sem eixos.
+function MiniSpark({ data }: { data: number[] }) {
+  const W = 64;
+  const H = 22;
+  const P = 2;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const pts = data.map((v, i) => [
+    P + (i / (data.length - 1)) * (W - P * 2),
+    P + (1 - (v - min) / range) * (H - P * 2),
+  ]);
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const area = `${line} L${(W - P).toFixed(1)},${H - P} L${P},${H - P} Z`;
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden className="shrink-0 mb-0.5">
+      <path d={area} className="fill-[#003083]/[0.08] dark:fill-[#5b9bff]/[0.12]" />
+      <path
+        d={line}
+        className="stroke-[#003083] dark:stroke-[#5b9bff]"
+        strokeWidth={1.5}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// EmptyHint — estado vazio que ensina: o que significa + próxima ação (PRODUCT.md, princípio 3).
+function EmptyHint({
+  icon: Icon,
+  text,
+  ctaLabel,
+  ctaTo,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  text: string;
+  ctaLabel?: string;
+  ctaTo?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center text-center py-6">
+      <Icon className={`w-5 h-5 mb-2 ${FC.mut}`} />
+      <p className={`text-[13px] ${FC.sub}`}>{text}</p>
+      {ctaLabel && ctaTo && (
+        <Link
+          to={ctaTo}
+          className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline"
+        >
+          {ctaLabel}
+          <ArrowUpRight className="w-3.5 h-3.5" />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+// MetricsSkeleton — carregando, a página mostra a própria forma (não um spinner no vazio).
+function MetricsSkeleton() {
+  const bar = "rounded bg-black/[0.06] dark:bg-white/[0.07] animate-pulse motion-reduce:animate-none";
+  return (
+    <>
+      <Row>
+        <HairCells cols={4}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="p-6">
+              <div className={`h-3 w-24 mb-3 ${bar}`} />
+              <div className={`h-6 w-32 mb-2 ${bar}`} />
+              <div className={`h-3 w-20 ${bar}`} />
+            </div>
+          ))}
+        </HairCells>
+      </Row>
+      <Row>
+        <div className="p-6">
+          <div className={`h-4 w-32 mb-2 ${bar}`} />
+          <div className={`h-3 w-48 mb-5 ${bar}`} />
+          <div className={`h-[200px] w-full ${bar}`} />
+        </div>
+      </Row>
+      <Row last>
+        <HairCells cols={2}>
+          {[0, 1].map((i) => (
+            <div key={i} className="p-6">
+              <div className={`h-4 w-28 mb-4 ${bar}`} />
+              {[0, 1, 2].map((j) => (
+                <div key={j} className={`h-3 w-full mb-2.5 ${bar}`} />
+              ))}
+            </div>
+          ))}
+        </HairCells>
+      </Row>
+    </>
   );
 }
 
@@ -380,10 +543,14 @@ function Table({
 }: {
   cols: string[];
   rows: (string | React.ReactNode)[][];
-  emptyMsg: string;
+  emptyMsg: React.ReactNode;
 }) {
   if (!rows.length) {
-    return <div className={`text-center py-6 text-[13px] ${FC.sub}`}>{emptyMsg}</div>;
+    return typeof emptyMsg === "string" ? (
+      <div className={`text-center py-6 text-[13px] ${FC.sub}`}>{emptyMsg}</div>
+    ) : (
+      <>{emptyMsg}</>
+    );
   }
   return (
     <div className="overflow-x-auto">
@@ -393,7 +560,7 @@ function Table({
             {cols.map((c, i) => (
               <th
                 key={i}
-                className={`pb-2 text-[11px] font-semibold uppercase tracking-wider ${FC.mut} ${
+                className={`pb-2 text-[11px] font-semibold uppercase tracking-wider ${FC.sub} ${
                   i === cols.length - 1 ? "text-right" : "text-left"
                 } ${i === 0 ? "pr-3" : "px-3"}`}
               >
@@ -433,6 +600,10 @@ function EmptyState() {
       <p className={`text-[13px] ${FC.sub}`}>
         Conecte um WhatsApp e mande mensagens pra ver custos e estatísticas aqui.
       </p>
+      <Link to="/admin/canais" className={`${btnPrimary} mt-4`}>
+        <Plug className="w-3.5 h-3.5" />
+        Conectar canal
+      </Link>
     </div>
   );
 }
