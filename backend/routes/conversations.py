@@ -9,7 +9,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
@@ -483,3 +483,82 @@ async def reply_manual(
     await db.commit()
     await db.refresh(msg)
     return msg
+
+
+async def _purge_conversations(db: AsyncSession, ids: list[int]) -> int:
+    """Apaga conversas + filhas (mensagens, execuções de playbook, notificações).
+
+    Limpa os filhos explicitamente (defensivo — não depende do ON DELETE do schema):
+    mensagens são removidas, referências em playbook/notificação viram NULL.
+    """
+    if not ids:
+        return 0
+    from models import TaNotification, TaPlaybookExecution
+
+    await db.execute(sa_delete(TaMessageLog).where(TaMessageLog.conversation_id.in_(ids)))
+    await db.execute(
+        sa_update(TaPlaybookExecution)
+        .where(TaPlaybookExecution.conversation_id.in_(ids))
+        .values(conversation_id=None)
+    )
+    await db.execute(
+        sa_update(TaNotification)
+        .where(TaNotification.conversation_id.in_(ids))
+        .values(conversation_id=None)
+    )
+    res = await db.execute(sa_delete(TaConversation).where(TaConversation.id.in_(ids)))
+    return res.rowcount if res.rowcount and res.rowcount > 0 else len(ids)
+
+
+@router.delete("/{conversation_id}", response_model=dict)
+async def delete_conversation(
+    conversation_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Exclui uma conversa e todo o histórico dela. Irreversível."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    await _purge_conversations(db, [conv.id])
+    await db.commit()
+    return {"deleted": [conv.id], "count": 1}
+
+
+class BulkDeleteIn(BaseModel):
+    ids: list[int] | None = None
+    status: str | None = None  # "active" | "handed_off" | "closed"
+    agent_id: int | None = None
+    all: bool = False
+
+
+@router.post("/bulk-delete", response_model=dict)
+async def bulk_delete(
+    body: BulkDeleteIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Limpa várias conversas de uma vez. Escopo (sempre restrito ao tenant):
+    por `ids`, por `status` (ex: só resolvidas), ou `all=true` (todas). Irreversível."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    agent_ids = await _tenant_agent_ids(db, user.tenant_id)
+    if not agent_ids:
+        return {"deleted": [], "count": 0}
+
+    stmt = select(TaConversation.id).where(TaConversation.agent_id.in_(agent_ids))
+    if body.ids:
+        stmt = stmt.where(TaConversation.id.in_(body.ids))
+    elif body.status:
+        stmt = stmt.where(TaConversation.status == body.status)
+    elif not body.all:
+        raise HTTPException(422, "Informe ids, status ou all=true")
+    if body.agent_id is not None:
+        if body.agent_id not in agent_ids:
+            raise HTTPException(403, "Agente de outro tenant")
+        stmt = stmt.where(TaConversation.agent_id == body.agent_id)
+
+    ids = [r[0] for r in (await db.execute(stmt)).all()]
+    count = await _purge_conversations(db, ids)
+    await db.commit()
+    return {"deleted": ids, "count": count}

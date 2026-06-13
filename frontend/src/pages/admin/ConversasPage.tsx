@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send } from "lucide-react";
+import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send, Trash2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
@@ -91,6 +91,39 @@ export default function ConversasPage() {
   const [me, setMe] = useState<{ role: string; member_id: number | null } | null>(null);
   const [scope, setScope] = useState<"todas" | "mine" | "unassigned" | "snoozed">("todas");
   const [mentions, setMentions] = useState<number[]>([]);
+  const [cleanMenu, setCleanMenu] = useState(false);
+
+  async function deleteConv(id: number) {
+    if (!confirm("Excluir esta conversa e todo o histórico? Não dá pra desfazer.")) return;
+    try {
+      await api.delete(`/conversations/${id}`);
+      setConvs((prev) => prev.filter((c) => c.id !== id));
+      setOpenId(null);
+      setOpenConv(null);
+      toast.success("Conversa excluída");
+    } catch {
+      toast.error("Erro ao excluir");
+    }
+  }
+
+  async function bulkDelete(kind: "closed" | "all") {
+    setCleanMenu(false);
+    const msg =
+      kind === "all"
+        ? "Excluir TODAS as conversas e seus históricos? Não dá pra desfazer."
+        : "Excluir todas as conversas RESOLVIDAS? Não dá pra desfazer.";
+    if (!confirm(msg)) return;
+    try {
+      const body = kind === "all" ? { all: true } : { status: "closed" };
+      const { data } = await api.post<{ count: number }>("/conversations/bulk-delete", body);
+      toast.success(`${data.count} conversa(s) excluída(s)`);
+      setOpenId(null);
+      setOpenConv(null);
+      load();
+    } catch {
+      toast.error("Não foi possível limpar");
+    }
+  }
 
   async function snoozeConv(id: number, minutes: number) {
     try {
@@ -263,9 +296,44 @@ export default function ConversasPage() {
           <h1 className="text-[20px] font-[450] tracking-[-0.1px] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
           <p className="text-[13px] text-[#262626]/[0.56] dark:text-[#8b93a0] mt-1">Acompanhe as conversas do seu agente e o histórico de mensagens.</p>
         </div>
-        <button onClick={() => load()} className="h-8 px-3 text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] border border-[#EDEDED] dark:border-[#23272e] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg inline-flex items-center gap-1.5 transition-colors active:scale-[0.98]">
-          <RefreshCw className="w-3.5 h-3.5" /> Atualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => setCleanMenu((v) => !v)}
+              className="h-8 px-3 text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] border border-[#EDEDED] dark:border-[#23272e] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg inline-flex items-center gap-1.5 transition-colors active:scale-[0.98]"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Limpar
+            </button>
+            {cleanMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setCleanMenu(false)} />
+                <div className="absolute right-0 mt-1 z-20 w-60 bg-white dark:bg-[#16191f] border border-[#EDEDED] dark:border-[#23272e] rounded-lg shadow-lg py-1 overflow-hidden">
+                  <button
+                    onClick={() => bulkDelete("closed")}
+                    className="w-full text-left px-3 py-2 text-[13px] text-[#262626] dark:text-[#e6e8eb] hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+                  >
+                    Excluir resolvidas
+                    <span className="block text-[11px] text-[#262626]/[0.5] dark:text-[#8b93a0]">
+                      Remove as conversas já encerradas
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => bulkDelete("all")}
+                    className="w-full text-left px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                  >
+                    Excluir todas
+                    <span className="block text-[11px] text-rose-400">
+                      Apaga todas as conversas do agente
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <button onClick={() => load()} className="h-8 px-3 text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] border border-[#EDEDED] dark:border-[#23272e] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg inline-flex items-center gap-1.5 transition-colors active:scale-[0.98]">
+            <RefreshCw className="w-3.5 h-3.5" /> Atualizar
+          </button>
+        </div>
       </div>
 
       {/* Abas de escopo (fila) */}
@@ -412,9 +480,18 @@ export default function ConversasPage() {
                   </p>
                 </div>
               </div>
-              <button onClick={() => setOpenId(null)} className="p-1.5 rounded-md text-[#262626]/40 dark:text-[#6b7280] hover:bg-black/[0.04] dark:hover:bg-white/[0.04]">
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => openConv && deleteConv(openConv.id)}
+                  title="Excluir conversa"
+                  className="p-1.5 rounded-md text-[#262626]/40 dark:text-[#6b7280] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+                <button onClick={() => setOpenId(null)} className="p-1.5 rounded-md text-[#262626]/40 dark:text-[#6b7280] hover:bg-black/[0.04] dark:hover:bg-white/[0.04]">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Ações: assumir / devolver / resolver */}
