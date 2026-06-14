@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Check } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, Button, SkeletonBar } from "@/components/ds/fc";
 
 interface SKU {
   key: string;
@@ -88,7 +88,22 @@ export default function CobrancaPage() {
 
         <Row>
           {loading ? (
-            <div className={`p-6 text-center text-[13px] ${FC.mut}`}>Carregando...</div>
+            // skeleton: ecoa a grade de planos (título, preço, botão, features), não spinner no vazio
+            <HairCells cols={3}>
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="p-6">
+                  <SkeletonBar className="h-5 w-24" />
+                  <SkeletonBar className="h-3 w-40 mt-2" />
+                  <SkeletonBar className="h-7 w-28 mt-4" />
+                  <SkeletonBar className="h-7 w-full mt-4 rounded-lg" />
+                  <div className="mt-5 space-y-2.5">
+                    {[0, 1, 2, 3].map((j) => (
+                      <SkeletonBar key={j} className="h-3 w-44" />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </HairCells>
           ) : (
             <HairCells cols={skus.length === 3 ? 3 : 2}>
               {skus.map((s) => {
@@ -105,7 +120,7 @@ export default function CobrancaPage() {
                     <div className={`text-[13px] mt-1 min-h-[36px] ${FC.sub}`}>{s.description}</div>
 
                     <div className="mt-4 flex items-baseline gap-1">
-                      <span className={`font-mono tabular-nums text-[26px] font-medium ${FC.ink}`}>{s.monthly_brl_display}</span>
+                      <span className={`tabular-nums text-[26px] font-medium ${FC.ink}`}>{s.monthly_brl_display}</span>
                       <span className={`text-[13px] ${FC.sub}`}>/mês</span>
                     </div>
 

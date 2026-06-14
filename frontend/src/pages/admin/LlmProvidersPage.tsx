@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
+import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, HelpCircle, Cpu } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 interface Provider {
   id: number;
@@ -164,7 +164,8 @@ export default function LlmProvidersPage() {
   }
 
   const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
-  const colLabel = `text-[11px] uppercase tracking-[0.06em] ${FC.mut}`;
+  // cabeçalhos de coluna (11px) em sub (56%) e não mut (40%): texto pequeno precisa de contraste
+  const colLabel = `text-[11px] uppercase tracking-[0.06em] ${FC.sub}`;
 
   function scopeLabel(p: Provider) {
     return p.tenant_id === null ? "Global" : `Tenant ${p.tenant_id}`;
@@ -244,11 +245,32 @@ export default function LlmProvidersPage() {
           </Row>
         )}
 
+        {/* Loading: skeleton ecoa a forma da tabela de providers (não spinner no vazio) */}
         {loading && (
-          <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Carregando…</div></Row>
+          <Row last>
+            <div className={`px-6 py-2.5 border-b ${FC.hair} flex items-center gap-4`}>
+              <SkeletonBar className="h-3 w-20" />
+              <SkeletonBar className="h-3 w-24" />
+              <SkeletonBar className="h-3 w-16 ml-auto" />
+            </div>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className={`px-6 py-3.5 border-b ${FC.hair} flex items-center gap-4`}>
+                <SkeletonBar className="h-3.5 w-28" />
+                <SkeletonBar className="h-3 w-40" />
+                <SkeletonBar className="h-5 w-16 ml-auto rounded" />
+                <SkeletonBar className="h-[18px] w-8 rounded-full" />
+              </div>
+            ))}
+          </Row>
         )}
         {!loading && providers.length === 0 && (
-          <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Nenhum provider cadastrado. Clique em "Novo provider".</div></Row>
+          <Row last>
+            <EmptyHint
+              icon={Cpu}
+              text='Nenhum provider cadastrado — clique em "Novo provider" pra conectar uma LLM.'
+              className="py-12"
+            />
+          </Row>
         )}
         {!loading && providers.length > 0 && (() => {
           // Lista plana ordenada por escopo (Global primeiro) — SEM faixas de grupo.
@@ -303,10 +325,11 @@ export default function LlmProvidersPage() {
                                 <ChevronDown className="w-4 h-4" />
                               </button>
                             </div>
-                            <span className={`text-[12px] font-mono ${idx === 0 ? FC.ink : FC.mut}`}>{idx + 1}º</span>
+                            {/* posição é contagem de negócio → sans tabular, não mono */}
+                            <span className={`text-[12px] tabular-nums ${idx === 0 ? FC.ink : FC.mut}`}>{idx + 1}º</span>
                           </div>
                         ) : (
-                          <span className={`text-[12px] font-mono ${FC.mut}`}>—</span>
+                          <span className={`text-[12px] tabular-nums ${FC.mut}`}>—</span>
                         )}
                       </div>
                     )}
@@ -413,17 +436,19 @@ export default function LlmProvidersPage() {
 
               {/* Grid de campos */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
-                <Field label="Ordem (priority)" value={`${detail.priority}`} mono />
+                {/* números de config (ordem/temp/tokens/timeout) = negócio → sans tabular */}
+                <Field label="Ordem (priority)" value={`${detail.priority}`} tabular />
                 <Field label="Status" value={detail.active ? "Ligado" : "Desligado"} />
                 <Field label="Modelo" value={detail.default_model} mono />
                 <Field label="API Key" value={detail.api_key_suffix ? `••••${detail.api_key_suffix}` : "—"} mono />
-                <Field label="Temperature" value={`${detail.temperature}`} mono />
-                <Field label="Max tokens" value={`${detail.max_tokens}`} mono />
-                <Field label="Timeout" value={`${detail.timeout_s}s`} mono />
+                <Field label="Temperature" value={`${detail.temperature}`} tabular />
+                <Field label="Max tokens" value={`${detail.max_tokens}`} tabular />
+                <Field label="Timeout" value={`${detail.timeout_s}s`} tabular />
                 <Field label="Escopo" value={scopeLabel(detail)} />
                 {detail.base_url && <Field label="Base URL" value={detail.base_url} mono full />}
                 {(detail.cost_input_per_1m != null || detail.cost_output_per_1m != null) && (
-                  <Field label="Custo /1M (in/out)" value={`$${detail.cost_input_per_1m ?? "?"} / $${detail.cost_output_per_1m ?? "?"}`} mono full />
+                  /* custo = valor de negócio → sans tabular, não mono de terminal */
+                  <Field label="Custo /1M (in/out)" value={`$${detail.cost_input_per_1m ?? "?"} / $${detail.cost_output_per_1m ?? "?"}`} tabular full />
                 )}
                 {detail.created_at && (
                   <Field label="Criado em" value={new Date(detail.created_at).toLocaleString("pt-BR")} full />
@@ -480,11 +505,12 @@ export default function LlmProvidersPage() {
     </div>
   );
 
-  function Field({ label, value, mono, full }: { label: string; value: string; mono?: boolean; full?: boolean }) {
+  function Field({ label, value, mono, tabular, full }: { label: string; value: string; mono?: boolean; tabular?: boolean; full?: boolean }) {
     return (
       <div className={full ? "col-span-2" : ""}>
-        <div className={`text-[11px] ${FC.mut}`}>{label}</div>
-        <div className={`${mono ? "font-mono" : ""} ${FC.ink} break-all`}>{value}</div>
+        {/* label do campo (11px) em sub: contraste de texto pequeno */}
+        <div className={`text-[11px] ${FC.sub}`}>{label}</div>
+        <div className={`${mono ? "font-mono" : tabular ? "tabular-nums" : ""} ${FC.ink} break-all`}>{value}</div>
       </div>
     );
   }

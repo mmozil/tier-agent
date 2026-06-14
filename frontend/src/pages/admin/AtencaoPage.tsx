@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { BellRing, Hand, UserX, RefreshCw, MessageSquare } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row } from "@/components/ds/fc";
+import { FC, PageFrame, Row, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 interface ConvItem {
   conversation_id: number;
@@ -94,7 +94,21 @@ export default function AtencaoPage() {
     </div>
   );
 
-  const emptyMsg = (t: string) => <div className={`px-6 py-6 text-center text-[12px] ${FC.mut}`}>{t}</div>;
+  // skeleton: durante o carregamento inicial, ecoa as linhas (avatar + 2 textos), não vazio mudo
+  const ListSkeleton = () => (
+    <>
+      {[0, 1].map((i) => (
+        <div key={i} className="flex items-center gap-3 px-6 py-3">
+          <SkeletonBar className="h-8 w-8 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <SkeletonBar className="h-3.5 w-40" />
+            <SkeletonBar className="h-3 w-56" />
+          </div>
+          <SkeletonBar className="h-3 w-8" />
+        </div>
+      ))}
+    </>
+  );
 
   return (
     <div className="-mx-8 pb-10">
@@ -117,7 +131,10 @@ export default function AtencaoPage() {
         <Row>
           <SectionHead icon={Hand} title="Aguardando humano" count={c.aguardando} tone="text-[#003083] dark:text-[#5b9bff]" />
           <div className={`divide-y ${FC.hair}`}>
-            {!loading && (data?.aguardando.length ?? 0) === 0 && emptyMsg("Ninguém aguardando. 👌")}
+            {loading && !data && <ListSkeleton />}
+            {!loading && (data?.aguardando.length ?? 0) === 0 && (
+              <EmptyHint icon={Hand} text="Ninguém aguardando — a fila está limpa." />
+            )}
             {data?.aguardando.map((it) => (
               <button key={it.conversation_id} onClick={() => open(it.conversation_id)} className={`w-full text-left flex items-center gap-3 px-6 py-3 ${FC.hover}`}>
                 <Avatar name={it.contato} />
@@ -125,7 +142,7 @@ export default function AtencaoPage() {
                   <div className={`text-[14px] font-medium truncate ${FC.ink}`}>{it.contato || it.telefone}</div>
                   <div className={`text-[12px] truncate ${FC.sub}`}>{it.preview || "—"}</div>
                 </div>
-                <span className={`text-[11px] ${FC.mut} shrink-0`}>{relTime(it.last_message_at)}</span>
+                <span className={`text-[11px] tabular-nums ${FC.sub} shrink-0`}>{relTime(it.last_message_at)}</span>
               </button>
             ))}
           </div>
@@ -135,7 +152,10 @@ export default function AtencaoPage() {
         <Row>
           <SectionHead icon={UserX} title="Não atribuídas" count={c.nao_atribuidas} tone="text-[#dc6803]" />
           <div className={`divide-y ${FC.hair}`}>
-            {!loading && (data?.nao_atribuidas.length ?? 0) === 0 && emptyMsg("Todas atribuídas.")}
+            {loading && !data && <ListSkeleton />}
+            {!loading && (data?.nao_atribuidas.length ?? 0) === 0 && (
+              <EmptyHint icon={UserX} text="Todas as conversas já têm um responsável." />
+            )}
             {data?.nao_atribuidas.map((it) => (
               <button key={it.conversation_id} onClick={() => open(it.conversation_id)} className={`w-full text-left flex items-center gap-3 px-6 py-3 ${FC.hover}`}>
                 <Avatar name={it.contato} />
@@ -143,7 +163,7 @@ export default function AtencaoPage() {
                   <div className={`text-[14px] font-medium truncate ${FC.ink}`}>{it.contato || it.telefone}</div>
                   <div className={`text-[12px] truncate ${FC.sub}`}>{it.preview || "—"}</div>
                 </div>
-                <span className={`text-[11px] ${FC.mut} shrink-0`}>{relTime(it.last_message_at)}</span>
+                <span className={`text-[11px] tabular-nums ${FC.sub} shrink-0`}>{relTime(it.last_message_at)}</span>
               </button>
             ))}
           </div>
@@ -153,7 +173,10 @@ export default function AtencaoPage() {
         <Row last>
           <SectionHead icon={BellRing} title="Leads e alertas" count={c.alertas} tone="text-[#0a8f5a]" />
           <div className={`divide-y ${FC.hair}`}>
-            {!loading && (data?.alertas.length ?? 0) === 0 && emptyMsg("Sem leads ou alertas novos.")}
+            {loading && !data && <ListSkeleton />}
+            {!loading && (data?.alertas.length ?? 0) === 0 && (
+              <EmptyHint icon={BellRing} text="Sem leads ou alertas novos." />
+            )}
             {data?.alertas.map((it) => (
               <button
                 key={it.notification_id}
@@ -172,7 +195,7 @@ export default function AtencaoPage() {
                   <div className={`text-[12px] truncate ${FC.sub}`}>{it.body || it.title}</div>
                 </div>
                 {it.conversation_id && <MessageSquare className={`w-3.5 h-3.5 ${FC.mut} shrink-0`} />}
-                <span className={`text-[11px] ${FC.mut} shrink-0`}>{relTime(it.created_at)}</span>
+                <span className={`text-[11px] tabular-nums ${FC.sub} shrink-0`}>{relTime(it.created_at)}</span>
               </button>
             ))}
           </div>

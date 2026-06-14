@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Users, Plus, Trash2, RefreshCw, X, Shield, Headphones, Link2 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SKEL } from "@/components/ds/fc";
 
 interface Member {
   id: number;
@@ -118,6 +118,27 @@ export default function EquipePage() {
   const inputCls = `h-8 px-3 text-[13px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
   const miniSelect = `h-7 px-2 text-[12px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none`;
 
+  // TeamSkeleton — carregando, ecoa a lista de membros (avatar + nome/email + controles).
+  function TeamSkeleton() {
+    return (
+      <Row last>
+        <div className={`divide-y ${FC.hair}`}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="px-6 py-3 flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-full shrink-0 ${SKEL}`} />
+              <div className="flex-1 min-w-0">
+                <div className={`h-3.5 w-32 mb-1.5 ${SKEL}`} />
+                <div className={`h-3 w-48 max-w-full ${SKEL}`} />
+              </div>
+              <div className={`h-7 w-24 ${SKEL}`} />
+              <div className={`h-7 w-20 ${SKEL}`} />
+            </div>
+          ))}
+        </div>
+      </Row>
+    );
+  }
+
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
@@ -156,7 +177,7 @@ export default function EquipePage() {
               </div>
               <div className="flex items-center gap-2 mt-3">
                 <Button variant="primary" onClick={create} disabled={saving}>{saving ? "Criando..." : "Criar atendente"}</Button>
-                <span className={`text-[12px] ${FC.mut}`}>
+                <span className={`text-[12px] ${FC.sub}`}>
                   Com senha: você passa as credenciais. Sem senha: copiamos um <b>link de convite</b> — o atendente define a própria senha.
                 </span>
               </div>
@@ -165,13 +186,14 @@ export default function EquipePage() {
         )}
 
         {loading ? (
-          <Row last><div className={`text-[13px] py-12 text-center ${FC.mut}`}>Carregando...</div></Row>
+          <TeamSkeleton />
         ) : members.length === 0 && !showForm ? (
           <Row last>
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Users className={`w-10 h-10 mb-3 ${FC.mut}`} />
-              <p className={`text-[14px] ${FC.sub}`}>Você ainda atende sozinho.</p>
-              <p className={`text-[12px] mt-1 ${FC.mut}`}>Adicione atendentes pra distribuir as conversas em fila.</p>
+            <div className="py-16">
+              <EmptyHint
+                icon={Users}
+                text="Você ainda atende sozinho. Adicione atendentes pra distribuir as conversas em fila — use o botão “Novo atendente” acima."
+              />
             </div>
           </Row>
         ) : members.length > 0 ? (

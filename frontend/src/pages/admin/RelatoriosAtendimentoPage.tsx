@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { BarChart3, RefreshCw, MessageSquare, Hand, Flame, Clock, Star } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, Button, EmptyHint, SKEL } from "@/components/ds/fc";
 
 interface Report {
   days: number;
@@ -37,7 +37,7 @@ function Kpi({ icon: Icon, label, value, color }: { icon: any; label: string; va
         <Icon className="w-4 h-4" style={{ color }} />
         <span className={`text-[12px] ${FC.sub}`}>{label}</span>
       </div>
-      <div className={`font-mono tabular-nums text-[24px] font-medium ${FC.ink}`}>{value}</div>
+      <div className={`tabular-nums text-[24px] font-medium ${FC.ink}`}>{value}</div>
     </div>
   );
 }
@@ -48,6 +48,53 @@ function SubCard({ title, children }: { title: string; children: React.ReactNode
       <h3 className={`text-[16px] font-[450] tracking-[-0.1px] mb-3 ${FC.ink}`}>{title}</h3>
       {children}
     </div>
+  );
+}
+
+// ReportSkeleton — carregando, ecoa a forma da página (banda deflection + 5 KPIs + 4 sub-cards).
+function ReportSkeleton() {
+  return (
+    <>
+      <Row>
+        <div className="flex items-center gap-6 p-6">
+          <div className="shrink-0">
+            <div className={`h-9 w-20 mb-2 ${SKEL}`} />
+            <div className={`h-3 w-24 ${SKEL}`} />
+          </div>
+          <div className={`h-12 w-px ${FC.hairBg}`} />
+          <div className="flex-1 grid grid-cols-3 gap-4">
+            {[0, 1, 2].map((i) => (
+              <div key={i}>
+                <div className={`h-5 w-10 mb-1.5 ${SKEL}`} />
+                <div className={`h-3 w-20 ${SKEL}`} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </Row>
+      <Row>
+        <HairCells cols={5}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="p-5">
+              <div className={`h-3 w-20 mb-3 ${SKEL}`} />
+              <div className={`h-6 w-12 ${SKEL}`} />
+            </div>
+          ))}
+        </HairCells>
+      </Row>
+      <Row last>
+        <HairCells cols={2} gridLines>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="p-6">
+              <div className={`h-4 w-32 mb-4 ${SKEL}`} />
+              {[0, 1, 2].map((j) => (
+                <div key={j} className={`h-3 w-full mb-2.5 ${SKEL}`} />
+              ))}
+            </div>
+          ))}
+        </HairCells>
+      </Row>
+    </>
   );
 }
 
@@ -106,14 +153,16 @@ export default function RelatoriosAtendimentoPage() {
         </Row>
 
         {loading ? (
-          <Row last>
-            <div className={`text-[13px] py-12 text-center ${FC.mut}`}>Carregando...</div>
-          </Row>
+          <ReportSkeleton />
         ) : data?.empty ? (
           <Row last>
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <BarChart3 className={`w-10 h-10 mb-3 ${FC.mut}`} />
-              <p className={`text-[14px] ${FC.sub}`}>Sem dados ainda neste período.</p>
+            <div className="py-16">
+              <EmptyHint
+                icon={BarChart3}
+                text="Sem dados de atendimento neste período — os relatórios nascem nas primeiras conversas."
+                ctaLabel="Conectar canal"
+                ctaTo="/admin/canais"
+              />
             </div>
           </Row>
         ) : data ? (
@@ -131,16 +180,16 @@ export default function RelatoriosAtendimentoPage() {
                   <div className={`h-12 w-px ${FC.hairBg}`} />
                   <div className="flex-1 grid grid-cols-3 gap-4">
                     <div>
-                      <div className={`text-[20px] font-mono font-medium ${FC.ink}`}>{data.deflection.resolvidas_pela_ia}</div>
-                      <div className={`text-[12px] ${FC.mut}`}>sem humano</div>
+                      <div className={`text-[20px] tabular-nums font-medium ${FC.ink}`}>{data.deflection.resolvidas_pela_ia}</div>
+                      <div className={`text-[12px] ${FC.sub}`}>sem humano</div>
                     </div>
                     <div>
-                      <div className={`text-[20px] font-mono font-medium ${FC.ink}`}>{data.deflection.precisaram_humano}</div>
-                      <div className={`text-[12px] ${FC.mut}`}>precisaram de humano</div>
+                      <div className={`text-[20px] tabular-nums font-medium ${FC.ink}`}>{data.deflection.precisaram_humano}</div>
+                      <div className={`text-[12px] ${FC.sub}`}>precisaram de humano</div>
                     </div>
                     <div>
-                      <div className={`text-[20px] font-mono font-medium ${FC.ink}`}>{data.deflection.total_conversas}</div>
-                      <div className={`text-[12px] ${FC.mut}`}>total de conversas</div>
+                      <div className={`text-[20px] tabular-nums font-medium ${FC.ink}`}>{data.deflection.total_conversas}</div>
+                      <div className={`text-[12px] ${FC.sub}`}>total de conversas</div>
                     </div>
                   </div>
                 </div>
@@ -171,13 +220,13 @@ export default function RelatoriosAtendimentoPage() {
                         <span className={`font-medium ${FC.ink}`}>{v}</span>
                       </div>
                     ))}
-                    {Object.keys(data.por_status).length === 0 && <p className={`text-[12px] ${FC.mut}`}>—</p>}
+                    {Object.keys(data.por_status).length === 0 && <p className={`text-[12px] ${FC.sub}`}>—</p>}
                   </div>
                 </SubCard>
 
                 <SubCard title="Notas de satisfação">
                   {data.csat.respostas === 0 ? (
-                    <p className={`text-[12px] ${FC.mut}`}>Nenhuma avaliação ainda.</p>
+                    <p className={`text-[12px] ${FC.sub}`}>Nenhuma avaliação ainda.</p>
                   ) : (
                     <div className="space-y-1.5">
                       {[5, 4, 3, 2, 1, 0].map((n) => {
@@ -199,7 +248,7 @@ export default function RelatoriosAtendimentoPage() {
 
                 <SubCard title="Por etiqueta">
                   {Object.keys(data.por_etiqueta).length === 0 ? (
-                    <p className={`text-[12px] ${FC.mut}`}>Nenhuma etiqueta usada.</p>
+                    <p className={`text-[12px] ${FC.sub}`}>Nenhuma etiqueta usada.</p>
                   ) : (
                     <div className="space-y-1.5">
                       {Object.entries(data.por_etiqueta).map(([t, v]) => (
@@ -217,7 +266,7 @@ export default function RelatoriosAtendimentoPage() {
 
                 <SubCard title="Por atendente">
                   {Object.keys(data.por_atendente).length === 0 ? (
-                    <p className={`text-[12px] ${FC.mut}`}>Nenhuma conversa atribuída.</p>
+                    <p className={`text-[12px] ${FC.sub}`}>Nenhuma conversa atribuída.</p>
                   ) : (
                     <div className="space-y-2">
                       {Object.entries(data.por_atendente).map(([a, v]) => (

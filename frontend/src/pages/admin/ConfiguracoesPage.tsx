@@ -56,7 +56,8 @@ export default function ConfiguracoesPage() {
         {SECTIONS.map((section, si) => (
           <Row key={section.label} last={si === SECTIONS.length - 1}>
             <div className="p-6">
-              <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${FC.mut}`}>{section.label}</h3>
+              {/* label 11px uppercase legível: sub (56%) em vez de mut (40%) */}
+              <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${FC.sub}`}>{section.label}</h3>
               <div className={`divide-y ${FC.hair} border ${FC.hair} rounded-lg overflow-hidden`}>
                 {section.items.map((item) => (
                   <Link

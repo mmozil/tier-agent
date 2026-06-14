@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Inbox, Phone, MessageCircle, Check, Archive, RefreshCw, Bell, Save } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 const REASON_LABEL: Record<string, string> = {
   explicit_request: "Pediu humano",
@@ -67,7 +67,7 @@ function AlertConfigCard() {
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 text-left">
         <Bell className="w-4 h-4 text-[#003083] dark:text-[#5b9bff]" />
         <span className={`text-[14px] font-medium ${FC.ink}`}>Onde te avisamos</span>
-        <span className={`text-[12px] ml-1 ${FC.mut}`}>
+        <span className={`text-[12px] ml-1 ${FC.sub}`}>
           {cfg.alert_whatsapp || cfg.alert_email ? `· ${cfg.alert_whatsapp || cfg.alert_email}` : "· nenhum canal configurado"}
         </span>
         <span className="ml-auto text-[12px] text-[#003083] dark:text-[#5b9bff]">{open ? "Fechar" : "Configurar"}</span>
@@ -90,7 +90,7 @@ function AlertConfigCard() {
           <div>
             <label className={`text-[12px] block mb-1 ${FC.sub}`}>Alerta de SLA — avisar se cliente espera resposta humana por (minutos)</label>
             <input type="number" min={0} value={cfg.sla_minutes} onChange={(e) => setCfg({ ...cfg, sla_minutes: Math.max(0, parseInt(e.target.value || "0", 10)) })} placeholder="0 = desligado" className={`${inputCls} w-40`} />
-            <span className={`text-[12px] ml-2 ${FC.mut}`}>0 = desligado</span>
+            <span className={`text-[12px] ml-2 ${FC.sub}`}>0 = desligado</span>
           </div>
           <label className={`flex items-center gap-2 text-[13px] ${FC.ink}`}>
             <input type="checkbox" checked={cfg.alert_enabled} onChange={(e) => setCfg({ ...cfg, alert_enabled: e.target.checked })} />
@@ -268,13 +268,15 @@ export default function LeadsPage() {
 
         <Row last>
           {loading ? (
-            <div className={`text-[13px] py-12 text-center ${FC.mut}`}>Carregando...</div>
+            <LeadsSkeleton />
           ) : visible.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Inbox className={`w-10 h-10 mb-3 ${FC.mut}`} />
-              <p className={`text-[14px] ${FC.sub}`}>Nenhum item por aqui ainda.</p>
-              <p className={`text-[12px] mt-1 ${FC.mut}`}>Leads aparecem automaticamente quando um cliente demonstra interesse no atendimento.</p>
-            </div>
+            <EmptyHint
+              icon={Inbox}
+              text="Nenhum item por aqui ainda. Leads aparecem automaticamente quando um cliente demonstra interesse no atendimento."
+              ctaLabel="Conectar canal"
+              ctaTo="/admin/canais"
+              className="py-16"
+            />
           ) : (
             <div className={`divide-y ${FC.hair}`}>
               {visible.map((n) => {
@@ -294,7 +296,7 @@ export default function LeadsPage() {
                             <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#262626]/[0.06] ${FC.sub}`}>{REASON_LABEL[reason]}</span>
                           )}
                           {unread && <span className="w-2 h-2 rounded-full bg-[#003083] dark:bg-[#5b9bff]" title="Não lido" />}
-                          <span className={`text-[12px] ${FC.mut}`}>{fmtDate(n.created_at)}</span>
+                          <span className={`text-[12px] ${FC.sub}`}>{fmtDate(n.created_at)}</span>
                         </div>
                         <h3 className={`text-[14px] font-medium truncate ${FC.ink}`}>{n.title}</h3>
                         {resumo ? (
@@ -334,6 +336,24 @@ export default function LeadsPage() {
           )}
         </Row>
       </PageFrame>
+    </div>
+  );
+}
+
+// Carregando, a lista mostra a própria forma (não um spinner no vazio).
+function LeadsSkeleton() {
+  return (
+    <div className={`divide-y ${FC.hair}`}>
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="p-6">
+          <div className="flex items-center gap-2 mb-2">
+            <SkeletonBar className="h-4 w-20 rounded-full" />
+            <SkeletonBar className="h-3 w-16" />
+          </div>
+          <SkeletonBar className="h-3.5 w-1/2 mb-2" />
+          <SkeletonBar className="h-3 w-3/4" />
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { ToggleLeft } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row } from "@/components/ds/fc";
+import { FC, PageFrame, Row, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 interface Flag {
   id: number;
@@ -68,31 +69,48 @@ export default function FeaturesPage() {
 
         <Row last>
           <div className="p-6">
-            {loading && <div className={`text-[13px] mb-3 ${FC.mut}`}>Carregando...</div>}
-            <div className={`border ${FC.hair} rounded-lg divide-y ${FC.hair} overflow-hidden`}>
-              {known.map((kf) => {
-                const f = getFlag(kf.key);
-                const enabled = f?.enabled ?? false;
-                return (
-                  <div key={kf.key} className="flex items-center justify-between px-5 py-3.5">
-                    <div>
-                      <div className={`text-[13px] font-medium font-mono ${FC.ink}`}>{kf.key}</div>
-                      <div className={`text-[12px] mt-0.5 ${FC.sub}`}>{kf.description}</div>
+            {/* Loading: skeleton ecoa a forma das linhas de flag (não spinner no vazio) */}
+            {loading ? (
+              <div className={`border ${FC.hair} rounded-lg divide-y ${FC.hair} overflow-hidden`}>
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center justify-between px-5 py-3.5">
+                    <div className="space-y-2">
+                      <SkeletonBar className="h-3.5 w-40" />
+                      <SkeletonBar className="h-3 w-56" />
                     </div>
-                    <button
-                      onClick={() => toggle(kf.key, !enabled)}
-                      className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? "bg-[#003083] dark:bg-[#5b9bff]" : "bg-[#262626]/20 dark:bg-white/20"}`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                          enabled ? "translate-x-5" : ""
-                        }`}
-                      />
-                    </button>
+                    <SkeletonBar className="h-6 w-11 rounded-full" />
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            ) : known.length === 0 ? (
+              <EmptyHint icon={ToggleLeft} text="Nenhuma feature flag disponível ainda." />
+            ) : (
+              <div className={`border ${FC.hair} rounded-lg divide-y ${FC.hair} overflow-hidden`}>
+                {known.map((kf) => {
+                  const f = getFlag(kf.key);
+                  const enabled = f?.enabled ?? false;
+                  return (
+                    <div key={kf.key} className="flex items-center justify-between px-5 py-3.5">
+                      <div>
+                        {/* key é identificador técnico → mantém mono */}
+                        <div className={`text-[13px] font-medium font-mono ${FC.ink}`}>{kf.key}</div>
+                        <div className={`text-[12px] mt-0.5 ${FC.sub}`}>{kf.description}</div>
+                      </div>
+                      <button
+                        onClick={() => toggle(kf.key, !enabled)}
+                        className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? "bg-[#003083] dark:bg-[#5b9bff]" : "bg-[#262626]/20 dark:bg-white/20"}`}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                            enabled ? "translate-x-5" : ""
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </Row>
       </PageFrame>

@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Plus, Trash2, Zap, Tag, UserCheck, MessageSquare, CheckCircle2, X } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 type ActionType = "tag" | "assign" | "reply" | "status";
 interface MAction {
@@ -183,9 +183,23 @@ export default function MacrosPage() {
 
         <Row last>
           <div className={`divide-y ${FC.hair}`}>
-            {loading && <div className={`px-6 py-8 text-center text-[13px] ${FC.mut}`}>Carregando…</div>}
+            {loading &&
+              // skeleton ecoa as linhas da lista (ícone + nome + sumário)
+              [0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3 px-6 py-3">
+                  <SkeletonBar className="w-4 h-4 rounded shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <SkeletonBar className="h-3.5 w-40 mb-1.5" />
+                    <SkeletonBar className="h-3 w-56" />
+                  </div>
+                </div>
+              ))}
             {!loading && macros.length === 0 && (
-              <div className={`px-6 py-10 text-center text-[13px] ${FC.mut}`}>Nenhuma macro ainda. Crie a primeira (ex: "Reembolso").</div>
+              <EmptyHint
+                icon={Zap}
+                text='Nenhuma macro ainda — crie a primeira (ex: "Reembolso") pra atender em 1 clique.'
+                className="py-10"
+              />
             )}
             {macros.map((m) => (
               <div key={m.id} className="flex items-center gap-3 px-6 py-3">

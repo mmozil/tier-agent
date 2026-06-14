@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Headphones, ShoppingCart, Wallet, Workflow } from "lucide-react";
+import { Headphones, MessageSquare, ShoppingCart, Users, Wallet, Workflow } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, EmptyHint, SKEL } from "@/components/ds/fc";
 
 const FEATURES = [
   { icon: Headphones, title: "Atender", desc: "Responde clientes em qualquer canal, 24/7.", to: "/admin/conversas" },
@@ -105,7 +105,7 @@ export default function VisaoGeralPage() {
                   <div className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Conversas — últimos 7 dias</div>
                   <div className={`text-[12.5px] mt-0.5 ${FC.sub}`}>resolução pela IA: {resolPct}%</div>
                 </div>
-                <div className={`font-mono tabular-nums text-[26px] font-medium leading-none ${FC.ink}`}>{total.toLocaleString("pt-BR")}</div>
+                <div className={`tabular-nums text-[26px] font-medium leading-none ${FC.ink}`}>{total.toLocaleString("pt-BR")}</div>
               </div>
               <div style={{ width: "100%", height: 150 }} className="mt-4">
                 {chartData.length > 0 ? (
@@ -125,7 +125,12 @@ export default function VisaoGeralPage() {
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className={`flex items-center justify-center h-full text-[12px] ${FC.mut}`}>Sem dados no período</div>
+                  <EmptyHint
+                    icon={MessageSquare}
+                    text="Nenhuma conversa nos últimos 7 dias — o gráfico nasce no primeiro contato."
+                    ctaLabel="Conectar canal"
+                    ctaTo="/admin/canais"
+                  />
                 )}
               </div>
             </div>
@@ -133,12 +138,14 @@ export default function VisaoGeralPage() {
               <div className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Carga por agente</div>
               <div className={`text-[12.5px] mt-0.5 ${FC.sub}`}>Conversas no período</div>
               <div className="mt-4 space-y-3.5">
-                {workload.length === 0 && <p className={`text-[12px] ${FC.mut}`}>Nenhuma conversa atribuída.</p>}
+                {workload.length === 0 && (
+                  <EmptyHint icon={Users} text="Nenhuma conversa atribuída a atendentes." ctaLabel="Gerenciar equipe" ctaTo="/admin/equipe" />
+                )}
                 {workload.map(([name, n]) => (
                   <div key={name}>
                     <div className="flex items-center justify-between text-[13px]">
                       <span className={`font-medium ${FC.ink}`}>{name}</span>
-                      <span className={`font-mono tabular-nums ${FC.sub}`}>{n}</span>
+                      <span className={`tabular-nums ${FC.sub}`}>{n}</span>
                     </div>
                     <div className="mt-1.5 h-1.5 rounded-full bg-[#262626]/[0.06] overflow-hidden">
                       <div className="h-full rounded-full bg-[#003083] dark:bg-[#5b9bff]" style={{ width: `${(n / maxLoad) * 100}%` }} />
@@ -159,7 +166,7 @@ export default function VisaoGeralPage() {
                 <div className={`text-[12.5px] mt-0.5 ${FC.sub}`}>Horários de pico — últimos 7 dias × hora do dia</div>
               </div>
               {live && (
-                <div className={`flex items-center gap-1.5 text-[11px] ${FC.mut}`}>
+                <div className={`flex items-center gap-1.5 text-[11px] ${FC.sub}`}>
                   <span>menos</span>
                   <span className="inline-flex gap-0.5">
                     {[0.08, 0.3, 0.55, 0.8, 1].map((o) => (
@@ -174,7 +181,19 @@ export default function VisaoGeralPage() {
             {live ? (
               <Heatmap data={live.heatmap} />
             ) : (
-              <div className={`mt-6 text-[12px] ${FC.mut}`}>Carregando tráfego…</div>
+              // Skeleton ecoa a forma do heatmap (linhas × células), não um texto solto.
+              <div className="mt-6 space-y-1.5" aria-hidden>
+                {[0, 1, 2, 3, 4, 5, 6].map((r) => (
+                  <div key={r} className="flex items-center gap-1.5">
+                    <div className={`h-3 w-9 shrink-0 ${SKEL}`} />
+                    <div className="grid gap-[3px] flex-1" style={{ gridTemplateColumns: "repeat(24, 1fr)" }}>
+                      {Array.from({ length: 24 }).map((_, c) => (
+                        <div key={c} className={`aspect-square ${SKEL}`} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </Row>
@@ -239,15 +258,16 @@ function Kpi({
     <div className="px-6 py-5">
       <div className="flex items-center gap-1.5">
         {dot && <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dot }} />}
-        <div className={`text-[11px] font-semibold uppercase tracking-wide ${FC.mut}`}>{label}</div>
+        {/* label 11px: sub (56%) e não mut (40%) — texto pequeno precisa de contraste */}
+        <div className={`text-[11px] font-semibold uppercase tracking-wide ${FC.sub}`}>{label}</div>
       </div>
       <div
-        className="mt-2 font-mono tabular-nums text-[28px] font-medium leading-none"
+        className="mt-2 tabular-nums text-[28px] font-medium leading-none"
         style={{ color: tone === "good" ? "#0a8f5a" : tone === "warn" ? "#F5A300" : undefined }}
       >
         {value}
       </div>
-      {hint && <div className={`mt-1.5 text-[11px] ${FC.mut}`}>{hint}</div>}
+      {hint && <div className={`mt-1.5 text-[11px] ${FC.sub}`}>{hint}</div>}
     </div>
   );
 }

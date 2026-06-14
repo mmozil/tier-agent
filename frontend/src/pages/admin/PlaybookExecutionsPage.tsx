@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 interface Execution {
   id: number;
@@ -77,14 +77,10 @@ export default function PlaybookExecutionsPage() {
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading || !pb) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
-      </div>
-    );
+    return <ExecutionsSkeleton />;
   }
 
-  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.mut}`;
+  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.sub}`;
 
   return (
     <div className="-mx-8 pb-10">
@@ -107,13 +103,11 @@ export default function PlaybookExecutionsPage() {
 
         {execs.length === 0 ? (
           <Row last>
-            <div className="p-12 text-center">
-              <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
-                <Clock className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
-              </div>
-              <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>Nenhuma execução ainda</h3>
-              <p className={`text-[13px] ${FC.sub}`}>Quando uma mensagem disparar este playbook, aparecerá aqui.</p>
-            </div>
+            <EmptyHint
+              icon={Clock}
+              text="Nenhuma execução ainda. Quando uma mensagem disparar este playbook, aparecerá aqui."
+              className="py-12"
+            />
           </Row>
         ) : (
           <Row last>
@@ -145,6 +139,38 @@ export default function PlaybookExecutionsPage() {
   );
 }
 
+// Carregando, a página mostra a própria forma (cabeçalho + tabela), não um spinner no vazio.
+function ExecutionsSkeleton() {
+  return (
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start gap-3 p-6">
+            <SkeletonBar className="w-7 h-7 rounded-md mt-0.5" />
+            <div className="flex-1">
+              <SkeletonBar className="h-5 w-64 mb-2" />
+              <SkeletonBar className="h-3 w-80" />
+            </div>
+          </div>
+        </Row>
+        <Row last>
+          <div className="px-6 py-4 space-y-3">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center gap-6">
+                <SkeletonBar className="h-3 w-10" />
+                <SkeletonBar className="h-3 w-24" />
+                <SkeletonBar className="h-4 w-20 rounded" />
+                <SkeletonBar className="h-3 w-28" />
+                <SkeletonBar className="h-3 w-10" />
+              </div>
+            ))}
+          </div>
+        </Row>
+      </PageFrame>
+    </div>
+  );
+}
+
 function ExecutionRow({ exe, onSelect }: { exe: Execution; onSelect: () => void }) {
   const dur =
     exe.completed_at && exe.started_at
@@ -159,7 +185,7 @@ function ExecutionRow({ exe, onSelect }: { exe: Execution; onSelect: () => void 
       <td className={`px-6 py-3 text-[13px] ${FC.sub}`}>
         {new Date(exe.started_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
       </td>
-      <td className={`px-6 py-3 text-[13px] font-mono ${FC.sub}`}>{dur}</td>
+      <td className={`px-6 py-3 text-[13px] tabular-nums ${FC.sub}`}>{dur}</td>
       <td className="px-6 py-3 text-right"><ChevronRight className={`w-4 h-4 ${FC.mut} inline`} /></td>
     </tr>
   );

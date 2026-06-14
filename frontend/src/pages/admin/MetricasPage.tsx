@@ -17,7 +17,7 @@ import {
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, SegToggle, btnPrimary } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, SegToggle, btnPrimary, EmptyHint, SKEL } from "@/components/ds/fc";
 
 interface Overview {
   period_days: number;
@@ -441,38 +441,9 @@ function MiniSpark({ data }: { data: number[] }) {
   );
 }
 
-// EmptyHint — estado vazio que ensina: o que significa + próxima ação (PRODUCT.md, princípio 3).
-function EmptyHint({
-  icon: Icon,
-  text,
-  ctaLabel,
-  ctaTo,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  text: string;
-  ctaLabel?: string;
-  ctaTo?: string;
-}) {
-  return (
-    <div className="flex flex-col items-center text-center py-6">
-      <Icon className={`w-5 h-5 mb-2 ${FC.mut}`} />
-      <p className={`text-[13px] ${FC.sub}`}>{text}</p>
-      {ctaLabel && ctaTo && (
-        <Link
-          to={ctaTo}
-          className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline"
-        >
-          {ctaLabel}
-          <ArrowUpRight className="w-3.5 h-3.5" />
-        </Link>
-      )}
-    </div>
-  );
-}
-
 // MetricsSkeleton — carregando, a página mostra a própria forma (não um spinner no vazio).
 function MetricsSkeleton() {
-  const bar = "rounded bg-black/[0.06] dark:bg-white/[0.07] animate-pulse motion-reduce:animate-none";
+  const bar = SKEL;
   return (
     <>
       <Row>

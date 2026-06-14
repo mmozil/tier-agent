@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { ArrowUpRight } from "lucide-react";
 
 /* ───────────────────────────────────────────────────────────────
    Design System Firecrawl × Tier — primitivos.
@@ -195,6 +197,49 @@ export function Button({
     <button type={type} onClick={onClick} disabled={disabled} title={title} className={`${base} ${sz} ${v} ${className}`}>
       {children}
     </button>
+  );
+}
+
+// ── Primitivos de polish (jun/2026) — compartilhados por todas as páginas admin ──
+
+// SKEL — classe base de skeleton: carregando, a página mostra a própria forma
+// (não um spinner no vazio). Respeita prefers-reduced-motion.
+export const SKEL = "rounded bg-black/[0.06] dark:bg-white/[0.07] animate-pulse motion-reduce:animate-none";
+
+// SkeletonBar — barra de skeleton; dimensione via className (ex: "h-3 w-24").
+export function SkeletonBar({ className = "h-3 w-24" }: { className?: string }) {
+  return <div aria-hidden className={`${SKEL} ${className}`} />;
+}
+
+// EmptyHint — estado vazio que ENSINA: o que significa + próxima ação
+// (PRODUCT.md, princípio 3). Use no lugar de texto cinza "Sem dados".
+export function EmptyHint({
+  icon: Icon,
+  text,
+  ctaLabel,
+  ctaTo,
+  className = "",
+}: {
+  icon: ComponentType<{ className?: string }>;
+  text: string;
+  ctaLabel?: string;
+  ctaTo?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col items-center text-center py-6 ${className}`}>
+      <Icon className={`w-5 h-5 mb-2 ${FC.mut}`} />
+      <p className={`text-[13px] ${FC.sub}`}>{text}</p>
+      {ctaLabel && ctaTo && (
+        <Link
+          to={ctaTo}
+          className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline"
+        >
+          {ctaLabel}
+          <ArrowUpRight className="w-3.5 h-3.5" />
+        </Link>
+      )}
+    </div>
   );
 }
 

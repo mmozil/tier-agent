@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Spacer, HairCells, Button, btnPrimary } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Spacer, HairCells, Button, btnPrimary, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 interface Agent {
   id: number;
@@ -249,17 +249,31 @@ export default function AgentesPage() {
 
       <Row last curvy={false}>
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
-          </div>
+          // skeleton ecoa a grade de 3 cards (forma da página, não spinner no vazio)
+          <HairCells cols={3} gridLines>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex h-full flex-col p-5">
+                <div className="flex items-start gap-3">
+                  <SkeletonBar className="w-9 h-9 rounded-[10px] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <SkeletonBar className="h-3.5 w-32 mb-2" />
+                    <SkeletonBar className="h-3 w-20" />
+                  </div>
+                </div>
+                <SkeletonBar className="mt-3 h-3 w-full" />
+                <SkeletonBar className="mt-2 h-3 w-3/4" />
+                <div className="mt-3 pt-3 border-t border-[#EDEDED] dark:border-[#23272e]">
+                  <SkeletonBar className="h-3 w-24" />
+                </div>
+              </div>
+            ))}
+          </HairCells>
         ) : agents.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
-              <Bot className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
-            </div>
-            <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>Nenhum agente ainda</h3>
-            <p className={`text-[13px] ${FC.sub}`}>Clique em "Novo agente" pra começar.</p>
-          </div>
+          <EmptyHint
+            icon={Bot}
+            text='Nenhum agente ainda — clique em "Novo agente" pra criar o primeiro funcionário digital.'
+            className="py-12"
+          />
         ) : (
           <HairCells cols={3} gridLines>
             {agents.map((a) => (

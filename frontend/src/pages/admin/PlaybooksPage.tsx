@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 import { Plus, Workflow, Loader2, CheckCircle2, Archive, FileText } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button, btnPrimary } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, Button, btnPrimary, SkeletonBar } from "@/components/ds/fc";
 
 interface PlaybookListItem {
   id: number;
@@ -127,7 +127,7 @@ export default function PlaybooksPage() {
 
         {loading ? (
           <Row last>
-            <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" /></div>
+            <PlaybooksSkeleton />
           </Row>
         ) : playbooks.length === 0 ? (
           <Row last><EmptyState hasAgents={agents.length > 0} onCreate={openCreate} /></Row>
@@ -200,7 +200,7 @@ export default function PlaybooksPage() {
                       <div className="flex-1 min-w-0">
                         <div className={`text-[13px] font-medium ${FC.ink}`}>{t.nome}</div>
                         <div className={`text-[11px] mt-0.5 ${FC.sub}`}>{t.descricao}</div>
-                        <div className={`text-[10px] mt-1 ${FC.mut}`}>{t.nodes_count} nós</div>
+                        <div className={`text-[10px] mt-1 ${FC.sub}`}>{t.nodes_count} nós</div>
                       </div>
                     </div>
                   </button>
@@ -258,6 +258,29 @@ function PlaybookCard({ pb }: { pb: PlaybookListItem }) {
         <span>Atualizado {new Date(pb.updated_at).toLocaleDateString("pt-BR")}</span>
       </div>
     </Link>
+  );
+}
+
+// Carregando, a grade mostra a própria forma (cards) — não um spinner no vazio.
+function PlaybooksSkeleton() {
+  return (
+    <HairCells cols={3} gridLines>
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <div key={i} className="p-5">
+          <div className="flex items-start justify-between mb-3">
+            <SkeletonBar className="w-9 h-9 rounded-md" />
+            <SkeletonBar className="h-4 w-20 rounded" />
+          </div>
+          <SkeletonBar className="h-3.5 w-2/3 mb-2" />
+          <SkeletonBar className="h-3 w-full mb-1.5" />
+          <SkeletonBar className="h-3 w-4/5 mb-4" />
+          <div className="flex items-center justify-between">
+            <SkeletonBar className="h-3 w-10" />
+            <SkeletonBar className="h-3 w-24" />
+          </div>
+        </div>
+      ))}
+    </HairCells>
   );
 }
 

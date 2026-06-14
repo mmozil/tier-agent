@@ -4,7 +4,7 @@ import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send, Trash
 
 import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
-import { btnPrimary } from "@/components/ds/fc";
+import { btnPrimary, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   active: { label: "IA ativa", cls: "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]" },
@@ -388,19 +388,36 @@ export default function ConversasPage() {
         </div>
       )}
 
-      {loading && <div className="text-[13px] text-[#262626]/40 py-8 text-center">Carregando...</div>}
+      {/* Loading: skeleton ecoa a forma das linhas da lista (não spinner no vazio) */}
+      {loading && (
+        <div className="overflow-hidden rounded-xl border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#16191f] divide-y divide-[#EDEDED] dark:divide-[#23272e]">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="px-4 py-3 flex items-center gap-3">
+              <SkeletonBar className="h-10 w-10 rounded-full shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center gap-2">
+                  <SkeletonBar className="h-3.5 w-40" />
+                  <SkeletonBar className="h-3 w-12 ml-auto" />
+                </div>
+                <SkeletonBar className="h-3 w-3/4" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!loading && shownConvs.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#16191f] py-16 text-center">
-          <div className="w-12 h-12 rounded-full bg-[#003083]/[0.06] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center mb-4">
-            <MessageSquare className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
-          </div>
-          <p className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb]">
-            {tagFilter ? `Nenhuma conversa com #${tagFilter}` : "Nenhuma conversa ainda"}
-          </p>
-          <p className="text-[12.5px] text-[#262626]/[0.56] dark:text-[#8b93a0] mt-1 max-w-[320px]">
-            As conversas aparecem aqui assim que clientes falarem com o agente.
-          </p>
+        <div className="rounded-xl border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#16191f] py-12">
+          {tagFilter ? (
+            <EmptyHint icon={MessageSquare} text={`Nenhuma conversa com #${tagFilter}.`} />
+          ) : (
+            <EmptyHint
+              icon={MessageSquare}
+              text="Nenhuma conversa ainda — elas aparecem assim que clientes falarem com o agente."
+              ctaLabel="Conectar canal"
+              ctaTo="/admin/canais"
+            />
+          )}
         </div>
       )}
 
@@ -432,13 +449,14 @@ export default function ConversasPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{name}</span>
                     {c.status !== "active" && <StatusBadge status={c.status} />}
-                    <span className="ml-auto shrink-0 text-[11px] text-[#262626]/40 tabular-nums">{fmtDate(c.last_message_at)}</span>
+                    {/* data/contagem (11px) em sub: texto pequeno precisa de contraste legível */}
+                    <span className="ml-auto shrink-0 text-[11px] text-[#262626]/[0.56] dark:text-[#8b93a0] tabular-nums">{fmtDate(c.last_message_at)}</span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-2">
                     <p className="flex-1 truncate text-[12.5px] text-[#262626]/[0.56] dark:text-[#8b93a0]">
                       {c.last_preview || <span className="italic text-[#262626]/30">Sem prévia</span>}
                     </p>
-                    <span className="shrink-0 text-[11px] text-[#262626]/40 tabular-nums">{c.msg_count} msg</span>
+                    <span className="shrink-0 text-[11px] text-[#262626]/[0.56] dark:text-[#8b93a0] tabular-nums">{c.msg_count} msg</span>
                   </div>
                   {((c.tags && c.tags.length > 0) || assignedM) && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

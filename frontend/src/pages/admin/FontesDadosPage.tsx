@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Trash2, Loader2, Zap, X, CheckCircle2, XCircle, Check } from "lucide-react";
+import { Trash2, Loader2, Zap, X, CheckCircle2, XCircle, Check, Plug, Bot } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, HairCells } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, HairCells, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 // Integrações (MCP) — catálogo de plataformas que o agente pode consultar/agir via
 // tool-use. Padrão "página de integrações": cards conhecidos (Conectar com URL
@@ -279,7 +279,7 @@ export default function FontesDadosPage() {
   }
 
   const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
-  const colLabel = `text-[11px] uppercase tracking-[0.06em] ${FC.mut}`;
+  const colLabel = `text-[11px] uppercase tracking-[0.06em] ${FC.sub}`;
   const COLS = "grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_88px_56px_72px] items-center gap-4";
 
   function Switch({ on, onClick, title }: { on: boolean; onClick: () => void; title?: string }) {
@@ -323,7 +323,7 @@ export default function FontesDadosPage() {
             </div>
             {agents.length > 0 && (
               <label className="shrink-0">
-                <span className={`block text-[11px] mb-1 ${FC.mut}`}>Agente</span>
+                <span className={`block text-[11px] mb-1 ${FC.sub}`}>Agente</span>
                 <select
                   value={agentId ?? ""}
                   onChange={(e) => setAgentId(Number(e.target.value))}
@@ -439,16 +439,47 @@ export default function FontesDadosPage() {
 
         {/* ─── Conectadas ─── */}
         {loading && (
-          <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Carregando…</div></Row>
+          // skeleton: ecoa a forma da lista (header + linhas com avatar/colunas), não spinner no vazio
+          <Row last>
+            <div className={`${COLS} px-6 py-2.5 border-b ${FC.hair}`}>
+              <span className={colLabel}>Integração</span>
+              <span className={colLabel}>Servidor</span>
+              <span className={colLabel}>Ferramentas</span>
+              <span className={colLabel}>Ativa</span>
+              <span />
+            </div>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className={`${COLS} px-6 py-3 border-b ${FC.hair}`}>
+                <div className="flex items-center gap-2.5">
+                  <SkeletonBar className="h-8 w-8 rounded-lg" />
+                  <SkeletonBar className="h-3.5 w-28" />
+                </div>
+                <SkeletonBar className="h-3 w-48" />
+                <SkeletonBar className="h-3 w-16" />
+                <SkeletonBar className="h-[18px] w-8 rounded-full" />
+                <span />
+              </div>
+            ))}
+          </Row>
         )}
         {!loading && agents.length === 0 && (
-          <Row last><div className={`px-6 py-12 text-center text-[13px] ${FC.mut}`}>Nenhum agente — crie um agente primeiro em "Agentes".</div></Row>
+          <Row last>
+            <EmptyHint
+              icon={Bot}
+              text="Nenhum agente ainda — crie um agente para conectar integrações."
+              ctaLabel="Criar agente"
+              ctaTo="/admin/agentes"
+              className="py-10"
+            />
+          </Row>
         )}
         {!loading && agents.length > 0 && providers.length === 0 && (
           <Row last>
-            <div className={`px-6 py-10 text-center text-[13px] ${FC.mut}`}>
-              Nenhuma integração conectada a este agente ainda — escolha uma no catálogo acima.
-            </div>
+            <EmptyHint
+              icon={Plug}
+              text="Nenhuma integração conectada a este agente ainda — escolha uma no catálogo acima."
+              className="py-10"
+            />
           </Row>
         )}
         {!loading && providers.length > 0 && (
@@ -579,7 +610,7 @@ export default function FontesDadosPage() {
   function Field({ label, value, mono, full }: { label: string; value: string; mono?: boolean; full?: boolean }) {
     return (
       <div className={full ? "col-span-2" : ""}>
-        <div className={`text-[11px] ${FC.mut}`}>{label}</div>
+        <div className={`text-[11px] ${FC.sub}`}>{label}</div>
         <div className={`${mono ? "font-mono" : ""} ${FC.ink} break-all`}>{value}</div>
       </div>
     );

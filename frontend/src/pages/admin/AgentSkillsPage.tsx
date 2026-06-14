@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { ArrowLeft, Archive, Bot, FileText, Loader2, Sparkles, User, X } from "lucide-react";
+import { ArrowLeft, Archive, Bot, FileText, Sparkles, User, X } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, Button, EmptyHint, SKEL } from "@/components/ds/fc";
 
 interface Skill {
   path: string;
@@ -92,11 +92,7 @@ export default function AgentSkillsPage() {
   };
 
   if (loading || !agent) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
-      </div>
-    );
+    return <SkillsSkeleton />;
   }
 
   return (
@@ -125,20 +121,18 @@ export default function AgentSkillsPage() {
 
         {filtered.length === 0 ? (
           <Row last>
-            <div className="p-12 text-center">
-              <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
-                <Sparkles className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
-              </div>
-              <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>
-                {filter === "auto" ? "Nenhuma skill auto-aprendida ainda" : "Nenhuma skill aqui"}
-              </h3>
-              <p className={`text-[13px] ${FC.sub}`}>
-                {filter === "auto"
-                  ? "Quando o agente acumular padrões nas conversas, o Curator do agente cria skills automaticamente."
-                  : filter === "uploaded"
-                    ? "Envie PDFs/Excel/MD em /admin/knowledge pra agente usar."
-                    : "Esse agente ainda não tem skills cadastradas no container."}
-              </p>
+            <div className="py-12">
+              <EmptyHint
+                icon={filter === "auto" ? Bot : filter === "uploaded" ? User : Sparkles}
+                text={
+                  filter === "auto"
+                    ? "Nenhuma skill auto-aprendida ainda. Quando o agente acumular padrões nas conversas, o Curator cria skills automaticamente."
+                    : filter === "uploaded"
+                      ? "Nenhum conhecimento enviado por você. Suba PDFs, planilhas ou MD pro agente usar."
+                      : "Esse agente ainda não tem skills cadastradas."
+                }
+                {...(filter !== "auto" ? { ctaLabel: "Enviar conhecimento", ctaTo: "/admin/knowledge" } : {})}
+              />
             </div>
           </Row>
         ) : (
@@ -159,6 +153,51 @@ export default function AgentSkillsPage() {
   );
 }
 
+// SkillsSkeleton — carregando, a página mostra a própria forma (header + tabs + grid de cards).
+function SkillsSkeleton() {
+  return (
+    <div className="-mx-8 pb-10">
+      <PageFrame>
+        <Row>
+          <div className="flex items-start gap-3 p-6">
+            <div className={`w-7 h-7 rounded-md shrink-0 ${SKEL}`} />
+            <div className="flex-1">
+              <div className={`h-5 w-48 mb-2 ${SKEL}`} />
+              <div className={`h-3 w-80 max-w-full ${SKEL}`} />
+            </div>
+          </div>
+        </Row>
+        <Row>
+          <div className="flex items-center gap-2 p-6">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className={`h-7 w-28 ${SKEL}`} />
+            ))}
+          </div>
+        </Row>
+        <Row last>
+          <HairCells cols={3} gridLines>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div className={`w-8 h-8 rounded-md ${SKEL}`} />
+                  <div className={`h-4 w-12 ${SKEL}`} />
+                </div>
+                <div className={`h-3.5 w-3/4 mb-2 ${SKEL}`} />
+                <div className={`h-3 w-full mb-1.5 ${SKEL}`} />
+                <div className={`h-3 w-2/3 mb-3 ${SKEL}`} />
+                <div className="flex gap-1.5 pt-2">
+                  <div className={`h-7 flex-1 ${SKEL}`} />
+                  <div className={`h-7 w-9 ${SKEL}`} />
+                </div>
+              </div>
+            ))}
+          </HairCells>
+        </Row>
+      </PageFrame>
+    </div>
+  );
+}
+
 function FilterTab({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
   return (
     <button
@@ -170,7 +209,7 @@ function FilterTab({ label, count, active, onClick }: { label: string; count: nu
       }`}
     >
       {label}
-      <span className={`text-[10px] ${active ? "opacity-80" : FC.mut}`}>{count}</span>
+      <span className={`text-[10px] tabular-nums ${active ? "opacity-80" : FC.sub}`}>{count}</span>
     </button>
   );
 }
@@ -196,10 +235,11 @@ function SkillCard({ skill, onView, onArchive }: { skill: Skill; onView: (s: Ski
       </div>
       <div className={`text-[13px] font-medium mb-1 truncate ${FC.ink}`}>{skill.title || skill.name}</div>
       {skill.description && <p className={`text-[11px] line-clamp-2 mb-2 ${FC.sub}`}>{skill.description}</p>}
-      <div className={`text-[10px] mb-3 ${FC.mut}`}>
+      <div className={`text-[10px] mb-3 ${FC.sub}`}>
+        {/* relative_dir é caminho técnico → mono; tamanho/data são metadados de negócio → sans */}
         {skill.relative_dir && <span className="font-mono">{skill.relative_dir}/</span>}
-        <span className="font-mono">{(skill.size_bytes / 1024).toFixed(1)}KB</span>
-        {skill.modified_at && <>{" · "}<span>{new Date(skill.modified_at).toLocaleDateString("pt-BR")}</span></>}
+        <span className="tabular-nums">{(skill.size_bytes / 1024).toFixed(1)}KB</span>
+        {skill.modified_at && <>{" · "}<span className="tabular-nums">{new Date(skill.modified_at).toLocaleDateString("pt-BR")}</span></>}
       </div>
       <div className="mt-auto flex gap-1.5 pt-2">
         <button onClick={() => onView(skill)} className={`flex-1 h-7 px-2 rounded-lg text-[11px] font-medium inline-flex items-center justify-center gap-1 border ${FC.hair} ${FC.ink} ${FC.hover}`}>
@@ -228,8 +268,11 @@ function SkillContentDrawer({ skill, content, loading, onClose }: { skill: Skill
         </div>
         <div className="flex-1 p-5">
           {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
+            // Skeleton ecoa o bloco de conteúdo (linhas no painel), não um spinner no vazio.
+            <div className="bg-[#F1F3F5] dark:bg-[#16191f] p-4 rounded-md space-y-2.5" aria-hidden>
+              {["w-3/4", "w-full", "w-5/6", "w-2/3", "w-full", "w-1/2", "w-11/12", "w-4/5"].map((w, i) => (
+                <div key={i} className={`h-3 ${w} ${SKEL}`} />
+              ))}
             </div>
           ) : (
             <pre className={`text-[11px] font-mono whitespace-pre-wrap bg-[#F1F3F5] dark:bg-[#16191f] p-4 rounded-md overflow-x-auto ${FC.ink}`}>

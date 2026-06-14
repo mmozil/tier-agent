@@ -76,7 +76,8 @@ export default function SuportePage() {
               Plataforma de agentes IA configuráveis. Cada agente roda em um container isolado, aprende com as conversas
               e age via WhatsApp, e-mail, web e mais. Suporte 24/7 sem trocar de ferramenta.
             </p>
-            <div className={`mt-3 text-[12px] ${FC.mut}`}>
+            {/* caption 12px legível: sub (56%) em vez de mut (40%) */}
+            <div className={`mt-3 text-[12px] ${FC.sub}`}>
               Versão · MVP · agent.tier.finance · © {new Date().getFullYear()} Tier Finance
             </div>
           </div>

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Upload, FileText, FileSpreadsheet, FileType, Trash2 } from "lucide-react";
+import { Upload, FileText, FileSpreadsheet, FileType, Trash2, FolderOpen } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SKEL } from "@/components/ds/fc";
 
 interface Agent {
   id: number;
@@ -106,7 +106,7 @@ export default function KnowledgePage() {
   }
 
   const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
-  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.mut}`;
+  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.sub}`;
 
   return (
     <div className="-mx-8 pb-10">
@@ -166,14 +166,27 @@ export default function KnowledgePage() {
                 </tr>
               </thead>
               <tbody>
-                {loading && (
-                  <tr>
-                    <td colSpan={5} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Carregando...</td>
-                  </tr>
-                )}
+                {loading &&
+                  [0, 1, 2].map((i) => (
+                    // Skeleton ecoa as colunas da tabela (Arquivo · Agente · Chunks · Status · Ações).
+                    <tr key={i} className={`border-b ${FC.hair}`}>
+                      <td className="px-6 py-2.5">
+                        <div className="inline-flex items-center gap-2">
+                          <div className={`w-4 h-4 rounded ${SKEL}`} />
+                          <div className={`h-3 w-40 ${SKEL}`} />
+                        </div>
+                      </td>
+                      <td className="px-6 py-2.5"><div className={`h-3 w-24 ${SKEL}`} /></td>
+                      <td className="px-6 py-2.5"><div className={`h-3 w-8 ${SKEL}`} /></td>
+                      <td className="px-6 py-2.5"><div className={`h-3 w-20 ${SKEL}`} /></td>
+                      <td className="px-6 py-2.5"><div className={`h-3 w-6 ml-auto ${SKEL}`} /></td>
+                    </tr>
+                  ))}
                 {!loading && items.length === 0 && (
                   <tr>
-                    <td colSpan={5} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Nenhum arquivo. Suba seu primeiro acima.</td>
+                    <td colSpan={5} className="px-6 py-12">
+                      <EmptyHint icon={FolderOpen} text="Nenhum conhecimento ainda. Suba seu primeiro arquivo no formulário acima." />
+                    </td>
                   </tr>
                 )}
                 {items.map((k) => {
@@ -191,7 +204,7 @@ export default function KnowledgePage() {
                       <td className={`px-6 py-2.5 text-[13px] ${FC.sub}`}>
                         {agents.find((a) => a.id === k.agent_id)?.nome || `#${k.agent_id}`}
                       </td>
-                      <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>{k.chunks_count}</td>
+                      <td className={`px-6 py-2.5 text-[13px] tabular-nums ${FC.sub}`}>{k.chunks_count}</td>
                       <td className="px-6 py-2.5 text-[13px]">
                         <span className="inline-flex items-center gap-1.5" title={sm.tip}>
                           <span className={`w-2 h-2 rounded-full ${sm.color}`} />

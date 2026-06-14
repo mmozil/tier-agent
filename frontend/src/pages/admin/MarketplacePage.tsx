@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Download, Loader2, Sparkles, Star, Workflow } from "lucide-react";
+import { Download, Loader2, Store, Star, Workflow } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, Button, EmptyHint, SKEL } from "@/components/ds/fc";
 
 interface MarketplaceItem {
   id: number;
@@ -108,20 +108,32 @@ export default function MarketplacePage() {
 
         {loading ? (
           <Row last>
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
-            </div>
+            <HairCells cols={3} gridLines>
+              {/* Skeleton ecoa o grid de cards de template (ícone + título + descrição + botão). */}
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="p-6 flex flex-col h-full">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className={`w-9 h-9 rounded-md ${SKEL}`} />
+                    <div className={`h-5 w-10 ${SKEL}`} />
+                  </div>
+                  <div className={`h-3.5 w-3/4 mb-2 ${SKEL}`} />
+                  <div className={`h-3 w-full mb-1.5 ${SKEL}`} />
+                  <div className={`h-3 w-5/6 mb-3 ${SKEL}`} />
+                  <div className={`h-3 w-1/2 mb-3 ${SKEL}`} />
+                  <div className={`h-7 w-full ${SKEL}`} />
+                </div>
+              ))}
+            </HairCells>
           </Row>
         ) : items.length === 0 ? (
           <Row last>
-            <div className="p-12 text-center">
-              <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
-                <Sparkles className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
-              </div>
-              <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>Marketplace ainda vazio</h3>
-              <p className={`text-[13px] ${FC.sub}`}>
-                Seja o primeiro a publicar um playbook! No editor → botão "Publicar no marketplace".
-              </p>
+            <div className="py-12">
+              <EmptyHint
+                icon={Store}
+                text='Marketplace ainda vazio. Seja o primeiro a publicar um playbook — no editor, use o botão "Publicar no marketplace".'
+                ctaLabel="Abrir playbooks"
+                ctaTo="/admin/playbooks"
+              />
             </div>
           </Row>
         ) : (

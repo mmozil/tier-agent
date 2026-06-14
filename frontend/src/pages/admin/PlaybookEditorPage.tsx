@@ -228,7 +228,8 @@ export default function PlaybookEditorPage() {
   if (loading || !pb) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-5 h-5 text-[#003083] animate-spin" />
+        {/* editor canvas é complexo demais pra skeleton — mantém spinner, só alinha cor dark */}
+        <Loader2 className="w-5 h-5 text-[#003083] dark:text-[#5b9bff] animate-spin" />
       </div>
     );
   }

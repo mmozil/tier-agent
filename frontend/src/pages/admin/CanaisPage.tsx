@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone } from "lucide-react";
+import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Bot } from "lucide-react";
 
 import { api } from "@/lib/api";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
-import { FC, PageFrame, Row, Spacer, Button } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Spacer, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 function WhatsAppIcon({ className }: { className?: string }) {
   return (
@@ -175,7 +175,7 @@ export default function CanaisPage() {
     }
   }
 
-  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.mut}`;
+  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.sub}`;
 
   return (
     <div className="-mx-8 pb-10">
@@ -259,12 +259,37 @@ export default function CanaisPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading && (
-                  <tr><td colSpan={5} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>Carregando...</td></tr>
-                )}
+                {/* skeleton: ecoa as linhas da tabela (mesmas 5 colunas), não spinner no vazio */}
+                {loading &&
+                  [0, 1, 2].map((i) => (
+                    <tr key={i} className={`border-b ${FC.hair}`}>
+                      <td className="px-6 py-3">
+                        <div className="inline-flex items-center gap-2">
+                          <SkeletonBar className="h-4 w-4 rounded" />
+                          <SkeletonBar className="h-3.5 w-24" />
+                        </div>
+                      </td>
+                      <td className="px-6 py-3"><SkeletonBar className="h-3 w-28" /></td>
+                      <td className="px-6 py-3"><SkeletonBar className="h-3 w-32" /></td>
+                      <td className="px-6 py-3"><SkeletonBar className="h-3 w-20" /></td>
+                      <td className="px-6 py-3"><div className="flex justify-end"><SkeletonBar className="h-6 w-24 rounded-md" /></div></td>
+                    </tr>
+                  ))}
                 {!loading && conns.length === 0 && (
-                  <tr><td colSpan={5} className={`px-6 py-6 text-center text-[13px] ${FC.mut}`}>
-                    {agents.length === 0 ? "Crie um agente primeiro (menu Agentes) para conectar um canal." : 'Nenhum canal conectado. Clique em "Conectar WhatsApp".'}
+                  <tr><td colSpan={5} className="px-6 py-6">
+                    {agents.length === 0 ? (
+                      <EmptyHint
+                        icon={Bot}
+                        text="Crie um agente primeiro para conectar um canal."
+                        ctaLabel="Criar agente"
+                        ctaTo="/admin/agentes"
+                      />
+                    ) : (
+                      <EmptyHint
+                        icon={Smartphone}
+                        text='Nenhum canal conectado. Clique em "Conectar WhatsApp".'
+                      />
+                    )}
                   </td></tr>
                 )}
                 {conns.map((c) => {
@@ -292,7 +317,7 @@ export default function CanaisPage() {
                         </div>
                       </td>
                       <td className={`px-6 py-2.5 text-[13px] ${FC.sub}`}>{agents.find((a) => a.id === c.agent_id)?.nome || `Agente #${c.agent_id}`}</td>
-                      <td className={`px-6 py-2.5 text-[13px] font-mono ${FC.sub}`}>{formatPhone(c.config_summary?.phone)}</td>
+                      <td className={`px-6 py-2.5 text-[13px] tabular-nums ${FC.sub}`}>{formatPhone(c.config_summary?.phone)}</td>
                       <td className="px-6 py-2.5 text-[13px]">
                         <span className="inline-flex items-center gap-1.5" title={meta.tip}>
                           <span className={`w-2 h-2 rounded-full ${meta.color}`} />
@@ -396,7 +421,7 @@ export default function CanaisPage() {
                             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#F5A300]" />
                           </span>
                           <span className={`text-[13px] font-medium ${FC.ink}`}>Aguardando leitura</span>
-                          <span className={`ml-auto text-[11px] ${FC.mut}`}>atualiza sozinho</span>
+                          <span className={`ml-auto text-[11px] ${FC.sub}`}>atualiza sozinho</span>
                         </>
                       )}
                     </div>
@@ -428,7 +453,7 @@ export default function CanaisPage() {
                           )}
                         </div>
                       </div>
-                      <p className={`mt-3 text-center text-[11px] ${FC.mut}`}>O código se renova automaticamente</p>
+                      <p className={`mt-3 text-center text-[11px] ${FC.sub}`}>O código se renova automaticamente</p>
                     </div>
                   </div>
                 </div>
@@ -469,19 +494,19 @@ export default function CanaisPage() {
                   <div>
                     <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2 ${FC.ink}`}>Conexão</div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
-                      <div><div className={`text-[11px] ${FC.mut}`}>Telefone</div><div className={`font-mono ${FC.ink}`}>{formatPhone(cs.phone)}</div></div>
+                      <div><div className={`text-[11px] ${FC.sub}`}>Telefone</div><div className={`tabular-nums ${FC.ink}`}>{formatPhone(cs.phone)}</div></div>
                       <div>
-                        <div className={`text-[11px] ${FC.mut}`}>Tipo</div>
+                        <div className={`text-[11px] ${FC.sub}`}>Tipo</div>
                         <div className="flex items-center gap-1.5">
                           <span className={FC.ink}>{isCloud ? "Oficial" : "Não-oficial"}</span>
                           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${isCloud ? "bg-[#003083]/[0.08] text-[#003083]" : "bg-[#262626]/[0.06] " + FC.mut}`}>{isCloud ? "Meta Cloud API" : "Baileys"}</span>
                         </div>
                       </div>
                       <div>
-                        <div className={`text-[11px] ${FC.mut}`}>Status</div>
+                        <div className={`text-[11px] ${FC.sub}`}>Status</div>
                         <div className="inline-flex items-center gap-1.5" title={m.tip}><span className={`w-2 h-2 rounded-full ${m.color}`} /><span className={FC.ink}>{m.label}</span></div>
                       </div>
-                      <div><div className={`text-[11px] ${FC.mut}`}>Último evento</div><div className={FC.ink}>{detail.last_event_at ? new Date(detail.last_event_at).toLocaleString("pt-BR") : "—"}</div></div>
+                      <div><div className={`text-[11px] ${FC.sub}`}>Último evento</div><div className={`tabular-nums ${FC.ink}`}>{detail.last_event_at ? new Date(detail.last_event_at).toLocaleString("pt-BR") : "—"}</div></div>
                     </div>
                   </div>
 
@@ -489,20 +514,20 @@ export default function CanaisPage() {
                   <div>
                     <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2 ${FC.ink}`}>Detalhes técnicos</div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
-                      <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Transporte</div><div className={FC.sub}>{cs.transporte || channelType(detail.kind)}</div></div>
-                      {cs.host && <div><div className={`text-[11px] ${FC.mut}`}>Host</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.host}</div></div>}
-                      <div><div className={`text-[11px] ${FC.mut}`}>Pareamento</div><div className={`text-[12px] ${FC.sub}`}>{cs.pareamento || "—"}</div></div>
+                      <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Transporte</div><div className={FC.sub}>{cs.transporte || channelType(detail.kind)}</div></div>
+                      {cs.host && <div><div className={`text-[11px] ${FC.sub}`}>Host</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.host}</div></div>}
+                      <div><div className={`text-[11px] ${FC.sub}`}>Pareamento</div><div className={`text-[12px] ${FC.sub}`}>{cs.pareamento || "—"}</div></div>
                       {isCloud ? (
                         <>
-                          <div><div className={`text-[11px] ${FC.mut}`}>Phone Number ID</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.phone_number_id || "—"}</div></div>
-                          <div><div className={`text-[11px] ${FC.mut}`}>WABA ID</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.waba_id || "—"}</div></div>
-                          <div><div className={`text-[11px] ${FC.mut}`}>Token</div><div className={FC.sub}>{cs.tem_token ? "✓ configurado" : "—"}</div></div>
-                          {cs.janela && <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Janela de mensagem</div><div className={`text-[12px] ${FC.sub}`}>{cs.janela}</div></div>}
+                          <div><div className={`text-[11px] ${FC.sub}`}>Phone Number ID</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.phone_number_id || "—"}</div></div>
+                          <div><div className={`text-[11px] ${FC.sub}`}>WABA ID</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.waba_id || "—"}</div></div>
+                          <div><div className={`text-[11px] ${FC.sub}`}>Token</div><div className={FC.sub}>{cs.tem_token ? "✓ configurado" : "—"}</div></div>
+                          {cs.janela && <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Janela de mensagem</div><div className={`text-[12px] ${FC.sub}`}>{cs.janela}</div></div>}
                         </>
                       ) : (
-                        <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Instância (Engine)</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.instance_id || "—"}</div></div>
+                        <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Instância (Engine)</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.instance_id || "—"}</div></div>
                       )}
-                      {cs.webhook && <div className="col-span-2"><div className={`text-[11px] ${FC.mut}`}>Webhook de entrada</div><div className={`font-mono text-[11px] ${FC.sub} break-all`}>{cs.webhook}</div></div>}
+                      {cs.webhook && <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Webhook de entrada</div><div className={`font-mono text-[11px] ${FC.sub} break-all`}>{cs.webhook}</div></div>}
                     </div>
                   </div>
 
