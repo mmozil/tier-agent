@@ -51,7 +51,7 @@ _DEFAULT_BASE_URL = {
     "nous": "https://inference-api.nousresearch.com/v1",
     "local": "http://localhost:8000/v1",
 }
-_MAX_TOOL_ITERATIONS = 6  # trava anti-loop no tool-use
+_MAX_TOOL_ITERATIONS = 8  # trava anti-loop no tool-use (multi-serviço: banho+tosa+taxidog)
 
 # Modelos de raciocínio (MiniMax-M2, etc.) emitem <think>...</think> na resposta —
 # o cliente NÃO pode ver o raciocínio. Removido antes de devolver.
@@ -305,14 +305,35 @@ async def send_message(
             except Exception:
                 args = {}
             handler = _TOOL_REGISTRY.get(name) or remote_handlers.get(name)
-            result = await handler(args) if handler else f"[ferramenta {name} indisponível]"
+            if handler:
+                try:
+                    result = await handler(args)
+                except Exception as e:  # noqa: BLE001 — falha de tool NUNCA pode matar a resposta
+                    logger.exception("tier_engine: ferramenta %s falhou", name)
+                    result = f"[erro ao executar {name}: {e}]"
+            else:
+                result = f"[ferramenta {name} indisponível]"
             tool_calls_made.append({"name": name, "args": args})
             messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": str(result)})
         data = await _complete_with_fallback(provider, messages, active_tools)
 
-    latency_ms = int((time.perf_counter() - started) * 1000)
     choice = (data.get("choices") or [{}])[0]
-    text = _strip_thinking(choice.get("message", {}).get("content", "") or "")
+    _final_msg = choice.get("message", {})
+    text = _strip_thinking(_final_msg.get("content", "") or "")
+    # Rede de segurança: se o loop terminou ainda querendo chamar ferramenta (estourou
+    # o limite) OU veio sem texto, força UMA resposta final SEM ferramentas — senão o
+    # agente fica MUDO depois de executar ações (ex: confirmar agendamentos). Os
+    # resultados das tools já estão em `messages`, então o modelo só precisa resumir.
+    if _final_msg.get("tool_calls") or not text:
+        try:
+            data = await _complete_with_fallback(provider, messages, None)
+            text = _strip_thinking((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
+        except Exception:
+            logger.exception("tier_engine: fecho final sem ferramentas falhou")
+    if not text:
+        # fallback duro — nunca deixar o cliente no vácuo
+        text = "Prontinho! 🐾 Me avisa se precisar de mais alguma coisa."
+    latency_ms = int((time.perf_counter() - started) * 1000)
     usage = data.get("usage", {})
 
     # 5. Restaura PII na resposta
