@@ -85,13 +85,14 @@ const SIDEBAR_FONT =
 
 export default function AdminLayout() {
   const location = useLocation();
-  // estilo FC: item h-34 rounded-10; ativo = "chip" branco elevado (neutro, SEM
-  // acento azul — igual ao nav do Firecrawl: a marca vive no logo/CTA, não no nav);
-  // inativo = ink@72% com hover faint (texto clareia + bg 4%). active:scale no clique.
+  // estilo FC/Linear FLAT: ativo e hover são o MESMO idioma (cinza neutro, só muda a
+  // intensidade) — sem card branco, sem sombra, sem acento azul (a marca vive no
+  // logo/CTA). ativo = preto 7% + ink + medium; hover (inativo) = preto 4% + texto
+  // clareia. active:scale no clique.
   const itemClass = (active: boolean) =>
     `group tier-jelly flex items-center gap-2.5 rounded-[10px] transition-colors duration-200 active:scale-[0.98] h-[34px] text-[13px] px-2.5 ${
       active
-        ? "text-[#262626] dark:text-white font-medium bg-white dark:bg-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.05),0_0_0_1px_rgba(0,0,0,0.045)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
+        ? "text-[#262626] dark:text-white font-medium bg-black/[0.07] dark:bg-white/[0.10]"
         : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] font-normal"
     }`;
 
