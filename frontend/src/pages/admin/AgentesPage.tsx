@@ -142,8 +142,8 @@ export default function AgentesPage() {
               <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Agentes</h2>
               <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Crie e gerencie os funcionários digitais do seu workspace.</p>
             </div>
-            <Button variant="primary" size="sm" onClick={() => setShowForm(!showForm)} className="shrink-0">
-              <Plus className="w-3.5 h-3.5" /> Novo agente
+            <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
+              <Plus className="w-4 h-4" /> Novo agente
             </Button>
           </div>
         </Row>

@@ -192,7 +192,6 @@ export default function CanaisPage() {
               ) : (
                 <Button
                   variant="secondary"
-                  size="sm"
                   onClick={() => toast.error("Crie um agente primeiro para conectar um canal.")}
                   title="Crie um agente primeiro para conectar um canal"
                   className="opacity-60 whitespace-nowrap"
@@ -202,7 +201,6 @@ export default function CanaisPage() {
               )}
               <Button
                 variant="primary"
-                size="sm"
                 onClick={() => {
                   if (!selectedAgent) {
                     toast.error("Crie um agente primeiro para conectar um canal.");
@@ -211,7 +209,7 @@ export default function CanaisPage() {
                   setShowProvision(true);
                 }}
               >
-                <Plus className="w-3.5 h-3.5" /> Conectar WhatsApp
+                <Plus className="w-4 h-4" /> Conectar WhatsApp
               </Button>
             </div>
           </div>

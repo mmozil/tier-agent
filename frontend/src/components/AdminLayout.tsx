@@ -164,14 +164,14 @@ export default function AdminLayout() {
               <input
                 type="text"
                 placeholder="Buscar..."
-                className="w-full h-8 pl-9 pr-3 text-[14px] rounded-lg bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
+                className="w-full h-9 pl-9 pr-3 text-[14px] rounded-[10px] bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
               />
             </div>
             <div className="flex items-center gap-1">
               <OnlineToggle />
               <Link
                 to="/admin/suporte"
-                className="h-7 px-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98]"
+                className="h-9 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[14px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98]"
               >
                 <HelpCircle className="w-4 h-4" /> Ajuda
               </Link>

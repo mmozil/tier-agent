@@ -533,7 +533,7 @@ export default function ConversasPage() {
                 {openConv.snoozed_until ? (
                   <button
                     onClick={() => unsnoozeConv(openConv.id)}
-                    className="h-7 px-3 text-[12px] rounded-md border border-amber-200 bg-amber-50 text-amber-700 inline-flex items-center gap-1.5"
+                    className="h-9 px-3.5 text-[14px] font-medium rounded-[10px] border border-amber-200 bg-amber-50 text-amber-700 inline-flex items-center gap-1.5 transition-all active:scale-[0.98]"
                   >
                     💤 Reativar
                   </button>
@@ -541,7 +541,7 @@ export default function ConversasPage() {
                   <select
                     value=""
                     onChange={(e) => e.target.value && snoozeConv(openConv.id, Number(e.target.value))}
-                    className="h-7 px-2 text-[12px] rounded-md border border-[#EDEDED] text-[#262626]/[0.72] outline-none"
+                    className="h-9 px-2.5 text-[13px] rounded-[10px] border border-[#EDEDED] text-[#262626]/[0.72] outline-none"
                   >
                     <option value="">💤 Adiar…</option>
                     <option value="60">1 hora</option>
@@ -553,7 +553,7 @@ export default function ConversasPage() {
                   <select
                     value=""
                     onChange={(e) => e.target.value && applyMacro(Number(e.target.value))}
-                    className="h-7 px-2 text-[12px] rounded-md border border-[#EDEDED] dark:border-[#23272e] dark:bg-[#14171c] text-[#262626]/[0.72] dark:text-[#9aa1ab] outline-none"
+                    className="h-9 px-2.5 text-[13px] rounded-[10px] border border-[#EDEDED] dark:border-[#23272e] dark:bg-[#14171c] text-[#262626]/[0.72] dark:text-[#9aa1ab] outline-none"
                     title="Aplicar macro"
                   >
                     <option value="">⚡ Macro…</option>

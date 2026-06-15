@@ -34,7 +34,7 @@ export const PRIMARY_SHADOW =
 // Firecrawl). Use em <button> crus pra ficarem idênticos ao componente <Button>.
 // Prefixe "w-full" quando precisar largura cheia.
 export const btnPrimary =
-  `h-7 px-3.5 rounded-lg text-[13px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
+  `h-9 px-3.5 rounded-[10px] text-[14px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
 
 // CurvyRect — os 4 corner brackets do Firecrawl (classe .curvy-rect). 11×11,
 // preenchidos com border-faint (#EDEDED). Arredondam o canto do container e,
@@ -161,15 +161,16 @@ export function HairCells({
   );
 }
 
-// iconBtn — botão-ícone quadrado (w-7 h-7), ghost, MESMA base/altura dos botões de
-// texto. Use em <button>/<Link> só-ícone (topbar, ações de tabela) pra entrarem no
-// sistema único de altura (h-7). Ícone interno: w-4 h-4 (ou w-[18px] em destaque).
+// iconBtn — botão-ícone quadrado (w-9 h-9 = MESMA altura dos botões de texto), ghost.
+// Use em <button>/<Link> só-ícone (topbar, ações de tabela). Ícone interno: w-4 h-4
+// (ou w-[18px] em destaque). Spec Firecrawl: 36px, rounded-10.
 export const iconBtn =
-  `w-7 h-7 inline-flex items-center justify-center rounded-lg ${FC.dim} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-all active:scale-[0.95] disabled:opacity-50 disabled:pointer-events-none`;
+  `w-9 h-9 inline-flex items-center justify-center rounded-[10px] ${FC.dim} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-all active:scale-[0.95] disabled:opacity-50 disabled:pointer-events-none`;
 
-// Button — botão no estilo FC: ALTURA ÚNICA h-7 (28px) em todas as variantes/tamanhos
-// (só o padding muda), rounded-lg, active:scale-[0.98] + hover. É o botão canônico do
-// admin — todo botão de texto deve usar este componente (ou btnPrimary/iconBtn).
+// Button — botão canônico do admin no spec REAL do Firecrawl: ALTURA e FONTE ÚNICAS
+// (h-9 / 36px · texto 14px/label-medium · rounded-10), só o padding-x muda entre
+// sm/md. Assim TODO botão de ação tem o mesmo tamanho visual. active:scale + hover.
+// Todo botão de texto deve usar este componente (ou btnPrimary/iconBtn).
 export function Button({
   children,
   variant = "primary",
@@ -190,11 +191,11 @@ export function Button({
   title?: string;
 }) {
   const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-all active:scale-[0.98] select-none disabled:opacity-50 disabled:pointer-events-none";
-  // Altura ÚNICA padrão (a menor: h-7 / 28px) pros dois tamanhos — só a largura
-  // (padding) varia. Mantém todos os botões na mesma linha de base.
-  const sz = `h-7 ${size === "sm" ? "text-[12px]" : "text-[13px]"}`;
-  const padX = size === "sm" ? "px-2.5" : "px-3.5";
+    "inline-flex items-center justify-center gap-1.5 rounded-[10px] font-medium transition-all active:scale-[0.98] select-none disabled:opacity-50 disabled:pointer-events-none";
+  // Altura E FONTE ÚNICAS (h-9 / 36px · 14px) pros dois tamanhos — só o padding-x
+  // varia (sm = mais compacto). Garante que todo botão de ação tenha o MESMO tamanho.
+  const sz = "h-9 text-[14px]";
+  const padX = size === "sm" ? "px-3" : "px-3.5";
   const v =
     variant === "primary"
       ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`
@@ -264,14 +265,14 @@ export function SegToggle<T extends string | number>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className={`inline-flex rounded-lg border ${FC.hair} p-0.5`}>
+    <div className={`inline-flex rounded-[10px] border ${FC.hair} p-0.5`}>
       {options.map((o) => {
         const active = o.value === value;
         return (
           <button
             key={String(o.value)}
             onClick={() => onChange(o.value)}
-            className={`h-7 px-3 rounded-md text-[12.5px] font-medium transition-all active:scale-[0.97] ${
+            className={`h-8 px-3 rounded-[8px] text-[13px] font-medium transition-all active:scale-[0.97] ${
               active
                 ? "bg-[#003083] text-white dark:bg-[#5b9bff] dark:text-[#0c0e12] shadow-[0_1px_2px_rgba(0,48,131,0.18)]"
                 : `${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`
