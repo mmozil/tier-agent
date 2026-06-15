@@ -604,15 +604,25 @@ async def handle_inbound_message(
     # Contexto do contato — o agente JÁ tem nome + telefone pelo canal (WhatsApp).
     # Evita pedir ao cliente dados que já temos (irrita + cada atendente re-pergunta).
     _is_wa = connector_kind in ("whatsapp", "whatsapp_cloud")
-    _phone = _re.sub(r"\D", "", (external_chat_id or "").split("@")[0]) if _is_wa else ""
+    _jid = external_chat_id or ""
+    # LID (@lid) é um ID INTERNO do WhatsApp, NÃO o telefone real — não apresentar como
+    # telefone (senão o agente busca/cadastra com número falso e nunca acha). Telefone real
+    # só quando o JID é @s.whatsapp.net (ou whatsapp_cloud, que já chega como número).
+    _is_lid = "@lid" in _jid
+    _phone = "" if (not _is_wa or _is_lid) else _re.sub(r"\D", "", _jid.split("@")[0])
     _contact = ["# Contato atual (você JÁ tem estes dados — NÃO peça ao cliente)"]
     _contact.append(f"- Nome: {sender_name or '(não informado pelo WhatsApp)'}")
     if _phone:
         _contact.append(f"- Telefone/WhatsApp: {_phone}")
+    elif _is_wa:
+        _contact.append(
+            "- Telefone/WhatsApp: não veio automaticamente nesta conversa. Se for cadastrar o "
+            "cliente e ele JÁ tiver dito o número aqui, USE o que ele disse — não peça de novo. "
+            "Só peça o número UMA vez, se ele nunca tiver informado."
+        )
     _contact.append(
-        "Use esses dados diretamente. Ao agendar uma demonstração ou encaminhar a "
-        "um consultor, NUNCA peça nome nem telefone (você já tem) — apenas confirme "
-        "o contato e pergunte só o que falta, como o nome da empresa."
+        "Use esses dados diretamente. NUNCA peça o nome (você já tem). Pergunte só o que "
+        "realmente falta."
     )
     system_prompt = f"{system_prompt}\n\n" + "\n".join(_contact)
 

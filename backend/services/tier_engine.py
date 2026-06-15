@@ -409,6 +409,17 @@ async def send_message(
     def _called(*subs: str) -> bool:
         return any(any(s in (c.get("name") or "").lower() for s in subs) for c in tool_calls_made)
 
+    # Re-pedido do que o cliente JÁ informou nesta conversa (clássico "mas eu já te passei").
+    # Junta o texto das mensagens do cliente e procura CEP/telefone pra devolver ao modelo.
+    _user_texts = " ".join(
+        m["content"] for m in messages if m.get("role") == "user" and isinstance(m.get("content"), str)
+    )
+    _ASKS_CEP = _re.compile(r"\bcep\b", _re.I)
+    _ASKS_PHONE = _re.compile(r"whats|telefone|n[úu]mero|seu zap|seu contato", _re.I)
+    _RE_CEP = _re.compile(r"\b\d{5}-?\d{3}\b")
+    _RE_PHONE = _re.compile(r"(?:\+?55\s*)?\(?\d{2}\)?\s*9?\d{4}[-\s]?\d{4}")
+    _asks = "?" in (text or "")
+
     _discipline_msg = None
     if active_tools and text and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
         "horario", "disponiv"
@@ -423,6 +434,20 @@ async def send_message(
             "(sistema) Você perguntou um dado do pet (porte/raça/nome) que provavelmente já está no "
             "cadastro. Consulte AGORA o cadastro do cliente pelo telefone dele (pet_listar_tutores) e use "
             "porte/raça/nome de lá, sem perguntar. Só pergunte se realmente não existir cadastro."
+        )
+    elif active_tools and text and _asks and _ASKS_CEP.search(text) and _RE_CEP.search(_user_texts):
+        _cep = _RE_CEP.search(_user_texts).group(0)  # type: ignore[union-attr]
+        _discipline_msg = (
+            f"(sistema) O cliente JÁ informou o CEP nesta conversa: {_cep}. NÃO peça de novo — chame AGORA "
+            f"pet_taxidog_cotar com cep_cliente={_cep} e traga a faixa do Taxidog. Se a ferramenta não "
+            "conseguir calcular, aí sim confirme com o cliente se ele fica até 3km ou até 7km — UMA vez só."
+        )
+    elif active_tools and text and _asks and _ASKS_PHONE.search(text) and _RE_PHONE.search(_user_texts):
+        _tel = _RE_PHONE.search(_user_texts).group(0).strip()  # type: ignore[union-attr]
+        _discipline_msg = (
+            f"(sistema) O cliente JÁ informou o número nesta conversa: {_tel}. NÃO peça de novo — use esse "
+            "número pra cadastrar/buscar o cliente e siga (se não houver cadastro, cadastre AGORA com o nome "
+            "do WhatsApp + esse número, sem ficar perguntando)."
         )
     if _discipline_msg:
         messages.append({"role": "assistant", "content": text})
