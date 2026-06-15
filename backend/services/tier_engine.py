@@ -287,51 +287,79 @@ async def send_message(
 
     started = time.perf_counter()
     tool_calls_made: list = []
+    import json as _json
+    import re as _re
 
-    data = await _complete_with_fallback(provider, messages, active_tools)
-    for _ in range(_MAX_TOOL_ITERATIONS):
-        choice = (data.get("choices") or [{}])[0]
-        msg = choice.get("message", {})
-        calls = msg.get("tool_calls") or []
-        if not calls:
-            break
-        messages.append(msg)
-        for call in calls:
-            fn = call.get("function", {})
-            name = fn.get("name")
-            import json as _json
-            try:
-                args = _json.loads(fn.get("arguments") or "{}")
-            except Exception:
-                args = {}
-            handler = _TOOL_REGISTRY.get(name) or remote_handlers.get(name)
-            if handler:
+    async def _exec_loop(_data: dict) -> dict:
+        """Executa o loop de tool-use a partir de _data até o modelo parar de chamar
+        ferramentas (ou estourar o limite). Mutaria `messages`. Devolve o último data."""
+        for _ in range(_MAX_TOOL_ITERATIONS):
+            ch = (_data.get("choices") or [{}])[0]
+            m = ch.get("message", {})
+            calls = m.get("tool_calls") or []
+            if not calls:
+                break
+            messages.append(m)
+            for call in calls:
+                fn = call.get("function", {})
+                name = fn.get("name")
                 try:
-                    result = await handler(args)
-                except Exception as e:  # noqa: BLE001 — falha de tool NUNCA pode matar a resposta
-                    logger.exception("tier_engine: ferramenta %s falhou", name)
-                    result = f"[erro ao executar {name}: {e}]"
-            else:
-                result = f"[ferramenta {name} indisponível]"
-            tool_calls_made.append({"name": name, "args": args})
-            messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": str(result)})
-        data = await _complete_with_fallback(provider, messages, active_tools)
+                    args = _json.loads(fn.get("arguments") or "{}")
+                except Exception:
+                    args = {}
+                handler = _TOOL_REGISTRY.get(name) or remote_handlers.get(name)
+                if handler:
+                    try:
+                        result = await handler(args)
+                    except Exception as e:  # noqa: BLE001 — falha de tool NUNCA mata a resposta
+                        logger.exception("tier_engine: ferramenta %s falhou", name)
+                        result = f"[erro ao executar {name}: {e}]"
+                else:
+                    result = f"[ferramenta {name} indisponível]"
+                tool_calls_made.append({"name": name, "args": args})
+                messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": str(result)})
+            _data = await _complete_with_fallback(provider, messages, active_tools)
+        return _data
+
+    data = await _exec_loop(await _complete_with_fallback(provider, messages, active_tools))
 
     choice = (data.get("choices") or [{}])[0]
     _final_msg = choice.get("message", {})
     text = _strip_thinking(_final_msg.get("content", "") or "")
-    # Rede de segurança: se o loop terminou ainda querendo chamar ferramenta (estourou
-    # o limite) OU veio sem texto, força UMA resposta final SEM ferramentas — senão o
-    # agente fica MUDO depois de executar ações (ex: confirmar agendamentos). Os
-    # resultados das tools já estão em `messages`, então o modelo só precisa resumir.
-    if _final_msg.get("tool_calls") or not text:
+
+    # Freio anti "anuncia e para": o modelo disse que ia ver/verificar mas NÃO chamou
+    # nenhuma ferramenta no turno → força a ação UMA vez (modelo ignora a persona às
+    # vezes). Pega "deixa eu ver", "um momento", "já te falo", "vou verificar"...
+    _ANNOUNCE = _re.compile(
+        r"deixa eu (ver|conferir|verificar|confirmar|olhar|checar|dar uma olhada)|um momento|"
+        r"j[áa] (te )?(falo|retorno|aviso|respondo|digo)|vou (ver|verificar|checar|confirmar|conferir|consultar)|"
+        r"aguarde|s[óo] um (instante|momento|minutinho)|pera[ií]",
+        _re.I,
+    )
+    if active_tools and not tool_calls_made and text and len(text) < 240 and _ANNOUNCE.search(text):
+        messages.append({"role": "assistant", "content": text})
+        messages.append({
+            "role": "user",
+            "content": "(sistema) Você disse que ia verificar mas não consultou nada. AJA AGORA: chame a ferramenta certa e responda com o resultado real na mesma mensagem — sem dizer que vai verificar/aguardar.",
+        })
+        try:
+            data = await _exec_loop(await _complete_with_fallback(provider, messages, active_tools))
+            _nt = _strip_thinking((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
+            if _nt:
+                text = _nt
+        except Exception:
+            logger.exception("tier_engine: freio anti-anuncio falhou")
+
+    # Rede de segurança: pendente de tool_call OU sem texto → fecho SEM ferramentas
+    # (senão o agente fica MUDO depois de executar ações). Tools já estão em messages.
+    _fm = (data.get("choices") or [{}])[0].get("message", {})
+    if _fm.get("tool_calls") or not text:
         try:
             data = await _complete_with_fallback(provider, messages, None)
             text = _strip_thinking((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
         except Exception:
             logger.exception("tier_engine: fecho final sem ferramentas falhou")
     if not text:
-        # fallback duro — nunca deixar o cliente no vácuo
         text = "Prontinho! 🐾 Me avisa se precisar de mais alguma coisa."
     latency_ms = int((time.perf_counter() - started) * 1000)
     usage = data.get("usage", {})
