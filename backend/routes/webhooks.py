@@ -102,6 +102,16 @@ async def whatsapp_engine_webhook(
     if key.get("fromMe"):
         return {"status": "ignored", "reason": "from_me"}
 
+    # Só DM 1:1 de cliente deve chegar ao agente. Status do WhatsApp (status@broadcast),
+    # canais (@newsletter), listas de transmissão (@broadcast) e grupos (@g.us) NÃO são
+    # conversa — descartar ANTES de cobrar LLM / mostrar "digitando". Usa o JID autoritativo
+    # (key.remoteJid), não external_chat_id (que prefere resolvedPhoneJid e mascara a origem).
+    # DM legítimo é só <numero>@s.whatsapp.net ou <id>@lid (convenções do Engine).
+    _raw_jid = (key.get("remoteJid") or "").lower()
+    if _raw_jid.endswith("@broadcast") or _raw_jid.endswith("@newsletter") or _raw_jid.endswith("@g.us"):
+        logger.info("webhook Engine ignorado remetente não-DM jid=%s", _raw_jid)
+        return {"status": "ignored", "reason": "non_dm_sender", "jid": _raw_jid}
+
     from services import agent_runtime
     from services.connectors.base import ConnectorAttachment
 

@@ -57,6 +57,16 @@ _MAX_TOOL_ITERATIONS = 8  # trava anti-loop no tool-use (multi-serviço: banho+t
 # o cliente NÃO pode ver o raciocínio. Removido antes de devolver.
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
 
+# CJK (chinês/japonês/coreano) — MiniMax vaza caracteres orientais esporádicos no pt-BR.
+# Cobre BMP (símbolos/kana/CJK unified+ext A/compat/fullwidth/hangul) + plano suplementar
+# (Ext B-H, U+20000+). NÃO pega acentos pt-BR nem emoji (emoji fica em U+1F300+, fora destas
+# faixas). Usado pra (1) forçar re-resposta em pt-BR e (2) sanitização final defensiva.
+_CJK_RE = re.compile(
+    "[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿"
+    "豈-﫿＀-￯가-힯]"
+    "|[\U00020000-\U0003ffff]"
+)
+
 
 def _strip_thinking(text: str) -> str:
     return _THINK_RE.sub("", text or "").strip()
@@ -392,6 +402,72 @@ async def send_message(
         except Exception:
             logger.exception("tier_engine: freio de disciplina de ferramenta falhou")
 
+    # Freio de UPSELL: fechou um agendamento mas NÃO ofereceu adicionais. Upsell é
+    # disciplina de VENDA e o MiniMax não a segue pela persona → impõe no motor. Só dispara
+    # se a tool de criação devolveu upsell_disponivel com algo a oferecer (taxidog ou extras)
+    # → não re-oferece o que já está no agendamento nem inventa adicional inexistente.
+    _OFFERS_UPSELL = _re.compile(
+        r"taxidog|leva[- ]e[- ]traz|corte de unha|unhas|hidrata|desembara[çc]|extra|adicional|"
+        r"quer (incluir|aproveitar|adicionar)",
+        _re.I,
+    )
+
+    def _tem_upsell_pendente() -> bool:
+        for _m in reversed(messages):
+            if _m.get("role") != "tool":
+                continue
+            _c = _m.get("content") or ""
+            if "upsell_disponivel" not in _c:
+                continue
+            if _re.search(r'"taxidog"\s*:\s*true', _c):
+                return True
+            _ex = _re.search(r'"extras"\s*:\s*\[(.*?)\]', _c, _re.S)
+            return bool(_ex and _ex.group(1).strip())
+        return False
+
+    if (
+        active_tools and text and _called("criar_agendamento")
+        and not _OFFERS_UPSELL.search(text) and _tem_upsell_pendente()
+    ):
+        messages.append({"role": "assistant", "content": text})
+        messages.append({
+            "role": "user",
+            "content": (
+                "(sistema) Você fechou o agendamento mas não ofereceu nada a mais. ANTES de encerrar, "
+                "veja o campo upsell_disponivel no resultado da ferramenta de criação e ofereça, de forma "
+                "curta e gentil (1 frase), só os adicionais e o Taxidog (leva-e-traz) que AINDA NÃO estão "
+                "neste agendamento. Não re-ofereça o que já está incluído. Sem pressão."
+            ),
+        })
+        try:
+            data = await _exec_loop(await _complete_with_fallback(provider, messages, active_tools))
+            _nt = _strip_thinking((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
+            if _nt:
+                text = _nt
+        except Exception:
+            logger.exception("tier_engine: freio de upsell falhou")
+
+    # Freio de IDIOMA: MiniMax às vezes vaza caracteres CJK no meio do pt-BR. Re-roda UMA
+    # vez forçando português (a sanitização final abaixo é a 2ª camada). Sem gate de tools:
+    # o vazamento ocorre também em conversa persona-driven pura.
+    if text and _CJK_RE.search(text):
+        messages.append({"role": "assistant", "content": text})
+        messages.append({
+            "role": "user",
+            "content": (
+                "(sistema) Sua resposta tinha caracteres de outro idioma (chinês/japonês/coreano). "
+                "Reescreva a MESMA resposta 100% em português do Brasil, sem nenhum caractere CJK, "
+                "mantendo conteúdo e tom. Não comente sobre isto."
+            ),
+        })
+        try:
+            data = await _exec_loop(await _complete_with_fallback(provider, messages, active_tools))
+            _nt = _strip_thinking((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
+            if _nt:
+                text = _nt
+        except Exception:
+            logger.exception("tier_engine: freio de idioma (CJK) falhou")
+
     # Rede de segurança: pendente de tool_call OU sem texto → fecho SEM ferramentas
     # (senão o agente fica MUDO depois de executar ações). Tools já estão em messages.
     _fm = (data.get("choices") or [{}])[0].get("message", {})
@@ -401,6 +477,10 @@ async def send_message(
             text = _strip_thinking((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
         except Exception:
             logger.exception("tier_engine: fecho final sem ferramentas falhou")
+    # 2ª camada anti-CJK: remove caractere oriental residual ANTES do guard de texto vazio
+    # (se sobrar só CJK, vira "" e cai no fallback — nunca manda balão vazio nem chinês).
+    if text:
+        text = _CJK_RE.sub("", text).strip()
     if not text:
         text = "Prontinho! 🐾 Me avisa se precisar de mais alguma coisa."
     latency_ms = int((time.perf_counter() - started) * 1000)

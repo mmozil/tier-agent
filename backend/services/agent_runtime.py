@@ -31,7 +31,7 @@ import re as _re
 
 _CJK_RE = _re.compile(
     r"[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿"
-    r"豈-﫿＀-￯가-힯]"
+    r"豈-﫿＀-￯가-힯\U00020000-\U0003FFFF]"
 )
 
 
@@ -656,7 +656,9 @@ async def handle_inbound_message(
         "fato pela ferramenta, e só confirme ao cliente DEPOIS de concluída.\n"
         "- Informe SEMPRE o valor/preço ANTES de pedir a confirmação final de um agendamento ou compra.\n"
         "- Avance a conversa a cada mensagem: confirme o que já sabe e pergunte só o que falta.\n"
-        "- Responda em pt-BR, de forma concisa e natural, sem excesso de emoji.\n\n"
+        "- IDIOMA: responda SEMPRE 100% em português do Brasil, de forma concisa e natural, sem "
+        "excesso de emoji. NUNCA use chinês, japonês, coreano nem qualquer outro idioma/alfabeto — "
+        "mesmo que o cliente escreva em outra língua, responda em pt-BR.\n\n"
         "# Atendimento atencioso (padrão de excelência, sempre no tom da sua persona)\n"
         "- Acolha com cordialidade, entenda a real necessidade e RESOLVA de fato. Ajudar vem antes de "
         "vender — não empurre upsell; ofereça só quando fizer sentido pro cliente.\n"
