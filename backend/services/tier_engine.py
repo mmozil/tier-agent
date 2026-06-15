@@ -350,6 +350,48 @@ async def send_message(
         except Exception:
             logger.exception("tier_engine: freio anti-anuncio falhou")
 
+    # Freio anti "inventa / pula consulta": o modelo (1) ofereceu horário sem consultar
+    # a agenda (alucina slots, inclusive já passados), ou (2) perguntou porte/raça/nome
+    # do pet sem consultar o cadastro (esses dados já estão salvos). Existe ferramenta
+    # pra ambos e o modelo deveria ter usado → força a consulta UMA vez. MiniMax ignora
+    # a persona; a disciplina precisa morar no motor.
+    _OFFERS_SLOT = _re.compile(r"\b\d{1,2}\s*h(?:\s*\d{2})?\b|\b\d{1,2}:\d{2}\b", _re.I)
+    _SCHED_CTX = _re.compile(r"hor[áa]rio|dispon[íi]|livre|vaga|encaix|pode ser|agend", _re.I)
+    _ASKS_PET = _re.compile(
+        r"\b(qual|quais)\b[^?]{0,40}\b(porte|ra[çc]a|nome do (?:seu )?pet|peso)\b"
+        r"|\bqual o porte\b|\bporte\b[^?]{0,12}\(\s*p\b",
+        _re.I,
+    )
+
+    def _called(*subs: str) -> bool:
+        return any(any(s in (c.get("name") or "").lower() for s in subs) for c in tool_calls_made)
+
+    _discipline_msg = None
+    if active_tools and text and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
+        "horario", "disponiv"
+    ):
+        _discipline_msg = (
+            "(sistema) Você ofereceu horário SEM consultar a agenda. Chame AGORA a ferramenta de "
+            "horários disponíveis para a data pedida e ofereça SOMENTE horários reais que ainda não "
+            "passaram (considere a data e a hora atuais). Nunca invente horários nem ofereça horário passado."
+        )
+    elif active_tools and text and _ASKS_PET.search(text) and not _called("tutor", "cliente", "historico"):
+        _discipline_msg = (
+            "(sistema) Você perguntou um dado do pet (porte/raça/nome) que provavelmente já está no "
+            "cadastro. Consulte AGORA o cadastro do cliente pelo telefone dele (pet_listar_tutores) e use "
+            "porte/raça/nome de lá, sem perguntar. Só pergunte se realmente não existir cadastro."
+        )
+    if _discipline_msg:
+        messages.append({"role": "assistant", "content": text})
+        messages.append({"role": "user", "content": _discipline_msg})
+        try:
+            data = await _exec_loop(await _complete_with_fallback(provider, messages, active_tools))
+            _nt = _strip_thinking((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
+            if _nt:
+                text = _nt
+        except Exception:
+            logger.exception("tier_engine: freio de disciplina de ferramenta falhou")
+
     # Rede de segurança: pendente de tool_call OU sem texto → fecho SEM ferramentas
     # (senão o agente fica MUDO depois de executar ações). Tools já estão em messages.
     _fm = (data.get("choices") or [{}])[0].get("message", {})
