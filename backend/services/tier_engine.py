@@ -426,6 +426,13 @@ async def send_message(
         r"que\s+horas\b[^?]*\b(trabalh|atend|sai|fecha|abre|fica)|hor[áa]rio\s+(del[ea]|d[oa]\s+\w+)",
         _re.I,
     )
+    # Cliente pergunta sobre um agendamento EXISTENTE (status/horário) — o modelo às vezes
+    # "confirma" um agendamento que não existe (alucina do histórico). Tem que conferir a agenda.
+    _USER_ASKS_BOOKING = _re.compile(
+        r"confirmad|meu(s)?\s+(hor[áa]rio|agendament)|est[áa]\s+(marcad|agendad|confirmad)|"
+        r"t[áa]\s+(marcad|confirmad)|tem\s+(algum\s+)?agendament|o\s+(do|da)\s+\w+\s+(est|t[áa]|ficou|continua)",
+        _re.I,
+    )
 
     _discipline_msg = None
     if active_tools and text and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
@@ -455,6 +462,13 @@ async def send_message(
             f"(sistema) O cliente JÁ informou o número nesta conversa: {_tel}. NÃO peça de novo — use esse "
             "número pra cadastrar/buscar o cliente e siga (se não houver cadastro, cadastre AGORA com o nome "
             "do WhatsApp + esse número, sem ficar perguntando)."
+        )
+    elif active_tools and text and _USER_ASKS_BOOKING.search(user_content or "") and not _called("agenda", "historico"):
+        _discipline_msg = (
+            "(sistema) O cliente perguntou sobre um agendamento EXISTENTE (se está confirmado / qual o horário). "
+            "NÃO afirme nem invente agendamento. Consulte AGORA a agenda real (pet_consultar_agenda do dia ou "
+            "pet_historico_pet do pet) e responda SÓ com o que existir de verdade. Se não houver agendamento "
+            "pra esse pet, diga que não encontrou e ofereça agendar — nunca confirme um horário/valor que você não verificou."
         )
     elif active_tools and text and _USER_ASKS_HOURS.search(user_content or "") and not _called("profission"):
         _discipline_msg = (
