@@ -419,6 +419,13 @@ async def send_message(
     _RE_CEP = _re.compile(r"\b\d{5}-?\d{3}\b")
     _RE_PHONE = _re.compile(r"(?:\+?55\s*)?\(?\d{2}\)?\s*9?\d{4}[-\s]?\d{4}")
     _asks = "?" in (text or "")
+    # Cliente perguntou ATÉ QUE HORAS um profissional trabalha (expediente) — isso é
+    # diferente de "tem horário livre". O modelo respondia "não tem horário hoje".
+    _USER_ASKS_HOURS = _re.compile(
+        r"at[ée]\s+que\s+horas|at[ée]\s+quando|\bexpediente\b|"
+        r"que\s+horas\b[^?]*\b(trabalh|atend|sai|fecha|abre|fica)|hor[áa]rio\s+(del[ea]|d[oa]\s+\w+)",
+        _re.I,
+    )
 
     _discipline_msg = None
     if active_tools and text and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
@@ -448,6 +455,14 @@ async def send_message(
             f"(sistema) O cliente JÁ informou o número nesta conversa: {_tel}. NÃO peça de novo — use esse "
             "número pra cadastrar/buscar o cliente e siga (se não houver cadastro, cadastre AGORA com o nome "
             "do WhatsApp + esse número, sem ficar perguntando)."
+        )
+    elif active_tools and text and _USER_ASKS_HOURS.search(user_content or "") and not _called("profission"):
+        _discipline_msg = (
+            "(sistema) O cliente perguntou o HORÁRIO/expediente de um profissional (até que horas atende hoje) "
+            "— isso NÃO é 'tem horário livre'. Consulte AGORA pet_listar_profissionais (campo escala_texto) e "
+            "responda até que horas o profissional atende hoje. Se ele atende mas o serviço não cabe hoje, "
+            "EXPLIQUE o porquê (ex.: já tem agendamento até tal hora; serviço mais curto ainda pode caber) — "
+            "nunca diga só que 'fechou tudo'."
         )
     if _discipline_msg:
         messages.append({"role": "assistant", "content": text})
