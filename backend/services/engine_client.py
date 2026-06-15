@@ -50,6 +50,13 @@ async def create_instance(tenant_id: int, name: str) -> dict:
         "name": name,
         "webhookUrl": "https://api-agent.tier.finance/api/v1/webhooks/whatsapp-engine",
     }
+    # A instância PRECISA nascer com o webhook_secret setado, senão o Engine assina
+    # o webhook com o global (WEBHOOK_HMAC_SECRET) e o tier-agent rejeita com 401
+    # (routes/webhooks.py verifica HMAC com TIER_WHATSAPP_WEBHOOK_SECRET). Todas as
+    # instâncias do tier-agent batem no mesmo receiver, então usam o mesmo secret.
+    # Sem isto, todo cliente/número novo nasce mudo até alguém corrigir no DB.
+    if settings.tier_whatsapp_webhook_secret:
+        payload["webhookSecret"] = settings.tier_whatsapp_webhook_secret
     async with httpx.AsyncClient(timeout=12) as cli:
         r = await cli.post(url, json=payload, headers=_admin_headers())
     if r.status_code >= 400:
