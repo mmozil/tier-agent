@@ -160,12 +160,15 @@ async def create_provider(
     if payload.provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(400, f"Provider não suportado. Use um de: {list(SUPPORTED_PROVIDERS)}")
 
-    # Só admin Tier pode criar config global (tenant_id NULL)
-    if payload.tenant_id is None and not user.is_admin:
-        raise HTTPException(403, "Apenas admin Tier pode criar config global")
-
-    # Tenant-scoped: força tenant_id do user
-    tenant_id = payload.tenant_id if user.is_admin else user.tenant_id
+    # Admin Tier cria config GLOBAL (tenant_id NULL) ou de qualquer tenant.
+    # Não-admin: o provider é SEMPRE escopado no PRÓPRIO tenant (LLM do agente dele).
+    # Antes dava 403 ao salvar (o painel manda tenant_id NULL) — agora só escopa no user.
+    if user.is_admin:
+        tenant_id = payload.tenant_id
+    else:
+        tenant_id = user.tenant_id
+        if not tenant_id:
+            raise HTTPException(403, "Sua conta não tem tenant pra associar o provider")
 
     item = TaLlmProvider(
         tenant_id=tenant_id,
