@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, MouseEvent, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight } from "lucide-react";
 
@@ -161,7 +161,15 @@ export function HairCells({
   );
 }
 
-// Button — botões no estilo FC: h-9, rounded-lg, efeito active:scale-[0.98] + hover.
+// iconBtn — botão-ícone quadrado (w-7 h-7), ghost, MESMA base/altura dos botões de
+// texto. Use em <button>/<Link> só-ícone (topbar, ações de tabela) pra entrarem no
+// sistema único de altura (h-7). Ícone interno: w-4 h-4 (ou w-[18px] em destaque).
+export const iconBtn =
+  `w-7 h-7 inline-flex items-center justify-center rounded-lg ${FC.dim} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-all active:scale-[0.95] disabled:opacity-50 disabled:pointer-events-none`;
+
+// Button — botão no estilo FC: ALTURA ÚNICA h-7 (28px) em todas as variantes/tamanhos
+// (só o padding muda), rounded-lg, active:scale-[0.98] + hover. É o botão canônico do
+// admin — todo botão de texto deve usar este componente (ou btnPrimary/iconBtn).
 export function Button({
   children,
   variant = "primary",
@@ -173,9 +181,9 @@ export function Button({
   title,
 }: {
   children: ReactNode;
-  variant?: "primary" | "secondary" | "ghost";
+  variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md";
-  onClick?: () => void;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
   className?: string;
   type?: "button" | "submit";
   disabled?: boolean;
@@ -192,7 +200,9 @@ export function Button({
       ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`
       : variant === "secondary"
         ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)]`
-        : `${size === "sm" ? "px-2" : "px-3"} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
+        : variant === "danger"
+          ? `${padX} text-[#c0362c] dark:text-[#ff6b5e] hover:bg-[#c0362c]/[0.06] dark:hover:bg-[#ff6b5e]/[0.10]`
+          : `${size === "sm" ? "px-2" : "px-3"} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
   return (
     <button type={type} onClick={onClick} disabled={disabled} title={title} className={`${base} ${sz} ${v} ${className}`}>
       {children}

@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Plus, Trash2, Zap, Tag, UserCheck, MessageSquare, CheckCircle2, X } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 type ActionType = "tag" | "assign" | "reply" | "status";
 interface MAction {
@@ -154,8 +154,8 @@ export default function MacrosPage() {
                             <option value="resume">Devolver à IA</option>
                           </select>
                         )}
-                        <button onClick={() => removeAction(i)} className={`p-1 rounded ${FC.mut} hover:text-[#E5484D]`}>
-                          <X className="w-3.5 h-3.5" />
+                        <button onClick={() => removeAction(i)} className={iconBtn}>
+                          <X className="w-4 h-4" />
                         </button>
                       </div>
                     );
@@ -165,9 +165,9 @@ export default function MacrosPage() {
                   {(Object.keys(TYPE_META) as ActionType[]).map((t) => {
                     const M = TYPE_META[t];
                     return (
-                      <button key={t} onClick={() => addAction(t)} className={`h-7 px-2.5 text-[12px] rounded-lg border ${FC.hair} ${FC.sub} ${FC.hover} inline-flex items-center gap-1`}>
+                      <Button key={t} variant="secondary" size="sm" onClick={() => addAction(t)}>
                         <M.icon className="w-3.5 h-3.5" /> {M.label}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -215,7 +215,7 @@ export default function MacrosPage() {
                     ))}
                   </div>
                 </div>
-                <button onClick={() => remove(m.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08]`}>
+                <button onClick={() => remove(m.id)} className={iconBtn} title="Deletar macro">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>

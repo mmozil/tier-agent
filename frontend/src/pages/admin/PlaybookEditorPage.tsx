@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { btnPrimary } from "@/components/ds/fc";
+import { btnPrimary, iconBtn, Button, FC } from "@/components/ds/fc";
 import {
   emptyCanvas,
   type NodeKindMeta,
@@ -244,7 +244,7 @@ export default function PlaybookEditorPage() {
       <div className="h-12 px-4 flex items-center gap-2 bg-white border-b border-[#EDEDED] shrink-0">
         <Link
           to="/admin/playbooks"
-          className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          className={iconBtn}
           title="Voltar"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -266,34 +266,27 @@ export default function PlaybookEditorPage() {
 
         <Link
           to={`/admin/playbooks/${pb.id}/executions`}
-          className="h-7 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 text-[#404452] hover:bg-slate-100 transition-colors"
+          className={`h-7 px-3 rounded-lg text-[13px] font-medium inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`}
         >
           <History className="w-3.5 h-3.5" />
           Execuções
         </Link>
-        <button
-          onClick={() => setShowTest(true)}
-          className="h-7 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 text-[#404452] hover:bg-slate-100 transition-colors"
-        >
+        <Button variant="ghost" onClick={() => setShowTest(true)}>
           <Play className="w-3.5 h-3.5" />
           Testar
-        </button>
+        </Button>
         {pb.status === "published" && (
-          <button
-            onClick={publishMarketplace}
-            className="h-7 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 text-[#404452] hover:bg-slate-100 transition-colors"
-            title="Publicar no marketplace público"
-          >
+          <Button variant="ghost" onClick={publishMarketplace} title="Publicar no marketplace público">
             <Store className="w-3.5 h-3.5" />
             Marketplace
-          </button>
+          </Button>
         )}
         <button
           onClick={archive}
-          className="h-7 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 text-[#404452] hover:bg-slate-100 transition-colors"
+          className={iconBtn}
           title="Arquivar"
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <Trash2 className="w-4 h-4" />
         </button>
         <button
           onClick={publish}
@@ -431,7 +424,7 @@ function TestRunDrawer({ playbookId, onClose }: { playbookId: number; onClose: (
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            className={iconBtn}
           >
             ×
           </button>

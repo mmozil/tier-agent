@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Upload, FileText, FileSpreadsheet, FileType, Trash2, FolderOpen } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SKEL } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SKEL, iconBtn } from "@/components/ds/fc";
 
 interface Agent {
   id: number;
@@ -215,10 +215,10 @@ export default function KnowledgePage() {
                         <div className="flex justify-end">
                           <button
                             onClick={() => onDelete(k.id)}
-                            className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}
+                            className={`${iconBtn} hover:text-[#E5484D] dark:hover:text-[#ff6b5e] hover:bg-[#E5484D]/[0.08]`}
                             title="Remover"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>

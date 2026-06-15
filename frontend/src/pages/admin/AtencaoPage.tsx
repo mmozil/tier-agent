@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { BellRing, Hand, UserX, RefreshCw, MessageSquare } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 interface ConvItem {
   conversation_id: number;
@@ -121,7 +121,7 @@ export default function AtencaoPage() {
                 Tudo que demanda um humano agora, em um lugar só — conversas aguardando, não atribuídas e leads/alertas.
               </p>
             </div>
-            <button onClick={load} className={`p-2 rounded-md ${FC.mut} ${FC.hover}`} title="Atualizar">
+            <button onClick={load} className={iconBtn} title="Atualizar">
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             </button>
           </div>

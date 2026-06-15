@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Users, Plus, Trash2, RefreshCw, X, Shield, Headphones, Link2 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SKEL } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SKEL, iconBtn } from "@/components/ds/fc";
 
 interface Member {
   id: number;
@@ -162,7 +162,7 @@ export default function EquipePage() {
             <div className="p-6">
               <div className="flex items-center justify-between mb-3">
                 <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Novo atendente</h3>
-                <button onClick={() => setShowForm(false)} className={`p-1 rounded ${FC.mut} hover:bg-black/[0.04]`}>
+                <button onClick={() => setShowForm(false)} className={iconBtn} title="Fechar">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -216,20 +216,20 @@ export default function EquipePage() {
                     <p className={`text-[12px] truncate ${FC.sub}`}>{m.email}</p>
                   </div>
                   {m.status === "invited" && m.invite_token && (
-                    <button onClick={() => copyInvite(m)} className={`h-7 px-2.5 text-[12px] rounded-lg border ${FC.hair} text-[#003083] dark:text-[#5b9bff] ${FC.hover} inline-flex items-center gap-1`}>
+                    <Button variant="secondary" size="sm" onClick={() => copyInvite(m)}>
                       <Link2 className="w-3.5 h-3.5" /> Copiar link
-                    </button>
+                    </Button>
                   )}
                   <select value={m.role} onChange={(e) => updateRole(m, e.target.value)} className={miniSelect}>
                     <option value="atendente">{ROLE_LABEL.atendente}</option>
                     <option value="admin">{ROLE_LABEL.admin}</option>
                   </select>
                   {m.status !== "invited" && (
-                    <button onClick={() => toggleStatus(m)} className={`h-7 px-2.5 text-[12px] rounded-lg border ${FC.hair} ${FC.sub} ${FC.hover}`}>
+                    <Button variant="secondary" size="sm" onClick={() => toggleStatus(m)}>
                       {m.status === "active" ? "Desativar" : "Ativar"}
-                    </button>
+                    </Button>
                   )}
-                  <button onClick={() => remove(m)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08]`} title="Remover">
+                  <button onClick={() => remove(m)} className={iconBtn} title="Remover">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>

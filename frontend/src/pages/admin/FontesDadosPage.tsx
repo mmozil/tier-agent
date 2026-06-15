@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Trash2, Loader2, Zap, X, CheckCircle2, XCircle, Check, Plug, Bot } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, HairCells, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, HairCells, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 // Integrações (MCP) — catálogo de plataformas que o agente pode consultar/agir via
 // tool-use. Padrão "página de integrações": cards conhecidos (Conectar com URL
@@ -361,12 +361,14 @@ export default function FontesDadosPage() {
                   <p className={`text-[12.5px] leading-5 flex-1 ${FC.sub}`}>{pr.desc}</p>
                   <div>
                     {conn ? (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => setDetail(conn)}
-                        className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#0a8f5a] hover:underline"
+                        className="!px-2 text-[#0a8f5a] hover:!text-[#0a8f5a] dark:text-[#0a8f5a] dark:hover:!text-[#0a8f5a]"
                       >
                         <Check className="w-3.5 h-3.5" /> Conectada — ver detalhes
-                      </button>
+                      </Button>
                     ) : (
                       <Button
                         variant={pr.available ? "secondary" : "ghost"}
@@ -517,11 +519,11 @@ export default function FontesDadosPage() {
                       onClick={() => testProvider(p)}
                       disabled={testing === p.id}
                       title="Testar conexão"
-                      className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
+                      className={`${iconBtn} ${tr ? (tr.ok ? "!text-[#0a8f5a]" : "!text-[#E5484D]") : ""} hover:!text-[#003083] hover:!bg-[#003083]/[0.06]`}
                     >
                       {testing === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />) : <Zap className="w-4 h-4" />}
                     </button>
-                    <button onClick={() => onDelete(p)} title="Desconectar" className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
+                    <button onClick={() => onDelete(p)} title="Desconectar" className={`${iconBtn} hover:!text-[#E5484D] hover:!bg-[#E5484D]/[0.08]`}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -547,7 +549,7 @@ export default function FontesDadosPage() {
                   <p className={`text-[12px] ${FC.sub}`}>{detail.enabled ? "Ativa" : "Pausada"} · {detail.has_bearer ? "autenticada" : "sem auth"}</p>
                 </div>
               </div>
-              <button onClick={() => setDetail(null)} className={`rounded-md p-1.5 ${FC.mut} ${FC.hover}`}><X className="h-4 w-4" /></button>
+              <button onClick={() => setDetail(null)} className={iconBtn}><X className="h-4 w-4" /></button>
             </div>
 
             <div className="p-5 space-y-5">
@@ -596,9 +598,9 @@ export default function FontesDadosPage() {
                 <Button variant="ghost" size="sm" onClick={() => toggleEnabled(detail)}>
                   {detail.enabled ? "Pausar" : "Ativar"}
                 </Button>
-                <button onClick={() => onDelete(detail)} className="text-[12px] text-[#E5484D] hover:underline inline-flex items-center gap-1">
+                <Button variant="danger" size="sm" onClick={() => onDelete(detail)}>
                   <Trash2 className="w-3 h-3" /> Desconectar
-                </button>
+                </Button>
               </div>
             </div>
           </div>

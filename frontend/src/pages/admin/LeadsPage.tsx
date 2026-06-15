@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Inbox, Phone, MessageCircle, Check, Archive, RefreshCw, Bell, Save } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 const REASON_LABEL: Record<string, string> = {
   explicit_request: "Pediu humano",
@@ -320,11 +320,11 @@ export default function LeadsPage() {
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {unread && (
-                          <button onClick={() => markRead(n.id)} title="Marcar como lida" className={`p-1.5 rounded ${FC.mut} hover:text-[#0a8f5a] hover:bg-[#0a8f5a]/[0.08]`}>
+                          <button onClick={() => markRead(n.id)} title="Marcar como lida" className={`${iconBtn} hover:text-[#0a8f5a] hover:bg-[#0a8f5a]/[0.08]`}>
                             <Check className="w-4 h-4" />
                           </button>
                         )}
-                        <button onClick={() => archive(n.id)} title="Arquivar" className={`p-1.5 rounded ${FC.mut} ${FC.hover}`}>
+                        <button onClick={() => archive(n.id)} title="Arquivar" className={iconBtn}>
                           <Archive className="w-4 h-4" />
                         </button>
                       </div>

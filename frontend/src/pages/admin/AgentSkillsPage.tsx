@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 import { ArrowLeft, Archive, Bot, FileText, Sparkles, User, X } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button, EmptyHint, SKEL } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, Button, iconBtn, EmptyHint, SKEL } from "@/components/ds/fc";
 
 interface Skill {
   path: string;
@@ -100,7 +100,7 @@ export default function AgentSkillsPage() {
       <PageFrame>
         <Row>
           <div className="flex items-start gap-3 p-6">
-            <Link to="/admin/agentes" className={`w-7 h-7 inline-flex items-center justify-center rounded-md ${FC.mut} ${FC.hover} mt-0.5`}>
+            <Link to="/admin/agentes" className={`${iconBtn} mt-0.5`}>
               <ArrowLeft className="w-4 h-4" />
             </Link>
             <div className="flex-1 min-w-0">
@@ -242,12 +242,12 @@ function SkillCard({ skill, onView, onArchive }: { skill: Skill; onView: (s: Ski
         {skill.modified_at && <>{" · "}<span className="tabular-nums">{new Date(skill.modified_at).toLocaleDateString("pt-BR")}</span></>}
       </div>
       <div className="mt-auto flex gap-1.5 pt-2">
-        <button onClick={() => onView(skill)} className={`flex-1 h-7 px-2 rounded-lg text-[11px] font-medium inline-flex items-center justify-center gap-1 border ${FC.hair} ${FC.ink} ${FC.hover}`}>
+        <Button variant="secondary" size="sm" onClick={() => onView(skill)} className="flex-1">
           <FileText className="w-3 h-3" /> Ver
-        </button>
-        <button onClick={() => onArchive(skill)} className={`h-7 px-2 rounded-lg text-[11px] font-medium inline-flex items-center justify-center gap-1 border border-[#E5484D]/30 text-[#E5484D] hover:bg-[#E5484D]/[0.06]`} title="Arquivar">
+        </Button>
+        <Button variant="danger" size="sm" onClick={() => onArchive(skill)} title="Arquivar">
           <Archive className="w-3 h-3" />
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -262,7 +262,7 @@ function SkillContentDrawer({ skill, content, loading, onClose }: { skill: Skill
             <h3 className={`text-[14px] font-medium truncate ${FC.ink}`}>{skill.title || skill.name}</h3>
             <div className={`text-[10px] font-mono truncate ${FC.sub}`}>{skill.path}</div>
           </div>
-          <button onClick={onClose} className={`w-7 h-7 inline-flex items-center justify-center rounded-md ${FC.mut} ${FC.hover}`}>
+          <button onClick={onClose} className={iconBtn}>
             <X className="w-4 h-4" />
           </button>
         </div>

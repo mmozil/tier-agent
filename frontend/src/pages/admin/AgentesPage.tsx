@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   ArrowRight,
@@ -20,7 +21,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Spacer, HairCells, Button, btnPrimary, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Spacer, HairCells, Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 interface Agent {
   id: number;
@@ -229,19 +230,12 @@ export default function AgentesPage() {
           </label>
 
           <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setShowForm(false)}
-              className="h-6 px-3 text-[12px] font-medium text-[#404452] rounded-md inline-flex items-center justify-center bg-white shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
-            >
+            <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
               Cancelar
-            </button>
-            <button
-              type="submit"
-              className={btnPrimary}
-            >
+            </Button>
+            <Button type="submit" variant="primary">
               Criar agente
-            </button>
+            </Button>
           </div>
         </form>
         </Row>
@@ -373,7 +367,7 @@ function AgentCard({
             e.stopPropagation();
             onOpenMenu(!menuOpen);
           }}
-          className="w-7 h-7 -mr-1 -mt-0.5 inline-flex items-center justify-center rounded-md text-[#262626]/40 hover:text-[#262626] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] dark:hover:text-white"
+          className={`${iconBtn} -mr-1 -mt-0.5`}
         >
           <MoreVertical className="w-4 h-4" />
         </button>
@@ -437,24 +431,26 @@ function AgentCard({
                 Excluir <strong>{agent.nome}</strong>? Remove playbooks, conversas, knowledge e canais.
               </p>
               <div className="flex gap-1.5">
-                <button
-                  onClick={(e) => {
+                <Button
+                  variant="secondary"
+                  onClick={(e: any) => {
                     e.stopPropagation();
                     setConfirmDelete(false);
                   }}
-                  className="flex-1 h-6 rounded text-[11px] text-[#262626]/[0.72] bg-[#262626]/[0.06] hover:bg-black/[0.06]"
+                  className="flex-1"
                 >
                   Não
-                </button>
-                <button
-                  onClick={(e) => {
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={(e: any) => {
                     e.stopPropagation();
                     onDelete();
                   }}
-                  className="flex-1 h-6 rounded text-[11px] text-white bg-red-500 hover:bg-red-600"
+                  className="flex-1"
                 >
                   Excluir
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -564,10 +560,7 @@ function AgentDetailsDrawer({
               </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-[#262626]/40 hover:text-[#262626]/[0.72] hover:bg-black/[0.04]"
-          >
+          <button onClick={onClose} className={iconBtn}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -612,12 +605,9 @@ function AgentDetailsDrawer({
               Configuração
             </h3>
             {!editing && (
-              <button
-                onClick={() => setEditing(true)}
-                className="h-6 px-2 rounded-md text-[12px] font-medium inline-flex items-center gap-1 bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
-              >
+              <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
                 <Edit3 className="w-3 h-3" /> Editar
-              </button>
+              </Button>
             )}
           </div>
 
@@ -667,23 +657,19 @@ function AgentDetailsDrawer({
                 </p>
               </div>
               <div className="flex justify-end gap-2 pt-1">
-                <button
+                <Button
+                  variant="secondary"
                   onClick={() => {
                     setEditing(false);
                     setForm({ nome: agent.nome, persona: agent.persona || "", avatar_url: agent.avatar_url || "" });
                   }}
-                  className="h-6 px-3 rounded-md text-[12px] font-medium bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)]"
                 >
                   Cancelar
-                </button>
-                <button
-                  onClick={save}
-                  disabled={saving}
-                  className={btnPrimary}
-                >
+                </Button>
+                <Button variant="primary" onClick={save} disabled={saving}>
                   {saving && <Loader2 className="w-3 h-3 animate-spin" />}
                   Salvar
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -708,16 +694,10 @@ function AgentDetailsDrawer({
             Ações
           </h3>
           <div className="space-y-2">
-            <a
-              href={`/admin/agentes/${agent.id}/skills`}
-              className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_#003083]"
-            >
+            <Link to={`/admin/agentes/${agent.id}/skills`} className={`${btnPrimary} w-full`}>
               ✨ Ver skills do agente
-            </a>
-            <button
-              onClick={toggleActive}
-              className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)] hover:shadow-[0_0_0_1px_rgb(180,190,210)]"
-            >
+            </Link>
+            <Button variant="secondary" onClick={toggleActive} className="w-full">
               {agent.active ? (
                 <>
                   <PauseCircle className="w-3.5 h-3.5" /> Pausar agente
@@ -727,7 +707,7 @@ function AgentDetailsDrawer({
                   <PlayCircle className="w-3.5 h-3.5" /> Ativar agente
                 </>
               )}
-            </button>
+            </Button>
 
             {confirmDelete ? (
               <div className="bg-red-50 border border-red-200 rounded-md p-3 space-y-2">
@@ -738,29 +718,19 @@ function AgentDetailsDrawer({
                   agente. <strong>Não dá pra desfazer.</strong>
                 </p>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="flex-1 h-7 rounded-md text-[12px] font-medium bg-white text-[#404452] shadow-[0_0_0_1px_rgb(212,222,233)]"
-                  >
+                  <Button variant="secondary" onClick={() => setConfirmDelete(false)} className="flex-1">
                     Cancelar
-                  </button>
-                  <button
-                    onClick={doDelete}
-                    disabled={deleting}
-                    className="flex-1 h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1 bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
-                  >
+                  </Button>
+                  <Button variant="danger" onClick={doDelete} disabled={deleting} className="flex-1">
                     {deleting && <Loader2 className="w-3 h-3 animate-spin" />}
                     Sim, excluir
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100"
-              >
+              <Button variant="danger" onClick={() => setConfirmDelete(true)} className="w-full">
                 <Trash2 className="w-3.5 h-3.5" /> Excluir agente
-              </button>
+              </Button>
             )}
           </div>
         </div>

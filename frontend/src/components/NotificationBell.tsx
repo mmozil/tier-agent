@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bell, Phone, ArrowRight } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { iconBtn } from "./ds/fc";
 
 interface Stats {
   unread: number;
@@ -82,11 +83,7 @@ export default function NotificationBell() {
 
   return (
     <div className="relative" ref={ref}>
-      <button
-        onClick={toggle}
-        className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors relative"
-        title="Notificações"
-      >
+      <button onClick={toggle} className={`${iconBtn} relative`} title="Notificações">
         <Bell className="w-[18px] h-[18px]" />
         {count > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-semibold inline-flex items-center justify-center">

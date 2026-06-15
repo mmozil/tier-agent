@@ -4,7 +4,7 @@ import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Bot } from
 
 import { api } from "@/lib/api";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
-import { FC, PageFrame, Row, Spacer, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Spacer, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 function WhatsAppIcon({ className }: { className?: string }) {
   return (
@@ -352,8 +352,8 @@ export default function CanaisPage() {
                               <Unplug className="w-3 h-3 shrink-0" /> Desconectar
                             </Button>
                           )}
-                          <button onClick={() => onDelete(c.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08]`} title="Remover canal permanentemente">
-                            <Trash2 className="w-3.5 h-3.5" />
+                          <button onClick={() => onDelete(c.id)} className={`${iconBtn} hover:!text-[#E5484D] hover:!bg-[#E5484D]/[0.08]`} title="Remover canal permanentemente">
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -387,7 +387,7 @@ export default function CanaisPage() {
                     <h2 className={`text-[15px] font-medium leading-tight ${FC.ink}`}>Conectar WhatsApp</h2>
                     <p className={`text-[12px] ${FC.sub}`}>Pareie escaneando o código — leva segundos</p>
                   </div>
-                  <button onClick={() => setQrModal(null)} className={`rounded-md p-1.5 ${FC.mut} ${FC.hover}`}><X className="h-4 w-4" /></button>
+                  <button onClick={() => setQrModal(null)} className={iconBtn}><X className="h-4 w-4" /></button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr_280px]">
@@ -430,10 +430,10 @@ export default function CanaisPage() {
                   <div className={`order-1 flex items-center justify-center border-b ${FC.hair} bg-[#F9F9F9] dark:bg-[#16191f] p-6 sm:order-2 sm:border-b-0 sm:border-l`}>
                     <div className="relative">
                       <div className={`relative rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#EDEDED]`}>
-                        <span className="pointer-events-none absolute left-1 top-1 h-4 w-4 rounded-tl-lg border-l-2 border-t-2 border-[#003083]/40" />
-                        <span className="pointer-events-none absolute right-1 top-1 h-4 w-4 rounded-tr-lg border-r-2 border-t-2 border-[#003083]/40" />
-                        <span className="pointer-events-none absolute bottom-1 left-1 h-4 w-4 rounded-bl-lg border-b-2 border-l-2 border-[#003083]/40" />
-                        <span className="pointer-events-none absolute bottom-1 right-1 h-4 w-4 rounded-br-lg border-b-2 border-r-2 border-[#003083]/40" />
+                        <span className="pointer-events-none absolute left-1 top-1 h-4 w-4 rounded-tl-lg border-l-2 border-t-2 border-[#262626]/20 dark:border-white/20" />
+                        <span className="pointer-events-none absolute right-1 top-1 h-4 w-4 rounded-tr-lg border-r-2 border-t-2 border-[#262626]/20 dark:border-white/20" />
+                        <span className="pointer-events-none absolute bottom-1 left-1 h-4 w-4 rounded-bl-lg border-b-2 border-l-2 border-[#262626]/20 dark:border-white/20" />
+                        <span className="pointer-events-none absolute bottom-1 right-1 h-4 w-4 rounded-br-lg border-b-2 border-r-2 border-[#262626]/20 dark:border-white/20" />
                         <div className="relative h-[208px] w-[208px] overflow-hidden rounded-lg">
                           {qrSrc ? (
                             <img src={qrSrc} alt="QR Code WhatsApp" className={`h-[208px] w-[208px] transition-all duration-300 ${isConnected || isConnecting ? "scale-95 opacity-20 blur-sm" : ""}`} />
@@ -487,7 +487,7 @@ export default function CanaisPage() {
                   <span className="inline-flex items-center gap-1.5 mr-1" title={m.tip}>
                     <span className={`w-2 h-2 rounded-full ${m.color}`} /><span className={`text-[12px] ${FC.sub}`}>{m.label}</span>
                   </span>
-                  <button onClick={() => setDetail(null)} className={`rounded-md p-1.5 ${FC.mut} ${FC.hover}`}><X className="h-4 w-4" /></button>
+                  <button onClick={() => setDetail(null)} className={iconBtn}><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-6 py-5 space-y-5">
                   {/* Conexão */}

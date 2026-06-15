@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 interface Execution {
   id: number;
@@ -89,7 +89,7 @@ export default function PlaybookExecutionsPage() {
           <div className="flex items-start gap-3 p-6">
             <Link
               to={`/admin/playbooks/${id}`}
-              className={`w-7 h-7 inline-flex items-center justify-center rounded-md ${FC.mut} ${FC.hover} mt-0.5`}
+              className={`${iconBtn} mt-0.5`}
             >
               <ArrowLeft className="w-4 h-4" />
             </Link>
@@ -231,7 +231,7 @@ function ExecutionStepsDrawer({ executionId, onClose }: { executionId: number; o
       <div className="w-[520px] bg-white dark:bg-[#0c0e12] h-full overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className={`px-5 py-4 border-b ${FC.hair} flex items-center justify-between sticky top-0 bg-white dark:bg-[#0c0e12]`}>
           <h3 className={`text-[16px] font-[450] ${FC.ink}`}>Execução #{executionId}</h3>
-          <button onClick={onClose} className={`w-7 h-7 inline-flex items-center justify-center rounded-md ${FC.mut} ${FC.hover}`}>×</button>
+          <button onClick={onClose} className={iconBtn}>×</button>
         </div>
 
         {loading ? (

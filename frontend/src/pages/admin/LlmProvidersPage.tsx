@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, HelpCircle, Cpu } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 interface Provider {
   id: number;
@@ -385,11 +385,11 @@ export default function LlmProvidersPage() {
                         onClick={() => testProvider(p)}
                         disabled={testing === p.id}
                         title="Testar conexão com o LLM"
-                        className={`p-1.5 rounded-md transition-colors ${tr ? (tr.ok ? "text-[#0a8f5a]" : "text-[#E5484D]") : FC.mut} hover:text-[#003083] hover:bg-[#003083]/[0.06]`}
+                        className={`${iconBtn} ${tr ? (tr.ok ? "!text-[#0a8f5a]" : "!text-[#E5484D]") : ""} hover:!text-[#003083] hover:!bg-[#003083]/[0.06]`}
                       >
                         {testing === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />) : <Zap className="w-4 h-4" />}
                       </button>
-                      <button onClick={() => onDelete(p.id)} className={`p-1.5 rounded-md ${FC.mut} hover:text-[#E5484D] hover:bg-[#E5484D]/[0.08] transition-colors`}>
+                      <button onClick={() => onDelete(p.id)} className={`${iconBtn} hover:!text-[#E5484D] hover:!bg-[#E5484D]/[0.08]`}>
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -419,7 +419,7 @@ export default function LlmProvidersPage() {
                 </div>
                 <p className={`text-[12px] ${FC.sub}`}>{scopeLabel(detail)} · {detail.default_model}</p>
               </div>
-              <button onClick={() => setDetail(null)} className={`rounded-md p-1.5 ${FC.mut} ${FC.hover}`}><X className="h-4 w-4" /></button>
+              <button onClick={() => setDetail(null)} className={iconBtn}><X className="h-4 w-4" /></button>
             </div>
 
             <div className="p-5 space-y-5">
@@ -494,9 +494,9 @@ export default function LlmProvidersPage() {
                 <Button variant="ghost" size="sm" onClick={() => toggleActive(detail)}>
                   {detail.active ? "Desligar" : "Ligar"}
                 </Button>
-                <button onClick={() => onDelete(detail.id)} className="text-[12px] text-[#E5484D] hover:underline inline-flex items-center gap-1">
+                <Button variant="danger" size="sm" onClick={() => onDelete(detail.id)}>
                   <Trash2 className="w-3 h-3" /> Deletar
-                </button>
+                </Button>
               </div>
             </div>
           </div>

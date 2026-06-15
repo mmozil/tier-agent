@@ -4,7 +4,7 @@ import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send, Trash
 
 import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
-import { btnPrimary, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   active: { label: "IA ativa", cls: "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]" },
@@ -298,12 +298,9 @@ export default function ConversasPage() {
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
-            <button
-              onClick={() => setCleanMenu((v) => !v)}
-              className="h-8 px-3 text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] border border-[#EDEDED] dark:border-[#23272e] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg inline-flex items-center gap-1.5 transition-colors active:scale-[0.98]"
-            >
+            <Button variant="secondary" onClick={() => setCleanMenu((v) => !v)}>
               <Trash2 className="w-3.5 h-3.5" /> Limpar
-            </button>
+            </Button>
             {cleanMenu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setCleanMenu(false)} />
@@ -330,9 +327,9 @@ export default function ConversasPage() {
               </>
             )}
           </div>
-          <button onClick={() => load()} className="h-8 px-3 text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] border border-[#EDEDED] dark:border-[#23272e] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] rounded-lg inline-flex items-center gap-1.5 transition-colors active:scale-[0.98]">
+          <Button variant="secondary" onClick={() => load()}>
             <RefreshCw className="w-3.5 h-3.5" /> Atualizar
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -502,11 +499,11 @@ export default function ConversasPage() {
                 <button
                   onClick={() => openConv && deleteConv(openConv.id)}
                   title="Excluir conversa"
-                  className="p-1.5 rounded-md text-[#262626]/40 dark:text-[#6b7280] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                  className={`${iconBtn} hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10`}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
-                <button onClick={() => setOpenId(null)} className="p-1.5 rounded-md text-[#262626]/40 dark:text-[#6b7280] hover:bg-black/[0.04] dark:hover:bg-white/[0.04]">
+                <button onClick={() => setOpenId(null)} className={iconBtn} title="Fechar">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -530,12 +527,9 @@ export default function ConversasPage() {
                     <Hand className="w-3.5 h-3.5" /> Assumir (pausar IA)
                   </button>
                 )}
-                <button
-                  onClick={() => changeStatus(openConv.id, "resolve")}
-                  className="h-7 px-3 text-[12px] rounded-md border border-[#EDEDED] text-[#262626]/[0.72] inline-flex items-center gap-1.5 hover:bg-white"
-                >
+                <Button variant="secondary" size="sm" onClick={() => changeStatus(openConv.id, "resolve")}>
                   <CheckCircle2 className="w-3.5 h-3.5" /> Resolver
-                </button>
+                </Button>
                 {openConv.snoozed_until ? (
                   <button
                     onClick={() => unsnoozeConv(openConv.id)}
@@ -751,7 +745,7 @@ export default function ConversasPage() {
                   <button
                     onClick={sendReply}
                     disabled={sending || !replyText.trim()}
-                    className={`h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg text-white disabled:opacity-40 ${
+                    className={`h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-lg text-white transition-all active:scale-[0.95] disabled:opacity-40 disabled:pointer-events-none ${
                       noteMode ? "bg-amber-500 hover:bg-amber-600" : "bg-[#003083] hover:bg-[#002266]"
                     }`}
                     title="Enviar"

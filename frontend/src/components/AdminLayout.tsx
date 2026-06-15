@@ -27,6 +27,7 @@ import {
 import UserMenu from "./UserMenu";
 import NotificationBell from "./NotificationBell";
 import OnlineToggle from "./OnlineToggle";
+import { iconBtn, btnPrimary } from "./ds/fc";
 
 interface NavItem {
   to: string;
@@ -84,13 +85,14 @@ const SIDEBAR_FONT =
 
 export default function AdminLayout() {
   const location = useLocation();
-  // estilo FC: item h-34 rounded-10; hover = texto clareia + ícone escurece (sem bg)
-  // + active:scale-[0.98] (afunda no clique); ativo = acento azul + bg faint.
+  // estilo FC: item h-34 rounded-10; ativo = "chip" branco elevado (neutro, SEM
+  // acento azul — igual ao nav do Firecrawl: a marca vive no logo/CTA, não no nav);
+  // inativo = ink@72% com hover faint (texto clareia + bg 4%). active:scale no clique.
   const itemClass = (active: boolean) =>
     `group tier-jelly flex items-center gap-2.5 rounded-[10px] transition-colors duration-200 active:scale-[0.98] h-[34px] text-[13px] px-2.5 ${
       active
-        ? "text-[#003083] dark:text-[#5b9bff] font-medium bg-[#003083]/[0.06] dark:bg-[#5b9bff]/[0.12]"
-        : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white font-normal"
+        ? "text-[#262626] dark:text-white font-medium bg-white dark:bg-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.05),0_0_0_1px_rgba(0,0,0,0.045)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
+        : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] font-normal"
     }`;
 
   return (
@@ -118,7 +120,7 @@ export default function AdminLayout() {
             <div key={sIdx} className={sIdx > 0 ? "mt-5" : ""}>
               {section.label && (
                 <div className="mb-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-[#262626]/40 dark:text-[#565d68]">{section.label}</span>
+                  <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#262626]/40 dark:text-[#565d68]">{section.label}</span>
                 </div>
               )}
               {section.items.map((item) => (
@@ -165,25 +167,19 @@ export default function AdminLayout() {
                 className="w-full h-8 pl-9 pr-3 text-[14px] rounded-lg bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
               />
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <OnlineToggle />
               <Link
                 to="/admin/suporte"
-                className="h-9 px-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98]"
+                className="h-7 px-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98]"
               >
                 <HelpCircle className="w-4 h-4" /> Ajuda
               </Link>
               <NotificationBell />
-              <Link
-                to="/admin/configuracoes"
-                className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98]"
-              >
+              <Link to="/admin/configuracoes" className={iconBtn} title="Configurações">
                 <Settings className="w-[18px] h-[18px]" />
               </Link>
-              <Link
-                to="/admin/cobranca"
-                className="h-9 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-lg text-white text-[13px] font-semibold bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] shadow-[0_1px_2px_rgba(0,48,131,0.18)] transition-all active:scale-[0.98]"
-              >
+              <Link to="/admin/cobranca" className={`${btnPrimary} ml-1`}>
                 <ArrowUpRight className="w-4 h-4" /> Upgrade
               </Link>
             </div>
