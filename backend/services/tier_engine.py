@@ -300,6 +300,39 @@ async def send_message(
     import json as _json
     import re as _re
 
+    # Identidade AO VIVO do petshop: se o agente tem a ferramenta de info do petshop,
+    # busca o nome/endereço/telefone REAIS (o que está nas Configurações) e injeta como
+    # fonte da verdade no system prompt. Assim renomear o petshop nas configs reflete no
+    # agente na hora, sem editar a persona. Só dispara em agentes que têm essa tool (Pet).
+    if remote_handlers and messages and messages[0].get("role") == "system":
+        _info_handler = next(
+            (h for n, h in remote_handlers.items() if n.endswith("pet_info_petshop")), None
+        )
+        if _info_handler is not None:
+            try:
+                _raw = await _info_handler({})
+                _info = _json.loads(_raw) if isinstance(_raw, str) else (_raw or {})
+                _nome = (_info or {}).get("nome")
+                if _nome:
+                    _linhas = [
+                        "# Identidade oficial do petshop (dados AO VIVO das Configurações — fonte da verdade)",
+                        f"- Nome oficial: {_nome}",
+                    ]
+                    _tel = (_info or {}).get("telefone")
+                    if _tel:
+                        _linhas.append(f"- Telefone: {_tel}")
+                    _end = (_info or {}).get("endereco")
+                    _end_txt = _end.get("linha") if isinstance(_end, dict) else (_end if isinstance(_end, str) else None)
+                    if _end_txt:
+                        _linhas.append(f"- Endereço: {_end_txt}")
+                    _linhas.append(
+                        "Use SEMPRE este nome oficial ao falar do petshop. Se a persona acima citar um "
+                        "nome diferente, ele está DESATUALIZADO — vale este."
+                    )
+                    messages[0]["content"] = f"{messages[0]['content']}\n\n" + "\n".join(_linhas)
+            except Exception:
+                logger.exception("tier_engine: prefetch pet_info_petshop falhou")
+
     async def _exec_loop(_data: dict) -> dict:
         """Executa o loop de tool-use a partir de _data até o modelo parar de chamar
         ferramentas (ou estourar o limite). Mutaria `messages`. Devolve o último data."""
