@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     tier_whatsapp_engine_tenant_id: str = ""
     tier_whatsapp_webhook_secret: str = ""
 
+    # Pet → Tier Agent: o Hovio Pet envia status do atendimento (check-in/etapas/pronto)
+    # PELA instância WhatsApp do agente (Yanna), sem duplicar a credencial da Engine.
+    pet_status_internal_key: str = ""
+    pet_status_agent_id: int = 0
+
     tier_pay_api_url: str = "https://api.tier.finance"
     tier_pay_internal_key: str = ""
     tier_agent_sku_starter_plan_id: str = ""
