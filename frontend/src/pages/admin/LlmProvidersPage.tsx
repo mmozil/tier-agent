@@ -39,7 +39,7 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
   deepseek: ["deepseek-chat", "deepseek-reasoner"],
   openrouter: ["anthropic/claude-haiku-4.5", "openai/gpt-4o-mini", "google/gemini-2.5-flash", "deepseek/deepseek-chat"],
   nous: ["Hermes-3-Llama-3.1-70B"],
-  local: [""],
+  local: [],
 };
 
 interface TestResult {
@@ -240,21 +240,38 @@ export default function LlmProvidersPage() {
                 </label>
                 <label className="block">
                   <span className={`text-[12px] ${FC.sub}`}>Modelo</span>
-                  <input
-                    value={form.default_model}
-                    onChange={(e) => setForm({ ...form, default_model: e.target.value })}
-                    list="model-suggestions"
-                    placeholder="escolha ou digite o modelo"
-                    className={inputCls}
-                    required
-                  />
-                  <datalist id="model-suggestions">
-                    {(MODEL_SUGGESTIONS[form.provider] ?? []).map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
+                  {(() => {
+                    const models = MODEL_SUGGESTIONS[form.provider] ?? [];
+                    const isCustom = !models.includes(form.default_model);
+                    return (
+                      <>
+                        <select
+                          value={isCustom ? "__custom__" : form.default_model}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setForm({ ...form, default_model: v === "__custom__" ? "" : v });
+                          }}
+                          className={inputCls}
+                        >
+                          {models.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                          <option value="__custom__">Outro (digitar)…</option>
+                        </select>
+                        {isCustom && (
+                          <input
+                            value={form.default_model}
+                            onChange={(e) => setForm({ ...form, default_model: e.target.value })}
+                            placeholder="digite o nome do modelo"
+                            className={`${inputCls} mt-2 font-mono`}
+                            required
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
                   <span className={`text-[11px] mt-1 block ${FC.mut}`}>
-                    Sugeridos pro {form.provider}; pode digitar qualquer modelo.
+                    Modelos do {form.provider}. Escolha "Outro" pra digitar qualquer um.
                   </span>
                 </label>
               </div>
