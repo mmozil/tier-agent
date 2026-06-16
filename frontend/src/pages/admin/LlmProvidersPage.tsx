@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, HelpCircle, Cpu } from "lucide-react";
+import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, HelpCircle, Cpu, Pencil } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
@@ -47,6 +47,8 @@ export default function LlmProvidersPage() {
   const [detail, setDetail] = useState<Provider | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, TestResult>>({});
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ default_model: "", temperature: 0.7, max_tokens: 4096, api_key: "" });
 
   const [form, setForm] = useState({
     provider: "minimax",
@@ -141,6 +143,37 @@ export default function LlmProvidersPage() {
       load();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || "Erro ao tornar principal");
+    }
+  }
+
+  // Edição do provider (modelo / temperatura / tokens / key) direto no painel — pro
+  // dono trocar o modelo SOZINHO, sem precisar de suporte/SQL.
+  function startEdit(p: Provider) {
+    setEditForm({ default_model: p.default_model, temperature: p.temperature, max_tokens: p.max_tokens, api_key: "" });
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    if (!detail) return;
+    const model = editForm.default_model.trim();
+    if (!model) {
+      toast.error("Informe o modelo");
+      return;
+    }
+    const body: Record<string, any> = {
+      default_model: model,
+      temperature: editForm.temperature,
+      max_tokens: editForm.max_tokens,
+    };
+    if (editForm.api_key.trim()) body.api_key = editForm.api_key.trim();
+    try {
+      await api.patch(`/llm-providers/${detail.id}`, body);
+      toast.success("Salvo ✓");
+      setEditing(false);
+      setDetail({ ...detail, default_model: model, temperature: editForm.temperature, max_tokens: editForm.max_tokens });
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao salvar");
     }
   }
 
@@ -509,7 +542,7 @@ export default function LlmProvidersPage() {
                 </div>
                 <p className={`text-[12px] ${FC.sub}`}>{scopeLabel(detail)} · {detail.default_model}</p>
               </div>
-              <button onClick={() => setDetail(null)} className={iconBtn}><X className="h-4 w-4" /></button>
+              <button onClick={() => { setDetail(null); setEditing(false); }} className={iconBtn}><X className="h-4 w-4" /></button>
             </div>
 
             <div className="p-5 space-y-5">
@@ -524,26 +557,78 @@ export default function LlmProvidersPage() {
                 )}
               </div>
 
-              {/* Grid de campos */}
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
-                {/* números de config (ordem/temp/tokens/timeout) = negócio → sans tabular */}
-                <Field label="Ordem (priority)" value={`${detail.priority}`} tabular />
-                <Field label="Status" value={detail.active ? "Ligado" : "Desligado"} />
-                <Field label="Modelo" value={detail.default_model} mono />
-                <Field label="API Key" value={detail.api_key_suffix ? `••••${detail.api_key_suffix}` : "—"} mono />
-                <Field label="Temperature" value={`${detail.temperature}`} tabular />
-                <Field label="Max tokens" value={`${detail.max_tokens}`} tabular />
-                <Field label="Timeout" value={`${detail.timeout_s}s`} tabular />
-                <Field label="Escopo" value={scopeLabel(detail)} />
-                {detail.base_url && <Field label="Base URL" value={detail.base_url} mono full />}
-                {(detail.cost_input_per_1m != null || detail.cost_output_per_1m != null) && (
-                  /* custo = valor de negócio → sans tabular, não mono de terminal */
-                  <Field label="Custo /1M (in/out)" value={`$${detail.cost_input_per_1m ?? "?"} / $${detail.cost_output_per_1m ?? "?"}`} tabular full />
-                )}
-                {detail.created_at && (
-                  <Field label="Criado em" value={new Date(detail.created_at).toLocaleString("pt-BR")} full />
-                )}
-              </div>
+              {editing ? (
+                /* Form de edição — o dono troca o MODELO (e temp/tokens/key) sozinho */
+                <div className="space-y-3">
+                  <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold ${FC.ink}`}>Editar provider</div>
+                  <label className="block">
+                    <span className={`text-[12px] ${FC.sub}`}>Modelo</span>
+                    {(() => {
+                      const models = modelsFor(detail.provider);
+                      const isCustom = !models.includes(editForm.default_model);
+                      return (
+                        <>
+                          <select
+                            value={isCustom ? "__custom__" : editForm.default_model}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setEditForm({ ...editForm, default_model: v === "__custom__" ? "" : v });
+                            }}
+                            className={inputCls}
+                          >
+                            {models.map((m) => (<option key={m} value={m}>{m}</option>))}
+                            <option value="__custom__">Outro (digitar)…</option>
+                          </select>
+                          {isCustom && (
+                            <input
+                              value={editForm.default_model}
+                              onChange={(e) => setEditForm({ ...editForm, default_model: e.target.value })}
+                              placeholder="ex: minimax/minimax-m3"
+                              className={`${inputCls} mt-2 font-mono`}
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
+                    <span className={`text-[11px] mt-1 block ${FC.mut}`}>Modelos do {detail.provider}. Escolha "Outro" pra digitar qualquer slug (ex: minimax/minimax-m3).</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <label className="block">
+                      <span className={`text-[12px] ${FC.sub}`}>Temperature</span>
+                      <input type="number" step="0.1" min="0" max="2" value={editForm.temperature} onChange={(e) => setEditForm({ ...editForm, temperature: parseFloat(e.target.value) })} className={inputCls} />
+                    </label>
+                    <label className="block">
+                      <span className={`text-[12px] ${FC.sub}`}>Max tokens</span>
+                      <input type="number" min="1" value={editForm.max_tokens} onChange={(e) => setEditForm({ ...editForm, max_tokens: parseInt(e.target.value) })} className={inputCls} />
+                    </label>
+                  </div>
+                  <label className="block">
+                    <span className={`text-[12px] ${FC.sub}`}>API Key <span className={FC.mut}>(em branco = manter a atual)</span></span>
+                    <input type="password" value={editForm.api_key} onChange={(e) => setEditForm({ ...editForm, api_key: e.target.value })} placeholder={detail.api_key_suffix ? `••••${detail.api_key_suffix}` : "sk-..."} className={`${inputCls} font-mono`} />
+                  </label>
+                </div>
+              ) : (
+                /* Grid de campos */
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
+                  {/* números de config (ordem/temp/tokens/timeout) = negócio → sans tabular */}
+                  <Field label="Ordem (priority)" value={`${detail.priority}`} tabular />
+                  <Field label="Status" value={detail.active ? "Ligado" : "Desligado"} />
+                  <Field label="Modelo" value={detail.default_model} mono />
+                  <Field label="API Key" value={detail.api_key_suffix ? `••••${detail.api_key_suffix}` : "—"} mono />
+                  <Field label="Temperature" value={`${detail.temperature}`} tabular />
+                  <Field label="Max tokens" value={`${detail.max_tokens}`} tabular />
+                  <Field label="Timeout" value={`${detail.timeout_s}s`} tabular />
+                  <Field label="Escopo" value={scopeLabel(detail)} />
+                  {detail.base_url && <Field label="Base URL" value={detail.base_url} mono full />}
+                  {(detail.cost_input_per_1m != null || detail.cost_output_per_1m != null) && (
+                    /* custo = valor de negócio → sans tabular, não mono de terminal */
+                    <Field label="Custo /1M (in/out)" value={`$${detail.cost_input_per_1m ?? "?"} / $${detail.cost_output_per_1m ?? "?"}`} tabular full />
+                  )}
+                  {detail.created_at && (
+                    <Field label="Criado em" value={new Date(detail.created_at).toLocaleString("pt-BR")} full />
+                  )}
+                </div>
+              )}
 
               {/* Fallback chain */}
               <div>
@@ -581,19 +666,35 @@ export default function LlmProvidersPage() {
 
               {/* Ações */}
               <div className="flex items-center justify-between gap-2 pt-1">
-                <div className="flex items-center gap-2">
-                  {!detail.in_use && detail.tenant_id !== null && (
-                    <Button variant="primary" size="sm" onClick={() => makePrimary(detail)}>
-                      <CheckCircle2 className="w-3 h-3" /> Tornar principal
+                {editing ? (
+                  <div className="flex items-center gap-2">
+                    <Button variant="primary" size="sm" onClick={saveEdit}>
+                      <CheckCircle2 className="w-3 h-3" /> Salvar
                     </Button>
-                  )}
-                  <Button variant="ghost" size="sm" onClick={() => toggleActive(detail)}>
-                    {detail.active ? "Desligar" : "Ligar"}
-                  </Button>
-                </div>
-                <Button variant="danger" size="sm" onClick={() => onDelete(detail.id)}>
-                  <Trash2 className="w-3 h-3" /> Deletar
-                </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>Cancelar</Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      {!detail.in_use && detail.tenant_id !== null && (
+                        <Button variant="primary" size="sm" onClick={() => makePrimary(detail)}>
+                          <CheckCircle2 className="w-3 h-3" /> Tornar principal
+                        </Button>
+                      )}
+                      {detail.tenant_id !== null && (
+                        <Button variant="ghost" size="sm" onClick={() => startEdit(detail)}>
+                          <Pencil className="w-3 h-3" /> Editar
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" onClick={() => toggleActive(detail)}>
+                        {detail.active ? "Desligar" : "Ligar"}
+                      </Button>
+                    </div>
+                    <Button variant="danger" size="sm" onClick={() => onDelete(detail.id)}>
+                      <Trash2 className="w-3 h-3" /> Deletar
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </div>
