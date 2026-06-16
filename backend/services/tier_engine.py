@@ -61,7 +61,7 @@ _DEFAULT_MODEL = {
     "openai": "gpt-4o",
     "openrouter": "openai/gpt-4o",
     "gemini": "gemini-2.0-flash",
-    "anthropic": "claude-haiku-4.5",
+    "anthropic": "claude-haiku-4-5-20251001",
 }
 
 

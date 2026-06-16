@@ -29,6 +29,19 @@ interface SupportedProvider {
   label: string;
 }
 
+// Modelos sugeridos por provider (o 1º vira o default ao trocar de provider).
+// Campo de modelo é livre — dá pra digitar qualquer um; isto só facilita.
+const MODEL_SUGGESTIONS: Record<string, string[]> = {
+  minimax: ["MiniMax-M2"],
+  anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-7"],
+  openai: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"],
+  gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  openrouter: ["anthropic/claude-haiku-4.5", "openai/gpt-4o-mini", "google/gemini-2.5-flash", "deepseek/deepseek-chat"],
+  nous: ["Hermes-3-Llama-3.1-70B"],
+  local: [""],
+};
+
 interface TestResult {
   ok: boolean;
   provider: string;
@@ -111,7 +124,7 @@ export default function LlmProvidersPage() {
     // Provider GLOBAL (tenant_id null) é o padrão compartilhado da Tier — só admin Tier
     // pode mexer (o backend retorna 403). Desligá-lo deixaria TODOS os agentes sem LLM.
     if (p.tenant_id === null) {
-      toast.error("Provider global da Tier — gerenciado pela plataforma. Pra usar outro modelo, cadastre um provider do seu workspace.");
+      toast("Esse é o modelo GLOBAL da plataforma (não dá pra desligar aqui) — mas não precisa: o seu provider tem prioridade e é o que o agente usa.", { icon: "ℹ️" });
       return;
     }
     try {
@@ -211,15 +224,38 @@ export default function LlmProvidersPage() {
               <div className="grid grid-cols-2 gap-4">
                 <label className="block">
                   <span className={`text-[12px] ${FC.sub}`}>Provider</span>
-                  <select value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} className={inputCls}>
+                  <select
+                    value={form.provider}
+                    onChange={(e) => {
+                      const prov = e.target.value;
+                      // troca o provider E já sugere o modelo padrão dele (o usuário pode editar)
+                      setForm({ ...form, provider: prov, default_model: MODEL_SUGGESTIONS[prov]?.[0] ?? "" });
+                    }}
+                    className={inputCls}
+                  >
                     {supported.map((s) => (
                       <option key={s.key} value={s.key}>{s.label}</option>
                     ))}
                   </select>
                 </label>
                 <label className="block">
-                  <span className={`text-[12px] ${FC.sub}`}>Modelo padrão</span>
-                  <input value={form.default_model} onChange={(e) => setForm({ ...form, default_model: e.target.value })} placeholder="ex: MiniMax-M2, claude-sonnet-4-6, gpt-4o-mini" className={inputCls} required />
+                  <span className={`text-[12px] ${FC.sub}`}>Modelo</span>
+                  <input
+                    value={form.default_model}
+                    onChange={(e) => setForm({ ...form, default_model: e.target.value })}
+                    list="model-suggestions"
+                    placeholder="escolha ou digite o modelo"
+                    className={inputCls}
+                    required
+                  />
+                  <datalist id="model-suggestions">
+                    {(MODEL_SUGGESTIONS[form.provider] ?? []).map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                  <span className={`text-[11px] mt-1 block ${FC.mut}`}>
+                    Sugeridos pro {form.provider}; pode digitar qualquer modelo.
+                  </span>
                 </label>
               </div>
               <label className="block">

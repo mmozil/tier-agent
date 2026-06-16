@@ -32,7 +32,7 @@ def _invalidate_cost_cache(tenant_id: int | None) -> None:
 SUPPORTED_PROVIDERS = {
     "minimax": "MiniMax (MiniMax-M2, abab6.5)",
     "gemini": "Google Gemini (gemini-2.5-flash, gemini-2.5-pro)",
-    "anthropic": "Anthropic Claude (claude-sonnet-4-6, claude-opus-4-7)",
+    "anthropic": "Anthropic Claude (claude-haiku-4-5, claude-sonnet-4-6, claude-opus-4-7)",
     "openai": "OpenAI (gpt-4o, gpt-4o-mini)",
     "openrouter": "OpenRouter (300+ modelos via 1 chave)",
     "deepseek": "DeepSeek (deepseek-chat, deepseek-reasoner)",
@@ -126,16 +126,27 @@ async def list_providers(
         ).scalars().all()
     )
 
-    # Determina o "em uso" por escopo (tenant_id). Em cada escopo, o 1º ativo na
-    # ordem (priority asc, id desc) é o que o motor pega.
+    # "Em uso" = o provider que o motor REALMENTE pega. Importante: o motor resolve
+    # TENANT sobre GLOBAL (_load_provider) — então, pra quem tem provider próprio ativo,
+    # o global fica SOMBREADO (não está em uso pra ele). Senão o painel mostrava 2x "Em uso"
+    # (global + tenant) e dava a impressão errada de que dava pra/precisava desligar o global.
     in_use_ids: set[int] = set()
-    by_scope: dict[int | None, list[TaLlmProvider]] = {}
-    for r in rows:
-        by_scope.setdefault(r.tenant_id, []).append(r)
-    for scope_rows in by_scope.values():
-        winner = next((r for r in scope_rows if r.active), None)
-        if winner:
-            in_use_ids.add(winner.id)
+    if user.is_admin:
+        # Admin vê todos os escopos — marca o winner ativo de cada escopo (visão de plataforma).
+        by_scope: dict[int | None, list[TaLlmProvider]] = {}
+        for r in rows:
+            by_scope.setdefault(r.tenant_id, []).append(r)
+        for scope_rows in by_scope.values():
+            winner = next((r for r in scope_rows if r.active), None)
+            if winner:
+                in_use_ids.add(winner.id)
+    else:
+        # Não-admin: efetivo = winner do tenant dele; só cai no global se não tiver o próprio.
+        tenant_winner = next((r for r in rows if r.tenant_id == user.tenant_id and r.active), None)
+        global_winner = next((r for r in rows if r.tenant_id is None and r.active), None)
+        effective = tenant_winner or global_winner
+        if effective:
+            in_use_ids.add(effective.id)
 
     items = []
     for row in rows:
