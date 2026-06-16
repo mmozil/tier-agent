@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,15 @@ class ConversationOut(BaseModel):
     snoozed_until: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    # Dados antigos podem ter NULL em campos str obrigatórios (ex.: csat_state) — sem isto
+    # UMA conversa com csat_state NULL derruba a LISTA inteira com 500 (mascarado de CORS).
+    @field_validator("csat_state", "external_id", "status", mode="before")
+    @classmethod
+    def _none_to_default(cls, v, info):
+        if v is None:
+            return {"csat_state": "none", "external_id": "", "status": "active"}.get(info.field_name, "")
+        return v
 
 
 class MessageOut(BaseModel):
