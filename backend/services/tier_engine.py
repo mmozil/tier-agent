@@ -53,6 +53,27 @@ _DEFAULT_BASE_URL = {
 }
 _MAX_TOOL_ITERATIONS = 8  # trava anti-loop no tool-use (multi-serviço: banho+tosa+taxidog)
 
+# Modelo canônico por provider — usado quando a config vem vazia OU com só o nome do
+# provider (ex: usuário digita "DeepSeek" no campo modelo). Evita 400 "model not exist".
+_DEFAULT_MODEL = {
+    "deepseek": "deepseek-chat",
+    "minimax": "MiniMax-M2",
+    "openai": "gpt-4o",
+    "openrouter": "openai/gpt-4o",
+    "gemini": "gemini-2.0-flash",
+    "anthropic": "claude-haiku-4.5",
+}
+
+
+def _norm_model(provider: str, model: str | None) -> str:
+    """Normaliza o nome do modelo. Vazio ou == nome do provider ("DeepSeek", "deepseek")
+    → usa o modelo canônico do provider. Um modelo específico é respeitado."""
+    m = (model or "").strip()
+    prov = (provider or "").lower()
+    if not m or m.lower().replace(" ", "").replace("-", "") == prov.replace("-", ""):
+        return _DEFAULT_MODEL.get(prov, m)
+    return m
+
 # Modelos de raciocínio (MiniMax-M2, etc.) emitem <think>...</think> na resposta —
 # o cliente NÃO pode ver o raciocínio. Removido antes de devolver.
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
@@ -185,10 +206,11 @@ async def _complete(p: TaLlmProvider, model: str, messages: list[dict], tools: l
 
 async def _complete_with_fallback(p: TaLlmProvider, messages: list[dict], tools: list[dict] | None) -> dict:
     """Tenta o modelo default; se falhar, percorre fallback_chain_json."""
-    attempts: list[tuple[str, str]] = [(p.provider, p.default_model)]
+    attempts: list[tuple[str, str]] = [(p.provider, _norm_model(p.provider, p.default_model))]
     for fb in (p.fallback_chain_json or []):
         if isinstance(fb, dict) and fb.get("model"):
-            attempts.append((fb.get("provider", p.provider), fb["model"]))
+            _fp = fb.get("provider", p.provider)
+            attempts.append((_fp, _norm_model(_fp, fb["model"])))
     last_err: Exception | None = None
     for prov, model in attempts:
         try:
