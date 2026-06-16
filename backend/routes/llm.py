@@ -162,9 +162,11 @@ async def list_providers(
     """
     stmt = select(TaLlmProvider)
     if not user.is_admin:
-        stmt = stmt.where(
-            (TaLlmProvider.tenant_id == user.tenant_id) | (TaLlmProvider.tenant_id.is_(None))
-        )
+        # Cliente vê SÓ os modelos dele. O provider global é infra da plataforma (rede de
+        # segurança pra agentes que ainda não escolheram o seu) — não aparece pro cliente,
+        # pra não confundir com um toggle que ele não controla. O motor continua usando o
+        # global como fallback automático quando o tenant não tem nenhum ativo.
+        stmt = stmt.where(TaLlmProvider.tenant_id == user.tenant_id)
     rows = list(
         (
             await db.execute(stmt.order_by(TaLlmProvider.priority.asc(), TaLlmProvider.id.desc()))

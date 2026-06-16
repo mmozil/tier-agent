@@ -216,11 +216,19 @@ export default function LlmProvidersPage() {
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
               <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>LLM Providers</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
-                As LLMs agrupadas por <b>escopo</b>. Dentro de cada grupo, o <b>1º ligado</b> é o que o motor pega
-                (<span className="text-[#0a8f5a] font-medium">Em uso</span>). <b>Tenant</b> tem prioridade sobre <b>Global</b>.
-                Reordene com <b>↑↓</b>, ligue/desligue no <b>toggle</b>, teste a key no <b>⚡</b>. Clique na linha pra ver tudo.
-              </p>
+              {providers.some((p) => p.tenant_id === null) ? (
+                <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                  As LLMs agrupadas por <b>escopo</b>. Dentro de cada grupo, o <b>1º ligado</b> é o que o motor pega
+                  (<span className="text-[#0a8f5a] font-medium">Em uso</span>). <b>Tenant</b> tem prioridade sobre <b>Global</b>.
+                  Reordene com <b>↑↓</b>, ligue/desligue no <b>toggle</b>, teste a key no <b>⚡</b>. Clique na linha pra ver tudo.
+                </p>
+              ) : (
+                <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                  Os modelos do seu agente. O marcado como <span className="text-[#0a8f5a] font-medium">Em uso</span> é o que ele
+                  usa — clique em <b>Tornar principal</b> pra trocar, no <b>toggle</b> pra ligar/desligar e no <b>⚡</b> pra testar a key.
+                  Se nenhum estiver ligado, o agente usa o modelo padrão da plataforma.
+                </p>
+              )}
             </div>
             <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
               <Plus className="w-3.5 h-3.5" /> Novo provider
@@ -348,9 +356,17 @@ export default function LlmProvidersPage() {
           const scopeCount = new Map<number | null, number>();
           sorted.forEach((p) => scopeCount.set(p.tenant_id, (scopeCount.get(p.tenant_id) ?? 0) + 1));
           const anyMulti = [...scopeCount.values()].some((n) => n > 1);
-          const COLS = anyMulti
-            ? "grid grid-cols-[56px_minmax(0,1.3fr)_minmax(0,1.4fr)_104px_100px_48px_60px] items-center gap-4"
-            : "grid grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_104px_100px_48px_60px] items-center gap-4";
+          // Coluna ESCOPO só quando há mais de um escopo (admin vendo Global + Tenants).
+          // Pro cliente (só o tenant dele) some — sem jargão "Global/Tenant".
+          const showScope = scopeCount.size > 1;
+          const COLS =
+            anyMulti && showScope
+              ? "grid grid-cols-[56px_minmax(0,1.3fr)_minmax(0,1.4fr)_104px_100px_48px_60px] items-center gap-4"
+              : anyMulti && !showScope
+                ? "grid grid-cols-[56px_minmax(0,1.3fr)_minmax(0,1.4fr)_100px_48px_60px] items-center gap-4"
+                : !anyMulti && showScope
+                  ? "grid grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_104px_100px_48px_60px] items-center gap-4"
+                  : "grid grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_100px_48px_60px] items-center gap-4";
           return (
             <Row last>
               {/* Cabeçalho de colunas — alinha via MESMO grid das linhas */}
@@ -358,7 +374,7 @@ export default function LlmProvidersPage() {
                 {anyMulti && <span className={colLabel}>Ordem</span>}
                 <span className={colLabel}>Provider</span>
                 <span className={colLabel}>Modelo</span>
-                <span className={colLabel}>Escopo</span>
+                {showScope && <span className={colLabel}>Escopo</span>}
                 <span className={colLabel}>Key</span>
                 <span className={colLabel}>Ativo</span>
                 <span />
@@ -422,24 +438,26 @@ export default function LlmProvidersPage() {
                       )}
                     </div>
 
-                    {/* Escopo — badge + tooltip */}
-                    <div>
-                      <span
-                        title={
-                          isGlobal
-                            ? "Global: disponível para TODOS os agentes/clientes. É o padrão da Tier — usado quando o cliente não tem LLM própria."
-                            : `Tenant ${p.tenant_id}: específico deste cliente. Só vale para os agentes dele e tem prioridade sobre o Global.`
-                        }
-                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded cursor-help ${
-                          isGlobal
-                            ? "bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff]"
-                            : "bg-[#262626]/[0.06] dark:bg-white/[0.08] " + FC.sub
-                        }`}
-                      >
-                        {isGlobal ? "Global" : `Tenant ${p.tenant_id}`}
-                        <HelpCircle className="w-3 h-3 opacity-50" />
-                      </span>
-                    </div>
+                    {/* Escopo — badge + tooltip (só quando há mais de um escopo) */}
+                    {showScope && (
+                      <div>
+                        <span
+                          title={
+                            isGlobal
+                              ? "Global: disponível para TODOS os agentes/clientes. É o padrão da Tier — usado quando o cliente não tem LLM própria."
+                              : `Tenant ${p.tenant_id}: específico deste cliente. Só vale para os agentes dele e tem prioridade sobre o Global.`
+                          }
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded cursor-help ${
+                            isGlobal
+                              ? "bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff]"
+                              : "bg-[#262626]/[0.06] dark:bg-white/[0.08] " + FC.sub
+                          }`}
+                        >
+                          {isGlobal ? "Global" : `Tenant ${p.tenant_id}`}
+                          <HelpCircle className="w-3 h-3 opacity-50" />
+                        </span>
+                      </div>
+                    )}
 
                     {/* Key */}
                     <span className={`text-[12px] font-mono ${FC.mut} truncate`}>
