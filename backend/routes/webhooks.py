@@ -223,9 +223,10 @@ async def _process_engine_message(
     from services.connectors.registry import registry as _reg
 
     try:
-        # 1. pausa de "leitura" ~3s ANTES de mostrar o "…digitando" — dá tempo
-        #    natural de a pessoa ver que a msg foi lida antes dos 3 pontinhos.
-        await asyncio.sleep(random.uniform(2.8, 3.4))
+        # 1. pausa curta de "leitura" ANTES do "…digitando" — dá um respiro humano
+        #    (a msg ser "lida" antes dos 3 pontinhos) sem atrasar a resposta. A latência
+        #    real do LLM já faz o tempo de digitação; aqui só um respiro mínimo anti-robô.
+        await asyncio.sleep(random.uniform(0.6, 1.3))
 
         async with db_context() as db:
             # 2. marca '…digitando' (3 pontinhos no WhatsApp do cliente)
