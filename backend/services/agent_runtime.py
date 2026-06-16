@@ -613,12 +613,16 @@ async def handle_inbound_message(
     _contact = ["# Contato atual (você JÁ tem estes dados — NÃO peça ao cliente)"]
     _contact.append(f"- Nome: {sender_name or '(não informado pelo WhatsApp)'}")
     if _phone:
-        _contact.append(f"- Telefone/WhatsApp: {_phone}")
+        _contact.append(
+            f"- Telefone/WhatsApp: {_phone} — este JÁ é o número do cliente. Ao buscar ou cadastrar, "
+            "use este número DIRETO. NUNCA pergunte o telefone/WhatsApp."
+        )
     elif _is_wa:
         _contact.append(
             "- Telefone/WhatsApp: não veio automaticamente nesta conversa. Se for cadastrar o "
             "cliente e ele JÁ tiver dito o número aqui, USE o que ele disse — não peça de novo. "
-            "Só peça o número UMA vez, se ele nunca tiver informado."
+            "Cadastre com o nome do WhatsApp + o que tiver; só peça o número UMA vez se for "
+            "realmente indispensável (ex.: contato pro Taxidog) e ele nunca tiver informado."
         )
     _contact.append(
         "Use esses dados diretamente. NUNCA peça o nome (você já tem). Pergunte só o que "
@@ -665,6 +669,13 @@ async def handle_inbound_message(
         "Para CANCELAR ou ALTERAR: localize o registro (consulte a agenda do dia), execute a ação de "
         "fato pela ferramenta, e só confirme ao cliente DEPOIS de concluída.\n"
         "- Informe SEMPRE o valor/preço ANTES de pedir a confirmação final de um agendamento ou compra.\n"
+        "- ENDEREÇO (entrega/busca-e-leva/Taxidog): o CEP sozinho NÃO basta — ele só dá a rua. Depois do "
+        "CEP, SEMPRE pergunte o NÚMERO da casa e o complemento (apto/bloco/referência), confirme rua+número "
+        "com o cliente e só então salve o endereço completo. NUNCA feche um pedido com entrega/Taxidog sem o "
+        "número da casa — sem ele não dá pra buscar/entregar.\n"
+        "- TELEFONE no WhatsApp: você JÁ tem o número do cliente (é o contato desta conversa, informado no "
+        "bloco 'Contato atual'). NUNCA pergunte 'qual seu telefone/WhatsApp' — use o número que já tem pra "
+        "buscar/cadastrar o cliente direto.\n"
         "- Avance a conversa a cada mensagem: confirme o que já sabe e pergunte só o que falta.\n"
         "- IDIOMA: responda SEMPRE 100% em português do Brasil, de forma concisa e natural, sem "
         "excesso de emoji. NUNCA use chinês, japonês, coreano nem qualquer outro idioma/alfabeto — "

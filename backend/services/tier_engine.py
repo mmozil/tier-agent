@@ -550,6 +550,15 @@ async def send_message(
         r"\bkm\b|dist[âa]ncia|cobertura|[áa]rea de atend|fora da (?:nossa )?[áa]rea|raio de atend",
         _re.I,
     )
+    # Fechamento de pedido COM Taxidog/entrega — o CEP só dá a rua, sem o NÚMERO da casa
+    # o pet não é buscado/entregue. Pega quando o modelo confirma o pedido sem ter pego o número.
+    _CLOSING_BOOKING = _re.compile(
+        r"confirmad|fechad|fica assim|fica confirmad|t[áa]\s+marcad|agendad[oa]\s+(?:pra|para)|"
+        r"ent[ãa]o fica|total\s*[:=]",
+        _re.I,
+    )
+    _TAXI_DELIV = _re.compile(r"taxidog|busca e leva|busca.*leva|leva.*em casa|entreg", _re.I)
+    _HOUSE_NUM = _re.compile(r",\s*\d{1,5}\b")  # "Rua X, 77" → número da casa presente
     _asks = "?" in (text or "")
     # Cliente perguntou ATÉ QUE HORAS um profissional trabalha (expediente) — isso é
     # diferente de "tem horário livre". O modelo respondia "não tem horário hoje".
@@ -587,6 +596,16 @@ async def send_message(
             "(sistema) Você perguntou um dado do pet (porte/raça/nome) que provavelmente já está no "
             "cadastro. Consulte AGORA o cadastro do cliente pelo telefone dele (pet_listar_tutores) e use "
             "porte/raça/nome de lá, sem perguntar. Só pergunte se realmente não existir cadastro."
+        )
+    elif (
+        active_tools and text and _ceps and _CLOSING_BOOKING.search(text) and _TAXI_DELIV.search(text)
+        and not _called("salvar_endereco", "cadastrar_cliente") and not _HOUSE_NUM.search(text)
+    ):
+        _discipline_msg = (
+            "(sistema) Você está fechando um pedido com Taxidog/entrega, mas o CEP sozinho só dá a RUA. "
+            "Antes de confirmar, PERGUNTE o número da casa e o complemento (apto/bloco), confirme rua+número "
+            "com o cliente e salve o endereço completo com pet_salvar_endereco (cep + numero). NUNCA feche "
+            "entrega/Taxidog sem o número da casa — sem ele não dá pra buscar o pet."
         )
     elif active_tools and text and _ceps and _TAXI_CTX.search(text) and not _called("taxidog"):
         _discipline_msg = (
