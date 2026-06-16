@@ -147,17 +147,17 @@ export default function ConversasPage() {
     }
   }
 
-  async function load(sc = scope) {
-    setLoading(true);
+  async function load(sc = scope, silent = false) {
+    if (!silent) setLoading(true);
     try {
       const params: Record<string, any> = { limit: 200 };
       if (sc !== "todas") params.scope = sc;
       const { data } = await api.get<Conversation[]>("/conversations", { params });
       setConvs(data);
     } catch {
-      toast.error("Falha ao carregar conversas");
+      if (!silent) toast.error("Falha ao carregar conversas");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
@@ -176,6 +176,27 @@ export default function ConversasPage() {
     api.get<{ id: number; name: string }[]>("/macros").then(({ data }) => setMacros(data)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-refresh (inbox ao vivo): a cada 10s atualiza a lista e a conversa aberta
+  // SILENCIOSAMENTE (sem spinner/flicker/toast). Sem isso, mensagens novas do canal
+  // só apareciam ao recarregar a página — parecia que "não chegava conversa".
+  useEffect(() => {
+    const id = setInterval(() => {
+      load(scope, true);
+      if (openId) {
+        api
+          .get<{ messages: Message[] }>(`/conversations/${openId}`)
+          .then(({ data }) => {
+            const next = data.messages || [];
+            // só troca se chegou msg nova — evita pular o scroll enquanto o atendente lê
+            setMsgs((prev) => (next.length > prev.length ? next : prev));
+          })
+          .catch(() => {});
+      }
+    }, 10000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, openId]);
 
   // Deep-link ?open=<id> (vindo de Leads → "Ver conversa")
   useEffect(() => {
