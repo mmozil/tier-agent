@@ -94,8 +94,8 @@ export default function PlaybookExecutionsPage() {
               <ArrowLeft className="w-4 h-4" />
             </Link>
             <div className="flex-1 min-w-0">
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 truncate ${FC.ink}`}>Execuções · {pb.nome}</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Últimas {execs.length} execuções deste playbook. Clique pra ver os steps.</p>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 truncate ${FC.ink}`}>Execuções · {pb.nome}</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Últimas {execs.length} execuções deste playbook. Clique pra ver os steps.</p>
             </div>
             <Button variant="secondary" onClick={load} className="shrink-0">Atualizar</Button>
           </div>
@@ -230,7 +230,7 @@ function ExecutionStepsDrawer({ executionId, onClose }: { executionId: number; o
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
       <div className="w-[520px] bg-white dark:bg-[#0c0e12] h-full overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className={`px-5 py-4 border-b ${FC.hair} flex items-center justify-between sticky top-0 bg-white dark:bg-[#0c0e12]`}>
-          <h3 className={`text-[16px] font-[450] ${FC.ink}`}>Execução #{executionId}</h3>
+          <h3 className={`text-[20px] font-[500] leading-7 fc-crisp ${FC.ink}`}>Execução #{executionId}</h3>
           <button onClick={onClose} className={iconBtn}>×</button>
         </div>
 

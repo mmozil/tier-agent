@@ -159,8 +159,8 @@ export default function MetricasPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Métricas</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Métricas</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                 Custo, latência, uso por agente e por modelo nos últimos {days} dias.
               </p>
             </div>
@@ -217,7 +217,7 @@ export default function MetricasPage() {
               <div className="p-6">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Volume diário</h3>
+                  <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Volume diário</h3>
                   <p className={`text-[13px] ${FC.sub}`}>Mensagens enviadas vs custo (R$)</p>
                 </div>
               </div>
@@ -487,7 +487,7 @@ function SectionTitle({
   icon?: React.ComponentType<{ className?: string }>;
 }) {
   // títulos de seção SEM ícone (igual Firecrawl)
-  return <h3 className={`text-[16px] font-[450] tracking-[-0.1px] mb-4 ${FC.ink}`}>{title}</h3>;
+  return <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] mb-4 ${FC.ink}`}>{title}</h3>;
 }
 
 function CellSection({
@@ -567,7 +567,7 @@ function EmptyState() {
       <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
         <Zap className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
       </div>
-      <h3 className={`text-[16px] font-[450] ${FC.ink} mb-1`}>Sem métricas ainda</h3>
+      <h3 className={`text-[20px] font-[500] leading-7 fc-crisp ${FC.ink} mb-1`}>Sem métricas ainda</h3>
       <p className={`text-[13px] ${FC.sub}`}>
         Conecte um WhatsApp e mande mensagens pra ver custos e estatísticas aqui.
       </p>

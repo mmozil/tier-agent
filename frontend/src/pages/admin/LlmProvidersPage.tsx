@@ -248,15 +248,15 @@ export default function LlmProvidersPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>LLM Providers</h2>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>LLM Providers</h2>
               {providers.some((p) => p.tenant_id === null) ? (
-                <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                   As LLMs agrupadas por <b>escopo</b>. Dentro de cada grupo, o <b>1º ligado</b> é o que o motor pega
                   (<span className="text-[#0a8f5a] font-medium">Em uso</span>). <b>Tenant</b> tem prioridade sobre <b>Global</b>.
                   Reordene com <b>↑↓</b>, ligue/desligue no <b>toggle</b>, teste a key no <b>⚡</b>. Clique na linha pra ver tudo.
                 </p>
               ) : (
-                <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                   Os modelos do seu agente. O marcado como <span className="text-[#0a8f5a] font-medium">Em uso</span> é o que ele
                   usa — clique em <b>Tornar principal</b> pra trocar, no <b>toggle</b> pra ligar/desligar e no <b>⚡</b> pra testar a key.
                   Se nenhum estiver ligado, o agente usa o modelo padrão da plataforma.
@@ -272,7 +272,7 @@ export default function LlmProvidersPage() {
         {showForm && (
           <Row>
             <form onSubmit={onSubmit} className="p-6 space-y-4">
-              <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Novo LLM provider</h3>
+              <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Novo LLM provider</h3>
               <div className="grid grid-cols-2 gap-4">
                 <label className="block">
                   <span className={`text-[12px] ${FC.sub}`}>Provider</span>

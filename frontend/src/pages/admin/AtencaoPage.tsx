@@ -116,8 +116,8 @@ export default function AtencaoPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Precisa de você</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Precisa de você</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                 Tudo que demanda um humano agora, em um lugar só — conversas aguardando, não atribuídas e leads/alertas.
               </p>
             </div>

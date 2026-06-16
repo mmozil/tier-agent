@@ -101,8 +101,8 @@ export default function VisaoGeralPage() {
         <Row>
           <div className="p-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Visão geral</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+              <h2 className={`text-[20px] font-[500] tracking-[-0.1px] leading-7 fc-crisp ${FC.ink}`}>Visão geral</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                 Pulso operacional dos agentes, filas e qualidade do atendimento.
               </p>
             </div>
@@ -215,8 +215,8 @@ export default function VisaoGeralPage() {
             <div className={`relative p-6 lg:border-r ${FC.hair}`}>
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Mensagens — últimos 7 dias</div>
-                  <div className={`text-[12.5px] mt-0.5 ${FC.sub}`}>
+                  <div className={`text-[20px] font-[500] tracking-[-0.1px] leading-7 fc-crisp ${FC.ink}`}>Mensagens — últimos 7 dias</div>
+                  <div className={`text-[13px] leading-5 mt-0.5 ${FC.dim}`}>
                     {repReady
                       ? `resolução pela IA: ${resolPct}%${rep?.handoffs ? ` · ${rep.handoffs} handoff(s)` : ""}`
                       : "Carregando ritmo de entrada"}
@@ -277,8 +277,8 @@ export default function VisaoGeralPage() {
             <div className="relative p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Carga por agente</div>
-                  <div className={`text-[12.5px] mt-0.5 ${FC.sub}`}>Distribuição do volume atribuído</div>
+                  <div className={`text-[20px] font-[500] tracking-[-0.1px] leading-7 fc-crisp ${FC.ink}`}>Carga por agente</div>
+                  <div className={`text-[13px] leading-5 mt-0.5 ${FC.dim}`}>Distribuição do volume atribuído</div>
                 </div>
                 {repReady && workload.length > 0 && (
                   <div className="text-right">
@@ -371,8 +371,8 @@ export default function VisaoGeralPage() {
           <div className="p-6">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <div className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Tráfego de conversas</div>
-                <div className={`text-[12.5px] mt-0.5 ${FC.sub}`}>Horários de pico — últimos 7 dias × hora do dia</div>
+                <div className={`text-[20px] font-[500] tracking-[-0.1px] leading-7 fc-crisp ${FC.ink}`}>Tráfego de conversas</div>
+                <div className={`text-[13px] leading-5 mt-0.5 ${FC.dim}`}>Horários de pico — últimos 7 dias × hora do dia</div>
               </div>
               {live && (
                 <div className={`flex items-center gap-1.5 text-[11px] ${FC.sub}`}>

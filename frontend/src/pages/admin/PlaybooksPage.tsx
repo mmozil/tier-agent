@@ -114,8 +114,8 @@ export default function PlaybooksPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Playbooks</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Playbooks</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                 Fluxos visuais de atendimento — desenhe gatilhos, ações e o agente IA segue quando faz sentido.
               </p>
             </div>
@@ -146,7 +146,7 @@ export default function PlaybooksPage() {
         <Modal onClose={() => setShowCreate(false)} wide={createMode === "choose" || createMode === "template"}>
           {createMode === "choose" && (
             <div className="space-y-4">
-              <h2 className={`text-[16px] font-[450] ${FC.ink}`}>Novo playbook</h2>
+              <h2 className={`text-[20px] font-[500] leading-7 fc-crisp ${FC.ink}`}>Novo playbook</h2>
               <p className={`text-[13px] ${FC.sub}`}>Comece em branco ou escolha um template pronto.</p>
               <div className="grid grid-cols-2 gap-3">
                 <button onClick={() => setCreateMode("blank")} className={`text-left rounded-lg p-4 border ${FC.hair} hover:border-[#003083] transition-colors`}>
@@ -166,7 +166,7 @@ export default function PlaybooksPage() {
 
           {createMode === "blank" && (
             <form onSubmit={onCreateBlank} className="space-y-4">
-              <h2 className={`text-[16px] font-[450] ${FC.ink}`}>Playbook em branco</h2>
+              <h2 className={`text-[20px] font-[500] leading-7 fc-crisp ${FC.ink}`}>Playbook em branco</h2>
               <AgentSelect agents={agents} value={createForm.agent_id} onChange={(v) => setCreateForm({ ...createForm, agent_id: v })} />
               <FormField label="Nome">
                 <input type="text" value={createForm.nome} onChange={(e) => setCreateForm({ ...createForm, nome: e.target.value })} placeholder="Ex: Recuperar carrinho abandonado" required className={inputCls} />
@@ -183,7 +183,7 @@ export default function PlaybooksPage() {
 
           {createMode === "template" && (
             <div className="space-y-4">
-              <h2 className={`text-[16px] font-[450] ${FC.ink}`}>Escolha um template</h2>
+              <h2 className={`text-[20px] font-[500] leading-7 fc-crisp ${FC.ink}`}>Escolha um template</h2>
               <AgentSelect agents={agents} value={createForm.agent_id} onChange={(v) => setCreateForm({ ...createForm, agent_id: v })} />
               <div className="space-y-2">
                 {templates.map((t) => (
@@ -290,7 +290,7 @@ function EmptyState({ hasAgents, onCreate }: { hasAgents: boolean; onCreate: () 
       <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair}`}>
         <Workflow className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />
       </div>
-      <h3 className={`text-[16px] font-[450] mb-1 ${FC.ink}`}>{hasAgents ? "Nenhum playbook ainda" : "Crie um agente primeiro"}</h3>
+      <h3 className={`text-[20px] font-[500] leading-7 fc-crisp mb-1 ${FC.ink}`}>{hasAgents ? "Nenhum playbook ainda" : "Crie um agente primeiro"}</h3>
       <p className={`text-[13px] mb-5 max-w-md mx-auto ${FC.sub}`}>
         {hasAgents
           ? "Playbooks são fluxos visuais de atendimento. Quando uma mensagem matchar o trigger, o playbook executa em vez do agente IA livre."

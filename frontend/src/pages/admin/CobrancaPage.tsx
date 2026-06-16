@@ -68,8 +68,8 @@ export default function CobrancaPage() {
       <PageFrame>
         <Row>
           <div className="p-6">
-            <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Cobrança</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Escolha o plano que cabe no seu volume.</p>
+            <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Cobrança</h2>
+            <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Escolha o plano que cabe no seu volume.</p>
             {sub && sub.current_sku && sub.current_sku !== "trial" && (
               <div className="mt-4 rounded-lg border border-[#0a8f5a]/30 bg-[#0a8f5a]/[0.06] px-4 py-3 text-[13px] text-[#0a8f5a]">
                 <strong>Plano atual:</strong> {sub.sku_details?.label}
@@ -116,7 +116,7 @@ export default function CobrancaPage() {
                         Mais popular
                       </div>
                     )}
-                    <div className={`text-[18px] font-[450] ${FC.ink}`}>{s.label}</div>
+                    <div className={`text-[20px] font-[500] leading-7 fc-crisp ${FC.ink}`}>{s.label}</div>
                     <div className={`text-[13px] mt-1 min-h-[36px] ${FC.sub}`}>{s.description}</div>
 
                     <div className="mt-4 flex items-baseline gap-1">

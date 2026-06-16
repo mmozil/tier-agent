@@ -145,8 +145,8 @@ export default function EquipePage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Equipe</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Equipe</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                 Atendentes com login próprio. Entram pela mesma tela de login e veem só este workspace.
               </p>
             </div>
@@ -161,7 +161,7 @@ export default function EquipePage() {
           <Row>
             <div className="p-6">
               <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Novo atendente</h3>
+                <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Novo atendente</h3>
                 <button onClick={() => setShowForm(false)} className={iconBtn} title="Fechar">
                   <X className="w-4 h-4" />
                 </button>

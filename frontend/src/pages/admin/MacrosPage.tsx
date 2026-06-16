@@ -105,8 +105,8 @@ export default function MacrosPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Macros</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Macros</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                 Atalhos do atendente: 1 clique executa uma sequência (etiqueta + atribuir + responder + status). Aplica na conversa pelo botão <b>Macros</b> no painel.
               </p>
             </div>

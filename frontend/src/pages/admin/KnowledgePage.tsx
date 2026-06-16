@@ -113,8 +113,8 @@ export default function KnowledgePage() {
       <PageFrame>
         <Row>
           <div className="p-6">
-            <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Knowledge</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+            <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Knowledge</h2>
+            <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
               Suba PDF, planilhas e textos. Vira skill consumível pelo agente em segundos.
             </p>
           </div>
@@ -122,7 +122,7 @@ export default function KnowledgePage() {
 
         <Row>
           <div className="p-6">
-            <h3 className={`text-[16px] font-[450] tracking-[-0.1px] mb-3 ${FC.ink}`}>Novo arquivo</h3>
+            <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] mb-3 ${FC.ink}`}>Novo arquivo</h3>
             <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr_auto] gap-3 items-end">
               <label className="block">
                 <span className={`text-[12px] ${FC.sub}`}>Agente</span>

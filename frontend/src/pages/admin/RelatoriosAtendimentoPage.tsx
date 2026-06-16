@@ -45,7 +45,7 @@ function Kpi({ icon: Icon, label, value, color }: { icon: any; label: string; va
 function SubCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="p-6">
-      <h3 className={`text-[16px] font-[450] tracking-[-0.1px] mb-3 ${FC.ink}`}>{title}</h3>
+      <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] mb-3 ${FC.ink}`}>{title}</h3>
       {children}
     </div>
   );
@@ -128,8 +128,8 @@ export default function RelatoriosAtendimentoPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Relatórios de atendimento</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Volume, handoffs, satisfação e etiquetas no período.</p>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Relatórios de atendimento</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Volume, handoffs, satisfação e etiquetas no período.</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <select

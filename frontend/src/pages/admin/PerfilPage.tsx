@@ -33,8 +33,8 @@ export default function PerfilPage() {
       <PageFrame>
         <Row>
           <div className="p-6">
-            <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Meu perfil</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Dados básicos da sua conta no Tier Agent.</p>
+            <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Meu perfil</h2>
+            <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Dados básicos da sua conta no Tier Agent.</p>
           </div>
         </Row>
 

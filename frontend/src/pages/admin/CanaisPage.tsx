@@ -183,8 +183,8 @@ export default function CanaisPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Canais</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Conecte WhatsApp, Telegram, Email e outros canais aos seus agentes.</p>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Canais</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Conecte WhatsApp, Telegram, Email e outros canais aos seus agentes.</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {selectedAgent ? (
@@ -220,7 +220,7 @@ export default function CanaisPage() {
         {showProvision && (
           <Row>
             <div className="p-6 space-y-4">
-              <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Conectar WhatsApp</h3>
+              <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar WhatsApp</h3>
               <label className="block">
                 <span className={`text-[12px] ${FC.sub}`}>Vincular ao agente</span>
                 <select

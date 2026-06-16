@@ -314,7 +314,7 @@ export default function ConversasPage() {
     <div className="max-w-[1232px] mx-auto pt-1">
       <div className="flex items-center justify-between mb-6 mt-2">
         <div>
-          <h1 className="text-[20px] font-[450] tracking-[-0.1px] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
+          <h1 className="text-[20px] font-[500] fc-crisp tracking-[-0.1px] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
           <p className="text-[13px] text-[#262626]/[0.56] dark:text-[#8b93a0] mt-1">Acompanhe as conversas do seu agente e o histórico de mensagens.</p>
         </div>
         <div className="flex items-center gap-2">

@@ -17,6 +17,10 @@
   }
   .font-display { font-family: "Inter", -apple-system, sans-serif; letter-spacing: -0.02em; font-feature-settings: "ss01","cv11"; }
   .text-balance { text-wrap: balance; }
+  /* Renderiza o texto em escala de cinza (sem a franja colorida do ClearType no
+     Windows) — igual o Firecrawl. O translateZ(0) promove o elemento a uma camada
+     na GPU, o que faz o Chrome usar grayscale AA. Usar em títulos. */
+  .fc-crisp { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; transform: translateZ(0); }
 
   /* ─── "Gelatina" (spring estilo Firecrawl/framer-motion) ─────────────
      Ao passar o mouse o elemento dá um pop elástico (estoura levemente e

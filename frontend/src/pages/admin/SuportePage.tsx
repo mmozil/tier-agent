@@ -40,8 +40,8 @@ export default function SuportePage() {
       <PageFrame>
         <Row>
           <div className="p-6">
-            <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Suporte</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Como podemos te ajudar a tirar o máximo do Tier Agent.</p>
+            <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Suporte</h2>
+            <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Como podemos te ajudar a tirar o máximo do Tier Agent.</p>
           </div>
         </Row>
 
@@ -71,7 +71,7 @@ export default function SuportePage() {
 
         <Row last>
           <div className="p-6">
-            <h3 className={`text-[16px] font-[450] tracking-[-0.1px] mb-1 ${FC.ink}`}>Sobre o Tier Agent</h3>
+            <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] mb-1 ${FC.ink}`}>Sobre o Tier Agent</h3>
             <p className={`text-[13px] leading-relaxed ${FC.sub}`}>
               Plataforma de agentes IA configuráveis. Cada agente roda em um container isolado, aprende com as conversas
               e age via WhatsApp, e-mail, web e mais. Suporte 24/7 sem trocar de ferramenta.

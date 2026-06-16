@@ -82,8 +82,8 @@ export default function MarketplacePage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Marketplace</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Marketplace</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                 Templates de playbook publicados pela comunidade Tier. Importe pro seu workspace e adapte.
               </p>
             </div>

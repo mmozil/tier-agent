@@ -314,8 +314,8 @@ export default function FontesDadosPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div className="min-w-0">
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Integrações (MCP)</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Integrações (MCP)</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                 Conecte o agente a outras plataformas — ele passa a <b>consultar dados e agir</b> nelas
                 durante a conversa (via ferramentas MCP). Escolha uma integração abaixo ou conecte um
                 servidor personalizado.
@@ -398,7 +398,7 @@ export default function FontesDadosPage() {
             <form onSubmit={onSubmit} className="p-6 space-y-4">
               <div className="flex items-center gap-2.5">
                 <Avatar preset={formPreset} nome={formPreset.nome} />
-                <h3 className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>
+                <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>
                   Conectar {formPreset.key === "custom" ? "servidor MCP" : formPreset.nome}
                 </h3>
               </div>

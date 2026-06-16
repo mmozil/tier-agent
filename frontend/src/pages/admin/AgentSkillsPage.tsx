@@ -104,8 +104,8 @@ export default function AgentSkillsPage() {
               <ArrowLeft className="w-4 h-4" />
             </Link>
             <div className="flex-1 min-w-0">
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 truncate ${FC.ink}`}>Skills · {agent.nome}</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Skills auto-criadas pelo Curator do agente e knowledge enviado por você.</p>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 truncate ${FC.ink}`}>Skills · {agent.nome}</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Skills auto-criadas pelo Curator do agente e knowledge enviado por você.</p>
             </div>
             <Button variant="secondary" onClick={load} className="shrink-0">Atualizar</Button>
           </div>

@@ -139,8 +139,8 @@ export default function AgentesPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Agentes</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>Crie e gerencie os funcionários digitais do seu workspace.</p>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Agentes</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Crie e gerencie os funcionários digitais do seu workspace.</p>
             </div>
             <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
               <Plus className="w-4 h-4" /> Novo agente
