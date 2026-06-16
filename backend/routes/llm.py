@@ -4,6 +4,8 @@ Cliente cadastra provider + API key + modelo + fallback chain via UI.
 API key é Fernet-encrypted no DB.
 """
 
+import json
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,6 +41,41 @@ SUPPORTED_PROVIDERS = {
     "nous": "Nous Portal (Engine-2/3, DeepEngine)",
     "local": "Endpoint OpenAI-compatible custom (Ollama/vLLM/LM Studio)",
 }
+
+# Catálogo de modelos sugeridos por provider — PARÂMETRO (não hardcode no frontend).
+# O frontend consome isto via GET /supported. Sobreescrevível em runtime (sem rebuild)
+# pela env LLM_PROVIDER_MODELS_JSON = {"anthropic":["..."], ...} (merge sobre o default).
+_DEFAULT_PROVIDER_MODELS: dict[str, list[str]] = {
+    "minimax": ["MiniMax-M2"],
+    "anthropic": ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-7"],
+    "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"],
+    "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+    "deepseek": ["deepseek-chat", "deepseek-reasoner"],
+    "openrouter": [
+        "anthropic/claude-haiku-4.5",
+        "openai/gpt-4o-mini",
+        "google/gemini-2.5-flash",
+        "deepseek/deepseek-chat",
+    ],
+    "nous": ["Hermes-3-Llama-3.1-70B"],
+    "local": [],
+}
+
+
+def _provider_models() -> dict[str, list[str]]:
+    """Catálogo efetivo: default + override por env (Coolify) sem mexer em código.
+
+    LLM_PROVIDER_MODELS_JSON='{"anthropic":["claude-haiku-4-5-20251001"],"deepseek":[...]}'
+    """
+    raw = os.environ.get("LLM_PROVIDER_MODELS_JSON")
+    if raw:
+        try:
+            override = json.loads(raw)
+            if isinstance(override, dict):
+                return {**_DEFAULT_PROVIDER_MODELS, **{k: list(v) for k, v in override.items() if isinstance(v, list)}}
+        except Exception:
+            pass
+    return _DEFAULT_PROVIDER_MODELS
 
 
 class LlmProviderIn(BaseModel):
@@ -99,8 +136,16 @@ class LlmProviderOut(BaseModel):
 
 @router.get("/supported")
 async def supported_providers():
-    """Lista provedores suportados pelo Tier Agent (UI usa pra popular dropdown)."""
-    return {"providers": [{"key": k, "label": v} for k, v in SUPPORTED_PROVIDERS.items()]}
+    """Provedores suportados + modelos sugeridos por provider (UI popula o dropdown).
+
+    `models` vem do catálogo parametrizável (`_provider_models`), não hardcoded no front.
+    """
+    catalog = _provider_models()
+    return {
+        "providers": [
+            {"key": k, "label": v, "models": catalog.get(k, [])} for k, v in SUPPORTED_PROVIDERS.items()
+        ]
+    }
 
 
 @router.get("", response_model=list[LlmProviderOut])

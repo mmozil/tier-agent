@@ -27,20 +27,8 @@ interface Provider {
 interface SupportedProvider {
   key: string;
   label: string;
+  models?: string[]; // catálogo de modelos servido pelo backend (parametrizável)
 }
-
-// Modelos sugeridos por provider (o 1º vira o default ao trocar de provider).
-// Campo de modelo é livre — dá pra digitar qualquer um; isto só facilita.
-const MODEL_SUGGESTIONS: Record<string, string[]> = {
-  minimax: ["MiniMax-M2"],
-  anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-7"],
-  openai: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"],
-  gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
-  deepseek: ["deepseek-chat", "deepseek-reasoner"],
-  openrouter: ["anthropic/claude-haiku-4.5", "openai/gpt-4o-mini", "google/gemini-2.5-flash", "deepseek/deepseek-chat"],
-  nous: ["Hermes-3-Llama-3.1-70B"],
-  local: [],
-};
 
 interface TestResult {
   ok: boolean;
@@ -200,6 +188,9 @@ export default function LlmProvidersPage() {
   // cabeçalhos de coluna (11px) em sub (56%) e não mut (40%): texto pequeno precisa de contraste
   const colLabel = `text-[11px] uppercase tracking-[0.06em] ${FC.sub}`;
 
+  // Modelos sugeridos do provider — vêm do backend (parâmetro), não hardcoded aqui.
+  const modelsFor = (prov: string) => supported.find((s) => s.key === prov)?.models ?? [];
+
   function scopeLabel(p: Provider) {
     return p.tenant_id === null ? "Global" : `Tenant ${p.tenant_id}`;
   }
@@ -249,7 +240,7 @@ export default function LlmProvidersPage() {
                     onChange={(e) => {
                       const prov = e.target.value;
                       // troca o provider E já sugere o modelo padrão dele (o usuário pode editar)
-                      setForm({ ...form, provider: prov, default_model: MODEL_SUGGESTIONS[prov]?.[0] ?? "" });
+                      setForm({ ...form, provider: prov, default_model: modelsFor(prov)[0] ?? "" });
                     }}
                     className={inputCls}
                   >
@@ -261,7 +252,7 @@ export default function LlmProvidersPage() {
                 <label className="block">
                   <span className={`text-[12px] ${FC.sub}`}>Modelo</span>
                   {(() => {
-                    const models = MODEL_SUGGESTIONS[form.provider] ?? [];
+                    const models = modelsFor(form.provider);
                     const isCustom = !models.includes(form.default_model);
                     return (
                       <>
