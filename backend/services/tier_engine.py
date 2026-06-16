@@ -540,6 +540,16 @@ async def send_message(
     _ASKS_PHONE = _re.compile(r"whats|telefone|n[úu]mero|seu zap|seu contato", _re.I)
     _RE_CEP = _re.compile(r"\b\d{5}-?\d{3}\b")
     _RE_PHONE = _re.compile(r"(?:\+?55\s*)?\(?\d{2}\)?\s*9?\d{4}[-\s]?\d{4}")
+    # Todos os CEPs que o cliente digitou, em ordem. SEMPRE vale o ÚLTIMO (correção). O
+    # cliente que erra e corrige o CEP é o caso clássico — pegar o primeiro trava o agente
+    # numa distância errada e ele fica repetindo "fora de área" pra sempre.
+    _ceps = _RE_CEP.findall(_user_texts)
+    # Resposta afirma distância/cobertura do Taxidog (km / fora de área / raio) — usado pra
+    # detectar quando o modelo REPETE uma faixa velha de memória sem recotar com o CEP atual.
+    _TAXI_CTX = _re.compile(
+        r"\bkm\b|dist[âa]ncia|cobertura|[áa]rea de atend|fora da (?:nossa )?[áa]rea|raio de atend",
+        _re.I,
+    )
     _asks = "?" in (text or "")
     # Cliente perguntou ATÉ QUE HORAS um profissional trabalha (expediente) — isso é
     # diferente de "tem horário livre". O modelo respondia "não tem horário hoje".
@@ -578,12 +588,19 @@ async def send_message(
             "cadastro. Consulte AGORA o cadastro do cliente pelo telefone dele (pet_listar_tutores) e use "
             "porte/raça/nome de lá, sem perguntar. Só pergunte se realmente não existir cadastro."
         )
-    elif active_tools and text and _asks and _ASKS_CEP.search(text) and _RE_CEP.search(_user_texts):
-        _cep = _RE_CEP.search(_user_texts).group(0)  # type: ignore[union-attr]
+    elif active_tools and text and _ceps and _TAXI_CTX.search(text) and not _called("taxidog"):
         _discipline_msg = (
-            f"(sistema) O cliente JÁ informou o CEP nesta conversa: {_cep}. NÃO peça de novo — chame AGORA "
-            f"pet_taxidog_cotar com cep_cliente={_cep} e traga a faixa do Taxidog. Se a ferramenta não "
-            "conseguir calcular, aí sim confirme com o cliente se ele fica até 3km ou até 7km — UMA vez só."
+            f"(sistema) Você afirmou distância/cobertura do Taxidog SEM cotar agora — NUNCA repita faixa/"
+            f"distância de memória. O CEP MAIS RECENTE do cliente é {_ceps[-1]} (se ele corrigiu, vale SEMPRE "
+            f"o último). Chame AGORA pet_taxidog_cotar com cep_cliente={_ceps[-1]} e responda SÓ com o resultado "
+            "dessa chamada (faixa e valor). Pare de repetir a mesma mensagem."
+        )
+    elif active_tools and text and _asks and _ASKS_CEP.search(text) and _ceps:
+        _cep = _ceps[-1]
+        _discipline_msg = (
+            f"(sistema) O cliente JÁ informou o CEP nesta conversa (o mais recente é {_cep}). NÃO peça de novo "
+            f"— chame AGORA pet_taxidog_cotar com cep_cliente={_cep} e traga a faixa do Taxidog. Se a ferramenta "
+            "não conseguir calcular, aí sim confirme com o cliente se ele fica até 3km ou até 7km — UMA vez só."
         )
     elif active_tools and text and _asks and _ASKS_PHONE.search(text) and _RE_PHONE.search(_user_texts):
         _tel = _RE_PHONE.search(_user_texts).group(0).strip()  # type: ignore[union-attr]
