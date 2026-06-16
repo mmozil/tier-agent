@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
@@ -6,6 +6,8 @@ import { motion } from "framer-motion";
 import { useGoogleLogin } from "@react-oauth/google";
 
 import { api } from "@/lib/api";
+
+const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
 function GoogleIcon() {
   return (
@@ -24,7 +26,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!email || !senha) {
       toast.error("Preencha email e senha");
@@ -42,22 +44,6 @@ export default function Login() {
       setLoading(false);
     }
   }
-
-  const loginWithGoogle = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      setLoading(true);
-      try {
-        await api.post("/auth/google", { access_token: tokenResponse.access_token });
-        toast.success("Bem-vindo");
-        window.location.href = "/admin/agentes";
-      } catch (err: any) {
-        toast.error(err?.response?.data?.detail || "Falha no login Google");
-      } finally {
-        setLoading(false);
-      }
-    },
-    onError: () => toast.error("Falha no login com Google"),
-  });
 
   return (
     <div className="min-h-screen flex bg-[#F8FAFF] font-sans">
@@ -147,15 +133,7 @@ export default function Login() {
               <div className="flex-1 h-px bg-[#E2E8F0]" />
             </div>
 
-            <button
-              type="button"
-              onClick={() => loginWithGoogle()}
-              disabled={loading}
-              className="w-full h-[50px] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[#0A1628] font-semibold rounded-lg text-[14px] flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50"
-            >
-              <GoogleIcon />
-              Continuar com Google
-            </button>
+            {GOOGLE_ENABLED ? <GoogleLoginButton loading={loading} setLoading={setLoading} /> : null}
           </form>
         </motion.div>
 
@@ -232,5 +210,41 @@ export default function Login() {
         </div>
       </div>
     </div>
+  );
+}
+
+function GoogleLoginButton({
+  loading,
+  setLoading,
+}: {
+  loading: boolean;
+  setLoading: Dispatch<SetStateAction<boolean>>;
+}) {
+  const loginWithGoogle = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setLoading(true);
+      try {
+        await api.post("/auth/google", { access_token: tokenResponse.access_token });
+        toast.success("Bem-vindo");
+        window.location.href = "/admin/agentes";
+      } catch (err: any) {
+        toast.error(err?.response?.data?.detail || "Falha no login Google");
+      } finally {
+        setLoading(false);
+      }
+    },
+    onError: () => toast.error("Falha no login com Google"),
+  });
+
+  return (
+    <button
+      type="button"
+      onClick={() => loginWithGoogle()}
+      disabled={loading}
+      className="w-full h-[50px] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[#0A1628] font-semibold rounded-lg text-[14px] flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50"
+    >
+      <GoogleIcon />
+      Continuar com Google
+    </button>
   );
 }

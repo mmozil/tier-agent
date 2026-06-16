@@ -10,15 +10,17 @@ import "./index.css";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
+const appShell = (
+  <BrowserRouter>
+    <AuthProvider>
+      <App />
+      <Toaster position="top-right" />
+    </AuthProvider>
+  </BrowserRouter>
+);
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <BrowserRouter>
-        <AuthProvider>
-          <App />
-          <Toaster position="top-right" />
-        </AuthProvider>
-      </BrowserRouter>
-    </GoogleOAuthProvider>
+    {GOOGLE_CLIENT_ID ? <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{appShell}</GoogleOAuthProvider> : appShell}
   </React.StrictMode>,
 );
