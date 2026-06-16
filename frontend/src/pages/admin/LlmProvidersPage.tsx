@@ -136,6 +136,26 @@ export default function LlmProvidersPage() {
     }
   }
 
+  // 1 clique: torna este o provider PRINCIPAL (o que o agente usa). Ativa + coloca
+  // na frente de todos do mesmo escopo (menor priority vence). Jeito simples de trocar
+  // o modelo sem mexer em toggle/ordem manualmente.
+  async function makePrimary(p: Provider) {
+    if (p.tenant_id === null) {
+      toast("Esse é o modelo GLOBAL da plataforma — cadastre/escolha um provider do seu workspace pra ser o principal do seu agente.", { icon: "ℹ️" });
+      return;
+    }
+    const scope = providers.filter((x) => x.tenant_id === p.tenant_id);
+    const minPriority = Math.min(...scope.map((x) => x.priority));
+    try {
+      await api.patch(`/llm-providers/${p.id}`, { active: true, priority: minPriority - 1 });
+      toast.success(`${p.provider} agora é o principal ✓`);
+      setDetail(null);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao tornar principal");
+    }
+  }
+
   // Reordena (prioridade): sobe/desce dentro do MESMO escopo (global ou tenant).
   // Quem tem MENOR priority é usado primeiro. Swap dos valores entre vizinhos.
   async function move(p: Provider, dir: "up" | "down") {
@@ -387,12 +407,20 @@ export default function LlmProvidersPage() {
                       </div>
                     )}
 
-                    {/* Provider + Em uso */}
+                    {/* Provider + Em uso / Tornar principal */}
                     <div className="min-w-0 flex items-center gap-2">
                       <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{p.provider}</span>
-                      {p.in_use && (
+                      {p.in_use ? (
                         <span className="shrink-0 px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
-                      )}
+                      ) : p.tenant_id !== null ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); makePrimary(p); }}
+                          title="Usar este modelo no agente"
+                          className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded text-[#003083] dark:text-[#5b9bff] hover:bg-[#003083]/[0.06]"
+                        >
+                          Tornar principal
+                        </button>
+                      ) : null}
                     </div>
 
                     {/* Modelo + fallback */}
@@ -544,9 +572,16 @@ export default function LlmProvidersPage() {
 
               {/* Ações */}
               <div className="flex items-center justify-between gap-2 pt-1">
-                <Button variant="ghost" size="sm" onClick={() => toggleActive(detail)}>
-                  {detail.active ? "Desligar" : "Ligar"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {!detail.in_use && detail.tenant_id !== null && (
+                    <Button variant="primary" size="sm" onClick={() => makePrimary(detail)}>
+                      <CheckCircle2 className="w-3 h-3" /> Tornar principal
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => toggleActive(detail)}>
+                    {detail.active ? "Desligar" : "Ligar"}
+                  </Button>
+                </div>
                 <Button variant="danger" size="sm" onClick={() => onDelete(detail.id)}>
                   <Trash2 className="w-3 h-3" /> Deletar
                 </Button>
