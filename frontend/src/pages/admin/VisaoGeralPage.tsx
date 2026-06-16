@@ -74,8 +74,12 @@ export default function VisaoGeralPage() {
   const ps = rep?.por_status || {};
   const totalConversas = rep?.total_conversas || 0;
   const resolPct = totalConversas > 0 ? Math.round(((ps.closed || 0) / totalConversas) * 100) : 0;
-  const workload = Object.entries(rep?.por_atendente || {});
+  const workload = useMemo(
+    () => Object.entries(rep?.por_atendente || {}).sort(([, left], [, right]) => right - left),
+    [rep?.por_atendente],
+  );
   const maxLoad = Math.max(1, ...workload.map(([, value]) => value));
+  const totalAssigned = workload.reduce((sum, [, value]) => sum + value, 0);
 
   const cv = live?.conversas;
   const at = live?.atendentes;
@@ -271,15 +275,38 @@ export default function VisaoGeralPage() {
             </div>
 
             <div className="relative p-6">
-              <div className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Carga por agente</div>
-              <div className={`text-[12.5px] mt-0.5 ${FC.sub}`}>Conversas no período</div>
-              <div className="mt-4 space-y-3.5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className={`text-[16px] font-[450] tracking-[-0.1px] ${FC.ink}`}>Carga por agente</div>
+                  <div className={`text-[12.5px] mt-0.5 ${FC.sub}`}>Distribuição do volume atribuído</div>
+                </div>
+                {repReady && workload.length > 0 && (
+                  <div className="text-right">
+                    <div className={`tabular-nums text-[18px] font-medium leading-none ${FC.ink}`}>
+                      {totalAssigned.toLocaleString("pt-BR")}
+                    </div>
+                    <div className={`mt-1 text-[11px] ${FC.sub}`}>conversas atribuídas</div>
+                  </div>
+                )}
+              </div>
+
+              <div className={`mt-4 -mx-6 border-t ${FC.hair}`}>
                 {!repReady && (
-                  <div className="space-y-3" aria-hidden>
+                  <div aria-hidden>
                     {Array.from({ length: 4 }).map((_, index) => (
-                      <div key={index}>
-                        <div className={`h-3 w-28 ${SKEL}`} />
-                        <div className={`mt-2 h-1.5 w-full ${SKEL}`} />
+                      <div key={index} className={`flex items-start justify-between gap-3 border-b px-6 py-3.5 ${FC.hair}`}>
+                        <div className="flex items-start gap-3">
+                          <div className={`mt-1 h-3 w-5 ${SKEL}`} />
+                          <div className={`h-7 w-7 rounded-full ${SKEL}`} />
+                          <div>
+                            <div className={`h-3.5 w-28 ${SKEL}`} />
+                            <div className={`mt-2 h-3 w-20 ${SKEL}`} />
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`ml-auto h-4 w-12 ${SKEL}`} />
+                          <div className={`mt-2 ml-auto h-3 w-16 ${SKEL}`} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -295,20 +322,46 @@ export default function VisaoGeralPage() {
                 )}
 
                 {repReady &&
-                  workload.map(([name, value]) => (
-                    <div key={name}>
-                      <div className="flex items-center justify-between text-[13px]">
-                        <span className={`font-medium ${FC.ink}`}>{name}</span>
-                        <span className={`tabular-nums ${FC.sub}`}>{value}</span>
-                      </div>
-                      <div className="mt-1.5 h-1.5 rounded-full bg-[#262626]/[0.06] overflow-hidden">
+                  workload.map(([name, value], index) => {
+                    const relativeShare = (value / maxLoad) * 100;
+                    const volumeShare = totalAssigned > 0 ? Math.round((value / totalAssigned) * 100) : 0;
+
+                    return (
+                      <div key={name} className={`relative overflow-hidden border-b px-6 py-3.5 last:border-b-0 ${FC.hair}`}>
                         <div
-                          className="h-full rounded-full bg-[#003083] dark:bg-[#5b9bff]"
-                          style={{ width: `${(value / maxLoad) * 100}%` }}
+                          className="pointer-events-none absolute inset-y-3 left-0 rounded-r-[10px] border border-[#003083]/[0.06] bg-[linear-gradient(90deg,rgba(0,48,131,0.08),rgba(0,48,131,0.03))] transition-[width] duration-300 motion-reduce:transition-none dark:border-[#5b9bff]/[0.10] dark:bg-[linear-gradient(90deg,rgba(91,155,255,0.18),rgba(91,155,255,0.06))]"
+                          style={{ width: `max(${relativeShare.toFixed(2)}%, 72px)` }}
                         />
+                        <div className="relative flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex items-start gap-3">
+                            <div className={`w-7 pt-0.5 text-[11px] tabular-nums ${FC.mut}`}>
+                              {String(index + 1).padStart(2, "0")}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#003083]/[0.08] text-[11px] font-medium text-[#003083] dark:bg-[#5b9bff]/[0.12] dark:text-[#8db9ff]">
+                                  {getInitials(name)}
+                                </span>
+                                <span className={`truncate text-[13px] font-medium ${FC.ink}`}>{name}</span>
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                                <span className={FC.sub}>{volumeShare}% do volume</span>
+                                {index === 0 && workload.length > 1 && (
+                                  <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 font-medium ${FC.hair} ${FC.sub}`}>
+                                    maior fila
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="pl-3 text-right">
+                            <div className={`tabular-nums text-[18px] font-medium leading-none ${FC.ink}`}>{value}</div>
+                            <div className={`mt-1 text-[11px] ${FC.sub}`}>conversas</div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             </div>
           </div>
@@ -445,4 +498,14 @@ function Kpi({
       {hint && <div className={`mt-1.5 text-[11px] ${FC.sub}`}>{hint}</div>}
     </div>
   );
+}
+
+function getInitials(name: string) {
+  const letters = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "");
+
+  return letters.join("") || "—";
 }
