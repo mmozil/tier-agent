@@ -168,26 +168,123 @@ async def _call_openai_compatible(
     return r.json()
 
 
+def _openai_tools_to_anthropic(tools: list[dict] | None) -> list[dict]:
+    """Converte tools do formato OpenAI ({type:function,function:{...}}) pro Anthropic
+    ({name,description,input_schema})."""
+    out = []
+    for t in tools or []:
+        fn = t.get("function") or {}
+        if not fn.get("name"):
+            continue
+        out.append({
+            "name": fn["name"],
+            "description": fn.get("description") or "",
+            "input_schema": fn.get("parameters") or {"type": "object", "properties": {}},
+        })
+    return out
+
+
+def _openai_messages_to_anthropic(messages: list[dict]) -> list[dict]:
+    """Converte mensagens estilo OpenAI → Anthropic (sem as system). Suporta tool-use:
+    assistant.tool_calls → blocos tool_use; role:tool → tool_result (coalescidos num único
+    user, como a API exige); user multimodal (image_url) → blocos image."""
+    import json as _json
+
+    out: list[dict] = []
+    pending: list[dict] = []
+
+    def flush():
+        nonlocal pending
+        if pending:
+            out.append({"role": "user", "content": pending})
+            pending = []
+
+    for m in messages:
+        role = m.get("role")
+        if role == "system":
+            continue
+        if role == "tool":
+            pending.append({
+                "type": "tool_result",
+                "tool_use_id": m.get("tool_call_id"),
+                "content": str(m.get("content") or ""),
+            })
+            continue
+        flush()  # qualquer tool_result acumulado vira um user antes da próxima msg
+        content = m.get("content")
+        if role == "assistant":
+            blocks: list[dict] = []
+            if isinstance(content, str) and content.strip():
+                blocks.append({"type": "text", "text": content})
+            for tc in (m.get("tool_calls") or []):
+                fn = tc.get("function") or {}
+                try:
+                    args = _json.loads(fn.get("arguments") or "{}")
+                except Exception:
+                    args = {}
+                blocks.append({"type": "tool_use", "id": tc.get("id"), "name": fn.get("name"), "input": args})
+            if not blocks:
+                blocks = [{"type": "text", "text": content if isinstance(content, str) else "..."}]
+            out.append({"role": "assistant", "content": blocks})
+        else:  # user
+            if isinstance(content, list):
+                ab: list[dict] = []
+                for part in content:
+                    if part.get("type") == "text":
+                        ab.append({"type": "text", "text": part.get("text", "")})
+                    elif part.get("type") == "image_url":
+                        url = (part.get("image_url") or {}).get("url")
+                        if url:
+                            ab.append({"type": "image", "source": {"type": "url", "url": url}})
+                out.append({"role": "user", "content": ab or [{"type": "text", "text": ""}]})
+            else:
+                out.append({"role": "user", "content": content or "..."})
+    flush()
+    return out
+
+
 async def _call_anthropic(
     *, base_url: str, api_key: str, model: str, messages: list[dict],
-    temperature: float, max_tokens: int, timeout_s: int,
+    temperature: float, max_tokens: int, timeout_s: int, tools: list[dict] | None = None,
 ) -> dict:
-    """Anthropic Messages API → normaliza pro shape OpenAI (choices/usage)."""
+    """Anthropic Messages API (com TOOL-USE) → normaliza pro shape OpenAI (choices/usage/tool_calls)."""
+    import json as _json
+
     system = "\n".join(m["content"] for m in messages if m.get("role") == "system" and isinstance(m.get("content"), str))
-    conv = [m for m in messages if m.get("role") != "system"]
-    payload = {"model": model, "system": system, "messages": conv,
-               "max_tokens": max_tokens, "temperature": temperature}
-    headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"}
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": _openai_messages_to_anthropic(messages),
+        "max_tokens": max_tokens,
+        "temperature": min(float(temperature), 1.0),  # Anthropic aceita 0..1
+    }
+    if system:
+        payload["system"] = system
+    if tools:
+        payload["tools"] = _openai_tools_to_anthropic(tools)
+    headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
     async with httpx.AsyncClient(timeout=timeout_s) as cli:
         r = await cli.post(f"{base_url}/messages", json=payload, headers=headers)
     if r.status_code >= 400:
         raise RuntimeError(f"Anthropic {model} retornou {r.status_code}: {r.text[:300]}")
     data = r.json()
-    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+    text_parts: list[str] = []
+    tool_calls: list[dict] = []
+    for b in data.get("content", []):
+        if b.get("type") == "text":
+            text_parts.append(b.get("text", ""))
+        elif b.get("type") == "tool_use":
+            tool_calls.append({
+                "id": b.get("id"),
+                "type": "function",
+                "function": {"name": b.get("name"), "arguments": _json.dumps(b.get("input") or {})},
+            })
+    msg: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
+    if tool_calls:
+        msg["tool_calls"] = tool_calls
     usage = data.get("usage", {})
     return {
         "model": data.get("model", model),
-        "choices": [{"message": {"role": "assistant", "content": text}}],
+        "choices": [{"message": msg}],
         "usage": {"prompt_tokens": usage.get("input_tokens", 0),
                   "completion_tokens": usage.get("output_tokens", 0)},
     }
@@ -198,7 +295,8 @@ async def _complete(p: TaLlmProvider, model: str, messages: list[dict], tools: l
     base = _base_url(p)
     if p.provider == "anthropic":
         return await _call_anthropic(base_url=base, api_key=api_key, model=model, messages=messages,
-                                     temperature=p.temperature, max_tokens=p.max_tokens, timeout_s=p.timeout_s)
+                                     temperature=p.temperature, max_tokens=p.max_tokens, timeout_s=p.timeout_s,
+                                     tools=tools)
     return await _call_openai_compatible(base_url=base, api_key=api_key, model=model, messages=messages,
                                          temperature=p.temperature, max_tokens=p.max_tokens,
                                          timeout_s=p.timeout_s, tools=tools)
