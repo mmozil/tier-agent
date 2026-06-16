@@ -241,7 +241,7 @@ async def log_message(
     await db.commit()
 
 
-async def load_history(db: AsyncSession, conversation_id: int, limit: int = 40) -> list[dict]:
+async def load_history(db: AsyncSession, conversation_id: int, limit: int = 80) -> list[dict]:
     """Carrega os últimos turnos (user/assistant) da conversa pra dar MEMÓRIA ao
     modelo. Sem isso o agente trata cada mensagem isolada e "esquece" o cliente
     (responde "nao" com saudação genérica). Exclui a mensagem atual do usuário
