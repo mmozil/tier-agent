@@ -396,12 +396,14 @@ async def send_message(
     # nenhuma ferramenta no turno → força a ação UMA vez (modelo ignora a persona às
     # vezes). Pega "deixa eu ver", "um momento", "já te falo", "vou verificar"...
     _ANNOUNCE = _re.compile(
-        r"deixa eu (ver|conferir|verificar|confirmar|olhar|checar|dar uma olhada)|um momento|"
-        r"j[áa] (te )?(falo|retorno|aviso|respondo|digo)|vou (ver|verificar|checar|confirmar|conferir|consultar)|"
-        r"aguarde|s[óo] um (instante|momento|minutinho)|pera[ií]",
+        r"deixa eu (ver|conferir|verificar|confirmar|olhar|checar|consultar|buscar|pesquisar|procurar|puxar|dar uma olhada)|"
+        r"um momento|s[óo] um (instante|momento|minutinho|segundo)|aguarde|pera[ií]|"
+        r"j[áa] (te )?(falo|retorno|aviso|respondo|digo|trago|passo|mando|verifico|consulto)|"
+        r"vou (ver|verificar|checar|confirmar|conferir|consultar|buscar|olhar|puxar|pesquisar|procurar|dar uma olhada)|"
+        r"\b(consultando|verificando|checando|buscando|conferindo|olhando|pesquisando|procurando)\b",
         _re.I,
     )
-    if active_tools and not tool_calls_made and text and len(text) < 240 and _ANNOUNCE.search(text):
+    if active_tools and not tool_calls_made and text and len(text) < 320 and _ANNOUNCE.search(text):
         messages.append({"role": "assistant", "content": text})
         messages.append({
             "role": "user",
@@ -455,6 +457,13 @@ async def send_message(
         r"t[áa]\s+(marcad|confirmad)|tem\s+(algum\s+)?agendament|o\s+(do|da)\s+\w+\s+(est|t[áa]|ficou|continua)",
         _re.I,
     )
+    # Citou um PREÇO sem consultar o sistema. Preço NUNCA é inventado nem fixo na persona —
+    # vem sempre de pet_listar_servicos, pelo PORTE do pet. (Ex.: disse "banho R$ 80" sem checar;
+    # porte G é R$ 144,90.) Só dispara se nenhuma tool com preço foi chamada no turno.
+    _QUOTES_PRICE = _re.compile(r"r\$\s*\d", _re.I)
+    _PRICE_CTX = _re.compile(
+        r"banho|tosa|hidrata|desembara|escova|antipulga|servi[çc]o|fica em|custa|pre[çc]o|valor|sai por", _re.I
+    )
 
     _discipline_msg = None
     if active_tools and text and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
@@ -499,6 +508,15 @@ async def send_message(
             "responda até que horas o profissional atende hoje. Se ele atende mas o serviço não cabe hoje, "
             "EXPLIQUE o porquê (ex.: já tem agendamento até tal hora; serviço mais curto ainda pode caber) — "
             "nunca diga só que 'fechou tudo'."
+        )
+    elif (
+        active_tools and text and _QUOTES_PRICE.search(text) and _PRICE_CTX.search(text)
+        and not _called("listar_servic", "criar_agendamento", "alterar_agendamento", "taxidog", "historico")
+    ):
+        _discipline_msg = (
+            "(sistema) Você citou um PREÇO sem consultar o sistema. O preço NUNCA é inventado nem fixo na "
+            "persona — chame AGORA pet_listar_servicos e use o valor do PORTE do pet (P/M/G/GG). Refaça a "
+            "resposta com o preço REAL do serviço pro porte certo."
         )
     if _discipline_msg:
         messages.append({"role": "assistant", "content": text})
