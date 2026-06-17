@@ -599,6 +599,17 @@ async def send_message(
     _PRICE_CTX = _re.compile(
         r"banho|tosa|hidrata|desembara|escova|antipulga|servi[çc]o|fica em|custa|pre[çc]o|valor|sai por", _re.I
     )
+    # Cliente DEU O OK final pra fechar ("pode confirmar tudo", "pode agendar", "fecha isso",
+    # "confirma", "pode marcar"). O modelo fraco (gpt-4o-mini) às vezes re-pergunta/re-lista
+    # horário em vez de AGENDAR. Detecta o OK explícito pra forçar a criação do agendamento.
+    _CONFIRMS_BOOKING = _re.compile(
+        r"pode\s+(confirmar|agendar|marcar|fechar)|confirma(r)?\s+tudo|fecha(r)?\s+(isso|tudo|o\s+agend)|"
+        r"\bconfirmad[oa]\b|pode\s+ser\s+ent[ãa]o|isso\s+mesmo.*confirm|t[áa]\s+(bom|certo).*(agend|confirm)|"
+        r"\bagenda(r)?\s+(isso|a[íi]|ent[ãa]o)\b",
+        _re.I,
+    )
+    # A resposta do modelo JÁ é uma confirmação de agendamento criado? (não freia se já fechou)
+    _BOOKED_OK = _re.compile(r"agendad|confirmad|marcad|prontinho|tudo certo|t[áa]\s+fechad|agendamento\s+criado", _re.I)
 
     _discipline_msg = None
     if active_tools and text and _HORARIOS_OK and _DENIES_SLOTS.search(text):
@@ -681,6 +692,19 @@ async def send_message(
             "(sistema) Você citou um PREÇO sem consultar o sistema. O preço NUNCA é inventado nem fixo na "
             "persona — chame AGORA pet_listar_servicos e use o valor do PORTE do pet (P/M/G/GG). Refaça a "
             "resposta com o preço REAL do serviço pro porte certo."
+        )
+    elif (
+        active_tools and text and _CONFIRMS_BOOKING.search(user_content or "")
+        and not _called("criar_agendamento", "agendar")
+        and not _BOOKED_OK.search(text)
+    ):
+        # Cliente confirmou e o modelo NÃO agendou (ficou re-perguntando/re-listando).
+        _discipline_msg = (
+            "(sistema) O cliente CONFIRMOU o agendamento. AGENDE AGORA: chame pet_criar_agendamento com "
+            "confirmado:true, passando em servico_ids o(s) serviço(s) escolhido(s) pelo NOME EXATO (inclua o "
+            "Taxidog no MESMO servico_ids se ele pediu — é um atendimento só) e o horário que ele escolheu "
+            "(YYYY-MM-DDTHH:MM:SS, São Paulo). NÃO re-pergunte nem re-liste horário. Depois de criar, confirme "
+            "ao cliente com o resumo (serviços, data/hora, valor total)."
         )
     if _discipline_msg:
         messages.append({"role": "assistant", "content": text})
