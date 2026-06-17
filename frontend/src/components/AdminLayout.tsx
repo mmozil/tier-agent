@@ -121,7 +121,8 @@ export default function AdminLayout() {
                   <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#262626]/40 dark:text-[#565d68]">{section.label}</span>
                 </div>
               )}
-              {section.items.map((item) => (
+              <div className="flex flex-col gap-1">
+                {section.items.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
@@ -164,6 +165,7 @@ export default function AdminLayout() {
                   }}
                 </NavLink>
               ))}
+              </div>
             </div>
           ))}
         </nav>
