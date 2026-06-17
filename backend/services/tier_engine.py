@@ -539,6 +539,21 @@ async def send_message(
     _user_texts = " ".join(
         m["content"] for m in messages if m.get("role") == "user" and isinstance(m.get("content"), str)
     )
+    # Resultados das ferramentas DESTE turno (role:tool). Usado pra pegar o modelo mentindo
+    # o retorno: ele consulta a agenda (dado certo) mas responde "não tem horário".
+    _tool_results = " ".join(
+        m["content"] for m in messages if m.get("role") == "tool" and isinstance(m.get("content"), str)
+    )
+    # A ferramenta de horários devolveu disponibilidade pro dia pedido? (faixa_livre só vem
+    # quando há slots; dia vazio traz só `aviso`/`proximo_dia_disponivel`, sem faixa_livre.)
+    _HORARIOS_OK = ("faixa_livre" in _tool_results) or ("AGENDÁVEIS" in _tool_results)
+    # O agente NEGOU que tem horário (apesar da ferramenta ter retornado).
+    _DENIES_SLOTS = _re.compile(
+        r"n[ãa]o\s+t(em|emos|ê?m)\s+(mais\s+)?(hor[áa]rio|vaga|disponib|disponí)|"
+        r"sem\s+hor[áa]rios?\s+dispon|indispon[íi]vel|n[ãa]o\s+h[áa]\s+hor[áa]rio|nenhum\s+hor[áa]rio|"
+        r"n[ãa]o\s+temos\s+dispon",
+        _re.I,
+    )
     _ASKS_CEP = _re.compile(r"\bcep\b", _re.I)
     _ASKS_PHONE = _re.compile(r"whats|telefone|n[úu]mero|seu zap|seu contato", _re.I)
     _RE_CEP = _re.compile(r"\b\d{5}-?\d{3}\b")
@@ -586,7 +601,19 @@ async def send_message(
     )
 
     _discipline_msg = None
-    if active_tools and text and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
+    if active_tools and text and _HORARIOS_OK and _DENIES_SLOTS.search(text):
+        # A ferramenta de horários RETORNOU disponibilidade, mas o agente respondeu "não tem".
+        # Força ele a relatar os horários REAIS que a ferramenta devolveu (a equipe toda).
+        _discipline_msg = (
+            "(sistema) A ferramenta de horários RETORNOU horários disponíveis neste turno (campo "
+            "faixa_livre/horários no resultado). Se houver horário para o DIA e o PERÍODO que o cliente "
+            "pediu, RELATE esses horários REAIS (com os profissionais que a ferramenta listou) — NÃO diga "
+            "que 'não tem'. Os horários da lista cobrem a equipe toda e vão até o fim do expediente "
+            "(inclusive à tarde). Só afirme indisponibilidade de um dia/período se a ferramenta realmente "
+            "NÃO trouxe horário pra ELE. Refaça a resposta com a disponibilidade real; se o cliente já "
+            "escolheu um horário da lista, AGENDE."
+        )
+    elif active_tools and text and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
         "horario", "disponiv"
     ):
         _discipline_msg = (
