@@ -87,7 +87,7 @@ const SIDEBAR_FONT =
 export default function AdminLayout() {
   const location = useLocation();
   const itemClass = (active: boolean) =>
-    `relative flex h-9 w-full items-center overflow-hidden rounded-[10px] transition-all duration-200 ease-out motion-reduce:transition-none active:scale-[0.98] ${
+    `tier-jelly relative flex h-9 w-full items-center overflow-hidden rounded-[10px] transition-all duration-200 ease-out motion-reduce:transition-none active:scale-[0.98] ${
       active
         ? "tier-sidebar-item-active text-[#003083] dark:text-[#8ab4ff]"
         : "text-[#262626]/[0.56] hover:text-[#262626]/[0.72] dark:text-[#8b93a0] dark:hover:text-[#d9dde5]"

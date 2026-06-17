@@ -22,11 +22,26 @@
      na GPU, o que faz o Chrome usar grayscale AA. Usar em títulos. */
   .fc-crisp { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; transform: translateZ(0); }
 
+  /* ─── "Gelatina" (spring estilo Firecrawl/framer-motion) ─────────────
+     Ao passar o mouse o elemento dá um pop elástico (estoura levemente e
+     volta ao tamanho normal). É one-shot no hover-enter — não é fundo. */
+  @keyframes tierJelly {
+    0%   { transform: scale(1); }
+    28%  { transform: scale(1.07); }
+    52%  { transform: scale(0.97); }
+    74%  { transform: scale(1.02); }
+    100% { transform: scale(1); }
+  }
+  .tier-jelly { will-change: transform; }
+  .tier-jelly:hover { animation: tierJelly 0.42s cubic-bezier(0.22, 1, 0.36, 1); }
   .tier-sidebar-item { background-color: transparent; }
   .tier-sidebar-item:hover { background-color: rgba(0, 0, 0, 0.035); }
   .tier-sidebar-item-active { background-color: rgba(0, 0, 0, 0.055); }
   .dark .tier-sidebar-item:hover { background-color: rgba(255, 255, 255, 0.045); }
   .dark .tier-sidebar-item-active { background-color: rgba(255, 255, 255, 0.08); }
+  @media (prefers-reduced-motion: reduce) {
+    .tier-jelly:hover { animation: none; }
+  }
 }
 
 @layer base {
