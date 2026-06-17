@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send, Trash2, Inbox } from "lucide-react";
 
@@ -83,6 +83,29 @@ function fmtPhone(ext: string): string {
   const d = (ext || "").replace(/\D/g, "");
   if (d.length >= 12) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4)}`;
   return ext;
+}
+
+// Renderiza o markdown do WhatsApp (*negrito* _itálico_ ~tachado~ `mono`) que a IA
+// usa nas mensagens — sem isso os asteriscos apareciam crus. As quebras de linha são
+// preservadas via `whitespace-pre-wrap` na bolha.
+function renderRich(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const re = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let k = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    const tok = m[0];
+    const inner = tok.slice(1, -1);
+    if (tok[0] === "*") nodes.push(<strong key={k++} className="font-semibold">{inner}</strong>);
+    else if (tok[0] === "_") nodes.push(<em key={k++}>{inner}</em>);
+    else if (tok[0] === "~") nodes.push(<del key={k++} className="opacity-70">{inner}</del>);
+    else nodes.push(<code key={k++} className="font-mono text-[12px] px-1 py-0.5 rounded bg-black/[0.06] dark:bg-white/[0.10]">{inner}</code>);
+    last = m.index + tok.length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
 }
 
 export default function ConversasPage() {
@@ -665,7 +688,7 @@ export default function ConversasPage() {
                   return (
                     <div key={m.id} className={`flex flex-col ${isUser ? "items-start" : "items-end"}`}>
                       <div
-                        className={`max-w-[78%] px-3.5 py-2 text-[13px] leading-relaxed shadow-[0_1px_1px_rgba(0,0,0,0.04)] ${
+                        className={`max-w-[78%] px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words shadow-[0_1px_1px_rgba(0,0,0,0.04)] ${
                           isUser
                             ? `rounded-2xl rounded-tl-md bg-white dark:bg-[#16191f] border ${FC.hair} ${FC.ink}`
                             : isAgent
@@ -673,7 +696,7 @@ export default function ConversasPage() {
                               : `rounded-2xl rounded-tr-md bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12] border border-[#003083]/[0.08] dark:border-[#5b9bff]/[0.16] ${FC.ink}`
                         }`}
                       >
-                        {m.content || <span className="opacity-60 italic">[sem texto]</span>}
+                        {m.content ? renderRich(m.content) : <span className="opacity-60 italic">[sem texto]</span>}
                       </div>
                       <span className={`text-[10px] mt-1 px-1 flex items-center gap-1 ${FC.mut}`}>
                         {isAgent ? (
@@ -729,8 +752,15 @@ export default function ConversasPage() {
                       })}
                     </div>
                   )}
-                  <div className="flex items-end gap-2">
-                    {!noteMode && <CannedPicker onInsert={(c) => setReplyText((prev) => (prev ? prev + "\n" + c : c))} />}
+                  {/* compositor unificado — campo em cima, ferramentas + enviar embutidos
+                      embaixo, tudo numa caixa só (estilo ChatGPT/Linear) */}
+                  <div
+                    className={`rounded-2xl border transition-shadow ${
+                      noteMode
+                        ? "border-amber-200 dark:border-amber-700/50 bg-amber-50/40 dark:bg-amber-900/10 focus-within:shadow-[0_0_0_2px_#f59e0b]"
+                        : `${FC.hair} bg-white dark:bg-[#14171c] focus-within:shadow-[0_0_0_2px_#003083] dark:focus-within:shadow-[0_0_0_2px_#5b9bff]`
+                    }`}
+                  >
                     <textarea
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
@@ -742,22 +772,23 @@ export default function ConversasPage() {
                       }}
                       rows={1}
                       placeholder={noteMode ? "Nota visível só pra equipe (não vai pro cliente)…" : "Responder ao cliente… (Enter envia, Shift+Enter quebra linha)"}
-                      className={`flex-1 resize-none max-h-32 px-3 py-2 text-[13px] rounded-xl border outline-none dark:bg-[#14171c] dark:text-[#e6e8eb] transition-shadow ${
-                        noteMode
-                          ? "border-amber-200 dark:border-amber-700/50 bg-amber-50/40 dark:bg-amber-900/10 focus:shadow-[0_0_0_2px_#f59e0b]"
-                          : `${FC.hair} focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff]`
-                      }`}
+                      className="block w-full resize-none max-h-40 px-3.5 pt-3 pb-1 text-[13px] leading-relaxed bg-transparent outline-none text-[#262626] dark:text-[#e6e8eb] placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280]"
                     />
-                    <button
-                      onClick={sendReply}
-                      disabled={sending || !replyText.trim()}
-                      className={`h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-xl text-white transition-all active:scale-[0.95] disabled:opacity-40 disabled:pointer-events-none ${
-                        noteMode ? "bg-amber-500 hover:bg-amber-600" : "bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff]"
-                      }`}
-                      title="Enviar"
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center justify-between px-2 pb-2 pt-0.5">
+                      <div className="flex items-center gap-0.5">
+                        {!noteMode && <CannedPicker onInsert={(c) => setReplyText((prev) => (prev ? prev + "\n" + c : c))} />}
+                      </div>
+                      <button
+                        onClick={sendReply}
+                        disabled={sending || !replyText.trim()}
+                        className={`h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl text-white transition-all active:scale-[0.95] disabled:opacity-40 disabled:pointer-events-none ${
+                          noteMode ? "bg-amber-500 hover:bg-amber-600" : "bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff]"
+                        }`}
+                        title="Enviar"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                   <p className={`text-[11px] ${FC.mut} mt-1.5`}>
                     {noteMode ? "A nota fica registrada na conversa, visível só pra equipe." : "Ao responder, você assume a conversa e a IA fica pausada."}
