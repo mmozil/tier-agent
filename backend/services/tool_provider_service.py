@@ -116,6 +116,10 @@ def _make_handler(
                 args = {**args, "telefone": customer_phone}
             elif real_tool.endswith("listar_tutores"):
                 args = {**args, "busca": customer_phone}
+            elif real_tool.endswith(("criar_agendamento", "cadastrar_pet", "salvar_endereco", "obter_tutor", "historico_pet")):
+                # tools que precisam do tutor certo — passa o telefone real pra o Pet
+                # resolver o tutor por ele (o modelo às vezes manda nome no tutor_id).
+                args = {**args, "_customer_phone": customer_phone}
         res = await mcp_client.call_tool(
             server_url=url, tool_name=real_tool, arguments=args, headers=headers or None
         )
