@@ -610,9 +610,29 @@ async def send_message(
     )
     # A resposta do modelo JÁ é uma confirmação de agendamento criado? (não freia se já fechou)
     _BOOKED_OK = _re.compile(r"agendad|confirmad|marcad|prontinho|tudo certo|t[áa]\s+fechad|agendamento\s+criado", _re.I)
+    # Um agendamento foi REALMENTE criado neste turno? (a tool de sucesso devolve agendamento_id)
+    _BOOKING_OK = "agendamento_id" in _tool_results
+    # A criação de agendamento FALHOU por serviço não resolvido (placeholder/código errado)?
+    _SVC_FAIL = (
+        "servico_ambiguo_ou_nao_encontrado" in _tool_results
+        or "servico_nao_encontrado" in _tool_results
+        or "opcoes_por_termo" in _tool_results
+    )
 
     _discipline_msg = None
-    if active_tools and text and _HORARIOS_OK and _DENIES_SLOTS.search(text):
+    if active_tools and text and _SVC_FAIL and not _BOOKING_OK:
+        # O modelo tentou agendar mas passou nome de serviço genérico/placeholder ou código
+        # errado → a tool devolveu opcoes_por_termo com os NOMES REAIS. Manda copiar de lá.
+        _discipline_msg = (
+            "(sistema) O agendamento NÃO foi criado: você passou nome(s) de serviço genéricos/placeholder "
+            "(ex.: 'Serviço 1', 'Nome do Serviço') ou um código errado. No resultado da ferramenta veio "
+            "`opcoes_por_termo` com os NOMES REAIS do catálogo. Chame pet_criar_agendamento DE NOVO copiando "
+            "LITERALMENTE o nome exato de cada serviço escolhido pelo cliente a partir de `opcoes_por_termo` "
+            "em servico_ids (inclua o Taxidog se ele pediu), com pet_id = o NOME do pet (ex.: 'Aslan'), o "
+            "horário REAL que o cliente escolheu nesta conversa (formato YYYY-MM-DDTHH:MM:SS — NÃO invente "
+            "data nem use exemplos) e confirmado:true. Depois confirme ao cliente."
+        )
+    elif active_tools and text and _HORARIOS_OK and _DENIES_SLOTS.search(text):
         # A ferramenta de horários RETORNOU disponibilidade, mas o agente respondeu "não tem".
         # Força ele a relatar os horários REAIS que a ferramenta devolveu (a equipe toda).
         _discipline_msg = (
@@ -695,7 +715,7 @@ async def send_message(
         )
     elif (
         active_tools and text and _CONFIRMS_BOOKING.search(user_content or "")
-        and not _called("criar_agendamento", "agendar")
+        and not _BOOKING_OK  # nenhum agendamento criado com sucesso (mesmo que tenha tentado e falhado)
         and not _BOOKED_OK.search(text)
     ):
         # Cliente confirmou e o modelo NÃO agendou (ficou re-perguntando/re-listando).
