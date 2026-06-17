@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
-import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Send, Trash2, Inbox } from "lucide-react";
+import { MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp } from "lucide-react";
 
 import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
@@ -83,6 +83,13 @@ function fmtPhone(ext: string): string {
   const d = (ext || "").replace(/\D/g, "");
   if (d.length >= 12) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4)}`;
   return ext;
+}
+
+// Ajusta a altura do textarea ao conteúdo: cresce conforme digita/pula linha, até um
+// teto (180px) — depois disso rola interno. Sem isso o campo ficava fixo em 1 linha.
+function autoGrowTextarea(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${Math.min(Math.max(el.scrollHeight, 44), 180)}px`;
 }
 
 // Renderiza o markdown do WhatsApp (*negrito* _itálico_ ~tachado~ `mono`) que a IA
@@ -196,12 +203,18 @@ export default function ConversasPage() {
   }
 
   const msgsEndRef = useRef<HTMLDivElement | null>(null);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Ao abrir/atualizar a conversa, rola pro final (mensagem mais recente visível) —
   // senão a conversa abre no topo e o usuário precisa descer manualmente.
   useEffect(() => {
     msgsEndRef.current?.scrollIntoView({ block: "end" });
   }, [msgs]);
+
+  // compositor cresce conforme digita (e reseta ao trocar de conversa / após enviar)
+  useEffect(() => {
+    if (taRef.current) autoGrowTextarea(taRef.current);
+  }, [replyText, openId, noteMode]);
 
   useEffect(() => {
     load();
@@ -762,8 +775,9 @@ export default function ConversasPage() {
                     }`}
                   >
                     <textarea
+                      ref={taRef}
                       value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
+                      onChange={(e) => { setReplyText(e.target.value); autoGrowTextarea(e.target); }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
@@ -772,21 +786,21 @@ export default function ConversasPage() {
                       }}
                       rows={1}
                       placeholder={noteMode ? "Nota visível só pra equipe (não vai pro cliente)…" : "Responder ao cliente… (Enter envia, Shift+Enter quebra linha)"}
-                      className="block w-full resize-none max-h-40 px-3.5 pt-3 pb-1 text-[13px] leading-relaxed bg-transparent outline-none text-[#262626] dark:text-[#e6e8eb] placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280]"
+                      className="block w-full resize-none overflow-y-auto px-4 pt-3.5 pb-1 text-[13px] leading-relaxed bg-transparent outline-none text-[#262626] dark:text-[#e6e8eb] placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280]"
                     />
-                    <div className="flex items-center justify-between px-2 pb-2 pt-0.5">
+                    <div className="flex items-center justify-between px-2.5 pb-2.5 pt-1">
                       <div className="flex items-center gap-0.5">
                         {!noteMode && <CannedPicker onInsert={(c) => setReplyText((prev) => (prev ? prev + "\n" + c : c))} />}
                       </div>
                       <button
                         onClick={sendReply}
                         disabled={sending || !replyText.trim()}
-                        className={`h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-xl text-white transition-all active:scale-[0.95] disabled:opacity-40 disabled:pointer-events-none ${
+                        className={`h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-full text-white transition-all active:scale-[0.92] disabled:opacity-40 disabled:pointer-events-none ${
                           noteMode ? "bg-amber-500 hover:bg-amber-600" : "bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff]"
                         }`}
                         title="Enviar"
                       >
-                        <Send className="w-4 h-4" />
+                        <ArrowUp className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
