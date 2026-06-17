@@ -37,11 +37,22 @@ EXTRACT_PROMPT = """Você extrai FATOS reutilizáveis de uma conversa pra memór
 
 Analise a troca abaixo e retorne SÓ um JSON array de objetos com:
 - "category": "preference" | "fact" | "event" | "profile"
-- "fact": frase curta na 3ª pessoa em pt-BR (ex: "Cliente prefere atendimento por áudio", "Comprou anel de ouro #1234 em 25/05")
+- "fact": frase curta na 3ª pessoa em pt-BR (ex: "Cliente prefere atendimento por áudio")
 - "importance": 1-5 (1 = trivial, 5 = crítico tipo alergia/preferência forte)
 
+EXTRAIA só info DURÁVEL e PESSOAL do cliente:
+- Preferências de atendimento (tom, áudio/texto, horário/turno preferido, profissional que ELE pediu).
+- Restrições/saúde/comportamento (alergia, medo, temperamento do pet).
+- Estilo de comunicação e contexto pessoal que vale lembrar.
+
+🚫 NUNCA EXTRAIA (isso vem do CADASTRO/AGENDA do sistema — se virar "memória" e estiver errado, contamina toda conversa futura como verdade):
+- Existência, nome, raça, porte ou QUANTIDADE de pets do cliente (o agente consulta o cadastro real).
+- PREÇOS, DURAÇÃO de serviços, horários livres, ou se tal profissional atende tal pet.
+- AGENDAMENTOS específicos (data/hora/profissional de um atendimento) — a agenda é a fonte da verdade.
+Se esses dados aparecerem na conversa, IGNORE na extração. NUNCA invente nem deduza.
+
 REGRAS:
-- Só extrai info DURÁVEL (vale lembrar em conversa futura). Pula small-talk, saudações, info já óbvia.
+- Só extrai info DURÁVEL (vale lembrar em conversa futura). Pula small-talk, saudações, dados de cadastro/agenda.
 - Máximo 5 fatos por turn.
 - Se nada vale a pena guardar, retorne [].
 
