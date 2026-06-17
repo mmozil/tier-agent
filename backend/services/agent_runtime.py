@@ -712,6 +712,17 @@ async def handle_inbound_message(
         "- TELEFONE no WhatsApp: você JÁ tem o número do cliente (é o contato desta conversa, informado no "
         "bloco 'Contato atual'). NUNCA pergunte 'qual seu telefone/WhatsApp' — use o número que já tem pra "
         "buscar/cadastrar o cliente direto.\n"
+        "- SERVIÇOS: ao oferecer, sempre LISTE/explique as opções (nome + o que inclui + preço pelo PORTE do "
+        "pet) ANTES de perguntar qual o cliente quer. NUNCA pergunte 'quer os serviços?' ou 'qual serviço?' "
+        "sem antes dizer QUAIS são e o que cada um inclui.\n"
+        "- Se a cotação do Taxidog falhar (não calculou a distância): NÃO diga que 'o CEP não existe/não foi "
+        "encontrado' — um CEP válido pode só não ter coordenada. Diga que não conseguiu calcular a distância "
+        "agora e confirme com o cliente UMA vez se ele fica até 3km ou até 7km.\n"
+        "- FLUXO de agendamento (siga em ordem): (1) identifique o cliente pelo telefone; sem cadastro = novo "
+        "→ cadastre (nome + pet com raça/porte) e só siga depois que a ferramenta CONFIRMAR que gravou; "
+        "(2) liste os serviços e o cliente escolhe; (3) mostre horários reais → cliente escolhe → AGENDE de "
+        "fato (uma vez) → confirme com os dados reais; (4) ofereça Taxidog (opções + CEP). Não pule etapas "
+        "nem afirme nada que a ferramenta não confirmou.\n"
         "- Avance a conversa a cada mensagem: confirme o que já sabe e pergunte só o que falta.\n"
         "- IDIOMA: responda SEMPRE 100% em português do Brasil, de forma concisa e natural, sem "
         "excesso de emoji. NUNCA use chinês, japonês, coreano nem qualquer outro idioma/alfabeto — "
@@ -755,6 +766,7 @@ async def handle_inbound_message(
             agent_id=agent.id,
             history=history,
             use_cache=not (memory_block or rag_block),  # contextual → sem cache
+            customer_phone=_phone or None,  # telefone real do contato → injetado nas tools de cadastro/busca
         )
     except Exception as e:
         logger.exception("Engine falhou tenant=%s agent=%s", agent.tenant_id, agent.id)

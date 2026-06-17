@@ -338,6 +338,7 @@ async def send_message(
     use_cache: bool = True,
     tools: list[dict] | None = None,
     history: list[dict] | None = None,
+    customer_phone: str | None = None,
 ) -> EngineReply:
     """Gera a resposta do agente in-process (drop-in do antigo engine_proxy.send_message).
 
@@ -408,7 +409,9 @@ async def send_message(
         try:
             from services import tool_provider_service
 
-            remote_schemas, remote_handlers = await tool_provider_service.discover_agent_tools(db, agent_id)
+            remote_schemas, remote_handlers = await tool_provider_service.discover_agent_tools(
+                db, agent_id, customer_phone=customer_phone
+            )
             if remote_schemas:
                 base_tools = base_tools + remote_schemas
         except Exception:

@@ -99,12 +99,23 @@ async def _list_tools_cached(url: str, headers: dict[str, str]) -> list[dict]:
     return tools
 
 
-def _make_handler(url: str, real_tool: str, headers: dict[str, str]) -> Callable[[dict], Awaitable[str]]:
+def _make_handler(
+    url: str, real_tool: str, headers: dict[str, str], customer_phone: str | None = None
+) -> Callable[[dict], Awaitable[str]]:
     """Closure que chama a tool remota. Encapsula (url, headers, tool) — sem estado global."""
 
     async def _handler(args: dict[str, Any]) -> str:
         if _circuit_open(url):
             return "[fonte temporariamente indisponível — tente novamente em instantes]"
+        # 🔒 IDENTIDADE DO CLIENTE vem do CANAL, não do LLM. O modelo às vezes manda um
+        # telefone placeholder (ex.: 11999999999) na busca/cadastro -> casa com o tutor
+        # errado (seed "Cliente Teste") e atribui pet/agendamento a outro cliente. Aqui
+        # forçamos o telefone REAL do contato nas tools de identificação do cliente.
+        if customer_phone:
+            if real_tool.endswith("cadastrar_cliente"):
+                args = {**args, "telefone": customer_phone}
+            elif real_tool.endswith("listar_tutores"):
+                args = {**args, "busca": customer_phone}
         res = await mcp_client.call_tool(
             server_url=url, tool_name=real_tool, arguments=args, headers=headers or None
         )
@@ -118,7 +129,7 @@ def _make_handler(url: str, real_tool: str, headers: dict[str, str]) -> Callable
 
 
 async def discover_agent_tools(
-    db: AsyncSession, agent_id: int
+    db: AsyncSession, agent_id: int, customer_phone: str | None = None
 ) -> tuple[list[dict], dict[str, Callable[[dict], Awaitable[str]]]]:
     """Descobre as tools MCP de todos os providers ativos do agente.
 
@@ -173,6 +184,6 @@ async def discover_agent_tools(
                     },
                 }
             )
-            handlers[prefixed] = _make_handler(p.mcp_server_url, real, headers)
+            handlers[prefixed] = _make_handler(p.mcp_server_url, real, headers, customer_phone)
 
     return schemas, handlers
