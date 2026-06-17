@@ -33,6 +33,7 @@ interface NavItem {
   to: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  metaLabel?: string;
   end?: boolean; // match exato (ex.: /admin index)
 }
 
@@ -44,38 +45,38 @@ interface NavGroup {
 const SECTIONS: NavGroup[] = [
   {
     label: "",
-    items: [{ to: "/admin", label: "Visão geral", icon: Home, end: true }],
+    items: [{ to: "/admin", label: "Visão geral", icon: Home, metaLabel: "/overview", end: true }],
   },
   {
     label: "Plataforma",
     items: [
-      { to: "/admin/atencao", label: "Precisa de você", icon: BellRing },
-      { to: "/admin/agentes", label: "Agentes", icon: Bot },
-      { to: "/admin/conversas", label: "Conversas", icon: MessageSquare },
-      { to: "/admin/leads", label: "Leads", icon: Inbox },
-      { to: "/admin/playbooks", label: "Playbooks", icon: Workflow },
-      { to: "/admin/marketplace", label: "Marketplace", icon: Store },
-      { to: "/admin/canais", label: "Canais", icon: Plug },
-      { to: "/admin/knowledge", label: "Knowledge", icon: BookOpen },
+      { to: "/admin/atencao", label: "Precisa de você", icon: BellRing, metaLabel: "/attention" },
+      { to: "/admin/agentes", label: "Agentes", icon: Bot, metaLabel: "/agents" },
+      { to: "/admin/conversas", label: "Conversas", icon: MessageSquare, metaLabel: "/inbox" },
+      { to: "/admin/leads", label: "Leads", icon: Inbox, metaLabel: "/leads" },
+      { to: "/admin/playbooks", label: "Playbooks", icon: Workflow, metaLabel: "/flows" },
+      { to: "/admin/marketplace", label: "Marketplace", icon: Store, metaLabel: "/market" },
+      { to: "/admin/canais", label: "Canais", icon: Plug, metaLabel: "/channels" },
+      { to: "/admin/knowledge", label: "Knowledge", icon: BookOpen, metaLabel: "/knowledge" },
     ],
   },
   {
     label: "Configuração",
     items: [
-      { to: "/admin/llm", label: "LLM Providers", icon: Cpu },
-      { to: "/admin/fontes-dados", label: "Integrações", icon: Database },
-      { to: "/admin/macros", label: "Macros", icon: Zap },
-      { to: "/admin/features", label: "Feature Flags", icon: ToggleLeft },
-      { to: "/admin/params", label: "Parâmetros", icon: Sliders },
+      { to: "/admin/llm", label: "LLM Providers", icon: Cpu, metaLabel: "/llm" },
+      { to: "/admin/fontes-dados", label: "Integrações", icon: Database, metaLabel: "/integrations" },
+      { to: "/admin/macros", label: "Macros", icon: Zap, metaLabel: "/macros" },
+      { to: "/admin/features", label: "Feature Flags", icon: ToggleLeft, metaLabel: "/flags" },
+      { to: "/admin/params", label: "Parâmetros", icon: Sliders, metaLabel: "/params" },
     ],
   },
   {
     label: "Conta",
     items: [
-      { to: "/admin/metricas", label: "Métricas", icon: BarChart3 },
-      { to: "/admin/relatorios-atendimento", label: "Relatórios", icon: PieChart },
-      { to: "/admin/cobranca", label: "Cobrança", icon: CreditCard },
-      { to: "/admin/equipe", label: "Equipe", icon: Users },
+      { to: "/admin/metricas", label: "Métricas", icon: BarChart3, metaLabel: "/metrics" },
+      { to: "/admin/relatorios-atendimento", label: "Relatórios", icon: PieChart, metaLabel: "/reports" },
+      { to: "/admin/cobranca", label: "Cobrança", icon: CreditCard, metaLabel: "/billing" },
+      { to: "/admin/equipe", label: "Equipe", icon: Users, metaLabel: "/team" },
     ],
   },
 ];
@@ -85,15 +86,11 @@ const SIDEBAR_FONT =
 
 export default function AdminLayout() {
   const location = useLocation();
-  // estilo FC/Linear FLAT: ativo e hover são o MESMO idioma (cinza neutro, só muda a
-  // intensidade) — sem card branco, sem sombra, sem acento azul (a marca vive no
-  // logo/CTA). ativo = preto 7% + ink + medium; hover (inativo) = preto 4% + texto
-  // clareia. active:scale no clique.
   const itemClass = (active: boolean) =>
-    `group tier-jelly flex items-center gap-2.5 rounded-[10px] transition-colors duration-200 active:scale-[0.98] h-[34px] text-[13px] px-2.5 ${
+    `tier-jelly relative flex h-9 w-full items-center overflow-hidden rounded-[10px] transition-all duration-200 ease-out motion-reduce:transition-none active:scale-[0.98] ${
       active
-        ? "text-[#262626] dark:text-white font-medium bg-black/[0.07] dark:bg-white/[0.10]"
-        : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] font-normal"
+        ? "tier-sidebar-item-active text-[#003083] dark:text-[#8ab4ff]"
+        : "text-[#262626]/[0.56] hover:text-[#262626]/[0.72] dark:text-[#8b93a0] dark:hover:text-[#d9dde5]"
     }`;
 
   return (
@@ -125,17 +122,43 @@ export default function AdminLayout() {
                 </div>
               )}
               {section.items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.end}>
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className="group tier-sidebar-item block rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003083]/25"
+                >
                   {({ isActive }) => {
                     const act = item.end ? isActive : isActive || location.pathname.startsWith(item.to);
                     return (
                       <div className={itemClass(act)}>
-                        <item.icon
-                          className={`w-4 h-4 flex-shrink-0 transition-all duration-200 ${
-                            act ? "opacity-100" : "opacity-60 group-hover:opacity-100"
-                          }`}
-                        />
-                        <span>{item.label}</span>
+                        <div className="absolute left-0 flex h-9 w-9 items-center justify-center">
+                          <item.icon
+                            className={`h-4 w-4 transition-all duration-200 motion-reduce:transition-none ${
+                              act
+                                ? "text-[#003083] dark:text-[#8ab4ff]"
+                                : "text-[#262626]/[0.72] opacity-80 dark:text-[#d9dde5] dark:opacity-60 group-hover:opacity-100"
+                            }`}
+                          />
+                        </div>
+                        <div className="flex flex-1 items-center pl-9 pr-2">
+                          <span
+                            className={`truncate text-[13px] leading-5 transition-colors duration-200 motion-reduce:transition-none ${
+                              act
+                                ? "font-medium text-[#003083] dark:text-[#8ab4ff]"
+                                : "font-normal text-[#262626]/[0.72] dark:text-[#9aa1ab] group-hover:text-[#262626] dark:group-hover:text-white"
+                            }`}
+                          >
+                            {item.label}
+                          </span>
+                          {item.metaLabel && (
+                            <span className="ml-auto relative flex items-center pl-2">
+                              <span className="pointer-events-none font-mono text-[11px] leading-4 text-[#262626]/[0.32] dark:text-[#6b7280] opacity-0 -translate-x-1 transition-all duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none group-hover:translate-x-0 group-hover:opacity-100">
+                                {item.metaLabel}
+                              </span>
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   }}

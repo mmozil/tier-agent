@@ -34,6 +34,11 @@
   }
   .tier-jelly { will-change: transform; }
   .tier-jelly:hover { animation: tierJelly 0.42s cubic-bezier(0.22, 1, 0.36, 1); }
+  .tier-sidebar-item { background-color: transparent; }
+  .tier-sidebar-item:hover { background-color: rgba(0, 0, 0, 0.035); }
+  .tier-sidebar-item-active { background-color: rgba(0, 0, 0, 0.055); }
+  .dark .tier-sidebar-item:hover { background-color: rgba(255, 255, 255, 0.045); }
+  .dark .tier-sidebar-item-active { background-color: rgba(255, 255, 255, 0.08); }
   @media (prefers-reduced-motion: reduce) {
     .tier-jelly:hover { animation: none; }
   }
