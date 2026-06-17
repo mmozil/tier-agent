@@ -113,7 +113,7 @@ export default function AdminLayout() {
         </div>
 
         {/* Nav — px-5 py-3 (mesmo respiro do preview/dev) */}
-        <nav className="flex-1 overflow-y-auto px-5 py-3">
+        <nav className="sidebar-scroll flex-1 overflow-y-auto px-5 py-3">
           {SECTIONS.map((section, sIdx) => (
             <div key={sIdx} className={sIdx > 0 ? "mt-5" : ""}>
               {section.label && (

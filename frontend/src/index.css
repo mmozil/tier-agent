@@ -39,6 +39,20 @@
   .tier-sidebar-item-active { background-color: rgba(0, 0, 0, 0.055); }
   .dark .tier-sidebar-item:hover { background-color: rgba(255, 255, 255, 0.045); }
   .dark .tier-sidebar-item-active { background-color: rgba(255, 255, 255, 0.08); }
+
+  /* ─── Scrollbar fina e elegante (sidebar) ─────────────────────────────
+     Substitui a barra padrão do SO (grossa/cinza) por uma fina, discreta e
+     arredondada: track transparente, thumb cinza translúcido que escurece no
+     hover. Webkit (Chrome/Edge) + Firefox. */
+  .sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgba(38, 38, 38, 0.16) transparent; }
+  .sidebar-scroll::-webkit-scrollbar { width: 6px; }
+  .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+  .sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(38, 38, 38, 0.14); border-radius: 9999px; }
+  .sidebar-scroll:hover::-webkit-scrollbar-thumb { background: rgba(38, 38, 38, 0.26); }
+  .dark .sidebar-scroll { scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
+  .dark .sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); }
+  .dark .sidebar-scroll:hover::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.26); }
+
   @media (prefers-reduced-motion: reduce) {
     .tier-jelly:hover { animation: none; }
   }
