@@ -52,6 +52,9 @@
      demais). Alvo: os blocos de seção (.mt-5) dentro do nav .sidebar-scroll. */
   .sidebar-scroll > .mt-5 { margin-top: 0.625rem; }
 
+  /* Linhas (itens) do sidebar mais próximas entre si: gap 4px → 2px. */
+  .sidebar-scroll .flex.flex-col.gap-1 { gap: 0.125rem; }
+
   /* ─── Scrollbar fina, AUTO-HIDE (só aparece ao passar o mouse) ──────────
      Thumb transparente por padrão; ao passar o mouse no container ele surge com fade
      suave. A borda transparente + background-clip deixa o thumb fino e afastado da
