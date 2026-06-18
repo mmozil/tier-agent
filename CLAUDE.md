@@ -40,10 +40,20 @@ Conector `whatsapp` (fala com `whats.tier.finance`). Baileys é não-oficial: to
 
 ## Modelo LLM + Atendimento (atualizado 29/mai/2026)
 
-### Modelo: MiniMax-M2 em produção (Claude/Haiku BLOQUEADO pela imagem)
+> ⚙️ **PROVEDOR ATIVO ATUAL (17/jun/2026): `openai/gpt-4o-mini` via OpenRouter (`ta_llm_provider` id5, tenant 6, temperature 0.2, priority 50).** O dono testou Haiku (Anthropic direto, id6) mas a conta Anthropic **zerou créditos** → a Yanna ficou MUDA (todo inbound = `engine_error`). Troquei pro gpt-4o-mini (OpenRouter = saldo SEPARADO). **Temperatura 0.2 é proposital** (a 0.7 o gpt-4o-mini enchia args de tool com placeholder "Serviço 1"/data fake). **🚨 LIÇÃO:** provedor LLM ativo sem saldo = outage TOTAL e silencioso do agente (só `engine_error` no log). Saldos por conta são distintos (Anthropic-direto ≠ OpenRouter). Restaurar = ativar provedor de saldo separado (`UPDATE ta_llm_provider SET active=true,priority=50 WHERE id=5; ... active=false WHERE id=6`). Manter gpt-4o-mini como rede de segurança no `fallback_chain`. Detalhe: memory `feedback_llm_provider_creditos_outage` + `feedback_weak_model_tool_args_temperature`.
+
+### Modelo: MiniMax-M2 em produção (Claude/Haiku BLOQUEADO pela imagem) — HISTÓRICO (motor antigo Hermes)
 - **Modelo ativo = MiniMax-M2** (provider config-driven via `TaLlmProvider`). O `tier-entrypoint.sh` do container lê `TIER_LLM_PROVIDER/MODEL/API_KEY` → `hermes config set`. Trocar = `TaLlmProvider` (tenant-específico ativo ganha do global) + `container_orchestrator.create_container` (recria; `restart_container` NÃO basta — só `docker restart`, mantém env).
 - ⚠️ **Claude/Haiku NÃO funciona nesta imagem `tier/hermes:0.14.0-tier1`**: o `run_agent` **ignora `model.default`** e usa sempre `claude-opus-4-6` (thinking-first) → em conversa multi-turno reenvia thinking blocks com assinatura inválida → HTTP 400 `Invalid signature in thinking block` (agente para). Pra usar Claude precisa **rebuild da imagem** (run_agent honrar o modelo + desligar thinking). Crédito Anthropic intacto.
 - **Filtro anti-CJK** (`agent_runtime._sanitize_reply`): MiniMax às vezes vaza chinês/japonês/coreano em pt-BR → removidos antes do envio. Inglês/espanhol NÃO são filtráveis (teto do MiniMax — só some com Claude). Persona tem regra "só pt-BR" como 1ª camada.
+
+### Injeção GLOBAL no system prompt (11-12/jun/2026 — vale p/ TODO agente)
+Em `services/agent_runtime.py`, depois do bloco de contato (**secundário à persona** → não altera quem já está calibrado, ex: Maria Luiza do Out Group):
+- **Data/hora atuais** em fuso `America/Sao_Paulo` (`_agora = datetime.now(ZoneInfo(...))`) — resolve o "não sei o dia/horário".
+- **Diretrizes base** (anti-burrice): não repetir pergunta já respondida; **USAR ferramentas** em vez de perguntar o que dá pra consultar; nunca inventar horário/preço/dia; informar valor ANTES de confirmar; ação executada por ferramenta é **REAL** (nunca dizer "não foi criado"; pra cancelar, achar na agenda e cancelar de fato).
+- **Atendimento padrão Apple**: A.P.P.L.E. (acolher / entender o problema / propor solução / ouvir com empatia / encerrar caloroso) + Feel-Felt-Found + "ajudar antes de vender" + nunca encerrar abrupto ("cancelei, tchau").
+- **`_sanitize_reply`** (já existia anti-CJK) também remove **emoji de bandeira aleatório** (regional indicators U+1F1E6–1F1FF) que o MiniMax cuspia.
+- **`_format_for_whatsapp(text)`** (só canais `whatsapp`/`whatsapp_cloud`, gate `_is_wa`): normaliza markdown que o WhatsApp NÃO entende → `**x**`/`__x__`→`*x*`, `## título`→`*título*`, marcadores `-`/`·`/`*`→`• `, colapsa quebras. WhatsApp usa `*negrito*`/`_itálico_` **nativo**, não markdown. Aplicado após `_sanitize_reply` quando `_is_wa`. Há também uma diretriz de formatação WhatsApp injetada no prompt quando `_is_wa`.
 
 ### Funcionalidades de atendimento (todas plataforma — valem p/ todo agente)
 - **Captura de lead** (`services/lead_capture.py`): detecta intenção de compra/telefone → `TaNotification(category=lead)` + dispara alerta externo.
@@ -68,8 +78,43 @@ Conector `whatsapp` (fala com `whats.tier.finance`). Baileys é não-oficial: to
 - **Sino real** (`components/NotificationBell.tsx`): badge com `GET /notifications/stats` (poll 20s) + dropdown com não-lidas → `/admin/leads`.
 - **Inbox de conversas** (`routes/conversations.py` + coluna `ta_message_log.content` via ensure idempotente em `main.py`): tela `/admin/leads` (Leads & Notificações, mostra motivo+resumo) + `/admin/conversas` (histórico + ações).
 - **Split de mensagens** (`_split_into_bubbles`): resposta > 700 chars → até 4 balões.
-- **Timing humanizado** (`webhooks._process_cloud_message_humanized`): atraso de leitura ~2-3s antes de digitar.
+- **Timing humanizado**:
+  - Path Cloud: `webhooks._process_cloud_message_humanized` (pausa de leitura ~2-3s antes de digitar).
+  - Path Engine/Baileys: `webhooks._process_engine_message` — pausa curta de leitura → **`send_typing`** ("…digitando") → LLM (a latência do LLM = tempo de digitação visível) → envia. **REMOVIDO** o `asyncio.sleep(3)` aditivo que somava EM CIMA do LLM (era "demora demais"). Agora igual ao path Cloud.
+  - **Indicador "…digitando"** (`services/connectors/adapters/whatsapp.py.send_typing(cfg, to, state="composing")`): `POST {engine}/v1/instances/{id}/presence` → o cliente vê o status digitando no WhatsApp.
 - **Persona consultiva + anti-alucinação**: entende antes de apresentar; nunca inventa (ERP é web, sem app dedicado; o que não sabe → encaminha consultor). Editada direto em `TaAgent.persona` (live, sem deploy) + `llm_cache.invalidate` após editar.
+
+## Federação MCP — Hovio Pet (agente "Nicoly") + Espelho de Conversas (11-12/jun/2026)
+
+A **Nicoly** = agente do Tier Agent conectado (via MCP/OAuth) a um petshop do **Hovio Pet** (atualmente **"Patinhas & Cia"**, `agent_id=6`, tenant 6). Atende no WhatsApp + tem suas conversas espelhadas no painel do Pet. **TUDO DEPLOYADO em prod.**
+
+### Webhook Engine processa em BACKGROUND (`routes/webhooks.py`)
+`whatsapp_engine_webhook` agora processa em **background**: `_process_engine_message` via `asyncio.create_task` (+ `db_context()` próprio) e o webhook devolve `{"status":"accepted"}` **na hora**. A idempotência (`_record_idempotent`) roda **inline antes** do enfileiramento.
+- **Por quê:** antes era inline e segurava o `200` durante delay + LLM + envio → estourava o **timeout do Engine** → reenvio/loop + "aguardando mensagem" travado no WhatsApp do cliente.
+- 🔒 **LIÇÃO:** webhook **NUNCA** segura o `200` durante LLM/delay. Aceita, responde rápido, processa em task.
+
+### Espelho de Conversas (Pet ← Tier Agent)
+Pra o petshop ver o atendimento da IA na aba **"Conversas"** do próprio painel (v1 read-only):
+- **Tempo real (fire-and-forget):** `services/pet_mirror.py.mirror_recent_to_pet(agent_id, conv_id)` — push logo após cada msg, chamado no fim de `handle_inbound_message`. Lê `ta_message_log` (`criadaEm` bate com o job → dedup do Pet não duplica).
+- **Backstop (job):** `scheduler.mirror_pet_conversations_job` (`IntervalTrigger`, **60s** — era 180s) empurra as conversas WhatsApp dos agentes com `tool_provider='hovio-pet'` pro endpoint **`/api/agent/mirror`** do Pet. `ensure_fresh_token` + decrypt bearer; envia `agente_nome` + `agente_foto_url`. Best-effort (falha só loga); lock Redis por tick (`mirror_pet`, TTL 50s).
+- O Pet **deduplica** por `(conversa, criadaEm)` → reenvio é inofensivo.
+
+### Foto/avatar do agente (aparece nos balões do Pet)
+- Coluna `TaAgent.avatar_url` (DDL no startup `main.py`: `ALTER TABLE ta_agent ADD COLUMN IF NOT EXISTS avatar_url TEXT`).
+- `routes/agents.py`: `avatar_url` em `AgentCreate`/`AgentOut`/`AgentUpdate`.
+- Frontend `pages/admin/AgentesPage.tsx`: campo "Foto do agente (URL)" com **preview** no drawer de edição.
+- O mirror envia a foto → aparece nos balões da conversa no painel do Pet.
+
+### Scroll nas conversas (`pages/admin/ConversasPage.tsx`)
+Rola pro final ao abrir/atualizar (`msgsEndRef` + `scrollIntoView` no `useEffect([msgs])`).
+
+### Template `ATENDENTE_PETSHOP` (`services/templates.py`)
+Reescrito consultivo: fluxo de agendamento via **ferramentas**, informar **valor antes** de confirmar, **cancelar de fato** (achar na agenda), atendimento Apple + oferecer **leva-e-traz (Taxidog)** ao agendar.
+
+### Gotchas / pendências MCP
+- **Token MCP é POR-PETSHOP:** confirmar `AgentAccessToken.petshopId` (lado Pet) ANTES de cadastrar dado pra Nicoly — ela migrou de PetduBem → Patinhas & Cia.
+- **Anthropic não passa tools no `tier_engine`** → a federação MCP só funciona no **path MiniMax** (prod = MiniMax). Com Claude/Anthropic as ferramentas não chegam ao loop.
+- **PENDENTE:** persona da Nicoly "sempre perguntar do Taxidog" — escrita direta no banco foi bloqueada; setar via **UI** (Agentes → Editar → Persona).
 
 ### RAG (pgvector) — pronto mas NÃO ativado
 - `rag_engine.py` corrigido pra `gemini-embedding-001` + `embedContent` + `outputDimensionality=768` (text-embedding-004 aposentado; batchEmbedContents não suportado). Embeddings = etapa separada do chat (Anthropic NÃO tem embeddings — recomenda Voyage; usamos Gemini free OU MiniMax embo-01).
@@ -78,6 +123,26 @@ Conector `whatsapp` (fala com `whats.tier.finance`). Baileys é não-oficial: to
 ### Agente de teste / App Review
 - Agente "Maria Luiza" = `agent_id 2`, tenant **Out Group** (id 3), número **+55 11 92336-2467** (Cloud API oficial, token System User permanente).
 - **App Review submetido** (29/mai, "em análise", ~10 dias). Login de teste do reviewer: `reviewer@tier.finance` / `TierReview2026!` (tenant 5). Pós-aprovação: **Publicar** (tirar de "Não publicado").
+
+## Qualidade & Observabilidade do agente (17/jun/2026 — cobertura de gaps de engenharia)
+
+Após avaliar o agente vs boas práticas (eng. de agentes / canal Ronnald Hawk), implementado plano de gaps (`~/.claude/plans/partitioned-fluttering-puppy.md`). **Tudo deployado; eval 3/3 VERDE.**
+
+### Freios determinísticos NOMEADOS + observabilidade (`tier_engine.py` + `agent_runtime.py`)
+- **Filosofia:** "a disciplina mora no MOTOR, não na persona". Depois que o modelo responde, o `send_message` compara a resposta com o RESULTADO REAL das tools e, se detectar desvio, reinjeta `(sistema) …` e re-roda o loop UMA vez. São ~16 freios.
+- **`EngineReply.brakes_fired`** (lista de nomes) + **`tool_calls_made`** agora PERSISTEM em `ta_message_log` (colunas `brakes_fired`/`tool_calls_json`, JSONB, criadas via runtime DDL em `main._ensure_message_content_column`). Cada freio tem nome fixo: `announce_and_stop, svc_fail, remarcacao, confirm_summary_missing, confirm_no_book, denies_slots, offers_slot_no_check, asks_pet_data, taxidog_no_house_num, taxidog_no_quote, cep_reasked, phone_reasked, booking_exists_query, prof_hours, price_no_check, upsell_missing, cjk_leak`.
+- **Trace Langfuse** (`langfuse_client.trace_event`, JÁ era chamado) enriquecido: `tool_calls`, `brakes_fired`, `cost_cents`; `level=WARNING` quando houve freio (métrica de saúde — turno que precisou de correção).
+- **Freios de agendamento (P1c):** `remarcacao` (vê `ja_tem_agendamento_nesse_dia` no resultado + não chamou alterar → força `pet_alterar_agendamento` com o id devolvido, NÃO duplica) e `confirm_summary_missing` (booking criado mas texto não confirma → força resumo: serviço/data-hora/valor). `_BOOKING_OK` exclui o payload de bloqueio (que tb traz `agendamento_id`). **Ordem importa:** `confirm_no_book` foi movido ANTES de `offers_slot_no_check` (intenção de fechar domina "ofereceu horário" — senão re-listava horário e nunca fechava).
+
+### Suíte de eval (`backend/tests/`)
+- Roda o agente REAL (LLM + MCP do Pet) contra golden cases; asserts DETERMINÍSTICOS sobre `tool_calls_json`/`brakes_fired` do `ta_message_log` (robusto à variação de texto). Marcada `live` (pulada sem `EVAL_LIVE=1`). `TIER_EVAL_MODE=1` → não grava memória (anti-contaminação, guard em `memory_service.add`+`style_adapter`).
+- **Rodar:** `docker exec -e EVAL_LIVE=1 -e TIER_EVAL_MODE=1 -w /app <backend-container> python -m pytest tests -q -s`
+- Gotcha: 1 ÚNICO teste async itera todos os casos (o engine async SQLAlchemy prende no 1º event loop → 1 teste por caso quebra com "Future attached to a different loop"). Casos = regressões dos bugs (happy_path fecha, remarcacao usa alterar, preço só após consultar).
+
+### Tenancy/escopo MCP (P0a — LGPD) — **DORMENTE** (lado Pet, `mmozil/pet`)
+- O token OAuth do Pet identifica só o PETSHOP → um agente customer-facing podia chamar tools petshop-wide (agenda/conversas/financeiro/vacinas de TODOS + envio avulso). **Novo scope `pet:customer`** (audiência "customer") + allowlist `CUSTOMER_TOOLS` (fail-closed) + gate no `route.ts` + hardening `pet_listar_tutores` (p/ customer, `busca` FORÇADA ao telefone do token = anti prompt-injection cross-cliente).
+- **tier-agent:** preset OAuth **`hovio-pet-customer`** (`oauth_connect.py`, scope `pet:customer`). A Yanna ainda usa o preset `hovio-pet` (staff) — **dormente**.
+- **Ligar (decisão do dono):** emitir token `pet:customer` p/ a Yanna + smoke 2-clientes (curl `/api/mcp tools/list`: customer NÃO lista as 4 tools que vazam) → trocar a Yanna pro preset customer.
 
 ## Arquitetura backend
 
@@ -103,4 +168,6 @@ Conector `whatsapp` (fala com `whats.tier.finance`). Baileys é não-oficial: to
 - Memória canônica: `project_tier_agent_whatsapp_oficial.md` (mais completa — modelo, atendimento, RAG, App Review), `project_tier_agent.md` (+ Q1/Q2/Q3, playbook builder).
 - Obsidian: `projetos/Tier/Tier Agent/`.
 
-_Última atualização: 29/mai/2026 — atendimento (lead/handoff/inbox/split/consultivo), modelo MiniMax (Haiku bloqueado), filtro CJK, RAG pronto-não-ativado, App Review submetido._
+_Última atualização: 17/jun/2026 — Cobertura de gaps de engenharia: observabilidade (`brakes_fired`+`tool_calls_json` em `ta_message_log`, ~16 freios nomeados, trace Langfuse enriquecido), freios de agendamento (`remarcacao` + `confirm_summary_missing`, `confirm_no_book` priorizado), suíte de eval `backend/tests/` (live, 3/3 verde), guard de memória `TIER_EVAL_MODE`, tenancy MCP `pet:customer` (DORMENTE). **Provedor ativo: gpt-4o-mini OpenRouter temp 0.2** (Haiku zerou créditos Anthropic = outage; trocado). Resolvers determinísticos no MCP do Pet (tutor/pet/serviço/profissional por nome) + CEP via ViaCEP + anti-duplicata de remarcação._
+_12/jun/2026 — Federação MCP Hovio Pet (Nicoly / Patinhas & Cia): injeção global de data-hora + diretrizes base + Apple no system prompt, `_format_for_whatsapp` (markdown→nativo), webhook Engine em background (não segura o 200), typing "…digitando" + remoção do sleep aditivo, espelho de conversas Pet←Tier Agent (`pet_mirror` + job 60s), avatar do agente (`TaAgent.avatar_url`), template ATENDENTE_PETSHOP consultivo._
+_29/mai/2026 — atendimento (lead/handoff/inbox/split/consultivo), modelo MiniMax (Haiku bloqueado), filtro CJK, RAG pronto-não-ativado, App Review submetido._
