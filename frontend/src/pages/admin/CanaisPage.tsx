@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Bot } from "lucide-react";
+import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Bot, Copy } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/phone";
@@ -45,6 +45,32 @@ interface Connector {
     tem_token?: boolean;
   };
   last_event_at: string | null;
+}
+
+// CodeField — valor técnico no estilo Firecrawl: rótulo + caixa de código (mono,
+// fundo sutil) com botão de copiar. Pra IDs, hosts, webhooks, tokens.
+function CodeField({ label, value, full }: { label: string; value: string; full?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className={full ? "col-span-2" : ""}>
+      <div className={`text-[11px] uppercase tracking-[0.06em] mb-1 ${FC.sub}`}>{label}</div>
+      <div className={`group/code flex items-center gap-2 h-8 px-2.5 rounded-lg border ${FC.hair} bg-[#F9F9F9] dark:bg-[#16191f]`}>
+        <code className={`font-mono text-[12px] truncate flex-1 ${FC.ink}`}>{value}</code>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard?.writeText(value);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          }}
+          title="Copiar"
+          className={`shrink-0 ${FC.mut} hover:text-[#262626] dark:hover:text-white transition-colors`}
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-[#0a8f5a]" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // Rótulo amigável do tipo de canal (fallback se o backend não mandar `tipo`)
@@ -259,18 +285,18 @@ export default function CanaisPage() {
                     className={`flex items-center gap-3.5 px-6 py-3.5 cursor-pointer ${FC.hover}`}
                     title="Ver detalhes do canal"
                   >
-                    {/* Avatar WhatsApp */}
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#25D366]/[0.10]">
-                      <WhatsAppIcon className="w-[18px] h-[18px]" />
+                    {/* Logo WhatsApp (sem fundo) */}
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center">
+                      <WhatsAppIcon className="w-6 h-6" />
                     </span>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{agentName(c.agent_id)}</span>
                         {isCloud ? (
-                          <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#003083]/[0.08] text-[#003083] dark:text-[#5b9bff] uppercase tracking-wide">Oficial</span>
+                          <span className="shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-[#003083]/[0.08] text-[#003083] dark:text-[#5b9bff] uppercase tracking-wide">Oficial</span>
                         ) : (
-                          <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#262626]/[0.06] dark:bg-white/[0.08] uppercase tracking-wide ${FC.mut}`}>Baileys</span>
+                          <span className={`shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-[#262626]/[0.06] dark:bg-white/[0.08] uppercase tracking-wide ${FC.mut}`}>Baileys</span>
                         )}
                       </div>
                       <div className={`flex items-center gap-2 mt-0.5 text-[13px] ${FC.sub}`}>
@@ -341,7 +367,7 @@ export default function CanaisPage() {
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
               <div className={`w-full max-w-[760px] overflow-hidden rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair}`}>
                 <div className={`flex items-center gap-3 border-b ${FC.hair} px-6 py-4`}>
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#25D366]/10"><WhatsAppIcon className="h-5 w-5" /></div>
+                  <div className="flex h-9 w-9 items-center justify-center"><WhatsAppIcon className="h-7 w-7" /></div>
                   <div className="flex-1 min-w-0">
                     <h2 className={`text-[15px] font-medium leading-tight ${FC.ink}`}>Conectar WhatsApp</h2>
                     <p className={`text-[12px] ${FC.sub}`}>Pareie escaneando o código — leva segundos</p>
@@ -438,7 +464,7 @@ export default function CanaisPage() {
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setDetail(null)}>
               <div className={`w-full max-w-[560px] overflow-hidden rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair}`} onClick={(e) => e.stopPropagation()}>
                 <div className={`flex items-center gap-3 border-b ${FC.hair} px-6 py-4`}>
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#25D366]/10"><WhatsAppIcon className="h-5 w-5" /></div>
+                  <div className="flex h-9 w-9 items-center justify-center"><WhatsAppIcon className="h-7 w-7" /></div>
                   <div className="flex-1 min-w-0">
                     <h2 className={`text-[15px] font-medium leading-tight truncate ${FC.ink}`}>{ag?.nome || `Agente #${detail.agent_id}`}</h2>
                     <p className={`text-[12px] ${FC.sub}`}>{cs.tipo || channelType(detail.kind)}</p>
@@ -474,19 +500,19 @@ export default function CanaisPage() {
                     <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2 ${FC.ink}`}>Detalhes técnicos</div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
                       <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Transporte</div><div className={FC.sub}>{cs.transporte || channelType(detail.kind)}</div></div>
-                      {cs.host && <div><div className={`text-[11px] ${FC.sub}`}>Host</div><div className={`font-mono text-[12px] ${FC.sub}`}>{cs.host}</div></div>}
+                      {cs.host && <CodeField label="Host" value={cs.host} />}
                       <div><div className={`text-[11px] ${FC.sub}`}>Pareamento</div><div className={`text-[12px] ${FC.sub}`}>{cs.pareamento || "—"}</div></div>
                       {isCloud ? (
                         <>
-                          <div><div className={`text-[11px] ${FC.sub}`}>Phone Number ID</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.phone_number_id || "—"}</div></div>
-                          <div><div className={`text-[11px] ${FC.sub}`}>WABA ID</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.waba_id || "—"}</div></div>
+                          <CodeField label="Phone Number ID" value={cs.phone_number_id || "—"} />
+                          <CodeField label="WABA ID" value={cs.waba_id || "—"} />
                           <div><div className={`text-[11px] ${FC.sub}`}>Token</div><div className={FC.sub}>{cs.tem_token ? "✓ configurado" : "—"}</div></div>
                           {cs.janela && <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Janela de mensagem</div><div className={`text-[12px] ${FC.sub}`}>{cs.janela}</div></div>}
                         </>
                       ) : (
-                        <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Instância (Engine)</div><div className={`font-mono text-[12px] ${FC.sub} break-all`}>{cs.instance_id || "—"}</div></div>
+                        <CodeField label="Instância (Engine)" value={cs.instance_id || "—"} full />
                       )}
-                      {cs.webhook && <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Webhook de entrada</div><div className={`font-mono text-[11px] ${FC.sub} break-all`}>{cs.webhook}</div></div>}
+                      {cs.webhook && <CodeField label="Webhook de entrada" value={cs.webhook} full />}
                     </div>
                   </div>
 

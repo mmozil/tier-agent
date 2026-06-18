@@ -384,9 +384,9 @@ export default function LeadsPage() {
                             target="_blank"
                             rel="noreferrer"
                             title="Abrir conversa no WhatsApp"
-                            className="inline-flex items-center gap-1.5 h-7 pl-1.5 pr-2.5 rounded-full bg-[#25D366]/[0.10] text-[#0a7d4a] dark:text-[#3ddc84] hover:bg-[#25D366]/[0.18] transition-colors text-[12.5px] font-medium tabular-nums"
+                            className={`inline-flex items-center gap-1.5 text-[13px] font-medium tabular-nums hover:underline ${FC.ink}`}
                           >
-                            <WhatsAppIcon className="w-4 h-4" /> {formatPhone(tel)}
+                            <WhatsAppIcon className="w-[18px] h-[18px] shrink-0" /> {formatPhone(tel)}
                           </a>
                         )}
                         {n.conversation_id && (
@@ -433,7 +433,7 @@ function LeadsSkeleton() {
               <SkeletonBar className="h-3 w-16 ml-auto" />
             </div>
             <SkeletonBar className="h-3 w-3/4 mb-2" />
-            <SkeletonBar className="h-7 w-40 rounded-full" />
+            <SkeletonBar className="h-4 w-44" />
           </div>
         </div>
       ))}
