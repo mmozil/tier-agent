@@ -103,6 +103,7 @@ class EngineReply:
     model_used: str | None = None
     raw_response: dict | None = None
     tool_calls_made: list = field(default_factory=list)
+    brakes_fired: list = field(default_factory=list)  # nomes dos freios que dispararam no turno (observabilidade/eval)
 
 
 # Registry de ferramentas (function calling). Cada handler: (args:dict) -> str.
@@ -420,6 +421,7 @@ async def send_message(
 
     started = time.perf_counter()
     tool_calls_made: list = []
+    brakes_fired: list[str] = []  # nomes dos freios que dispararam (observabilidade/eval)
     import json as _json
     import re as _re
 
@@ -505,6 +507,7 @@ async def send_message(
         _re.I,
     )
     if active_tools and not tool_calls_made and text and len(text) < 320 and _ANNOUNCE.search(text):
+        brakes_fired.append("announce_and_stop")
         messages.append({"role": "assistant", "content": text})
         messages.append({
             "role": "user",
@@ -610,8 +613,12 @@ async def send_message(
     )
     # A resposta do modelo JÁ é uma confirmação de agendamento criado? (não freia se já fechou)
     _BOOKED_OK = _re.compile(r"agendad|confirmad|marcad|prontinho|tudo certo|t[áa]\s+fechad|agendamento\s+criado", _re.I)
-    # Um agendamento foi REALMENTE criado neste turno? (a tool de sucesso devolve agendamento_id)
-    _BOOKING_OK = "agendamento_id" in _tool_results
+    # O Pet bloqueou a criação por já existir agendamento do mesmo serviço no mesmo dia
+    # (remarcação): o payload de bloqueio TAMBÉM traz agendamento_id (do existente).
+    _REMARCA_PENDING = "ja_tem_agendamento_nesse_dia" in _tool_results
+    # Um agendamento foi REALMENTE criado/alterado neste turno? (sucesso devolve agendamento_id;
+    # mas o bloqueio de remarcação também o traz → excluir esse caso pra não dar falso-positivo).
+    _BOOKING_OK = "agendamento_id" in _tool_results and not _REMARCA_PENDING
     # A criação de agendamento FALHOU por serviço não resolvido (placeholder/código errado)?
     _SVC_FAIL = (
         "servico_ambiguo_ou_nao_encontrado" in _tool_results
@@ -620,9 +627,11 @@ async def send_message(
     )
 
     _discipline_msg = None
+    _brake = None
     if active_tools and text and _SVC_FAIL and not _BOOKING_OK:
         # O modelo tentou agendar mas passou nome de serviço genérico/placeholder ou código
         # errado → a tool devolveu opcoes_por_termo com os NOMES REAIS. Manda copiar de lá.
+        _brake = "svc_fail"
         _discipline_msg = (
             "(sistema) O agendamento NÃO foi criado: você passou nome(s) de serviço genéricos/placeholder "
             "(ex.: 'Serviço 1', 'Nome do Serviço') ou um código errado. No resultado da ferramenta veio "
@@ -632,9 +641,29 @@ async def send_message(
             "horário REAL que o cliente escolheu nesta conversa (formato YYYY-MM-DDTHH:MM:SS — NÃO invente "
             "data nem use exemplos) e confirmado:true. Depois confirme ao cliente."
         )
+    elif active_tools and text and _REMARCA_PENDING and not _called("alterar_agendamento"):
+        # P1c: o Pet bloqueou o create porque já existe agendamento desse serviço no dia
+        # (remarcação). O modelo precisa ALTERAR o existente, não criar outro.
+        _brake = "remarcacao"
+        _discipline_msg = (
+            "(sistema) NÃO crie um novo agendamento: o pet já tem um agendamento desse serviço nesse dia "
+            "(o resultado da ferramenta trouxe `agendamento_id` do existente em `ja_tem_agendamento_nesse_dia`). "
+            "Para MUDAR o horário, chame pet_alterar_agendamento com esse agendamento_id e o novo_inicio "
+            "(YYYY-MM-DDTHH:MM:SS, São Paulo) e confirmado:true. Depois confirme a remarcação ao cliente."
+        )
+    elif active_tools and text and _BOOKING_OK and not _BOOKED_OK.search(text):
+        # P1c-fase1b: o agendamento FOI criado/alterado (agendamento_id no resultado) mas o texto
+        # final não confirma ao cliente — garante a mensagem clara de confirmação.
+        _brake = "confirm_summary_missing"
+        _discipline_msg = (
+            "(sistema) O agendamento FOI criado/alterado com sucesso no sistema. NÃO re-pergunte nem "
+            "re-liste horários, e NÃO chame a ferramenta de novo. Apenas CONFIRME ao cliente agora, em uma "
+            "mensagem clara: o(s) serviço(s), a data e a hora, e o valor total."
+        )
     elif active_tools and text and _HORARIOS_OK and _DENIES_SLOTS.search(text):
         # A ferramenta de horários RETORNOU disponibilidade, mas o agente respondeu "não tem".
         # Força ele a relatar os horários REAIS que a ferramenta devolveu (a equipe toda).
+        _brake = "denies_slots"
         _discipline_msg = (
             "(sistema) A ferramenta de horários RETORNOU horários disponíveis neste turno (campo "
             "faixa_livre/horários no resultado). Se houver horário para o DIA e o PERÍODO que o cliente "
@@ -647,12 +676,14 @@ async def send_message(
     elif active_tools and text and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
         "horario", "disponiv"
     ):
+        _brake = "offers_slot_no_check"
         _discipline_msg = (
             "(sistema) Você ofereceu horário SEM consultar a agenda. Chame AGORA a ferramenta de "
             "horários disponíveis para a data pedida e ofereça SOMENTE horários reais que ainda não "
             "passaram (considere a data e a hora atuais). Nunca invente horários nem ofereça horário passado."
         )
     elif active_tools and text and _ASKS_PET.search(text) and not _called("tutor", "cliente", "historico"):
+        _brake = "asks_pet_data"
         _discipline_msg = (
             "(sistema) Você perguntou um dado do pet (porte/raça/nome) que provavelmente já está no "
             "cadastro. Consulte AGORA o cadastro do cliente pelo telefone dele (pet_listar_tutores) e use "
@@ -662,6 +693,7 @@ async def send_message(
         active_tools and text and _ceps and _CLOSING_BOOKING.search(text) and _TAXI_DELIV.search(text)
         and not _called("salvar_endereco", "cadastrar_cliente") and not _HOUSE_NUM.search(text)
     ):
+        _brake = "taxidog_no_house_num"
         _discipline_msg = (
             "(sistema) Você está fechando um pedido com Taxidog/entrega, mas o CEP sozinho só dá a RUA. "
             "Antes de confirmar, PERGUNTE o número da casa e o complemento (apto/bloco), confirme rua+número "
@@ -669,6 +701,7 @@ async def send_message(
             "entrega/Taxidog sem o número da casa — sem ele não dá pra buscar o pet."
         )
     elif active_tools and text and _ceps and _TAXI_CTX.search(text) and not _called("taxidog"):
+        _brake = "taxidog_no_quote"
         _discipline_msg = (
             f"(sistema) Você afirmou distância/cobertura do Taxidog SEM cotar agora — NUNCA repita faixa/"
             f"distância de memória. O CEP MAIS RECENTE do cliente é {_ceps[-1]} (se ele corrigiu, vale SEMPRE "
@@ -677,6 +710,7 @@ async def send_message(
         )
     elif active_tools and text and _asks and _ASKS_CEP.search(text) and _ceps:
         _cep = _ceps[-1]
+        _brake = "cep_reasked"
         _discipline_msg = (
             f"(sistema) O cliente JÁ informou o CEP nesta conversa (o mais recente é {_cep}). NÃO peça de novo "
             f"— chame AGORA pet_taxidog_cotar com cep_cliente={_cep} e traga a faixa do Taxidog. Se a ferramenta "
@@ -684,12 +718,14 @@ async def send_message(
         )
     elif active_tools and text and _asks and _ASKS_PHONE.search(text) and _RE_PHONE.search(_user_texts):
         _tel = _RE_PHONE.search(_user_texts).group(0).strip()  # type: ignore[union-attr]
+        _brake = "phone_reasked"
         _discipline_msg = (
             f"(sistema) O cliente JÁ informou o número nesta conversa: {_tel}. NÃO peça de novo — use esse "
             "número pra cadastrar/buscar o cliente e siga (se não houver cadastro, cadastre AGORA com o nome "
             "do WhatsApp + esse número, sem ficar perguntando)."
         )
     elif active_tools and text and _USER_ASKS_BOOKING.search(user_content or "") and not _called("agenda", "historico"):
+        _brake = "booking_exists_query"
         _discipline_msg = (
             "(sistema) O cliente perguntou sobre um agendamento EXISTENTE (se está confirmado / qual o horário). "
             "NÃO afirme nem invente agendamento. Consulte AGORA a agenda real (pet_consultar_agenda do dia ou "
@@ -697,6 +733,7 @@ async def send_message(
             "pra esse pet, diga que não encontrou e ofereça agendar — nunca confirme um horário/valor que você não verificou."
         )
     elif active_tools and text and _USER_ASKS_HOURS.search(user_content or "") and not _called("profission"):
+        _brake = "prof_hours"
         _discipline_msg = (
             "(sistema) O cliente perguntou o HORÁRIO/expediente de um profissional (até que horas atende hoje) "
             "— isso NÃO é 'tem horário livre'. Consulte AGORA pet_listar_profissionais (campo escala_texto) e "
@@ -708,6 +745,7 @@ async def send_message(
         active_tools and text and _QUOTES_PRICE.search(text) and _PRICE_CTX.search(text)
         and not _called("listar_servic", "criar_agendamento", "alterar_agendamento", "taxidog", "historico")
     ):
+        _brake = "price_no_check"
         _discipline_msg = (
             "(sistema) Você citou um PREÇO sem consultar o sistema. O preço NUNCA é inventado nem fixo na "
             "persona — chame AGORA pet_listar_servicos e use o valor do PORTE do pet (P/M/G/GG). Refaça a "
@@ -719,6 +757,7 @@ async def send_message(
         and not _BOOKED_OK.search(text)
     ):
         # Cliente confirmou e o modelo NÃO agendou (ficou re-perguntando/re-listando).
+        _brake = "confirm_no_book"
         _discipline_msg = (
             "(sistema) O cliente CONFIRMOU o agendamento. AGENDE AGORA: chame pet_criar_agendamento com "
             "confirmado:true, passando em servico_ids o(s) serviço(s) escolhido(s) pelo NOME EXATO (inclua o "
@@ -727,6 +766,8 @@ async def send_message(
             "ao cliente com o resumo (serviços, data/hora, valor total)."
         )
     if _discipline_msg:
+        if _brake:
+            brakes_fired.append(_brake)
         messages.append({"role": "assistant", "content": text})
         messages.append({"role": "user", "content": _discipline_msg})
         try:
@@ -764,6 +805,7 @@ async def send_message(
         active_tools and text and _called("criar_agendamento")
         and not _OFFERS_UPSELL.search(text) and _tem_upsell_pendente()
     ):
+        brakes_fired.append("upsell_missing")
         messages.append({"role": "assistant", "content": text})
         messages.append({
             "role": "user",
@@ -786,6 +828,7 @@ async def send_message(
     # vez forçando português (a sanitização final abaixo é a 2ª camada). Sem gate de tools:
     # o vazamento ocorre também em conversa persona-driven pura.
     if text and _CJK_RE.search(text):
+        brakes_fired.append("cjk_leak")
         messages.append({"role": "assistant", "content": text})
         messages.append({
             "role": "user",
@@ -846,6 +889,7 @@ async def send_message(
         model_used=data.get("model"),
         raw_response=data,
         tool_calls_made=tool_calls_made,
+        brakes_fired=brakes_fired,
     )
 
 

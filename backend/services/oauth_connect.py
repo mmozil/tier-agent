@@ -48,7 +48,20 @@ PRESETS: dict[str, dict] = {
         "authorize_url": "https://pet.hovio.com.br/oauth/authorize",
         "token_url": "https://pet.hovio.com.br/oauth/token",
         "mcp_url": "https://pet.hovio.com.br/api/mcp",
+        # STAFF (copiloto interno): acesso amplo — agenda/financeiro/conversas de todos.
         "scope": "pet:read pet:write pet:whatsapp",
+        "client_id": "tier-agent",
+        "secret_env": "HOVIO_PET_OAUTH_CLIENT_SECRET",
+    },
+    "hovio-pet-customer": {
+        "nome": "Hovio Pet (atendimento ao cliente)",
+        # CUSTOMER (agente que fala com o cliente final): SÓ tools escopadas ao próprio
+        # cliente. O scope pet:customer faz o servidor MCP do Pet esconder/bloquear as tools
+        # petshop-wide (agenda/conversas/financeiro/vacinas/envio avulso) — anti-vazamento.
+        "authorize_url": "https://pet.hovio.com.br/oauth/authorize",
+        "token_url": "https://pet.hovio.com.br/oauth/token",
+        "mcp_url": "https://pet.hovio.com.br/api/mcp",
+        "scope": "pet:customer",
         "client_id": "tier-agent",
         "secret_env": "HOVIO_PET_OAUTH_CLIENT_SECRET",
     },

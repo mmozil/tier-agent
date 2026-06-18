@@ -258,6 +258,11 @@ class TaMessageLog(Base):
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # texto da mensagem (user/assistant) — pra inbox/histórico. Coluna adicionada
     # via ensure_message_content_column() (runtime DDL, nullable, retrocompatível).
+    tool_calls_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # observabilidade/eval: ferramentas chamadas no turno [{name, args(truncado)}]
+    brakes_fired: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # observabilidade/eval: nomes dos freios determinísticos que dispararam no turno
+    # (ambas via ensure_message_content_column() — runtime DDL, nullable, retrocompatível).
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 

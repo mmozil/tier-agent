@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -33,6 +34,16 @@ from services.rag_engine import _embed_via_gemini
 logger = logging.getLogger(__name__)
 
 DEFAULT_TOP_K = 5
+
+
+def _eval_mode() -> bool:
+    """True quando rodando a suíte de eval/simulação (env TIER_EVAL_MODE).
+
+    Nesse modo NÃO gravamos memória de longo prazo — a suíte não pode contaminar
+    `ta_contact_memory` (nem da prod nem do DB de teste) com fatos de conversas sintéticas.
+    A LEITURA (search) segue funcionando, escopada por external_chat_id.
+    """
+    return os.getenv("TIER_EVAL_MODE", "").strip().lower() in ("1", "true", "yes")
 EXTRACT_PROMPT = """Você extrai FATOS reutilizáveis de uma conversa pra memória de longo prazo do atendimento.
 
 Analise a troca abaixo e retorne SÓ um JSON array de objetos com:
@@ -218,6 +229,9 @@ async def add(
     """Extrai fatos novos da troca user→assistant e persiste. Retorna count."""
     if not user_text or not external_chat_id:
         return 0
+
+    if _eval_mode():
+        return 0  # modo eval/simulação: nunca grava memória (anti-contaminação)
 
     cfg = await _get_config(db, tenant_id)
     if not cfg["enabled"]:

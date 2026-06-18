@@ -48,6 +48,10 @@ async def maybe_extract_style(
     Idempotente — se já tem fact 'tom de comunicação' pro contato, skip.
     Chamado em background pelo agent_runtime (não bloqueia resposta).
     """
+    from services.memory_service import _eval_mode
+
+    if _eval_mode():
+        return  # modo eval/simulação: não grava style (anti-contaminação de memória)
     if msg_count > 3 or not text or len(text.strip()) < 10:
         return
 

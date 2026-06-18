@@ -200,6 +200,8 @@ async def log_message(
     latency_ms: int = 0,
     model_used: str | None = None,
     content: str | None = None,
+    tool_calls_json: list | None = None,
+    brakes_fired: list | None = None,
 ) -> None:
     log = TaMessageLog(
         conversation_id=conversation_id,
@@ -210,6 +212,8 @@ async def log_message(
         latency_ms=latency_ms,
         model_used=model_used,
         content=(content or "")[:8000] or None,
+        tool_calls_json=tool_calls_json or None,
+        brakes_fired=brakes_fired or None,
     )
     db.add(log)
 
@@ -793,6 +797,12 @@ async def handle_inbound_message(
         tokens_out=reply.tokens_out,
     )
 
+    # Observabilidade/eval: tool calls (args truncados) + freios disparados no turno.
+    _tool_calls_log = [
+        {"name": c.get("name"), "args": json.dumps(c.get("args"), ensure_ascii=False)[:300]}
+        for c in (reply.tool_calls_made or [])
+    ] or None
+
     # Log resposta do assistant
     await log_message(
         db,
@@ -805,6 +815,8 @@ async def handle_inbound_message(
         latency_ms=reply.latency_ms,
         model_used=reply.model_used,
         content=reply.text,
+        tool_calls_json=_tool_calls_log,
+        brakes_fired=(reply.brakes_fired or None),
     )
 
     # Envia resposta de volta no canal
@@ -941,9 +953,14 @@ async def handle_inbound_message(
                 "external_chat_id": external_chat_id,
                 "tokens_in": reply.tokens_in,
                 "tokens_out": reply.tokens_out,
+                "cost_cents": cost_cents,
                 "model": reply.model_used,
                 "memory_used": bool(memory_block),
+                "tool_calls": [c.get("name") for c in (reply.tool_calls_made or [])],
+                "brakes_fired": reply.brakes_fired or [],
             },
+            # turnos onde o modelo precisou de correção (freio) sobem como WARNING — métrica de saúde
+            level="WARNING" if reply.brakes_fired else "DEFAULT",
             latency_ms=reply.latency_ms,
         )
     except Exception:
