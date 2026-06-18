@@ -660,6 +660,21 @@ async def send_message(
             "re-liste horários, e NÃO chame a ferramenta de novo. Apenas CONFIRME ao cliente agora, em uma "
             "mensagem clara: o(s) serviço(s), a data e a hora, e o valor total."
         )
+    elif (
+        active_tools and text and _CONFIRMS_BOOKING.search(user_content or "")
+        and not _BOOKING_OK  # nenhum agendamento criado com sucesso (mesmo que tenha tentado e falhado)
+        and not _BOOKED_OK.search(text)
+    ):
+        # Cliente confirmou e o modelo NÃO agendou (re-perguntando/re-listando). PRIORIDADE alta:
+        # vem antes de offers_slot/denies_slots — a intenção de FECHAR domina "ofereceu horário".
+        _brake = "confirm_no_book"
+        _discipline_msg = (
+            "(sistema) O cliente CONFIRMOU o agendamento. AGENDE AGORA: chame pet_criar_agendamento com "
+            "confirmado:true, passando em servico_ids o(s) serviço(s) escolhido(s) pelo NOME EXATO (inclua o "
+            "Taxidog no MESMO servico_ids se ele pediu — é um atendimento só) e o horário que ele escolheu "
+            "(YYYY-MM-DDTHH:MM:SS, São Paulo). NÃO re-pergunte nem re-liste horário. Depois de criar, confirme "
+            "ao cliente com o resumo (serviços, data/hora, valor total)."
+        )
     elif active_tools and text and _HORARIOS_OK and _DENIES_SLOTS.search(text):
         # A ferramenta de horários RETORNOU disponibilidade, mas o agente respondeu "não tem".
         # Força ele a relatar os horários REAIS que a ferramenta devolveu (a equipe toda).
@@ -750,20 +765,6 @@ async def send_message(
             "(sistema) Você citou um PREÇO sem consultar o sistema. O preço NUNCA é inventado nem fixo na "
             "persona — chame AGORA pet_listar_servicos e use o valor do PORTE do pet (P/M/G/GG). Refaça a "
             "resposta com o preço REAL do serviço pro porte certo."
-        )
-    elif (
-        active_tools and text and _CONFIRMS_BOOKING.search(user_content or "")
-        and not _BOOKING_OK  # nenhum agendamento criado com sucesso (mesmo que tenha tentado e falhado)
-        and not _BOOKED_OK.search(text)
-    ):
-        # Cliente confirmou e o modelo NÃO agendou (ficou re-perguntando/re-listando).
-        _brake = "confirm_no_book"
-        _discipline_msg = (
-            "(sistema) O cliente CONFIRMOU o agendamento. AGENDE AGORA: chame pet_criar_agendamento com "
-            "confirmado:true, passando em servico_ids o(s) serviço(s) escolhido(s) pelo NOME EXATO (inclua o "
-            "Taxidog no MESMO servico_ids se ele pediu — é um atendimento só) e o horário que ele escolheu "
-            "(YYYY-MM-DDTHH:MM:SS, São Paulo). NÃO re-pergunte nem re-liste horário. Depois de criar, confirme "
-            "ao cliente com o resumo (serviços, data/hora, valor total)."
         )
     if _discipline_msg:
         if _brake:
