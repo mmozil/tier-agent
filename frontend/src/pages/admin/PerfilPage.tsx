@@ -4,7 +4,7 @@ import { Loader2, User, Building2, Mail } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { FC, PageFrame, Row, Button } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button } from "@/components/ds/fc";
 
 export default function PerfilPage() {
   const { user, refresh } = useAuth();
@@ -31,12 +31,7 @@ export default function PerfilPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="p-6">
-            <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Meu perfil</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Dados básicos da sua conta no Tier Agent.</p>
-          </div>
-        </Row>
+        <PageHero title="Meu perfil" subtitle="Dados básicos da sua conta no Tier Agent." />
 
         <Row last>
           <form onSubmit={onSubmit} className="p-6 space-y-6">

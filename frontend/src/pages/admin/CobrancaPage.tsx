@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Check } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, HairCells, Button, SkeletonBar } from "@/components/ds/fc";
 
 interface SKU {
   key: string;
@@ -66,25 +66,27 @@ export default function CobrancaPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="p-6">
-            <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Cobrança</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Escolha o plano que cabe no seu volume.</p>
-            {sub && sub.current_sku && sub.current_sku !== "trial" && (
-              <div className="mt-4 rounded-lg border border-[#0a8f5a]/30 bg-[#0a8f5a]/[0.06] px-4 py-3 text-[13px] text-[#0a8f5a]">
-                <strong>Plano atual:</strong> {sub.sku_details?.label}
-                {sub.subscription?.next_billing_at && (
-                  <> · próxima cobrança: {new Date(sub.subscription.next_billing_at).toLocaleDateString("pt-BR")}</>
-                )}
-              </div>
-            )}
-            {sub?.current_sku === "trial" && (
-              <div className="mt-4 rounded-lg border border-[#F5A300]/30 bg-[#F5A300]/[0.08] px-4 py-3 text-[13px] text-[#9a6700]">
-                Você está no <strong>trial</strong>. Escolha um plano abaixo pra continuar usando após o período.
-              </div>
-            )}
-          </div>
-        </Row>
+        <PageHero title="Cobrança" subtitle="Escolha o plano que cabe no seu volume." />
+
+        {sub?.current_sku && (
+          <Row>
+            <div className="p-6">
+              {sub.current_sku !== "trial" && (
+                <div className="rounded-lg border border-[#0a8f5a]/30 bg-[#0a8f5a]/[0.06] px-4 py-3 text-[13px] text-[#0a8f5a]">
+                  <strong>Plano atual:</strong> {sub.sku_details?.label}
+                  {sub.subscription?.next_billing_at && (
+                    <> · próxima cobrança: {new Date(sub.subscription.next_billing_at).toLocaleDateString("pt-BR")}</>
+                  )}
+                </div>
+              )}
+              {sub.current_sku === "trial" && (
+                <div className="rounded-lg border border-[#F5A300]/30 bg-[#F5A300]/[0.08] px-4 py-3 text-[13px] text-[#9a6700]">
+                  Você está no <strong>trial</strong>. Escolha um plano abaixo pra continuar usando após o período.
+                </div>
+              )}
+            </div>
+          </Row>
+        )}
 
         <Row>
           {loading ? (

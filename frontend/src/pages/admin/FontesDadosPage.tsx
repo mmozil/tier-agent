@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Trash2, Loader2, Zap, X, CheckCircle2, XCircle, Check, Plug, Bot } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, HairCells, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button, HairCells, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 // Integrações (MCP) — catálogo de plataformas que o agente pode consultar/agir via
 // tool-use. Padrão "página de integrações": cards conhecidos (Conectar com URL
@@ -311,18 +311,18 @@ export default function FontesDadosPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="flex items-start justify-between gap-4 p-6">
-            <div className="min-w-0">
-              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Integrações (MCP)</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
-                Conecte o agente a outras plataformas — ele passa a <b>consultar dados e agir</b> nelas
-                durante a conversa (via ferramentas MCP). Escolha uma integração abaixo ou conecte um
-                servidor personalizado.
-              </p>
-            </div>
-            {agents.length > 0 && (
-              <label className="shrink-0">
+        <PageHero
+          title="Integrações"
+          subtitle={
+            <>
+              Conecte o agente a outras plataformas — ele passa a <b>consultar dados e agir</b> nelas
+              durante a conversa (via ferramentas MCP). Escolha uma integração abaixo ou conecte um
+              servidor personalizado.
+            </>
+          }
+          right={
+            agents.length > 0 ? (
+              <label className="block">
                 <span className={`block text-[11px] mb-1 ${FC.sub}`}>Agente</span>
                 <select
                   value={agentId ?? ""}
@@ -334,9 +334,9 @@ export default function FontesDadosPage() {
                   ))}
                 </select>
               </label>
-            )}
-          </div>
-        </Row>
+            ) : undefined
+          }
+        />
 
         {/* ─── Catálogo de integrações ─── */}
         <Row>

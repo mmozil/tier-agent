@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Plus, Trash2, Zap, Tag, UserCheck, MessageSquare, CheckCircle2, X } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 type ActionType = "tag" | "assign" | "reply" | "status";
 interface MAction {
@@ -102,19 +102,19 @@ export default function MacrosPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="flex items-start justify-between gap-4 p-6">
-            <div>
-              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Macros</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
-                Atalhos do atendente: 1 clique executa uma sequência (etiqueta + atribuir + responder + status). Aplica na conversa pelo botão <b>Macros</b> no painel.
-              </p>
-            </div>
+        <PageHero
+          title="Macros"
+          subtitle={
+            <>
+              Atalhos do atendente: 1 clique executa uma sequência (etiqueta + atribuir + responder + status). Aplica na conversa pelo botão <b>Macros</b> no painel.
+            </>
+          }
+          right={
             <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
               <Plus className="w-3.5 h-3.5" /> Nova macro
             </Button>
-          </div>
-        </Row>
+          }
+        />
 
         {showForm && (
           <Row>

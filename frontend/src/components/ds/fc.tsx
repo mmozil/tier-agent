@@ -125,6 +125,64 @@ export function SectionHeader({
   );
 }
 
+// PageHeroRidge — decoração ASCII topográfica faint (eco do <canvas> decorativo do
+// Firecrawl no hero das páginas). Bottom-right, mascarada, pointer-events-none.
+const HERO_RIDGE = [
+  "",
+  "",
+  " ..::..           ....",
+  ":--==--::.......::----::.                 .::::::...  ..::",
+  "=++*+++==-------==++++==-:              .:-=====---:::--==",
+  "*xxxxxx**+++=+++**xxxx**+-:.          .:-=+*****+++===+++*",
+  "X######XXxx***xxXXX###Xxx+=-:.      .:-=+*xXXXXXxxx****xxX",
+  "###########XXX##########Xx*+=::....::=+*xX#########XXXX###",
+];
+function PageHeroRidge() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none select-none absolute right-0 top-0 bottom-0 hidden md:flex items-end justify-end pr-8 overflow-hidden"
+      style={{
+        width: 480,
+        WebkitMaskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
+        maskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
+      }}
+    >
+      <pre className="font-mono text-[8px] leading-[8px] text-[#262626]/[0.10] dark:text-white/[0.07] whitespace-pre mb-7">
+        {HERO_RIDGE.join("\n")}
+      </pre>
+    </div>
+  );
+}
+
+// PageHero — banner de topo (estilo página de API Keys do Firecrawl): título grande
+// (28/semibold) + subtítulo + decoração ASCII faint à direita. `right` = ação opcional
+// (ex: seletor de agente). Usar como 1ª <Row> de cada página de Configurações.
+export function PageHero({
+  title,
+  subtitle,
+  right,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  right?: ReactNode;
+}) {
+  return (
+    <Row>
+      <div className="relative overflow-hidden">
+        <PageHeroRidge />
+        <div className="relative flex items-start justify-between gap-4 px-6 py-11">
+          <div className="min-w-0">
+            <h1 className={`text-[28px] font-semibold tracking-[-0.4px] leading-9 fc-crisp ${FC.ink}`}>{title}</h1>
+            {subtitle && <p className={`text-[14px] leading-6 mt-2 max-w-[600px] ${FC.sub}`}>{subtitle}</p>}
+          </div>
+          {right && <div className="relative shrink-0">{right}</div>}
+        </div>
+      </div>
+    </Row>
+  );
+}
+
 // HairCells — grade flush. As bordas internas cruzam nas interseções → "+".
 // cols controla as colunas no breakpoint lg. Cada filho deve ter seu próprio padding.
 export function HairCells({

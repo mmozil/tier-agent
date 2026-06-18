@@ -29,7 +29,7 @@ import PlaybookEditorPage from "./pages/admin/PlaybookEditorPage";
 import PlaybookExecutionsPage from "./pages/admin/PlaybookExecutionsPage";
 import MetricasPage from "./pages/admin/MetricasPage";
 import VisaoGeralPage from "./pages/admin/VisaoGeralPage";
-import { FC, PageFrame, Row } from "./components/ds/fc";
+import { FC, PageFrame, PageHero, Row } from "./components/ds/fc";
 import AgentSkillsPage from "./pages/admin/AgentSkillsPage";
 import MarketplacePage from "./pages/admin/MarketplacePage";
 import LeadsPage from "./pages/admin/LeadsPage";
@@ -43,11 +43,10 @@ function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
+        <PageHero title={title} subtitle={desc} />
         <Row last>
           <div className="p-6">
-            <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>{title}</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>{desc}</p>
-            <span className={`mt-5 inline-flex items-center gap-1.5 rounded-full border ${FC.hair} px-2.5 py-1 text-[11px] font-medium ${FC.mut}`}>
+            <span className={`inline-flex items-center gap-1.5 rounded-full border ${FC.hair} px-2.5 py-1 text-[11px] font-medium ${FC.mut}`}>
               <span className="w-1.5 h-1.5 rounded-full bg-[#F5A300]" /> Em breve
             </span>
           </div>

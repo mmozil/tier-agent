@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { ToggleLeft } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, EmptyHint, SkeletonBar } from "@/components/ds/fc";
 
 interface Flag {
   id: number;
@@ -58,14 +58,10 @@ export default function FeaturesPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="p-6">
-            <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Feature Flags</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
-              Liga/desliga capacidades do agente sem deploy. Escopo global = aplica em todos os tenants.
-            </p>
-          </div>
-        </Row>
+        <PageHero
+          title="Feature Flags"
+          subtitle="Liga/desliga capacidades do agente sem deploy. Escopo global = aplica em todos os tenants."
+        />
 
         <Row last>
           <div className="p-6">

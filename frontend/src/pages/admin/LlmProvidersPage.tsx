@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Plus, Trash2, Loader2, Zap, GripVertical, X, CheckCircle2, XCircle, Cpu, Pencil } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 interface Provider {
   id: number;
@@ -37,37 +37,6 @@ interface TestResult {
   latency_ms?: number;
   sample?: string;
   detail?: string;
-}
-
-// Arte ASCII topográfica (eco do <canvas> decorativo do Firecrawl no hero). Gerada
-// deterministicamente; renderizada bem faint + mascarada — textura, não conteúdo.
-const RIDGE = [
-  "",
-  "",
-  " ..::..           ....",
-  ":--==--::.......::----::.                 .::::::...  ..::",
-  "=++*+++==-------==++++==-:              .:-=====---:::--==",
-  "*xxxxxx**+++=+++**xxxx**+-:.          .:-=+*****+++===+++*",
-  "X######XXxx***xxXXX###Xxx+=-:.      .:-=+*xXXXXXxxx****xxX",
-  "###########XXX##########Xx*+=::....::=+*xX#########XXXX###",
-];
-
-function RidgeDecoration() {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none select-none absolute right-0 top-0 bottom-0 hidden md:flex items-end justify-end pr-8 overflow-hidden"
-      style={{
-        width: 480,
-        WebkitMaskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
-        maskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
-      }}
-    >
-      <pre className="font-mono text-[8px] leading-[8px] text-[#262626]/[0.10] dark:text-white/[0.07] whitespace-pre mb-7">
-        {RIDGE.join("\n")}
-      </pre>
-    </div>
-  );
 }
 
 export default function LlmProvidersPage() {
@@ -290,20 +259,17 @@ export default function LlmProvidersPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        {/* ─── HERO (estilo Firecrawl: título grande + subtítulo + decoração ASCII) ─── */}
-        <Row>
-          <div className="relative overflow-hidden">
-            <RidgeDecoration />
-            <div className="relative px-6 py-11">
-              <h1 className={`text-[28px] font-semibold tracking-[-0.4px] leading-9 fc-crisp ${FC.ink}`}>LLM Providers</h1>
-              <p className={`text-[14px] leading-6 mt-2 max-w-[580px] ${FC.sub}`}>
-                Conecte as LLMs do seu agente e defina a <b>ordem de uso</b>. A 1ª ligada é a{" "}
-                <span className="text-[#0a8f5a] font-medium">principal</span>; as seguintes entram como{" "}
-                <b>fallback</b> se a de cima falhar ou ficar fora do ar.
-              </p>
-            </div>
-          </div>
-        </Row>
+        {/* ─── HERO compartilhado (PageHero do design system) ─── */}
+        <PageHero
+          title="LLM Providers"
+          subtitle={
+            <>
+              Conecte as LLMs do seu agente e defina a <b>ordem de uso</b>. A 1ª ligada é a{" "}
+              <span className="text-[#0a8f5a] font-medium">principal</span>; as seguintes entram como{" "}
+              <b>fallback</b> se a de cima falhar ou ficar fora do ar.
+            </>
+          }
+        />
 
         {/* ─── Formulário de novo provider (aparece ao clicar em "Novo provider") ─── */}
         {showForm && (

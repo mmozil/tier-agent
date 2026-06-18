@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Users, Plus, Trash2, RefreshCw, X, Shield, Headphones, Link2 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SKEL, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SKEL, iconBtn } from "@/components/ds/fc";
 
 interface Member {
   id: number;
@@ -142,20 +142,16 @@ export default function EquipePage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="flex items-start justify-between gap-4 p-6">
-            <div>
-              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Equipe</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
-                Atendentes com login próprio. Entram pela mesma tela de login e veem só este workspace.
-              </p>
-            </div>
+        <PageHero
+          title="Equipe"
+          subtitle="Atendentes com login próprio. Entram pela mesma tela de login e veem só este workspace."
+          right={
             <div className="flex items-center gap-2 shrink-0">
               <Button variant="ghost" onClick={load}><RefreshCw className="w-3.5 h-3.5" /> Atualizar</Button>
               <Button variant="primary" onClick={() => setShowForm((s) => !s)}><Plus className="w-3.5 h-3.5" /> Novo atendente</Button>
             </div>
-          </div>
-        </Row>
+          }
+        />
 
         {showForm && (
           <Row>
