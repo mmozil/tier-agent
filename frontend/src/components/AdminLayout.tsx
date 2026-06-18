@@ -1,40 +1,31 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import {
-  Home,
-  ArrowUpRight,
-  PieChart,
-  Cpu,
-  ToggleLeft,
-  Users,
-  Sliders,
-  BarChart3,
-  CreditCard,
-  Bot,
-  MessageSquare,
-  Plug,
-  BookOpen,
-  Workflow,
-  Search,
-  HelpCircle,
-  Settings,
-  Store,
-  Inbox,
-  BellRing,
-  Zap,
-  Database,
-} from "lucide-react";
+import { ArrowUpRight, HelpCircle, Search, Settings } from "lucide-react";
 
 import UserMenu from "./UserMenu";
 import NotificationBell from "./NotificationBell";
 import OnlineToggle from "./OnlineToggle";
 import { iconBtn, btnPrimary } from "./ds/fc";
+import {
+  AgentsMenuIcon,
+  AttentionMenuIcon,
+  ChannelsMenuIcon,
+  ConversationsMenuIcon,
+  KnowledgeMenuIcon,
+  LeadsMenuIcon,
+  MarketplaceMenuIcon,
+  MetricsMenuIcon,
+  OverviewMenuIcon,
+  PlaybooksMenuIcon,
+  ReportsMenuIcon,
+  SettingsMenuIcon,
+} from "./icons/menuIcons";
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   metaLabel?: string;
-  end?: boolean; // match exato (ex.: /admin index)
+  end?: boolean;
 }
 
 interface NavGroup {
@@ -45,39 +36,31 @@ interface NavGroup {
 const SECTIONS: NavGroup[] = [
   {
     label: "",
-    items: [{ to: "/admin", label: "Visão geral", icon: Home, metaLabel: "/overview", end: true }],
+    items: [{ to: "/admin", label: "Visão geral", icon: OverviewMenuIcon, metaLabel: "/overview", end: true }],
   },
   {
     label: "Plataforma",
     items: [
-      { to: "/admin/atencao", label: "Precisa de você", icon: BellRing, metaLabel: "/attention" },
-      { to: "/admin/agentes", label: "Agentes", icon: Bot, metaLabel: "/agents" },
-      { to: "/admin/conversas", label: "Conversas", icon: MessageSquare, metaLabel: "/inbox" },
-      { to: "/admin/leads", label: "Leads", icon: Inbox, metaLabel: "/leads" },
-      { to: "/admin/playbooks", label: "Playbooks", icon: Workflow, metaLabel: "/flows" },
-      { to: "/admin/marketplace", label: "Marketplace", icon: Store, metaLabel: "/market" },
-      { to: "/admin/canais", label: "Canais", icon: Plug, metaLabel: "/channels" },
-      { to: "/admin/knowledge", label: "Knowledge", icon: BookOpen, metaLabel: "/knowledge" },
+      { to: "/admin/atencao", label: "Precisa de você", icon: AttentionMenuIcon, metaLabel: "/attention" },
+      { to: "/admin/agentes", label: "Agentes", icon: AgentsMenuIcon, metaLabel: "/agents" },
+      { to: "/admin/conversas", label: "Conversas", icon: ConversationsMenuIcon, metaLabel: "/inbox" },
+      { to: "/admin/leads", label: "Leads", icon: LeadsMenuIcon, metaLabel: "/leads" },
+      { to: "/admin/playbooks", label: "Playbooks", icon: PlaybooksMenuIcon, metaLabel: "/flows" },
+      { to: "/admin/marketplace", label: "Marketplace", icon: MarketplaceMenuIcon, metaLabel: "/market" },
+      { to: "/admin/canais", label: "Canais", icon: ChannelsMenuIcon, metaLabel: "/channels" },
+      { to: "/admin/knowledge", label: "Knowledge", icon: KnowledgeMenuIcon, metaLabel: "/knowledge" },
     ],
   },
   {
-    label: "Configuração",
+    label: "Análise",
     items: [
-      { to: "/admin/llm", label: "LLM Providers", icon: Cpu, metaLabel: "/llm" },
-      { to: "/admin/fontes-dados", label: "Integrações", icon: Database, metaLabel: "/integrations" },
-      { to: "/admin/macros", label: "Macros", icon: Zap, metaLabel: "/macros" },
-      { to: "/admin/features", label: "Feature Flags", icon: ToggleLeft, metaLabel: "/flags" },
-      { to: "/admin/params", label: "Parâmetros", icon: Sliders, metaLabel: "/params" },
+      { to: "/admin/metricas", label: "Métricas", icon: MetricsMenuIcon, metaLabel: "/metrics" },
+      { to: "/admin/relatorios-atendimento", label: "Relatórios", icon: ReportsMenuIcon, metaLabel: "/reports" },
     ],
   },
   {
-    label: "Conta",
-    items: [
-      { to: "/admin/metricas", label: "Métricas", icon: BarChart3, metaLabel: "/metrics" },
-      { to: "/admin/relatorios-atendimento", label: "Relatórios", icon: PieChart, metaLabel: "/reports" },
-      { to: "/admin/cobranca", label: "Cobrança", icon: CreditCard, metaLabel: "/billing" },
-      { to: "/admin/equipe", label: "Equipe", icon: Users, metaLabel: "/team" },
-    ],
+    label: "",
+    items: [{ to: "/admin/configuracoes", label: "Configurações", icon: SettingsMenuIcon, metaLabel: "/settings" }],
   },
 ];
 
@@ -103,7 +86,6 @@ export default function AdminLayout() {
           WebkitFontSmoothing: "antialiased",
         }}
       >
-        {/* Logo — área h-16 com border-b (igual FC: linha sob o logo) */}
         <div className="h-16 px-5 shrink-0 flex items-center border-b border-[#EDEDED]">
           <img
             src="/tier-agent-escuro.png"
@@ -112,65 +94,65 @@ export default function AdminLayout() {
           />
         </div>
 
-        {/* Nav — px-5 py-3 (mesmo respiro do preview/dev) */}
         <nav className="sidebar-scroll flex-1 overflow-y-auto px-5 py-3">
           {SECTIONS.map((section, sIdx) => (
             <div key={sIdx} className={sIdx > 0 ? "mt-5" : ""}>
               {section.label && (
                 <div className="mb-1">
-                  <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#262626]/40 dark:text-[#565d68]">{section.label}</span>
+                  <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#262626]/40 dark:text-[#565d68]">
+                    {section.label}
+                  </span>
                 </div>
               )}
               <div className="flex flex-col gap-1">
                 {section.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  className="group tier-sidebar-item block rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003083]/25"
-                >
-                  {({ isActive }) => {
-                    const act = item.end ? isActive : isActive || location.pathname.startsWith(item.to);
-                    return (
-                      <div className={itemClass(act)}>
-                        <div className="absolute left-0 flex h-9 w-9 items-center justify-center">
-                          <item.icon
-                            className={`h-4 w-4 transition-all duration-200 motion-reduce:transition-none ${
-                              act
-                                ? "text-[#003083] dark:text-[#8ab4ff]"
-                                : "text-[#262626]/[0.72] opacity-80 dark:text-[#d9dde5] dark:opacity-60 group-hover:opacity-100"
-                            }`}
-                          />
-                        </div>
-                        <div className="flex flex-1 items-center pl-9 pr-2">
-                          <span
-                            className={`truncate text-[13px] leading-5 transition-colors duration-200 motion-reduce:transition-none ${
-                              act
-                                ? "font-medium text-[#003083] dark:text-[#8ab4ff]"
-                                : "font-normal text-[#262626]/[0.72] dark:text-[#9aa1ab] group-hover:text-[#262626] dark:group-hover:text-white"
-                            }`}
-                          >
-                            {item.label}
-                          </span>
-                          {item.metaLabel && (
-                            <span className="ml-auto relative flex items-center pl-2">
-                              <span className="pointer-events-none font-mono text-[11px] leading-4 text-[#262626]/[0.32] dark:text-[#6b7280] opacity-0 -translate-x-1 transition-all duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none group-hover:translate-x-0 group-hover:opacity-100">
-                                {item.metaLabel}
-                              </span>
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    className="group tier-sidebar-item block rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003083]/25"
+                  >
+                    {({ isActive }) => {
+                      const act = item.end ? isActive : isActive || location.pathname.startsWith(item.to);
+                      return (
+                        <div className={itemClass(act)}>
+                          <div className="absolute left-0 flex h-9 w-9 items-center justify-center">
+                            <item.icon
+                              className={`h-4 w-4 transition-all duration-200 motion-reduce:transition-none ${
+                                act
+                                  ? "text-[#003083] dark:text-[#8ab4ff]"
+                                  : "text-[#262626]/[0.72] opacity-80 dark:text-[#d9dde5] dark:opacity-60 group-hover:opacity-100"
+                              }`}
+                            />
+                          </div>
+                          <div className="flex flex-1 items-center pl-9 pr-2">
+                            <span
+                              className={`truncate text-[13px] leading-5 transition-colors duration-200 motion-reduce:transition-none ${
+                                act
+                                  ? "font-medium text-[#003083] dark:text-[#8ab4ff]"
+                                  : "font-normal text-[#262626]/[0.72] dark:text-[#9aa1ab] group-hover:text-[#262626] dark:group-hover:text-white"
+                              }`}
+                            >
+                              {item.label}
                             </span>
-                          )}
+                            {item.metaLabel && (
+                              <span className="ml-auto relative flex items-center pl-2">
+                                <span className="pointer-events-none font-mono text-[11px] leading-4 text-[#262626]/[0.32] dark:text-[#6b7280] opacity-0 -translate-x-1 transition-all duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none group-hover:translate-x-0 group-hover:opacity-100">
+                                  {item.metaLabel}
+                                </span>
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  }}
-                </NavLink>
-              ))}
+                      );
+                    }}
+                  </NavLink>
+                ))}
               </div>
             </div>
           ))}
         </nav>
 
-        {/* User menu bottom */}
         <div className="border-t border-[#EDEDED] p-2 shrink-0">
           <UserMenu />
         </div>
@@ -180,10 +162,7 @@ export default function AdminLayout() {
         className="flex-1 ml-[240px] min-h-screen bg-[#F9F9F9]"
         style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
-        {/* SEM max-w: o conteúdo é full-width pra as linhas (Row) chegarem nas
-            extremidades; o conteúdo em si fica contido nos rails da Row (1232). */}
         <div className="px-8 pb-8">
-          {/* TOP BAR — 60px, search + ícones (igual Stripe/Tier Empresas) */}
           <div className="h-[60px] flex items-center justify-between">
             <div className="relative w-[320px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#262626]/40 dark:text-[#6b7280] pointer-events-none" />

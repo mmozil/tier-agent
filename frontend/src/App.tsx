@@ -22,7 +22,7 @@ import CanaisPage from "./pages/admin/CanaisPage";
 import KnowledgePage from "./pages/admin/KnowledgePage";
 import CobrancaPage from "./pages/admin/CobrancaPage";
 import PerfilPage from "./pages/admin/PerfilPage";
-import ConfiguracoesPage from "./pages/admin/ConfiguracoesPage";
+import ConfiguracoesLayout from "./pages/admin/ConfiguracoesLayout";
 import SuportePage from "./pages/admin/SuportePage";
 import PlaybooksPage from "./pages/admin/PlaybooksPage";
 import PlaybookEditorPage from "./pages/admin/PlaybookEditorPage";
@@ -80,27 +80,37 @@ export default function App() {
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<VisaoGeralPage />} />
         <Route path="agentes" element={<AgentesPage />} />
-        <Route path="llm" element={<LlmProvidersPage />} />
-        <Route path="fontes-dados" element={<FontesDadosPage />} />
-        <Route path="features" element={<FeaturesPage />} />
+        <Route path="llm" element={<Navigate to="/admin/configuracoes/llm" replace />} />
+        <Route path="fontes-dados" element={<Navigate to="/admin/configuracoes/integracoes" replace />} />
+        <Route path="features" element={<Navigate to="/admin/configuracoes/features" replace />} />
         <Route path="atencao" element={<AtencaoPage />} />
-        <Route path="macros" element={<MacrosPage />} />
+        <Route path="macros" element={<Navigate to="/admin/configuracoes/macros" replace />} />
         <Route path="conversas" element={<ConversasPage />} />
         <Route path="canais" element={<CanaisPage />} />
         <Route path="leads" element={<LeadsPage />} />
         <Route path="relatorios-atendimento" element={<RelatoriosAtendimentoPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />
-        <Route path="params" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
+        <Route path="params" element={<Navigate to="/admin/configuracoes/parametros" replace />} />
         <Route path="metricas" element={<MetricasPage />} />
         <Route path="agentes/:id/skills" element={<AgentSkillsPage />} />
         <Route path="marketplace" element={<MarketplacePage />} />
-        <Route path="cobranca" element={<CobrancaPage />} />
-        <Route path="equipe" element={<EquipePage />} />
+        <Route path="cobranca" element={<Navigate to="/admin/configuracoes/cobranca" replace />} />
+        <Route path="equipe" element={<Navigate to="/admin/configuracoes/equipe" replace />} />
         <Route path="playbooks" element={<PlaybooksPage />} />
         <Route path="playbooks/:id" element={<PlaybookEditorPage />} />
         <Route path="playbooks/:id/executions" element={<PlaybookExecutionsPage />} />
-        <Route path="perfil" element={<PerfilPage />} />
-        <Route path="configuracoes" element={<ConfiguracoesPage />} />
+        <Route path="perfil" element={<Navigate to="/admin/configuracoes/perfil" replace />} />
+        <Route path="configuracoes" element={<ConfiguracoesLayout />}>
+          <Route index element={<Navigate to="/admin/configuracoes/llm" replace />} />
+          <Route path="llm" element={<LlmProvidersPage />} />
+          <Route path="integracoes" element={<FontesDadosPage />} />
+          <Route path="macros" element={<MacrosPage />} />
+          <Route path="parametros" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
+          <Route path="features" element={<FeaturesPage />} />
+          <Route path="equipe" element={<EquipePage />} />
+          <Route path="cobranca" element={<CobrancaPage />} />
+          <Route path="perfil" element={<PerfilPage />} />
+        </Route>
         <Route path="suporte" element={<SuportePage />} />
       </Route>
 
