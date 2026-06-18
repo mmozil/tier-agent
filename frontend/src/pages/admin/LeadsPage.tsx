@@ -206,10 +206,16 @@ export default function LeadsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Avisa o sininho (NotificationBell) pra atualizar o badge NA HORA, sem esperar o poll.
+  function notifyBell() {
+    window.dispatchEvent(new CustomEvent("notifications:changed"));
+  }
+
   async function markRead(id: number) {
     try {
       await api.patch(`/notifications/${id}/read`);
       setItems((prev) => prev.map((n) => (n.id === id ? { ...n, status: "read" } : n)));
+      notifyBell();
     } catch {
       toast.error("Erro ao marcar como lida");
     }
@@ -219,6 +225,7 @@ export default function LeadsPage() {
     try {
       await api.patch(`/notifications/${id}/archive`);
       setItems((prev) => prev.filter((n) => n.id !== id));
+      notifyBell();
     } catch {
       toast.error("Erro ao arquivar");
     }
@@ -229,6 +236,7 @@ export default function LeadsPage() {
     try {
       await api.post("/notifications/mark-all-read");
       setItems((prev) => prev.map((n) => (n.status === "unread" ? { ...n, status: "read" } : n)));
+      notifyBell();
       toast.success("Todas marcadas como lidas");
     } catch {
       toast.error("Erro ao marcar todas como lidas");

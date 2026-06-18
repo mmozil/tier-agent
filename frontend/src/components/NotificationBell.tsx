@@ -63,8 +63,17 @@ export default function NotificationBell() {
   useEffect(() => {
     loadCount();
     const t = setInterval(loadCount, POLL_MS);
-    return () => clearInterval(t);
-  }, [loadCount]);
+    // Atualiza NA HORA quando outra tela marca lida/arquiva (sem esperar o poll de 20s).
+    const onChanged = () => {
+      loadCount();
+      if (open) loadItems();
+    };
+    window.addEventListener("notifications:changed", onChanged);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("notifications:changed", onChanged);
+    };
+  }, [loadCount, loadItems, open]);
 
   // Fecha ao clicar fora
   useEffect(() => {
