@@ -105,8 +105,17 @@ Pra o petshop ver o atendimento da IA na aba **"Conversas"** do próprio painel 
 - Frontend `pages/admin/AgentesPage.tsx`: campo "Foto do agente (URL)" com **preview** no drawer de edição.
 - O mirror envia a foto → aparece nos balões da conversa no painel do Pet.
 
-### Scroll nas conversas (`pages/admin/ConversasPage.tsx`)
-Rola pro final ao abrir/atualizar (`msgsEndRef` + `scrollIntoView` no `useEffect([msgs])`).
+### Conversas — layout Chatwoot 4 zonas (`pages/admin/ConversasPage.tsx`, 18/jun/2026)
+Inbox estilo Chatwoot com design Tier×Firecrawl (hairlines FC, claro+dark, full-bleed `-mx-8`):
+- **Z1 sub-nav** (208px): Todas · Não atendidas · **Menções** · **Participantes** · Canais (de `connector_kind`) · Etiquetas (cor determinística `tagColor`).
+- **Z2 lista** (340px): busca client-side + abas (Todos/Não atribuídas/Minhas/Adiadas) + linhas com avatar/dot/etiquetas.
+- **Z3 chat** (flex): markdown WhatsApp (`renderRich`), compositor auto-grow + enviar circular, ações; rola pro fim (`msgsEndRef`).
+- **Z4 contato** (304px, colapsável): acordeão (Agente atribuído, Etiquetas, Macros, Informação, Conversas anteriores por telefone) + placeholders "em breve".
+- **Menções/Participantes**: backend `GET /conversations?view=mentions|participating` (`routes/conversations.py`) — Menções = `TaNotification(category="mention", target_member_id=eu)`; Participantes = atribuída a mim OU marcado. Front: `selectNav()` seta `view` + recarrega.
+- **Roadmap do que falta** (Prioridade, Time, Atributos, Anexos…): `.docs/conversas-chatwoot-checklist.md`.
+
+### Design do admin (`components/AdminLayout.tsx` + overrides em `index.css`)
+Nível Attio/Linear/Firecrawl. Sidebar: **jelly** (`.tier-jelly:hover` pop elástico, SEM `will-change` — senão o texto borra/perde ClearType), **scrollbar auto-hide** (`.sidebar-scroll`, só no hover), item **selecionado = só azul** (fundo cinza + jelly só no `:hover`), seções/linhas com spacing apertado. Ajustes feitos via CSS em `index.css` (não toca o `AdminLayout` quando há WIP de ícones untracked).
 
 ### Template `ATENDENTE_PETSHOP` (`services/templates.py`)
 Reescrito consultivo: fluxo de agendamento via **ferramentas**, informar **valor antes** de confirmar, **cancelar de fato** (achar na agenda), atendimento Apple + oferecer **leva-e-traz (Taxidog)** ao agendar.
