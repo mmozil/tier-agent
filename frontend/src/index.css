@@ -32,7 +32,9 @@
     74%  { transform: scale(1.02); }
     100% { transform: scale(1); }
   }
-  .tier-jelly { will-change: transform; }
+  /* SEM will-change / camada GPU permanente: numa camada composta o Chrome desliga
+     o ClearType e o texto fica levemente "borrado" no hover. Sem o will-change o texto
+     renderiza nítido e o pop (jelly) continua rodando igual no :hover. */
   .tier-jelly:hover { animation: tierJelly 0.42s cubic-bezier(0.22, 1, 0.36, 1); }
   .tier-sidebar-item { background-color: transparent; }
   .tier-sidebar-item:hover { background-color: rgba(0, 0, 0, 0.035); }
@@ -40,18 +42,26 @@
   .dark .tier-sidebar-item:hover { background-color: rgba(255, 255, 255, 0.045); }
   .dark .tier-sidebar-item-active { background-color: rgba(255, 255, 255, 0.08); }
 
-  /* ─── Scrollbar fina e elegante (sidebar) ─────────────────────────────
-     Substitui a barra padrão do SO (grossa/cinza) por uma fina, discreta e
-     arredondada: track transparente, thumb cinza translúcido que escurece no
-     hover. Webkit (Chrome/Edge) + Firefox. */
-  .sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgba(38, 38, 38, 0.16) transparent; }
-  .sidebar-scroll::-webkit-scrollbar { width: 6px; }
+  /* ─── Scrollbar fina, AUTO-HIDE (só aparece ao passar o mouse) ──────────
+     Thumb transparente por padrão; ao passar o mouse no container ele surge com fade
+     suave. A borda transparente + background-clip deixa o thumb fino e afastado da
+     borda. Webkit (Chrome/Edge) + Firefox. */
+  .sidebar-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .sidebar-scroll:hover { scrollbar-color: rgba(38, 38, 38, 0.22) transparent; }
+  .sidebar-scroll::-webkit-scrollbar { width: 8px; }
   .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
-  .sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(38, 38, 38, 0.14); border-radius: 9999px; }
-  .sidebar-scroll:hover::-webkit-scrollbar-thumb { background: rgba(38, 38, 38, 0.26); }
-  .dark .sidebar-scroll { scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
-  .dark .sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); }
-  .dark .sidebar-scroll:hover::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.26); }
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+    transition: background-color 0.25s ease;
+  }
+  .sidebar-scroll:hover::-webkit-scrollbar-thumb { background-color: rgba(38, 38, 38, 0.22); }
+  .sidebar-scroll::-webkit-scrollbar-thumb:hover { background-color: rgba(38, 38, 38, 0.40); }
+  .dark .sidebar-scroll:hover { scrollbar-color: rgba(255, 255, 255, 0.22) transparent; }
+  .dark .sidebar-scroll:hover::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.22); }
+  .dark .sidebar-scroll::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.40); }
 }
 
 @layer base {
