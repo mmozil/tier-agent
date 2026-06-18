@@ -3,19 +3,10 @@ import toast from "react-hot-toast";
 import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Bot } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { formatPhone } from "@/lib/phone";
+import { WhatsAppIcon } from "@/components/icons/channelIcons";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
-import { FC, PageFrame, Row, Spacer, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
-
-function WhatsAppIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
-      <path
-        fill="#25D366"
-        d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"
-      />
-    </svg>
-  );
-}
+import { FC, PageFrame, PageHero, Row, Select, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { color: string; label: string; tip: string }> = {
   connected: { color: "bg-[#0a8f5a]", label: "Conectado", tip: "Pareado e recebendo mensagens" },
@@ -25,19 +16,6 @@ const STATUS_META: Record<string, { color: string; label: string; tip: string }>
   disconnected: { color: "bg-[#262626]/25", label: "Desconectado", tip: "Conexão encerrada" },
   unknown: { color: "bg-[#262626]/25", label: "Desconhecido", tip: "Sem resposta da plataforma" },
 };
-
-function formatPhone(p: string | undefined | null): string {
-  if (!p || p === "—") return "—";
-  const d = p.replace(/\D/g, "");
-  // Com código do país (55)
-  if (d.length === 13) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
-  if (d.length === 12) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 8)}-${d.slice(8)}`;
-  // Sem código do país — assume BR e prefixa +55 pra manter o mesmo padrão
-  // (celular 11 dígitos, fixo 10) → "+55 (11) 94145-2082"
-  if (d.length === 11) return `+55 (${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `+55 (${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return p;
-}
 
 interface Agent {
   id: number;
@@ -175,18 +153,25 @@ export default function CanaisPage() {
     }
   }
 
-  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.sub}`;
+  const agentName = (id: number) => agents.find((a) => a.id === id)?.nome || `Agente #${id}`;
 
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="flex items-start justify-between gap-4 p-6">
-            <div>
-              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Canais</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Conecte WhatsApp, Telegram, Email e outros canais aos seus agentes.</p>
-            </div>
+        <PageHero
+          title="Canais"
+          subtitle="Conecte WhatsApp (oficial ou Baileys) e outros canais aos seus agentes. Cada canal fica vinculado a um agente que responde automaticamente."
+          right={
             <div className="flex items-center gap-2 shrink-0">
+              {agents.length > 1 && (
+                <Select
+                  value={selectedAgent}
+                  onChange={(v) => setSelectedAgent(v)}
+                  options={agents.map((a) => ({ value: a.id, label: a.nome }))}
+                  placeholder="Agente"
+                  className="w-[170px]"
+                />
+              )}
               {selectedAgent ? (
                 <ConnectWhatsAppCloud agentId={selectedAgent} onConnected={load} />
               ) : (
@@ -212,28 +197,23 @@ export default function CanaisPage() {
                 <Plus className="w-4 h-4" /> Conectar WhatsApp
               </Button>
             </div>
-          </div>
-        </Row>
-
-        <Spacer />
+          }
+        />
 
         {showProvision && (
           <Row>
-            <div className="p-6 space-y-4">
-              <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar WhatsApp</h3>
+            <div className="p-6 space-y-4 max-w-[560px]">
+              <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar WhatsApp (Baileys)</h3>
               <label className="block">
-                <span className={`text-[12px] ${FC.sub}`}>Vincular ao agente</span>
-                <select
-                  value={selectedAgent || ""}
-                  onChange={(e) => setSelectedAgent(Number(e.target.value))}
-                  className={`mt-1 w-full h-9 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`}
-                >
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>{a.nome}</option>
-                  ))}
-                </select>
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
+                <Select
+                  value={selectedAgent}
+                  onChange={(v) => setSelectedAgent(v)}
+                  options={agents.map((a) => ({ value: a.id, label: a.nome }))}
+                  placeholder="Escolha um agente"
+                />
               </label>
-              <p className={`text-[12px] ${FC.sub}`}>
+              <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
                 Cria uma instância isolada do WhatsApp pra esse agente. Você vai escanear um QR code com seu celular pra parear.
               </p>
               <div className="flex justify-end gap-2">
@@ -245,126 +225,107 @@ export default function CanaisPage() {
         )}
 
         <Row last>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className={`border-b ${FC.hair}`}>
-                  <th className={th}>Canal</th>
-                  <th className={th}>Agente</th>
-                  <th className={th}>Telefone</th>
-                  <th className={th}>Status</th>
-                  <th className={`${th} text-right w-[180px]`}>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* skeleton: ecoa as linhas da tabela (mesmas 5 colunas), não spinner no vazio */}
-                {loading &&
-                  [0, 1, 2].map((i) => (
-                    <tr key={i} className={`border-b ${FC.hair}`}>
-                      <td className="px-6 py-3">
-                        <div className="inline-flex items-center gap-2">
-                          <SkeletonBar className="h-4 w-4 rounded" />
-                          <SkeletonBar className="h-3.5 w-24" />
-                        </div>
-                      </td>
-                      <td className="px-6 py-3"><SkeletonBar className="h-3 w-28" /></td>
-                      <td className="px-6 py-3"><SkeletonBar className="h-3 w-32" /></td>
-                      <td className="px-6 py-3"><SkeletonBar className="h-3 w-20" /></td>
-                      <td className="px-6 py-3"><div className="flex justify-end"><SkeletonBar className="h-6 w-24 rounded-md" /></div></td>
-                    </tr>
-                  ))}
-                {!loading && conns.length === 0 && (
-                  <tr><td colSpan={5} className="px-6 py-6">
-                    {agents.length === 0 ? (
-                      <EmptyHint
-                        icon={Bot}
-                        text="Crie um agente primeiro para conectar um canal."
-                        ctaLabel="Criar agente"
-                        ctaTo="/admin/agentes"
-                      />
-                    ) : (
-                      <EmptyHint
-                        icon={Smartphone}
-                        text='Nenhum canal conectado. Clique em "Conectar WhatsApp".'
-                      />
-                    )}
-                  </td></tr>
-                )}
-                {conns.map((c) => {
-                  const status = c.config_summary?.status || "unknown";
-                  const meta = STATUS_META[status] || STATUS_META.unknown;
-                  const isCloud = c.kind === "whatsapp_cloud";
-                  const tipoLabel = c.config_summary?.tipo || channelType(c.kind);
-                  return (
-                    <tr
-                      key={c.id}
-                      onClick={() => setDetail(c)}
-                      className={`border-b ${FC.hair} last:border-0 ${FC.hover} cursor-pointer`}
-                      title="Ver detalhes do canal"
-                    >
-                      <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>
-                        <div className="inline-flex items-center gap-2">
-                          <WhatsAppIcon className="w-4 h-4" />
-                          <span>{c.kind === "telegram" ? "Telegram" : c.kind === "email" ? "E-mail" : "WhatsApp"}</span>
-                          {isCloud && (
-                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#003083]/[0.08] text-[#003083]">Oficial</span>
-                          )}
-                          {c.kind === "whatsapp" && (
-                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#262626]/[0.06] ${FC.mut}`}>Baileys</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className={`px-6 py-2.5 text-[13px] ${FC.sub}`}>{agents.find((a) => a.id === c.agent_id)?.nome || `Agente #${c.agent_id}`}</td>
-                      <td className={`px-6 py-2.5 text-[13px] tabular-nums ${FC.sub}`}>{formatPhone(c.config_summary?.phone)}</td>
-                      <td className="px-6 py-2.5 text-[13px]">
-                        <span className="inline-flex items-center gap-1.5" title={meta.tip}>
-                          <span className={`w-2 h-2 rounded-full ${meta.color}`} />
-                          <span className={FC.sub}>{meta.label}</span>
-                        </span>
-                      </td>
-                      <td className="px-6 py-2.5" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-2">
-                          {/* QR só pro Baileys (Cloud conecta via OAuth, não pareia) */}
-                          {c.kind === "whatsapp" && status !== "connected" && (
-                            <Button variant="primary" size="sm" onClick={() => openQR(c.id)} className="whitespace-nowrap">
-                              <QrCode className="w-3 h-3 shrink-0" /> Escanear QR
-                            </Button>
-                          )}
-                          {status === "connected" && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              title="Desconectar"
-                              className="whitespace-nowrap"
-                              onClick={async () => {
-                                if (!confirm(`Desconectar este canal (${tipoLabel})?`)) return;
-                                try {
-                                  await api.post(`/connectors/${c.id}/disconnect`);
-                                  toast.success("Desconectado");
-                                  load();
-                                } catch {
-                                  toast.error("Erro ao desconectar");
-                                }
-                              }}
-                            >
-                              <Unplug className="w-3 h-3 shrink-0" /> Desconectar
-                            </Button>
-                          )}
-                          <button onClick={() => onDelete(c.id)} className={`${iconBtn} hover:!text-[#E5484D] hover:!bg-[#E5484D]/[0.08]`} title="Remover canal permanentemente">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {loading ? (
+            <div className={`divide-y ${FC.hair}`}>
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3.5 px-6 py-3.5">
+                  <SkeletonBar className="h-9 w-9 rounded-full shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <SkeletonBar className="h-3.5 w-32" />
+                    <SkeletonBar className="h-3 w-44" />
+                  </div>
+                  <SkeletonBar className="h-3 w-20" />
+                  <SkeletonBar className="h-7 w-24 rounded-md" />
+                </div>
+              ))}
+            </div>
+          ) : conns.length === 0 ? (
+            agents.length === 0 ? (
+              <EmptyHint icon={Bot} text="Crie um agente primeiro para conectar um canal." ctaLabel="Criar agente" ctaTo="/admin/agentes" className="py-16" />
+            ) : (
+              <EmptyHint icon={Smartphone} text='Nenhum canal conectado. Clique em "Conectar WhatsApp" para parear seu número.' className="py-16" />
+            )
+          ) : (
+            <div className={`divide-y ${FC.hair}`}>
+              {conns.map((c) => {
+                const status = c.config_summary?.status || "unknown";
+                const meta = STATUS_META[status] || STATUS_META.unknown;
+                const isCloud = c.kind === "whatsapp_cloud";
+                const tipoLabel = c.config_summary?.tipo || channelType(c.kind);
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => setDetail(c)}
+                    className={`flex items-center gap-3.5 px-6 py-3.5 cursor-pointer ${FC.hover}`}
+                    title="Ver detalhes do canal"
+                  >
+                    {/* Avatar WhatsApp */}
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#25D366]/[0.10]">
+                      <WhatsAppIcon className="w-[18px] h-[18px]" />
+                    </span>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{agentName(c.agent_id)}</span>
+                        {isCloud ? (
+                          <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#003083]/[0.08] text-[#003083] dark:text-[#5b9bff] uppercase tracking-wide">Oficial</span>
+                        ) : (
+                          <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#262626]/[0.06] dark:bg-white/[0.08] uppercase tracking-wide ${FC.mut}`}>Baileys</span>
+                        )}
+                      </div>
+                      <div className={`flex items-center gap-2 mt-0.5 text-[13px] ${FC.sub}`}>
+                        <span className="tabular-nums">{formatPhone(c.config_summary?.phone)}</span>
+                        <span className={FC.mut}>·</span>
+                        <span className="truncate">{c.kind === "telegram" ? "Telegram" : c.kind === "email" ? "E-mail" : "WhatsApp"}</span>
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    <span className="hidden sm:inline-flex items-center gap-1.5 shrink-0 w-[180px]" title={meta.tip}>
+                      <span className={`w-2 h-2 rounded-full ${meta.color}`} />
+                      <span className={`text-[13px] ${FC.sub}`}>{meta.label}</span>
+                    </span>
+
+                    {/* Ações */}
+                    <div className="flex items-center justify-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {c.kind === "whatsapp" && status !== "connected" && (
+                        <Button variant="primary" size="sm" onClick={() => openQR(c.id)} className="whitespace-nowrap">
+                          <QrCode className="w-3 h-3 shrink-0" /> Escanear QR
+                        </Button>
+                      )}
+                      {status === "connected" && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          title="Desconectar"
+                          className="whitespace-nowrap"
+                          onClick={async () => {
+                            if (!confirm(`Desconectar este canal (${tipoLabel})?`)) return;
+                            try {
+                              await api.post(`/connectors/${c.id}/disconnect`);
+                              toast.success("Desconectado");
+                              load();
+                            } catch {
+                              toast.error("Erro ao desconectar");
+                            }
+                          }}
+                        >
+                          <Unplug className="w-3 h-3 shrink-0" /> Desconectar
+                        </Button>
+                      )}
+                      <button onClick={() => onDelete(c.id)} className={`${iconBtn} hover:!text-[#E5484D] hover:!bg-[#E5484D]/[0.08]`} title="Remover canal permanentemente">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </Row>
       </PageFrame>
 
-      {/* QR Modal (mantido — só tokens FC) */}
+      {/* QR Modal */}
       {qrModal &&
         (() => {
           const isConnected = qrModal.status === "connected";
@@ -529,7 +490,7 @@ export default function CanaisPage() {
                     </div>
                   </div>
 
-                  {/* Vínculo + como funciona (sem persona — isso vive em Agentes) */}
+                  {/* Vínculo + como funciona */}
                   <div>
                     <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2 ${FC.ink}`}>Agente vinculado</div>
                     <div className="flex items-center justify-between gap-2 text-[13px]">

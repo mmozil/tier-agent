@@ -4,6 +4,7 @@ import { Plus, Trash2, Loader2, Zap, GripVertical, X, CheckCircle2, XCircle, Cpu
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
+import { ProviderLogo } from "@/components/icons/providerLogos";
 
 interface Provider {
   id: number;
@@ -491,6 +492,7 @@ export default function LlmProvidersPage() {
                       {/* Conteúdo em UMA linha: provider · modelo · key · fallback */}
                       <div className="min-w-0 flex-1 flex items-center gap-3 self-center">
                         <div className="flex items-center gap-2 w-[210px] shrink-0">
+                          <ProviderLogo provider={p.provider} className="w-5 h-5 shrink-0" />
                           <span className={`text-[15px] font-medium truncate ${FC.ink}`}>{p.provider}</span>
                           {p.in_use ? (
                             <span className="shrink-0 px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
@@ -552,6 +554,7 @@ export default function LlmProvidersPage() {
             <div className={`sticky top-0 z-10 flex items-center justify-between gap-3 border-b ${FC.hair} bg-white dark:bg-[#0c0e12] px-5 py-4`}>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
+                  <ProviderLogo provider={detail.provider} className="w-5 h-5 shrink-0" />
                   <h2 className={`text-[16px] font-medium leading-tight ${FC.ink}`}>{detail.provider}</h2>
                   {detail.in_use && (
                     <span className="px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>

@@ -1,6 +1,7 @@
 import type { ComponentType, MouseEvent, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown } from "lucide-react";
 
 /* ───────────────────────────────────────────────────────────────
    Design System Firecrawl × Tier — primitivos.
@@ -307,6 +308,94 @@ export function EmptyHint({
           {ctaLabel}
           <ArrowUpRight className="w-3.5 h-3.5" />
         </Link>
+      )}
+    </div>
+  );
+}
+
+// Select — dropdown customizado no padrão Firecrawl (substitui o <select> nativo do
+// SO, que não casa com o design). Trigger h-9 + painel flutuante com hover/check.
+// Genérico sobre o tipo do value (string | number). Fecha no clique-fora / Esc.
+export function Select<T extends string | number>({
+  value,
+  options,
+  onChange,
+  placeholder = "Selecionar…",
+  className = "",
+  disabled = false,
+}: {
+  value: T | null | undefined;
+  options: { value: T; label: ReactNode; icon?: ReactNode }[];
+  onChange: (v: T) => void;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: globalThis.MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const sel = options.find((o) => o.value === value);
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className={`w-full h-9 pl-3 pr-2 inline-flex items-center justify-between gap-2 rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} text-[14px] ${FC.ink} outline-none transition-shadow ${
+          open ? "shadow-[0_0_0_2px_#003083]" : "hover:border-[#d8d8d8] dark:hover:border-[#33373e]"
+        } disabled:opacity-50 disabled:pointer-events-none`}
+      >
+        <span className="min-w-0 flex items-center gap-2 truncate">
+          {sel?.icon}
+          {sel ? <span className="truncate">{sel.label}</span> : <span className={FC.mut}>{placeholder}</span>}
+        </span>
+        <ChevronDown className={`w-4 h-4 shrink-0 ${FC.mut} transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          className={`absolute z-50 mt-1 w-full max-h-[280px] overflow-y-auto sidebar-scroll rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.12)]`}
+        >
+          {options.length === 0 ? (
+            <div className={`px-2.5 py-2 text-[13px] ${FC.mut}`}>Nenhuma opção</div>
+          ) : (
+            options.map((o) => {
+              const active = o.value === value;
+              return (
+                <button
+                  key={String(o.value)}
+                  type="button"
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  className={`w-full h-8 px-2.5 rounded-[7px] inline-flex items-center gap-2 text-[13px] text-left transition-colors ${
+                    active
+                      ? "bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#8ab4ff] font-medium"
+                      : `${FC.ink} hover:bg-black/[0.04] dark:hover:bg-white/[0.05]`
+                  }`}
+                >
+                  {o.icon}
+                  <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                  {active && <Check className="w-3.5 h-3.5 shrink-0" />}
+                </button>
+              );
+            })
+          )}
+        </div>
       )}
     </div>
   );

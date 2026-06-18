@@ -544,7 +544,7 @@ function AgentDetailsDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
       <div
-        className="w-[520px] bg-white h-full overflow-y-auto shadow-2xl"
+        className="w-[720px] max-w-[94vw] bg-white h-full overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

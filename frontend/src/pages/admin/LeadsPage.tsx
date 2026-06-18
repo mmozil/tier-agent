@@ -1,9 +1,28 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Inbox, Phone, MessageCircle, Check, CheckCheck, Archive, RefreshCw, Bell, Save } from "lucide-react";
+import {
+  type LucideIcon,
+  Inbox,
+  MessageCircle,
+  Check,
+  CheckCheck,
+  Archive,
+  RefreshCw,
+  Bell,
+  Save,
+  UserRound,
+  Sparkles,
+  Hand,
+  Clock,
+  AtSign,
+  AlertTriangle,
+  ArrowUpRight,
+} from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
+import { formatPhone } from "@/lib/phone";
+import { WhatsAppIcon } from "@/components/icons/channelIcons";
+import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
 const REASON_LABEL: Record<string, string> = {
   explicit_request: "Pediu humano",
@@ -62,19 +81,26 @@ function AlertConfigCard() {
     }
   }
 
+  const canal = cfg.alert_whatsapp || cfg.alert_email;
   return (
     <div className="p-6">
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 text-left">
-        <Bell className="w-4 h-4 text-[#003083] dark:text-[#5b9bff]" />
-        <span className={`text-[14px] font-medium ${FC.ink}`}>Onde te avisamos</span>
-        <span className={`text-[12px] ml-1 ${FC.sub}`}>
-          {cfg.alert_whatsapp || cfg.alert_email ? `· ${cfg.alert_whatsapp || cfg.alert_email}` : "· nenhum canal configurado"}
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-3 text-left">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#003083]/[0.07] text-[#003083] dark:bg-[#5b9bff]/[0.12] dark:text-[#5b9bff]">
+          <Bell className="w-4 h-4" />
         </span>
-        <span className="ml-auto text-[12px] text-[#003083] dark:text-[#5b9bff]">{open ? "Fechar" : "Configurar"}</span>
+        <span className="min-w-0">
+          <span className={`block text-[14px] font-medium ${FC.ink}`}>Onde te avisamos</span>
+          <span className={`block text-[12px] truncate ${FC.sub}`}>
+            {canal ? `Avisos extras em ${canal}` : "Nenhum canal extra configurado — só o sininho do painel"}
+          </span>
+        </span>
+        <span className="ml-auto inline-flex items-center gap-1 text-[12.5px] font-medium text-[#003083] dark:text-[#5b9bff] shrink-0">
+          {open ? "Fechar" : "Configurar"}
+        </span>
       </button>
       {open && (
-        <div className={`border-t ${FC.hair} pt-3 mt-3 space-y-3`}>
-          <p className={`text-[12px] ${FC.sub}`}>
+        <div className={`border-t ${FC.hair} pt-4 mt-4 space-y-3`}>
+          <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
             Quando um cliente pede um humano, demonstra insatisfação ou é um lead quente, te avisamos também por estes canais (além do sininho aqui no painel).
           </p>
           <div className="grid grid-cols-2 gap-3">
@@ -155,13 +181,13 @@ interface Notification {
   telefone: string | null;
 }
 
-const CATEGORY_META: Record<string, { label: string; color: string }> = {
-  lead: { label: "Lead", color: "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]" },
-  handoff: { label: "Atendimento humano", color: "bg-[#003083]/[0.10] text-[#003083] dark:text-[#5b9bff]" },
-  sla: { label: "SLA — cliente esperando", color: "bg-[#F5A300]/[0.14] text-[#9a6700]" },
-  mention: { label: "Você foi marcado", color: "bg-[#8B5CF6]/[0.12] text-[#8B5CF6]" },
-  error: { label: "Erro", color: "bg-[#E5484D]/[0.12] text-[#E5484D]" },
-  info: { label: "Info", color: "bg-[#262626]/[0.08] text-[#262626]/[0.56]" },
+const CATEGORY_META: Record<string, { label: string; icon: LucideIcon; tint: string }> = {
+  lead: { label: "Lead", icon: Sparkles, tint: "#0a8f5a" },
+  handoff: { label: "Atendimento humano", icon: Hand, tint: "#003083" },
+  sla: { label: "SLA — cliente esperando", icon: Clock, tint: "#9a6700" },
+  mention: { label: "Você foi marcado", icon: AtSign, tint: "#8B5CF6" },
+  error: { label: "Erro", icon: AlertTriangle, tint: "#E5484D" },
+  info: { label: "Info", icon: Bell, tint: "#697386" },
 };
 
 const FILTERS = [
@@ -256,27 +282,26 @@ export default function LeadsPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="flex items-start justify-between gap-4 p-6">
-            <div>
-              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Leads &amp; Notificações</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Oportunidades capturadas no atendimento e pedidos de transferência para humano.</p>
-            </div>
+        <PageHero
+          title="Leads & Notificações"
+          subtitle="Oportunidades capturadas no atendimento e pedidos de transferência para humano — com o contato pronto pra você responder no WhatsApp."
+          right={
             <div className="flex items-center gap-2 shrink-0">
               {unreadCount > 0 && (
                 <Button variant="ghost" onClick={markAllRead}>
-                  <CheckCheck className="w-3.5 h-3.5" /> Marcar todas como lidas ({unreadCount})
+                  <CheckCheck className="w-3.5 h-3.5" /> Marcar todas lidas ({unreadCount})
                 </Button>
               )}
-              <Button variant="ghost" onClick={load}><RefreshCw className="w-3.5 h-3.5" /> Atualizar</Button>
+              <Button variant="secondary" onClick={load}><RefreshCw className="w-3.5 h-3.5" /> Atualizar</Button>
             </div>
-          </div>
-        </Row>
+          }
+        />
 
         <Row><AlertConfigCard /></Row>
 
-        <Row>
-          <div className="flex items-center gap-1 px-6 pt-3">
+        <Row last>
+          {/* Tabs de filtro */}
+          <div className={`flex items-center gap-1 px-6 pt-3 border-b ${FC.hair}`}>
             {FILTERS.map((f) => (
               <button
                 key={f.key}
@@ -292,9 +317,7 @@ export default function LeadsPage() {
               </button>
             ))}
           </div>
-        </Row>
 
-        <Row last>
           {loading ? (
             <LeadsSkeleton />
           ) : visible.length === 0 ? (
@@ -310,52 +333,80 @@ export default function LeadsPage() {
               {visible.map((n) => {
                 const meta = CATEGORY_META[n.category] || CATEGORY_META.info;
                 const tel = n.telefone || n.payload_json?.telefone || n.payload_json?.whatsapp;
+                const digits = tel ? String(tel).replace(/\D/g, "") : "";
                 const contato = n.contato || n.payload_json?.contato;
                 const unread = n.status === "unread";
                 const reason = n.payload_json?.reason as string | undefined;
                 const resumo = n.payload_json?.resumo as string | undefined;
+                const AvatarIcon = contato ? UserRound : meta.icon;
+                const headline = contato || n.title;
                 return (
-                  <div key={n.id} className={`p-6 ${unread ? "bg-[#003083]/[0.02]" : ""}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>
-                          {reason && REASON_LABEL[reason] && (
-                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#262626]/[0.06] ${FC.sub}`}>{REASON_LABEL[reason]}</span>
-                          )}
-                          {unread && <span className="w-2 h-2 rounded-full bg-[#003083] dark:bg-[#5b9bff]" title="Não lido" />}
-                          <span className={`text-[12px] ${FC.sub}`}>{fmtDate(n.created_at)}</span>
-                        </div>
-                        <h3 className={`text-[14px] font-medium truncate ${FC.ink}`}>{n.title}</h3>
-                        {resumo ? (
-                          <pre className={`text-[12px] mt-1.5 whitespace-pre-wrap font-sans rounded-lg p-2.5 border ${FC.hair} bg-[#F1F3F5] dark:bg-[#16191f] ${FC.sub}`}>{resumo}</pre>
-                        ) : (
-                          n.body && <p className={`text-[13px] mt-1 line-clamp-2 ${FC.sub}`}>{n.body}</p>
+                  <div key={n.id} className={`flex items-start gap-3.5 px-6 py-4 transition-colors ${unread ? "bg-[#003083]/[0.02]" : ""} ${FC.hover}`}>
+                    {/* Avatar — ícone people quando há contato, senão ícone da categoria */}
+                    <span
+                      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                      style={{ backgroundColor: meta.tint + "16", color: meta.tint }}
+                    >
+                      <AvatarIcon className="w-[18px] h-[18px]" />
+                    </span>
+
+                    <div className="min-w-0 flex-1">
+                      {/* Header: nome/título + badges + data */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[14px] font-medium ${FC.ink}`}>{headline}</span>
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: meta.tint + "1F", color: meta.tint }}>
+                          {meta.label}
+                        </span>
+                        {reason && REASON_LABEL[reason] && (
+                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#262626]/[0.06] dark:bg-white/[0.08] ${FC.sub}`}>{REASON_LABEL[reason]}</span>
                         )}
-                        <div className="flex flex-wrap items-center gap-4 mt-2">
-                          {tel && (
-                            <a href={`https://wa.me/${String(tel).replace(/\D/g, "")}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] text-[#0a8f5a] hover:underline">
-                              <Phone className="w-3.5 h-3.5" /> {tel}
-                            </a>
-                          )}
-                          {contato && <span className={`inline-flex items-center gap-1 text-[13px] ${FC.sub}`}><MessageCircle className="w-3.5 h-3.5" /> {contato}</span>}
-                          {n.conversation_id && (
-                            <a href={`/admin/conversas?open=${n.conversation_id}`} className="inline-flex items-center gap-1 text-[13px] text-[#003083] dark:text-[#5b9bff] hover:underline">
-                              <MessageCircle className="w-3.5 h-3.5" /> Ver conversa
-                            </a>
-                          )}
-                        </div>
+                        {unread && <span className="w-2 h-2 rounded-full bg-[#003083] dark:bg-[#5b9bff]" title="Não lido" />}
+                        <span className={`ml-auto text-[12px] tabular-nums shrink-0 ${FC.sub}`}>{fmtDate(n.created_at)}</span>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {unread && (
-                          <button onClick={() => markRead(n.id)} title="Marcar como lida" className={`${iconBtn} hover:text-[#0a8f5a] hover:bg-[#0a8f5a]/[0.08]`}>
-                            <Check className="w-4 h-4" />
-                          </button>
+
+                      {/* Subtítulo: o título quando o headline já é o contato */}
+                      {contato && n.title && n.title !== contato && (
+                        <p className={`text-[13px] mt-0.5 ${FC.sub}`}>{n.title}</p>
+                      )}
+
+                      {/* Resumo / corpo */}
+                      {resumo ? (
+                        <pre className={`text-[12px] mt-2 whitespace-pre-wrap font-sans rounded-lg p-2.5 border ${FC.hair} bg-[#F9F9F9] dark:bg-[#16191f] ${FC.sub}`}>{resumo}</pre>
+                      ) : (
+                        n.body && <p className={`text-[13px] mt-1 line-clamp-2 ${FC.sub}`}>{n.body}</p>
+                      )}
+
+                      {/* Contato: chip WhatsApp (+55 (99) 99999-9999) + ver conversa */}
+                      <div className="flex flex-wrap items-center gap-2.5 mt-2.5">
+                        {tel && (
+                          <a
+                            href={`https://wa.me/${digits}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Abrir conversa no WhatsApp"
+                            className="inline-flex items-center gap-1.5 h-7 pl-1.5 pr-2.5 rounded-full bg-[#25D366]/[0.10] text-[#0a7d4a] dark:text-[#3ddc84] hover:bg-[#25D366]/[0.18] transition-colors text-[12.5px] font-medium tabular-nums"
+                          >
+                            <WhatsAppIcon className="w-4 h-4" /> {formatPhone(tel)}
+                          </a>
                         )}
-                        <button onClick={() => archive(n.id)} title="Arquivar" className={iconBtn}>
-                          <Archive className="w-4 h-4" />
+                        {n.conversation_id && (
+                          <a href={`/admin/conversas?open=${n.conversation_id}`} className="inline-flex items-center gap-1 text-[12.5px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline">
+                            <MessageCircle className="w-3.5 h-3.5" /> Ver conversa <ArrowUpRight className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Ações */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {unread && (
+                        <button onClick={() => markRead(n.id)} title="Marcar como lida" className={`${iconBtn} hover:!text-[#0a8f5a] hover:!bg-[#0a8f5a]/[0.08]`}>
+                          <Check className="w-4 h-4" />
                         </button>
-                      </div>
+                      )}
+                      <button onClick={() => archive(n.id)} title="Arquivar" className={iconBtn}>
+                        <Archive className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 );
@@ -373,13 +424,17 @@ function LeadsSkeleton() {
   return (
     <div className={`divide-y ${FC.hair}`}>
       {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="p-6">
-          <div className="flex items-center gap-2 mb-2">
-            <SkeletonBar className="h-4 w-20 rounded-full" />
-            <SkeletonBar className="h-3 w-16" />
+        <div key={i} className="flex items-start gap-3.5 px-6 py-4">
+          <SkeletonBar className="h-9 w-9 rounded-full shrink-0" />
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <SkeletonBar className="h-3.5 w-28" />
+              <SkeletonBar className="h-4 w-16 rounded-full" />
+              <SkeletonBar className="h-3 w-16 ml-auto" />
+            </div>
+            <SkeletonBar className="h-3 w-3/4 mb-2" />
+            <SkeletonBar className="h-7 w-40 rounded-full" />
           </div>
-          <SkeletonBar className="h-3.5 w-1/2 mb-2" />
-          <SkeletonBar className="h-3 w-3/4" />
         </div>
       ))}
     </div>

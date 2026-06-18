@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Upload, FileText, FileSpreadsheet, FileType, Trash2, FolderOpen } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, EmptyHint, SKEL, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Select, EmptyHint, SKEL, iconBtn } from "@/components/ds/fc";
 
 interface Agent {
   id: number;
@@ -105,50 +105,49 @@ export default function KnowledgePage() {
     }
   }
 
-  const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
   const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.sub}`;
 
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="p-6">
-            <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Knowledge</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
-              Suba PDF, planilhas e textos. Vira skill consumível pelo agente em segundos.
-            </p>
-          </div>
-        </Row>
+        <PageHero
+          title="Knowledge"
+          subtitle="Suba PDF, planilhas e textos. Vira skill consumível pelo agente em segundos."
+        />
 
         <Row>
           <div className="p-6">
             <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] mb-3 ${FC.ink}`}>Novo arquivo</h3>
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr_auto] gap-3 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_1.6fr] gap-3 items-end">
               <label className="block">
-                <span className={`text-[12px] ${FC.sub}`}>Agente</span>
-                <select value={selectedAgent || ""} onChange={(e) => setSelectedAgent(Number(e.target.value))} className={inputCls}>
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.nome}
-                    </option>
-                  ))}
-                </select>
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Agente</span>
+                <Select
+                  value={selectedAgent}
+                  onChange={(v) => setSelectedAgent(v)}
+                  options={agents.map((a) => ({ value: a.id, label: a.nome }))}
+                  placeholder="Escolha um agente"
+                />
               </label>
               <label className="block">
-                <span className={`text-[12px] ${FC.sub}`}>Arquivo (PDF, XLSX, TXT — máx 20MB)</span>
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Arquivo (PDF, XLSX, TXT — máx 20MB)</span>
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading || !selectedAgent}
+                  className={`w-full h-9 px-3 inline-flex items-center gap-2 rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] text-[13px] ${FC.sub} text-left transition-shadow hover:border-[#d8d8d8] dark:hover:border-[#33373e] focus:outline-none focus:shadow-[0_0_0_2px_#003083] disabled:opacity-50 disabled:pointer-events-none`}
+                >
+                  <Upload className="w-4 h-4 shrink-0 text-[#003083] dark:text-[#5b9bff]" />
+                  {uploading ? "Enviando…" : "Escolher arquivo e enviar"}
+                </button>
                 <input
                   ref={fileRef}
                   type="file"
                   accept=".pdf,.xlsx,.xls,.txt,.md"
                   onChange={onUpload}
                   disabled={uploading}
-                  className="mt-1 w-full text-[13px] file:h-7 file:px-2.5 file:text-[12px] file:bg-[#003083] file:text-white file:border-0 file:rounded-lg file:mr-3 file:cursor-pointer"
+                  className="hidden"
                 />
               </label>
-              <Button variant="primary" disabled={uploading} onClick={() => fileRef.current?.click()} className="whitespace-nowrap">
-                <Upload className="w-3.5 h-3.5 shrink-0" />
-                {uploading ? "Enviando..." : "Upload"}
-              </Button>
             </div>
           </div>
         </Row>
