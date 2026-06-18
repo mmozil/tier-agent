@@ -1,36 +1,36 @@
 import { NavLink, Outlet } from "react-router-dom";
 import {
-  type Icon,
-  CreditCard,
+  type LucideIcon,
   Cpu,
-  Lightning,
-  PlugsConnected,
+  CreditCard,
+  Plug,
   SlidersHorizontal,
-  ToggleRight,
+  ToggleLeft,
   UserCircle,
-  UsersThree,
-} from "@phosphor-icons/react";
+  Users,
+  Zap,
+} from "lucide-react";
 
 import { FC } from "@/components/ds/fc";
 
 // Área de Configurações estilo Chatwoot: sub-nav à esquerda + a página de settings à
 // direita (via <Outlet/>). As páginas de config (LLM, Integrações, etc.) usam `-mx-8`
 // + PageFrame/Row (full-bleed), então o conteúdo tem um wrapper px-8 pra acomodar.
-const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: Icon }[] }[] = [
+const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: LucideIcon }[] }[] = [
   {
     label: "Agente",
     items: [
       { to: "/admin/configuracoes/llm", label: "LLM Providers", icon: Cpu },
-      { to: "/admin/configuracoes/integracoes", label: "Integrações", icon: PlugsConnected },
-      { to: "/admin/configuracoes/macros", label: "Macros", icon: Lightning },
+      { to: "/admin/configuracoes/integracoes", label: "Integrações", icon: Plug },
+      { to: "/admin/configuracoes/macros", label: "Macros", icon: Zap },
       { to: "/admin/configuracoes/parametros", label: "Parâmetros", icon: SlidersHorizontal },
-      { to: "/admin/configuracoes/features", label: "Feature Flags", icon: ToggleRight },
+      { to: "/admin/configuracoes/features", label: "Feature Flags", icon: ToggleLeft },
     ],
   },
   {
     label: "Conta",
     items: [
-      { to: "/admin/configuracoes/equipe", label: "Equipe", icon: UsersThree },
+      { to: "/admin/configuracoes/equipe", label: "Equipe", icon: Users },
       { to: "/admin/configuracoes/cobranca", label: "Cobrança", icon: CreditCard },
       { to: "/admin/configuracoes/perfil", label: "Perfil", icon: UserCircle },
     ],
@@ -64,7 +64,7 @@ export default function ConfiguracoesLayout() {
                       }`
                     }
                   >
-                    <it.icon className="h-4 w-4 shrink-0" weight="bold" />
+                    <it.icon className="h-4 w-4 shrink-0" strokeWidth={2} />
                     {it.label}
                   </NavLink>
                 ))}
