@@ -3,11 +3,12 @@ import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, Search, Zap,
+  Paperclip, ExternalLink, ArrowUpRight,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
-import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC } from "@/components/ds/fc";
+import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { label: string; cls: string; dot: string }> = {
   active: { label: "IA ativa", cls: "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]", dot: "bg-[#0a8f5a]" },
@@ -464,6 +465,23 @@ export default function ConversasPage() {
     ? convs.filter((c) => c.external_id === openConv.external_id && c.id !== openConv.id).slice(0, 6)
     : [];
 
+  const activeMembers = members.filter((m) => m.status === "active");
+  const assignedMember = openConv ? members.find((m) => m.id === openConv.assigned_member_id) : undefined;
+  // Anexos: extrai links/arquivos compartilhados no corpo das mensagens (a mídia nativa
+  // do WhatsApp ainda não é persistida pela Engine — só o texto).
+  const attachments: { url: string; label: string }[] = [];
+  if (openConv) {
+    const seen = new Set<string>();
+    for (const m of msgs) {
+      for (const u of (m.content || "").match(/https?:\/\/[^\s)<>"']+/g) || []) {
+        if (seen.has(u)) continue;
+        seen.add(u);
+        const tail = u.split("?")[0].split("/").filter(Boolean).pop() || u.replace(/^https?:\/\//, "");
+        attachments.push({ url: u, label: tail.length > 38 ? tail.slice(0, 38) + "…" : tail });
+      }
+    }
+  }
+
   const scopeTabs = [
     { k: "todas", label: "Todos" },
     { k: "unassigned", label: "Não atribuídas" },
@@ -844,14 +862,24 @@ export default function ConversasPage() {
               <div className="space-y-3">
                 <div>
                   <label className={`block text-[12px] ${FC.sub} mb-1`}>Agente atribuído</label>
-                  <select
-                    value={openConv.assigned_member_id ?? ""}
-                    onChange={(e) => saveAssign(openConv.id, e.target.value ? Number(e.target.value) : null)}
-                    className={`w-full h-8 text-[13px] px-2 rounded-[8px] border ${FC.hair} ${FC.ink} dark:bg-[#14171c] outline-none focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff]`}
-                  >
-                    <option value="">— ninguém —</option>
-                    {members.filter((m) => m.status === "active").map((m) => <option key={m.id} value={m.id}>{m.nome} {m.online ? "🟢" : ""}</option>)}
-                  </select>
+                  {activeMembers.length > 0 ? (
+                    <Select
+                      value={openConv.assigned_member_id ?? 0}
+                      onChange={(v) => saveAssign(openConv.id, v === 0 ? null : (v as number))}
+                      placeholder="— ninguém —"
+                      options={[
+                        { value: 0, label: "— ninguém —" },
+                        ...activeMembers.map((m) => ({ value: m.id, label: `${m.nome}${m.online ? " 🟢" : ""}` })),
+                      ]}
+                    />
+                  ) : (
+                    <a
+                      href="/admin/equipe"
+                      className={`flex items-center justify-between gap-2 h-8 px-2.5 rounded-[8px] border border-dashed ${FC.hair} text-[12px] ${FC.sub} hover:border-[#003083] dark:hover:border-[#5b9bff] hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors`}
+                    >
+                      Adicione atendentes em Equipe <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
+                    </a>
+                  )}
                 </div>
                 <div>
                   <label className={`block text-[12px] ${FC.sub} mb-1`}>Time atribuído</label>
@@ -921,10 +949,51 @@ export default function ConversasPage() {
               ) : <SoonHint text="Nenhuma conversa anterior deste contato." />}
             </AccordionSection>
 
-            <AccordionSection title="Atributos do contato" defaultOpen={false}><SoonHint /></AccordionSection>
+            <AccordionSection title="Atributos do contato" defaultOpen={false}>
+              <dl className="space-y-2 text-[12.5px]">
+                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Nome</dt><dd className="text-[#262626] dark:text-[#e6e8eb] truncate">{openConv.contact_name || "—"}</dd></div>
+                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Telefone</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb]">{fmtPhone(openConv.external_id || "")}</dd></div>
+                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Canal</dt><dd className="text-[#262626] dark:text-[#e6e8eb]">{channelLabel(openConv.connector_kind)}</dd></div>
+                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>ID externo</dt><dd className="font-mono text-[11px] text-[#262626]/70 dark:text-[#9aa1ab] truncate max-w-[150px]" title={openConv.external_id || ""}>{openConv.external_id || "—"}</dd></div>
+              </dl>
+            </AccordionSection>
             <AccordionSection title="Notas do contato" defaultOpen={false}><SoonHint text="Notas internas aparecem no histórico do chat (modo Nota interna)." /></AccordionSection>
-            <AccordionSection title="Anexos" defaultOpen={false}><SoonHint /></AccordionSection>
-            <AccordionSection title="Participantes da conversa" defaultOpen={false}><SoonHint /></AccordionSection>
+            <AccordionSection title={`Anexos${attachments.length ? ` (${attachments.length})` : ""}`} defaultOpen={false}>
+              {attachments.length > 0 ? (
+                <div className="space-y-0.5">
+                  {attachments.map((a, i) => (
+                    <a
+                      key={i}
+                      href={a.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={a.url}
+                      className={`flex items-center gap-2 px-2 h-8 rounded-[8px] text-[12.5px] ${FC.dim} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white transition-colors`}
+                    >
+                      <Paperclip className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                      <span className="truncate flex-1">{a.label}</span>
+                      <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <SoonHint text="Sem anexos nesta conversa. Links e arquivos compartilhados no chat aparecem aqui." />
+              )}
+            </AccordionSection>
+            <AccordionSection title="Participantes da conversa" defaultOpen={false}>
+              {assignedMember && (
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="w-6 h-6 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[11px] font-semibold text-[#003083] dark:text-[#5b9bff]">
+                    {assignedMember.nome.charAt(0).toUpperCase()}
+                  </span>
+                  <span className="text-[12.5px] text-[#262626] dark:text-[#e6e8eb] truncate">{assignedMember.nome}</span>
+                  <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] ${FC.sub} shrink-0`}>Atribuído</span>
+                </div>
+              )}
+              <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
+                Mencione um colega com <b className={FC.ink}>@nome</b> numa <b className={FC.ink}>Nota interna</b> pra adicioná-lo: ele recebe a notificação e a conversa aparece em <b className={FC.ink}>Menções</b>.
+              </p>
+            </AccordionSection>
           </div>
         </aside>
       )}
