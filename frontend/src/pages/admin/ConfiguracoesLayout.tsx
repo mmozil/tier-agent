@@ -1,27 +1,38 @@
 import { NavLink, Outlet } from "react-router-dom";
+import {
+  type Icon,
+  CreditCard,
+  Cpu,
+  Lightning,
+  PlugsConnected,
+  SlidersHorizontal,
+  ToggleRight,
+  UserCircle,
+  UsersThree,
+} from "@phosphor-icons/react";
 
 import { FC } from "@/components/ds/fc";
 
 // Área de Configurações estilo Chatwoot: sub-nav à esquerda + a página de settings à
 // direita (via <Outlet/>). As páginas de config (LLM, Integrações, etc.) usam `-mx-8`
 // + PageFrame/Row (full-bleed), então o conteúdo tem um wrapper px-8 pra acomodar.
-const SETTINGS_NAV: { label: string; items: { to: string; label: string }[] }[] = [
+const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: Icon }[] }[] = [
   {
     label: "Agente",
     items: [
-      { to: "/admin/configuracoes/llm", label: "LLM Providers" },
-      { to: "/admin/configuracoes/integracoes", label: "Integrações" },
-      { to: "/admin/configuracoes/macros", label: "Macros" },
-      { to: "/admin/configuracoes/parametros", label: "Parâmetros" },
-      { to: "/admin/configuracoes/features", label: "Feature Flags" },
+      { to: "/admin/configuracoes/llm", label: "LLM Providers", icon: Cpu },
+      { to: "/admin/configuracoes/integracoes", label: "Integrações", icon: PlugsConnected },
+      { to: "/admin/configuracoes/macros", label: "Macros", icon: Lightning },
+      { to: "/admin/configuracoes/parametros", label: "Parâmetros", icon: SlidersHorizontal },
+      { to: "/admin/configuracoes/features", label: "Feature Flags", icon: ToggleRight },
     ],
   },
   {
     label: "Conta",
     items: [
-      { to: "/admin/configuracoes/equipe", label: "Equipe" },
-      { to: "/admin/configuracoes/cobranca", label: "Cobrança" },
-      { to: "/admin/configuracoes/perfil", label: "Perfil" },
+      { to: "/admin/configuracoes/equipe", label: "Equipe", icon: UsersThree },
+      { to: "/admin/configuracoes/cobranca", label: "Cobrança", icon: CreditCard },
+      { to: "/admin/configuracoes/perfil", label: "Perfil", icon: UserCircle },
     ],
   },
 ];
@@ -46,13 +57,14 @@ export default function ConfiguracoesLayout() {
                     key={it.to}
                     to={it.to}
                     className={({ isActive }) =>
-                      `flex items-center h-8 px-2.5 rounded-[8px] text-[13px] transition-colors ${
+                      `flex items-center gap-2 h-8 px-2.5 rounded-[8px] text-[13px] transition-colors ${
                         isActive
                           ? "bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#8ab4ff] font-medium"
                           : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white font-[450]"
                       }`
                     }
                   >
+                    <it.icon className="h-4 w-4 shrink-0" weight="regular" />
                     {it.label}
                   </NavLink>
                 ))}
