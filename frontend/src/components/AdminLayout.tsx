@@ -92,8 +92,8 @@ export default function AdminLayout() {
   }
 
   const itemClass = (active: boolean) =>
-    `tier-jelly relative flex h-9 items-center overflow-hidden rounded-[10px] transition-all duration-200 ease-out motion-reduce:transition-none active:scale-[0.98] ${
-      collapsed ? "w-9 justify-center" : "w-full"
+    `tier-jelly relative flex h-9 items-center overflow-hidden rounded-[10px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none active:scale-[0.98] ${
+      collapsed ? "w-9" : "w-full"
     } ${
       active
         ? "tier-sidebar-item-active text-[#003083] dark:text-[#8ab4ff]"
@@ -110,16 +110,25 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-white flex">
       <aside
-        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#F9F9F9] border-r border-[#EDEDED] transition-[width] duration-200 ease-out motion-reduce:transition-none"
+        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#F9F9F9] border-r border-[#EDEDED] transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ width: collapsed ? 64 : 240, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
-        {/* Logo */}
-        <div className={`h-16 shrink-0 flex items-center border-b border-[#EDEDED] ${collapsed ? "justify-center px-0" : "px-5"}`}>
-          {collapsed ? (
+        {/* Logo — crossfade entre a marca (3 quadrados, recolhido) e o logo completo */}
+        <div className="h-16 shrink-0 relative overflow-hidden border-b border-[#EDEDED]">
+          <div
+            className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+              collapsed ? "opacity-100 scale-100" : "opacity-0 scale-90 pointer-events-none"
+            }`}
+          >
             <TierLogoMark className="w-7 h-7" />
-          ) : (
+          </div>
+          <div
+            className={`absolute inset-0 flex items-center px-5 transition-opacity duration-200 ease-out motion-reduce:transition-none ${
+              collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
+            }`}
+          >
             <img src="/tier-agent-escuro.png" alt="Tier Agent" style={{ height: 28, width: "auto", display: "block" }} />
-          )}
+          </div>
         </div>
 
         <nav className={`sidebar-scroll flex-1 overflow-y-auto py-3 ${collapsed ? "px-3" : "px-5"}`}>
@@ -145,35 +154,36 @@ export default function AdminLayout() {
                       const act = item.end ? isActive : isActive || location.pathname.startsWith(item.to);
                       return (
                         <div className={itemClass(act)}>
-                          <div
-                            className={
-                              collapsed
-                                ? "flex h-9 w-9 items-center justify-center shrink-0"
-                                : "absolute left-0 flex h-9 w-9 items-center justify-center"
-                            }
-                          >
+                          {/* ícone — SEMPRE absolute na faixa de 36px à esquerda: posição
+                              estável ao recolher (não pula); o label desliza/some por baixo */}
+                          <div className="absolute left-0 top-0 flex h-9 w-9 items-center justify-center">
                             <item.icon className={iconClass(act)} />
                           </div>
-                          {!collapsed && (
-                            <div className="flex flex-1 items-center pl-9 pr-2">
-                              <span
-                                className={`truncate text-[13px] leading-5 transition-colors duration-200 motion-reduce:transition-none ${
-                                  act
-                                    ? "font-medium text-[#003083] dark:text-[#8ab4ff]"
-                                    : "font-normal text-[#262626]/[0.72] dark:text-[#9aa1ab] group-hover:text-[#262626] dark:group-hover:text-white"
-                                }`}
-                              >
-                                {item.label}
-                              </span>
-                              {item.metaLabel && (
-                                <span className="ml-auto relative flex items-center pl-2">
-                                  <span className="pointer-events-none font-mono text-[11px] leading-4 text-[#262626]/[0.32] dark:text-[#6b7280] opacity-0 -translate-x-1 transition-all duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none group-hover:translate-x-0 group-hover:opacity-100">
-                                    {item.metaLabel}
-                                  </span>
+                          {/* label — sempre montado; some com fade + slide e é clipado pelo
+                              overflow-hidden do item conforme a largura encolhe (recolher elegante) */}
+                          <div
+                            aria-hidden={collapsed}
+                            className={`flex flex-1 items-center pl-9 pr-2 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+                              collapsed ? "opacity-0 -translate-x-1" : "opacity-100 translate-x-0"
+                            }`}
+                          >
+                            <span
+                              className={`truncate text-[13px] leading-5 transition-colors duration-200 motion-reduce:transition-none ${
+                                act
+                                  ? "font-medium text-[#003083] dark:text-[#8ab4ff]"
+                                  : "font-normal text-[#262626]/[0.72] dark:text-[#9aa1ab] group-hover:text-[#262626] dark:group-hover:text-white"
+                              }`}
+                            >
+                              {item.label}
+                            </span>
+                            {item.metaLabel && (
+                              <span className="ml-auto relative flex items-center pl-2">
+                                <span className="pointer-events-none font-mono text-[11px] leading-4 text-[#262626]/[0.32] dark:text-[#6b7280] opacity-0 -translate-x-1 transition-all duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none group-hover:translate-x-0 group-hover:opacity-100">
+                                  {item.metaLabel}
                                 </span>
-                              )}
-                            </div>
-                          )}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       );
                     }}
@@ -209,7 +219,7 @@ export default function AdminLayout() {
       </aside>
 
       <main
-        className="flex-1 min-h-screen bg-[#F9F9F9] transition-[margin] duration-200 ease-out motion-reduce:transition-none"
+        className="flex-1 min-h-screen bg-[#F9F9F9] transition-[margin] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ marginLeft: collapsed ? 64 : 240, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         <div className="px-8 pb-8">

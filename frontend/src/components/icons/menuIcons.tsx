@@ -1,15 +1,15 @@
 import {
   Bell,
   BookOpen,
-  Bot,
   ChartColumn,
-  LayoutGrid,
+  House,
   LineChart,
   MessageSquare,
   Radio,
   Settings,
   Store,
   UserPlus,
+  WandSparkles,
   Workflow,
 } from "lucide-react";
 
@@ -21,9 +21,9 @@ import {
 type IconProps = { className?: string };
 const SW = 2;
 
-export const OverviewMenuIcon = ({ className }: IconProps) => <LayoutGrid className={className} strokeWidth={SW} />;
+export const OverviewMenuIcon = ({ className }: IconProps) => <House className={className} strokeWidth={SW} />;
 export const AttentionMenuIcon = ({ className }: IconProps) => <Bell className={className} strokeWidth={SW} />;
-export const AgentsMenuIcon = ({ className }: IconProps) => <Bot className={className} strokeWidth={SW} />;
+export const AgentsMenuIcon = ({ className }: IconProps) => <WandSparkles className={className} strokeWidth={SW} />;
 export const ConversationsMenuIcon = ({ className }: IconProps) => <MessageSquare className={className} strokeWidth={SW} />;
 export const LeadsMenuIcon = ({ className }: IconProps) => <UserPlus className={className} strokeWidth={SW} />;
 export const PlaybooksMenuIcon = ({ className }: IconProps) => <Workflow className={className} strokeWidth={SW} />;
