@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Inbox, Phone, MessageCircle, Check, Archive, RefreshCw, Bell, Save } from "lucide-react";
+import { Inbox, Phone, MessageCircle, Check, CheckCheck, Archive, RefreshCw, Bell, Save } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
@@ -224,6 +224,19 @@ export default function LeadsPage() {
     }
   }
 
+  async function markAllRead() {
+    if (unreadCount === 0) return;
+    try {
+      await api.post("/notifications/mark-all-read");
+      setItems((prev) => prev.map((n) => (n.status === "unread" ? { ...n, status: "read" } : n)));
+      toast.success("Todas marcadas como lidas");
+    } catch {
+      toast.error("Erro ao marcar todas como lidas");
+    }
+  }
+
+  const unreadCount = items.filter((n) => n.status === "unread").length;
+
   const visible = items.filter((n) => {
     if (n.status === "archived") return false;
     if (filter === "all") return true;
@@ -241,7 +254,14 @@ export default function LeadsPage() {
               <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Leads &amp; Notificações</h2>
               <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Oportunidades capturadas no atendimento e pedidos de transferência para humano.</p>
             </div>
-            <Button variant="ghost" onClick={load} className="shrink-0"><RefreshCw className="w-3.5 h-3.5" /> Atualizar</Button>
+            <div className="flex items-center gap-2 shrink-0">
+              {unreadCount > 0 && (
+                <Button variant="ghost" onClick={markAllRead}>
+                  <CheckCheck className="w-3.5 h-3.5" /> Marcar todas como lidas ({unreadCount})
+                </Button>
+              )}
+              <Button variant="ghost" onClick={load}><RefreshCw className="w-3.5 h-3.5" /> Atualizar</Button>
+            </div>
           </div>
         </Row>
 
