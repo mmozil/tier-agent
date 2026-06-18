@@ -74,6 +74,7 @@ async def list_conversations(
     status: str | None = None,
     tag: str | None = None,
     scope: str | None = None,  # "mine" | "unassigned" | None (todas)
+    view: str | None = None,  # "mentions" | "participating" (folders Chatwoot)
     limit: int = Query(100, ge=1, le=300),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -104,6 +105,29 @@ async def list_conversations(
         stmt = stmt.where(
             or_(TaConversation.snoozed_until.is_(None), TaConversation.snoozed_until <= now)
         )
+
+    # Folders Chatwoot — Menções: conversas em que fui marcado numa nota interna
+    # (TaNotification category="mention"). Participantes: atribuídas a mim OU marcado.
+    if view in ("mentions", "participating"):
+        if not user.member_id:
+            return []
+        from models import TaNotification
+
+        marcado = select(TaNotification.conversation_id).where(
+            TaNotification.target_member_id == user.member_id,
+            TaNotification.conversation_id.isnot(None),
+        )
+        if view == "mentions":
+            marcado = marcado.where(TaNotification.category == "mention")
+            stmt = stmt.where(TaConversation.id.in_(marcado))
+        else:  # participating
+            stmt = stmt.where(
+                or_(
+                    TaConversation.assigned_member_id == user.member_id,
+                    TaConversation.id.in_(marcado),
+                )
+            )
+
     stmt = stmt.order_by(TaConversation.last_message_at.desc().nulls_last()).limit(limit)
 
     convs = (await db.execute(stmt)).scalars().all()

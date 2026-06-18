@@ -267,11 +267,12 @@ export default function ConversasPage() {
     }
   }
 
-  async function load(sc = scope, silent = false) {
+  async function load(sc = scope, silent = false, view: "mentions" | "participating" | null = viewRef.current) {
     if (!silent) setLoading(true);
     try {
       const params: Record<string, any> = { limit: 200 };
       if (sc !== "todas") params.scope = sc;
+      if (view) params.view = view;
       const { data } = await api.get<Conversation[]>("/conversations", { params });
       setConvs(data);
     } catch {
@@ -283,6 +284,7 @@ export default function ConversasPage() {
 
   const msgsEndRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const viewRef = useRef<"mentions" | "participating" | null>(null);
 
   useEffect(() => {
     msgsEndRef.current?.scrollIntoView({ block: "end" });
@@ -422,16 +424,24 @@ export default function ConversasPage() {
     }
   }
 
+  // Troca de folder na sub-nav: define o filtro + o view do backend (menções/participação)
+  // e recarrega. Os demais (all/unattended/canal/etiqueta) filtram client-side.
+  function selectNav(nav: NavFilter) {
+    setNavFilter(nav);
+    const v = nav.type === "mentions" ? "mentions" : nav.type === "participants" ? "participating" : null;
+    viewRef.current = v;
+    load(scope, false, v);
+  }
+
   // ─── Derivados ───
   const allTags = Array.from(new Set(convs.flatMap((c) => c.tags || []))).sort();
   const channels = Array.from(new Set(convs.map((c) => c.connector_kind || "outro")));
-  const isSpecialEmpty = navFilter.type === "mentions" || navFilter.type === "participants";
 
   const filteredConvs = convs.filter((c) => {
     if (navFilter.type === "channel" && (c.connector_kind || "outro") !== navFilter.value) return false;
     if (navFilter.type === "tag" && !(c.tags || []).includes(navFilter.value)) return false;
     if (navFilter.type === "unattended" && (c.status === "closed" || c.assigned_member_id)) return false;
-    if (isSpecialEmpty) return false;
+    // menções/participantes já vêm filtradas do backend (view=…); aqui só a busca
     if (search.trim()) {
       const q = search.toLowerCase();
       const name = (c.contact_name || c.external_id || "").toLowerCase();
@@ -469,10 +479,10 @@ export default function ConversasPage() {
           <h1 className="text-[15px] font-[550] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
         </div>
         <nav className="flex-1 overflow-y-auto sidebar-scroll px-2 py-3 min-h-0 space-y-0.5">
-          <SubNavItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => setNavFilter({ type: "all" })} />
-          <SubNavItem icon={Clock} label="Não atendidas" count={unattendedCount} active={navFilter.type === "unattended"} onClick={() => setNavFilter({ type: "unattended" })} />
-          <SubNavItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => setNavFilter({ type: "mentions" })} soon />
-          <SubNavItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => setNavFilter({ type: "participants" })} soon />
+          <SubNavItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
+          <SubNavItem icon={Clock} label="Não atendidas" count={unattendedCount} active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
+          <SubNavItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
+          <SubNavItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => selectNav({ type: "participants" })} />
 
           {channels.length > 0 && (
             <div className="pt-3">
@@ -484,7 +494,7 @@ export default function ConversasPage() {
                   label={channelLabel(ch === "outro" ? null : ch)}
                   count={convs.filter((c) => (c.connector_kind || "outro") === ch).length}
                   active={navFilter.type === "channel" && navFilter.value === ch}
-                  onClick={() => setNavFilter({ type: "channel", value: ch })}
+                  onClick={() => selectNav({ type: "channel", value: ch })}
                 />
               ))}
             </div>
@@ -500,7 +510,7 @@ export default function ConversasPage() {
                   dotColor={tagColor(t)}
                   count={convs.filter((c) => (c.tags || []).includes(t)).length}
                   active={navFilter.type === "tag" && navFilter.value === t}
-                  onClick={() => setNavFilter({ type: "tag", value: t })}
+                  onClick={() => selectNav({ type: "tag", value: t })}
                 />
               ))}
             </div>
@@ -582,22 +592,14 @@ export default function ConversasPage() {
             </div>
           )}
 
-          {!loading && isSpecialEmpty && (
-            <div className="py-14 px-5">
-              <EmptyHint
-                icon={navFilter.type === "mentions" ? AtSign : Users}
-                text={navFilter.type === "mentions"
-                  ? "Quando alguém marcar você numa nota interna, as conversas aparecem aqui."
-                  : "Conversas em que você participa aparecem aqui."}
-              />
-              <p className="text-center text-[11px] uppercase tracking-wide text-[#262626]/35 dark:text-[#6b7280] mt-2">Em breve</p>
-            </div>
-          )}
-
-          {!loading && !isSpecialEmpty && filteredConvs.length === 0 && (
+          {!loading && filteredConvs.length === 0 && (
             <div className="py-14 px-5">
               {search.trim() ? (
                 <EmptyHint icon={Search} text={`Nenhuma conversa encontrada para "${search}".`} />
+              ) : navFilter.type === "mentions" ? (
+                <EmptyHint icon={AtSign} text="Nenhuma menção — quando alguém te marcar numa nota interna (@você), a conversa aparece aqui." />
+              ) : navFilter.type === "participants" ? (
+                <EmptyHint icon={Users} text="Você ainda não participa de nenhuma conversa (atribuída a você ou onde foi marcado)." />
               ) : navFilter.type === "tag" ? (
                 <EmptyHint icon={Tag} text={`Nenhuma conversa com #${navFilter.value}.`} />
               ) : (
@@ -606,7 +608,7 @@ export default function ConversasPage() {
             </div>
           )}
 
-          {!loading && !isSpecialEmpty && filteredConvs.length > 0 && (
+          {!loading && filteredConvs.length > 0 && (
             <div className={`divide-y ${FC.hair}`}>
               {filteredConvs.map((c) => {
                 const name = c.contact_name || fmtPhone(c.external_id);
