@@ -16,6 +16,10 @@ os.environ.setdefault("TIER_EVAL_MODE", "1")
 import pytest
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "live: eval de integração (LLM+MCP reais); rode com EVAL_LIVE=1")
+
+
 def pytest_collection_modifyitems(config, items):
     if os.getenv("EVAL_LIVE", "").strip().lower() in ("1", "true", "yes"):
         return
