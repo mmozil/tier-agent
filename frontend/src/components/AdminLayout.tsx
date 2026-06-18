@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { ArrowUpRight, HelpCircle, Search, Settings } from "lucide-react";
+import { ArrowUpRight, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settings } from "lucide-react";
 
 import UserMenu from "./UserMenu";
 import NotificationBell from "./NotificationBell";
@@ -67,82 +68,112 @@ const SECTIONS: NavGroup[] = [
 const SIDEBAR_FONT =
   "'Geist', -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Ubuntu, sans-serif";
 
+// Logomarca Tier (3 quadrados em diagonal) — mostrada quando o sidebar está colapsado.
+function TierLogoMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 36 36" fill="none" className={className} aria-hidden>
+      <path d="M15.1904 17.7378H2.92909C1.31144 17.7378 0 19.0593 0 20.6897V33.0478C0 34.6782 1.31144 36 2.92909 36H15.1904C16.808 36 18.1192 34.6782 18.1192 33.0478V20.6897C18.1192 19.0593 16.808 17.7378 15.1904 17.7378Z" fill="#020855" />
+      <path d="M24.1201 8.8916H11.8588C10.2411 8.8916 8.92969 10.2131 8.92969 11.8436V24.2016C8.92969 25.832 10.2411 27.1536 11.8588 27.1536H24.1201C25.7377 27.1536 27.0489 25.832 27.0489 24.2016V11.8436C27.0489 10.2131 25.7377 8.8916 24.1201 8.8916Z" fill="#003083" />
+      <path d="M33.071 0H20.8099C19.1923 0 17.8809 1.32179 17.8809 2.9522V15.31C17.8809 16.9404 19.1923 18.2622 20.8099 18.2622H33.071C34.6887 18.2622 36.0001 16.9404 36.0001 15.31V2.9522C36.0001 1.32179 34.6887 0 33.071 0Z" fill="#1F42E4" />
+    </svg>
+  );
+}
+
 export default function AdminLayout() {
   const location = useLocation();
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("tier-admin-collapsed") === "1");
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("tier-admin-collapsed", next ? "1" : "0");
+      return next;
+    });
+  }
+
   const itemClass = (active: boolean) =>
-    `tier-jelly relative flex h-9 w-full items-center overflow-hidden rounded-[10px] transition-all duration-200 ease-out motion-reduce:transition-none active:scale-[0.98] ${
+    `tier-jelly relative flex h-9 items-center overflow-hidden rounded-[10px] transition-all duration-200 ease-out motion-reduce:transition-none active:scale-[0.98] ${
+      collapsed ? "w-9 justify-center" : "w-full"
+    } ${
       active
         ? "tier-sidebar-item-active text-[#003083] dark:text-[#8ab4ff]"
         : "text-[#262626]/[0.56] hover:text-[#262626]/[0.72] dark:text-[#8b93a0] dark:hover:text-[#d9dde5]"
     }`;
 
+  const iconClass = (active: boolean) =>
+    `h-4 w-4 transition-all duration-200 motion-reduce:transition-none ${
+      active
+        ? "text-[#003083] dark:text-[#8ab4ff]"
+        : "text-[#262626]/[0.72] opacity-80 dark:text-[#d9dde5] dark:opacity-60 group-hover:opacity-100"
+    }`;
+
   return (
     <div className="min-h-screen bg-white flex">
       <aside
-        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#F9F9F9] border-r border-[#EDEDED]"
-        style={{
-          width: 240,
-          fontFamily: SIDEBAR_FONT,
-          WebkitFontSmoothing: "antialiased",
-        }}
+        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#F9F9F9] border-r border-[#EDEDED] transition-[width] duration-200 ease-out motion-reduce:transition-none"
+        style={{ width: collapsed ? 64 : 240, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
-        <div className="h-16 px-5 shrink-0 flex items-center border-b border-[#EDEDED]">
-          <img
-            src="/tier-agent-escuro.png"
-            alt="Tier Agent"
-            style={{ height: 28, width: "auto", display: "block" }}
-          />
+        {/* Logo */}
+        <div className={`h-16 shrink-0 flex items-center border-b border-[#EDEDED] ${collapsed ? "justify-center px-0" : "px-5"}`}>
+          {collapsed ? (
+            <TierLogoMark className="w-7 h-7" />
+          ) : (
+            <img src="/tier-agent-escuro.png" alt="Tier Agent" style={{ height: 28, width: "auto", display: "block" }} />
+          )}
         </div>
 
-        <nav className="sidebar-scroll flex-1 overflow-y-auto px-5 py-3">
+        <nav className={`sidebar-scroll flex-1 overflow-y-auto py-3 ${collapsed ? "px-3" : "px-5"}`}>
           {SECTIONS.map((section, sIdx) => (
             <div key={sIdx} className={sIdx > 0 ? "mt-5" : ""}>
-              {section.label && (
+              {section.label && !collapsed && (
                 <div className="mb-1">
                   <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#262626]/40 dark:text-[#565d68]">
                     {section.label}
                   </span>
                 </div>
               )}
-              <div className="flex flex-col gap-1">
+              <div className={`flex flex-col gap-1 ${collapsed ? "items-center" : ""}`}>
                 {section.items.map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
                     end={item.end}
-                    className="group tier-sidebar-item block rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003083]/25"
+                    title={collapsed ? item.label : undefined}
+                    className={`group tier-sidebar-item block rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003083]/25 ${collapsed ? "w-9" : ""}`}
                   >
                     {({ isActive }) => {
                       const act = item.end ? isActive : isActive || location.pathname.startsWith(item.to);
                       return (
                         <div className={itemClass(act)}>
-                          <div className="absolute left-0 flex h-9 w-9 items-center justify-center">
-                            <item.icon
-                              className={`h-4 w-4 transition-all duration-200 motion-reduce:transition-none ${
-                                act
-                                  ? "text-[#003083] dark:text-[#8ab4ff]"
-                                  : "text-[#262626]/[0.72] opacity-80 dark:text-[#d9dde5] dark:opacity-60 group-hover:opacity-100"
-                              }`}
-                            />
+                          <div
+                            className={
+                              collapsed
+                                ? "flex h-9 w-9 items-center justify-center shrink-0"
+                                : "absolute left-0 flex h-9 w-9 items-center justify-center"
+                            }
+                          >
+                            <item.icon className={iconClass(act)} />
                           </div>
-                          <div className="flex flex-1 items-center pl-9 pr-2">
-                            <span
-                              className={`truncate text-[13px] leading-5 transition-colors duration-200 motion-reduce:transition-none ${
-                                act
-                                  ? "font-medium text-[#003083] dark:text-[#8ab4ff]"
-                                  : "font-normal text-[#262626]/[0.72] dark:text-[#9aa1ab] group-hover:text-[#262626] dark:group-hover:text-white"
-                              }`}
-                            >
-                              {item.label}
-                            </span>
-                            {item.metaLabel && (
-                              <span className="ml-auto relative flex items-center pl-2">
-                                <span className="pointer-events-none font-mono text-[11px] leading-4 text-[#262626]/[0.32] dark:text-[#6b7280] opacity-0 -translate-x-1 transition-all duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none group-hover:translate-x-0 group-hover:opacity-100">
-                                  {item.metaLabel}
-                                </span>
+                          {!collapsed && (
+                            <div className="flex flex-1 items-center pl-9 pr-2">
+                              <span
+                                className={`truncate text-[13px] leading-5 transition-colors duration-200 motion-reduce:transition-none ${
+                                  act
+                                    ? "font-medium text-[#003083] dark:text-[#8ab4ff]"
+                                    : "font-normal text-[#262626]/[0.72] dark:text-[#9aa1ab] group-hover:text-[#262626] dark:group-hover:text-white"
+                                }`}
+                              >
+                                {item.label}
                               </span>
-                            )}
-                          </div>
+                              {item.metaLabel && (
+                                <span className="ml-auto relative flex items-center pl-2">
+                                  <span className="pointer-events-none font-mono text-[11px] leading-4 text-[#262626]/[0.32] dark:text-[#6b7280] opacity-0 -translate-x-1 transition-all duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none group-hover:translate-x-0 group-hover:opacity-100">
+                                    {item.metaLabel}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     }}
@@ -153,14 +184,33 @@ export default function AdminLayout() {
           ))}
         </nav>
 
+        {/* Toggle recolher/expandir */}
+        <div className={`shrink-0 pt-2 ${collapsed ? "px-3" : "px-3"}`}>
+          <button
+            onClick={toggleCollapsed}
+            title={collapsed ? "Expandir" : "Recolher"}
+            className={`flex items-center h-8 rounded-[8px] text-[12px] text-[#262626]/[0.56] dark:text-[#8b93a0] hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white transition-colors ${
+              collapsed ? "w-9 justify-center" : "w-full px-2.5 gap-2"
+            }`}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="w-4 h-4" />
+            ) : (
+              <>
+                <PanelLeftClose className="w-4 h-4" /> <span>Recolher</span>
+              </>
+            )}
+          </button>
+        </div>
+
         <div className="border-t border-[#EDEDED] p-2 shrink-0">
-          <UserMenu />
+          <UserMenu collapsed={collapsed} />
         </div>
       </aside>
 
       <main
-        className="flex-1 ml-[240px] min-h-screen bg-[#F9F9F9]"
-        style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
+        className="flex-1 min-h-screen bg-[#F9F9F9] transition-[margin] duration-200 ease-out motion-reduce:transition-none"
+        style={{ marginLeft: collapsed ? 64 : 240, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         <div className="px-8 pb-8">
           <div className="h-[60px] flex items-center justify-between">

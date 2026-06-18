@@ -48,7 +48,7 @@ function ExternalIcon() {
   );
 }
 
-export default function UserMenu() {
+export default function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -182,17 +182,20 @@ export default function UserMenu() {
       {/* Trigger */}
       <button
         onClick={() => setOpen(!open)}
-        className={`w-full flex items-center gap-2.5 p-2 rounded-md transition-colors ${
-          open ? "bg-slate-100" : "hover:bg-slate-50"
-        }`}
+        title={collapsed ? nomePessoa : undefined}
+        className={`flex items-center p-2 rounded-md transition-colors ${
+          collapsed ? "w-9 justify-center" : "w-full gap-2.5"
+        } ${open ? "bg-slate-100" : "hover:bg-slate-50"}`}
       >
-        <Avatar nome={nomePessoa} size={32} />
-        <div className="flex-1 min-w-0 text-left">
-          <div className="text-[12px] font-medium text-slate-900 truncate">{nomePessoa}</div>
-          {nomeEmpresa && nomeEmpresa !== nomePessoa && (
-            <div className="text-[10px] text-slate-500 truncate">{nomeEmpresa}</div>
-          )}
-        </div>
+        <Avatar nome={nomePessoa} size={collapsed ? 28 : 32} />
+        {!collapsed && (
+          <div className="flex-1 min-w-0 text-left">
+            <div className="text-[12px] font-medium text-slate-900 truncate">{nomePessoa}</div>
+            {nomeEmpresa && nomeEmpresa !== nomePessoa && (
+              <div className="text-[10px] text-slate-500 truncate">{nomeEmpresa}</div>
+            )}
+          </div>
+        )}
       </button>
     </div>
   );
