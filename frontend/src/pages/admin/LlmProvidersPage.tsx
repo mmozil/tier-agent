@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, Cpu, Pencil } from "lucide-react";
+import { Plus, Trash2, Loader2, Zap, GripVertical, X, CheckCircle2, XCircle, Cpu, Pencil } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
@@ -80,6 +80,9 @@ export default function LlmProvidersPage() {
   const [testResults, setTestResults] = useState<Record<number, TestResult>>({});
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ default_model: "", temperature: 0.7, max_tokens: 4096, api_key: "" });
+  // Drag & drop pra reordenar a sequência: id sendo arrastado + id sob o cursor (alvo).
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dragOverId, setDragOverId] = useState<number | null>(null);
 
   const [form, setForm] = useState({
     provider: "minimax",
@@ -208,26 +211,39 @@ export default function LlmProvidersPage() {
     }
   }
 
-  // Reordena (prioridade): sobe/desce dentro do MESMO escopo (global ou tenant).
-  // Quem tem MENOR priority é usado primeiro. Swap dos valores entre vizinhos.
-  async function move(p: Provider, dir: "up" | "down") {
-    const scope = providers.filter((x) => x.tenant_id === p.tenant_id);
-    const idx = scope.findIndex((x) => x.id === p.id);
-    const j = dir === "up" ? idx - 1 : idx + 1;
-    if (j < 0 || j >= scope.length) return;
-    const other = scope[j];
+  // Reordena por DRAG & DROP dentro do MESMO escopo: move o item arrastado pra
+  // posição do alvo e regrava priority sequencial (0,1,2…). Menor priority = usado
+  // primeiro. Update otimista (aplica local na hora, inclusive quem fica "Em uso") e
+  // depois persiste; load() reconcilia.
+  async function reorder(fromId: number, toId: number) {
+    if (fromId === toId) return;
+    const dragged = providers.find((p) => p.id === fromId);
+    const target = providers.find((p) => p.id === toId);
+    if (!dragged || !target || dragged.tenant_id !== target.tenant_id) return; // só dentro do mesmo escopo
+    const group = providers.filter((p) => p.tenant_id === dragged.tenant_id); // ordem exibida
+    const from = group.findIndex((p) => p.id === fromId);
+    const to = group.findIndex((p) => p.id === toId);
+    if (from < 0 || to < 0) return;
+    const order = [...group];
+    const [moved] = order.splice(from, 1);
+    order.splice(to, 0, moved);
+    // 1º ATIVO da nova ordem vira "Em uso" (espelha a regra do backend)
+    const firstActiveId = order.find((p) => p.active)?.id ?? null;
+    const remap = new Map(order.map((p, i) => [p.id, i]));
+    // otimista: substitui os slots do mesmo escopo na nova ordem, preserva os outros
+    let gi = 0;
+    const optimistic = providers.map((p) => {
+      if (p.tenant_id !== dragged.tenant_id) return p;
+      const next = order[gi++];
+      return { ...next, priority: remap.get(next.id)!, in_use: next.active && next.id === firstActiveId };
+    });
+    setProviders(optimistic);
     try {
-      if (p.priority === other.priority) {
-        // empate (ex: ambos default 100) — desempata movendo só este
-        const np = dir === "up" ? other.priority - 1 : other.priority + 1;
-        await api.patch(`/llm-providers/${p.id}`, { priority: np });
-      } else {
-        await api.patch(`/llm-providers/${p.id}`, { priority: other.priority });
-        await api.patch(`/llm-providers/${other.id}`, { priority: p.priority });
-      }
+      await Promise.all(order.map((p, i) => api.patch(`/llm-providers/${p.id}`, { priority: i })));
       load();
-    } catch {
-      toast.error("Erro ao reordenar");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao reordenar");
+      load();
     }
   }
 
@@ -377,7 +393,7 @@ export default function LlmProvidersPage() {
             <div className="min-w-0">
               <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Seus modelos</h2>
               <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
-                Reordene a sequência com <b>↑↓</b> · ligue/desligue no <b>toggle</b> · teste a conexão no <b>⚡</b>.
+                <b>Arraste</b> os cards pra mudar a sequência · ligue/desligue no <b>toggle</b> · teste a conexão no <b>⚡</b>.
               </p>
             </div>
             <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
@@ -389,12 +405,14 @@ export default function LlmProvidersPage() {
           {loading && (
             <div>
               {[0, 1, 2].map((i) => (
-                <div key={i} className={`flex items-center gap-4 px-6 py-4 ${i > 0 ? `border-t ${FC.hair}` : ""}`}>
+                <div key={i} className={`flex items-center gap-3 px-6 py-3 ${i > 0 ? `border-t ${FC.hair}` : ""}`}>
+                  <SkeletonBar className="h-4 w-4" />
                   <SkeletonBar className="h-6 w-6 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <SkeletonBar className="h-3.5 w-32" />
-                    <SkeletonBar className="h-3 w-48" />
-                  </div>
+                  <SkeletonBar className="h-3.5 w-28" />
+                  <SkeletonBar className="h-3 w-36" />
+                  <SkeletonBar className="h-6 w-24 rounded-md" />
+                  <div className="flex-1" />
+                  <SkeletonBar className="h-7 w-7 rounded-lg" />
                   <SkeletonBar className="h-7 w-7 rounded-lg" />
                   <SkeletonBar className="h-5 w-9 rounded-full" />
                 </div>
@@ -446,41 +464,68 @@ export default function LlmProvidersPage() {
                   return (
                     <div
                       key={p.id}
+                      data-llm-row
                       onClick={() => setDetail(p)}
-                      className={`group relative flex items-stretch gap-4 px-6 py-4 ${topBorder ? `border-t ${FC.hair}` : ""} cursor-pointer ${FC.hover} ${p.in_use ? "bg-[#0a8f5a]/[0.03]" : ""}`}
+                      onDragOver={(e) => {
+                        if (!dragId) return;
+                        const d = providers.find((x) => x.id === dragId);
+                        if (!d || d.tenant_id !== p.tenant_id) { e.dataTransfer.dropEffect = "none"; return; } // só mesmo escopo
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                        if (dragOverId !== p.id) setDragOverId(p.id);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (dragId) reorder(dragId, p.id);
+                        setDragId(null);
+                        setDragOverId(null);
+                      }}
+                      style={dragOverId === p.id && dragId !== p.id ? { boxShadow: "inset 0 2px 0 0 #003083" } : undefined}
+                      className={`group relative flex items-stretch gap-3 px-6 py-3 ${topBorder ? `border-t ${FC.hair}` : ""} cursor-pointer ${FC.hover} ${p.in_use ? "bg-[#0a8f5a]/[0.03]" : ""} ${dragId === p.id ? "opacity-50" : ""}`}
                     >
-                      {/* Rail de SEQUÊNCIA: nº de posição + conector vertical + reordenar */}
-                      <div className="relative flex w-7 shrink-0 flex-col items-center" onClick={(e) => e.stopPropagation()}>
-                        {multi && !isFirst && <span className={`absolute top-0 h-3 w-px ${FC.hairBg}`} />}
-                        <span
-                          title={p.in_use ? "Principal — é a que o agente usa" : `${idx + 1}ª na fila de fallback`}
-                          className={`relative z-[1] flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${
-                            p.in_use
-                              ? "bg-[#0a8f5a] text-white"
-                              : p.active
-                                ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
-                                : `${FC.hairBg} ${FC.mut}`
-                          }`}
-                        >
-                          {idx + 1}
-                        </span>
-                        {multi && !isLast && <span className={`flex-1 w-px ${FC.hairBg} mt-0.5`} />}
-                        {multi && (
-                          <div className="mt-1 flex flex-col -space-y-0.5">
-                            <button disabled={isFirst} onClick={() => move(p, "up")} className={isFirst ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083] dark:hover:text-[#5b9bff]`} title="Subir na ordem">
-                              <ChevronUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button disabled={isLast} onClick={() => move(p, "down")} className={isLast ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083] dark:hover:text-[#5b9bff]`} title="Descer na ordem">
-                              <ChevronDown className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                      {/* Rail: handle de arrastar + nº de posição (conector vertical liga a sequência) */}
+                      <div className="flex shrink-0 items-center gap-1.5 self-stretch" onClick={(e) => e.stopPropagation()}>
+                        {multi ? (
+                          <span
+                            draggable
+                            title="Arraste pra reordenar a sequência"
+                            onDragStart={(e) => {
+                              setDragId(p.id);
+                              e.dataTransfer.effectAllowed = "move";
+                              // a imagem arrastada é a LINHA inteira (não só o handle)
+                              const row = (e.currentTarget as HTMLElement).closest("[data-llm-row]");
+                              if (row) e.dataTransfer.setDragImage(row as Element, 24, 18);
+                            }}
+                            onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                            className={`cursor-grab active:cursor-grabbing ${FC.mut} hover:text-[#003083] dark:hover:text-[#5b9bff]`}
+                          >
+                            <GripVertical className="w-4 h-4" />
+                          </span>
+                        ) : (
+                          <span className="w-4 shrink-0" />
                         )}
+                        <div className="relative flex w-6 items-center justify-center self-stretch">
+                          {multi && !isFirst && <span className={`absolute left-1/2 top-0 h-1/2 w-px -translate-x-1/2 ${FC.hairBg}`} />}
+                          {multi && !isLast && <span className={`absolute left-1/2 bottom-0 h-1/2 w-px -translate-x-1/2 ${FC.hairBg}`} />}
+                          <span
+                            title={p.in_use ? "Principal — é a que o agente usa" : `${idx + 1}ª na fila de fallback`}
+                            className={`relative z-[1] flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${
+                              p.in_use
+                                ? "bg-[#0a8f5a] text-white"
+                                : p.active
+                                  ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
+                                  : `${FC.hairBg} ${FC.mut}`
+                            }`}
+                          >
+                            {idx + 1}
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Conteúdo: provider + modelo + key (estilo Firecrawl) */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-[15px] font-medium ${FC.ink}`}>{p.provider}</span>
+                      {/* Conteúdo em UMA linha: provider · modelo · key · fallback */}
+                      <div className="min-w-0 flex-1 flex items-center gap-3 self-center">
+                        <div className="flex items-center gap-2 w-[210px] shrink-0">
+                          <span className={`text-[15px] font-medium truncate ${FC.ink}`}>{p.provider}</span>
                           {p.in_use ? (
                             <span className="shrink-0 px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
                           ) : p.tenant_id !== null ? (
@@ -493,14 +538,14 @@ export default function LlmProvidersPage() {
                             </button>
                           ) : null}
                         </div>
-                        <div className="mt-1 flex items-center gap-2 min-w-0">
-                          <span className={`text-[13px] font-mono truncate ${FC.sub}`}>{p.default_model}</span>
-                          <span className={`inline-flex items-center h-6 px-2 rounded-md bg-black/[0.03] dark:bg-white/[0.05] border ${FC.hair} text-[11.5px] font-mono shrink-0 ${FC.mut}`}>
-                            {p.api_key_suffix ? `••••••••${p.api_key_suffix}` : "sem key"}
-                          </span>
-                        </div>
-                        {p.fallback_chain && p.fallback_chain.length > 0 && (
-                          <div className={`mt-1 text-[11px] font-mono truncate ${FC.mut}`}>↳ {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
+                        <span className={`text-[13px] font-mono truncate w-[170px] shrink-0 ${FC.sub}`}>{p.default_model}</span>
+                        <span className={`inline-flex items-center h-6 px-2 rounded-md bg-black/[0.03] dark:bg-white/[0.05] border ${FC.hair} text-[11.5px] font-mono shrink-0 ${FC.mut}`}>
+                          {p.api_key_suffix ? `••••••••${p.api_key_suffix}` : "sem key"}
+                        </span>
+                        {p.fallback_chain && p.fallback_chain.length > 0 ? (
+                          <span className={`text-[11px] font-mono truncate flex-1 min-w-0 ${FC.mut}`}>↳ {p.fallback_chain.map((f) => f.model).join(" → ")}</span>
+                        ) : (
+                          <span className="flex-1" />
                         )}
                       </div>
 
