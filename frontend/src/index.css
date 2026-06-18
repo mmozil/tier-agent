@@ -46,7 +46,8 @@
 
   /* Rótulos do sidebar um pouco menos finos: o item inativo sobe de 400 → 450 (o ativo,
      font-medium, segue 500). Alvo = o span do rótulo (.truncate.font-normal). */
-  .tier-sidebar-item .truncate.font-normal { font-weight: 450; }
+  .tier-sidebar-item .truncate.font-normal { font-weight: 500; }
+  .tier-sidebar-item .truncate.font-medium { font-weight: 600; }
 
   /* Seções do sidebar mais próximas umas das outras (o mt-5 de 20px estava longe
      demais). Alvo: os blocos de seção (.mt-5) dentro do nav .sidebar-scroll. */

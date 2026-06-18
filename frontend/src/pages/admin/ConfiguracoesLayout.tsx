@@ -64,7 +64,7 @@ export default function ConfiguracoesLayout() {
                       }`
                     }
                   >
-                    <it.icon className="h-4 w-4 shrink-0" weight="regular" />
+                    <it.icon className="h-4 w-4 shrink-0" weight="bold" />
                     {it.label}
                   </NavLink>
                 ))}
