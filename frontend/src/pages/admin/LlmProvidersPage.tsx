@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, HelpCircle, Cpu, Pencil } from "lucide-react";
+import { Plus, Trash2, Loader2, Zap, ChevronUp, ChevronDown, X, CheckCircle2, XCircle, Cpu, Pencil } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
@@ -37,6 +37,37 @@ interface TestResult {
   latency_ms?: number;
   sample?: string;
   detail?: string;
+}
+
+// Arte ASCII topográfica (eco do <canvas> decorativo do Firecrawl no hero). Gerada
+// deterministicamente; renderizada bem faint + mascarada — textura, não conteúdo.
+const RIDGE = [
+  "",
+  "",
+  " ..::..           ....",
+  ":--==--::.......::----::.                 .::::::...  ..::",
+  "=++*+++==-------==++++==-:              .:-=====---:::--==",
+  "*xxxxxx**+++=+++**xxxx**+-:.          .:-=+*****+++===+++*",
+  "X######XXxx***xxXXX###Xxx+=-:.      .:-=+*xXXXXXxxx****xxX",
+  "###########XXX##########Xx*+=::....::=+*xX#########XXXX###",
+];
+
+function RidgeDecoration() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none select-none absolute right-0 top-0 bottom-0 hidden md:flex items-end justify-end pr-8 overflow-hidden"
+      style={{
+        width: 480,
+        WebkitMaskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
+        maskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
+      }}
+    >
+      <pre className="font-mono text-[8px] leading-[8px] text-[#262626]/[0.10] dark:text-white/[0.07] whitespace-pre mb-7">
+        {RIDGE.join("\n")}
+      </pre>
+    </div>
+  );
 }
 
 export default function LlmProvidersPage() {
@@ -218,8 +249,6 @@ export default function LlmProvidersPage() {
   }
 
   const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
-  // cabeçalhos de coluna (11px) em sub (56%) e não mut (40%): texto pequeno precisa de contraste
-  const colLabel = `text-[11px] uppercase tracking-[0.06em] ${FC.sub}`;
 
   // Modelos sugeridos do provider — vêm do backend (parâmetro), não hardcoded aqui.
   const modelsFor = (prov: string) => supported.find((s) => s.key === prov)?.models ?? [];
@@ -235,9 +264,9 @@ export default function LlmProvidersPage() {
         type="button"
         title={title}
         onClick={(e) => { e.stopPropagation(); onClick(); }}
-        className={`relative inline-flex h-[18px] w-[32px] shrink-0 items-center rounded-full transition-colors ${on ? "bg-[#0a8f5a]" : "bg-slate-300 dark:bg-[#3a3a3a]"}`}
+        className={`relative inline-flex h-[20px] w-[36px] shrink-0 items-center rounded-full transition-colors ${on ? "bg-[#0a8f5a]" : "bg-slate-300 dark:bg-[#3a3a3a]"}`}
       >
-        <span className={`inline-block h-[14px] w-[14px] transform rounded-full bg-white shadow transition-transform ${on ? "translate-x-[16px]" : "translate-x-[2px]"}`} />
+        <span className={`inline-block h-[16px] w-[16px] transform rounded-full bg-white shadow transition-transform ${on ? "translate-x-[18px]" : "translate-x-[2px]"}`} />
       </button>
     );
   }
@@ -245,30 +274,22 @@ export default function LlmProvidersPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
+        {/* ─── HERO (estilo Firecrawl: título grande + subtítulo + decoração ASCII) ─── */}
         <Row>
-          <div className="flex items-start justify-between gap-4 p-6">
-            <div>
-              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>LLM Providers</h2>
-              {providers.some((p) => p.tenant_id === null) ? (
-                <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
-                  As LLMs agrupadas por <b>escopo</b>. Dentro de cada grupo, o <b>1º ligado</b> é o que o motor pega
-                  (<span className="text-[#0a8f5a] font-medium">Em uso</span>). <b>Tenant</b> tem prioridade sobre <b>Global</b>.
-                  Reordene com <b>↑↓</b>, ligue/desligue no <b>toggle</b>, teste a key no <b>⚡</b>. Clique na linha pra ver tudo.
-                </p>
-              ) : (
-                <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
-                  Os modelos do seu agente. O marcado como <span className="text-[#0a8f5a] font-medium">Em uso</span> é o que ele
-                  usa — clique em <b>Tornar principal</b> pra trocar, no <b>toggle</b> pra ligar/desligar e no <b>⚡</b> pra testar a key.
-                  Se nenhum estiver ligado, o agente usa o modelo padrão da plataforma.
-                </p>
-              )}
+          <div className="relative overflow-hidden">
+            <RidgeDecoration />
+            <div className="relative px-6 py-11">
+              <h1 className={`text-[28px] font-semibold tracking-[-0.4px] leading-9 fc-crisp ${FC.ink}`}>LLM Providers</h1>
+              <p className={`text-[14px] leading-6 mt-2 max-w-[580px] ${FC.sub}`}>
+                Conecte as LLMs do seu agente e defina a <b>ordem de uso</b>. A 1ª ligada é a{" "}
+                <span className="text-[#0a8f5a] font-medium">principal</span>; as seguintes entram como{" "}
+                <b>fallback</b> se a de cima falhar ou ficar fora do ar.
+              </p>
             </div>
-            <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
-              <Plus className="w-3.5 h-3.5" /> Novo provider
-            </Button>
           </div>
         </Row>
 
+        {/* ─── Formulário de novo provider (aparece ao clicar em "Novo provider") ─── */}
         {showForm && (
           <Row>
             <form onSubmit={onSubmit} className="p-6 space-y-4">
@@ -350,178 +371,163 @@ export default function LlmProvidersPage() {
           </Row>
         )}
 
-        {/* Loading: skeleton ecoa a forma da tabela de providers (não spinner no vazio) */}
-        {loading && (
-          <Row last>
-            <div className={`px-6 py-2.5 border-b ${FC.hair} flex items-center gap-4`}>
-              <SkeletonBar className="h-3 w-20" />
-              <SkeletonBar className="h-3 w-24" />
-              <SkeletonBar className="h-3 w-16 ml-auto" />
+        {/* ─── Seção "Seus modelos" (header + lista, no mesmo frame como o Firecrawl) ─── */}
+        <Row last>
+          <div className={`flex items-start justify-between gap-4 border-b ${FC.hair} p-6`}>
+            <div className="min-w-0">
+              <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 ${FC.ink}`}>Seus modelos</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                Reordene a sequência com <b>↑↓</b> · ligue/desligue no <b>toggle</b> · teste a conexão no <b>⚡</b>.
+              </p>
             </div>
-            {[0, 1, 2].map((i) => (
-              <div key={i} className={`px-6 py-3.5 border-b ${FC.hair} flex items-center gap-4`}>
-                <SkeletonBar className="h-3.5 w-28" />
-                <SkeletonBar className="h-3 w-40" />
-                <SkeletonBar className="h-5 w-16 ml-auto rounded" />
-                <SkeletonBar className="h-[18px] w-8 rounded-full" />
-              </div>
-            ))}
-          </Row>
-        )}
-        {!loading && providers.length === 0 && (
-          <Row last>
+            <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
+              <Plus className="w-3.5 h-3.5" /> Novo provider
+            </Button>
+          </div>
+
+          {/* Loading: skeleton ecoa a forma da lista (stepper + provider + toggle) */}
+          {loading && (
+            <div>
+              {[0, 1, 2].map((i) => (
+                <div key={i} className={`flex items-center gap-4 px-6 py-4 ${i > 0 ? `border-t ${FC.hair}` : ""}`}>
+                  <SkeletonBar className="h-6 w-6 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <SkeletonBar className="h-3.5 w-32" />
+                    <SkeletonBar className="h-3 w-48" />
+                  </div>
+                  <SkeletonBar className="h-7 w-7 rounded-lg" />
+                  <SkeletonBar className="h-5 w-9 rounded-full" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!loading && providers.length === 0 && (
             <EmptyHint
               icon={Cpu}
               text='Nenhum provider cadastrado — clique em "Novo provider" pra conectar uma LLM.'
-              className="py-12"
+              className="py-14"
             />
-          </Row>
-        )}
-        {!loading && providers.length > 0 && (() => {
-          // Lista plana ordenada por escopo (Global primeiro) — SEM faixas de grupo.
-          // O escopo vira uma COLUNA (badge + tooltip), mais limpo e tabular.
-          const sorted = [...providers].sort((a, b) => {
-            const sa = a.tenant_id === null ? 0 : 1;
-            const sb = b.tenant_id === null ? 0 : 1;
-            return sa - sb; // sort estável preserva a ordem (priority) dentro do escopo
-          });
-          // Coluna ORDEM só quando há 2+ no MESMO escopo (aí reordenar faz sentido).
-          const scopeCount = new Map<number | null, number>();
-          sorted.forEach((p) => scopeCount.set(p.tenant_id, (scopeCount.get(p.tenant_id) ?? 0) + 1));
-          const anyMulti = [...scopeCount.values()].some((n) => n > 1);
-          // Coluna ESCOPO só quando há mais de um escopo (admin vendo Global + Tenants).
-          // Pro cliente (só o tenant dele) some — sem jargão "Global/Tenant".
-          const showScope = scopeCount.size > 1;
-          const COLS =
-            anyMulti && showScope
-              ? "grid grid-cols-[56px_minmax(0,1.3fr)_minmax(0,1.4fr)_104px_100px_48px_60px] items-center gap-4"
-              : anyMulti && !showScope
-                ? "grid grid-cols-[56px_minmax(0,1.3fr)_minmax(0,1.4fr)_100px_48px_60px] items-center gap-4"
-                : !anyMulti && showScope
-                  ? "grid grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_104px_100px_48px_60px] items-center gap-4"
-                  : "grid grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_100px_48px_60px] items-center gap-4";
-          return (
-            <Row last>
-              {/* Cabeçalho de colunas — alinha via MESMO grid das linhas */}
-              <div className={`${COLS} px-6 py-2.5 border-b ${FC.hair}`}>
-                {anyMulti && <span className={colLabel}>Ordem</span>}
-                <span className={colLabel}>Provider</span>
-                <span className={colLabel}>Modelo</span>
-                {showScope && <span className={colLabel}>Escopo</span>}
-                <span className={colLabel}>Key</span>
-                <span className={colLabel}>Ativo</span>
-                <span />
-              </div>
+          )}
 
-              {sorted.map((p) => {
-                const isGlobal = p.tenant_id === null;
-                const scopeItems = sorted.filter((x) => x.tenant_id === p.tenant_id);
-                const idx = scopeItems.indexOf(p);
-                const multi = scopeItems.length > 1;
-                const tr = testResults[p.id];
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => setDetail(p)}
-                    className={`${COLS} px-6 py-3 border-b ${FC.hair} cursor-pointer ${FC.hover} ${p.in_use ? "bg-[#0a8f5a]/[0.025]" : ""}`}
-                  >
-                    {/* Ordem — só quando há reordenação possível */}
-                    {anyMulti && (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        {multi ? (
-                          <div className="flex items-center gap-1.5">
-                            <div className="flex flex-col -my-1">
-                              <button disabled={idx === 0} onClick={() => move(p, "up")} className={idx === 0 ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
-                                <ChevronUp className="w-4 h-4" />
-                              </button>
-                              <button disabled={idx === scopeItems.length - 1} onClick={() => move(p, "down")} className={idx === scopeItems.length - 1 ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083]`}>
-                                <ChevronDown className="w-4 h-4" />
-                              </button>
-                            </div>
-                            {/* posição é contagem de negócio → sans tabular, não mono */}
-                            <span className={`text-[12px] tabular-nums ${idx === 0 ? FC.ink : FC.mut}`}>{idx + 1}º</span>
-                          </div>
-                        ) : (
-                          <span className={`text-[12px] tabular-nums ${FC.mut}`}>—</span>
-                        )}
-                      </div>
-                    )}
+          {!loading && providers.length > 0 && (() => {
+            // Agrupa por ESCOPO (Global primeiro), preservando a ordem de prioridade
+            // (o backend já devolve por priority). Cada grupo é uma SEQUÊNCIA própria.
+            const sorted = [...providers].sort((a, b) => (a.tenant_id === null ? 0 : 1) - (b.tenant_id === null ? 0 : 1));
+            const groupsMap = new Map<number | null, Provider[]>();
+            sorted.forEach((p) => {
+              if (!groupsMap.has(p.tenant_id)) groupsMap.set(p.tenant_id, []);
+              groupsMap.get(p.tenant_id)!.push(p);
+            });
+            const groups = [...groupsMap.entries()];
+            const showScope = groups.length > 1;
 
-                    {/* Provider + Em uso / Tornar principal */}
-                    <div className="min-w-0 flex items-center gap-2">
-                      <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{p.provider}</span>
-                      {p.in_use ? (
-                        <span className="shrink-0 px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
-                      ) : p.tenant_id !== null ? (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); makePrimary(p); }}
-                          title="Usar este modelo no agente"
-                          className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded text-[#003083] dark:text-[#5b9bff] hover:bg-[#003083]/[0.06]"
-                        >
-                          Tornar principal
-                        </button>
-                      ) : null}
-                    </div>
+            return groups.map(([tid, items], gi) => (
+              <div key={String(tid)}>
+                {/* Header do grupo de escopo — só quando há mais de um escopo (admin) */}
+                {showScope && (
+                  <div className={`flex items-baseline gap-2 px-6 py-2.5 bg-black/[0.015] dark:bg-white/[0.02] ${gi > 0 ? `border-t ${FC.hair}` : ""}`}>
+                    <span className={`text-[11px] uppercase tracking-[0.06em] font-semibold ${FC.sub}`}>
+                      {tid === null ? "Global · plataforma" : "Seu workspace"}
+                    </span>
+                    <span className={`text-[11px] ${FC.mut}`}>
+                      {items.length > 1 ? `${items.length} modelos, na ordem de uso` : "1 modelo"}
+                    </span>
+                  </div>
+                )}
 
-                    {/* Modelo + fallback */}
-                    <div className="min-w-0">
-                      <div className={`text-[13px] font-mono truncate ${FC.sub}`}>{p.default_model}</div>
-                      {p.fallback_chain && p.fallback_chain.length > 0 && (
-                        <div className={`text-[11px] font-mono truncate ${FC.mut}`}>↳ {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
-                      )}
-                    </div>
-
-                    {/* Escopo — badge + tooltip (só quando há mais de um escopo) */}
-                    {showScope && (
-                      <div>
+                {items.map((p, idx) => {
+                  const total = items.length;
+                  const multi = total > 1;
+                  const isFirst = idx === 0;
+                  const isLast = idx === total - 1;
+                  const tr = testResults[p.id];
+                  const topBorder = showScope ? true : idx > 0; // 1ª linha sem borda quando não há header de grupo
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => setDetail(p)}
+                      className={`group relative flex items-stretch gap-4 px-6 py-4 ${topBorder ? `border-t ${FC.hair}` : ""} cursor-pointer ${FC.hover} ${p.in_use ? "bg-[#0a8f5a]/[0.03]" : ""}`}
+                    >
+                      {/* Rail de SEQUÊNCIA: nº de posição + conector vertical + reordenar */}
+                      <div className="relative flex w-7 shrink-0 flex-col items-center" onClick={(e) => e.stopPropagation()}>
+                        {multi && !isFirst && <span className={`absolute top-0 h-3 w-px ${FC.hairBg}`} />}
                         <span
-                          title={
-                            isGlobal
-                              ? "Global: disponível para TODOS os agentes/clientes. É o padrão da Tier — usado quando o cliente não tem LLM própria."
-                              : `Tenant ${p.tenant_id}: específico deste cliente. Só vale para os agentes dele e tem prioridade sobre o Global.`
-                          }
-                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded cursor-help ${
-                            isGlobal
-                              ? "bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#5b9bff]"
-                              : "bg-[#262626]/[0.06] dark:bg-white/[0.08] " + FC.sub
+                          title={p.in_use ? "Principal — é a que o agente usa" : `${idx + 1}ª na fila de fallback`}
+                          className={`relative z-[1] flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${
+                            p.in_use
+                              ? "bg-[#0a8f5a] text-white"
+                              : p.active
+                                ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
+                                : `${FC.hairBg} ${FC.mut}`
                           }`}
                         >
-                          {isGlobal ? "Global" : `Tenant ${p.tenant_id}`}
-                          <HelpCircle className="w-3 h-3 opacity-50" />
+                          {idx + 1}
                         </span>
+                        {multi && !isLast && <span className={`flex-1 w-px ${FC.hairBg} mt-0.5`} />}
+                        {multi && (
+                          <div className="mt-1 flex flex-col -space-y-0.5">
+                            <button disabled={isFirst} onClick={() => move(p, "up")} className={isFirst ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083] dark:hover:text-[#5b9bff]`} title="Subir na ordem">
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button disabled={isLast} onClick={() => move(p, "down")} className={isLast ? "opacity-20 cursor-default" : `${FC.mut} hover:text-[#003083] dark:hover:text-[#5b9bff]`} title="Descer na ordem">
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    )}
 
-                    {/* Key */}
-                    <span className={`text-[12px] font-mono ${FC.mut} truncate`}>
-                      {p.api_key_suffix ? `••••${p.api_key_suffix}` : "—"}
-                    </span>
+                      {/* Conteúdo: provider + modelo + key (estilo Firecrawl) */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-[15px] font-medium ${FC.ink}`}>{p.provider}</span>
+                          {p.in_use ? (
+                            <span className="shrink-0 px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
+                          ) : p.tenant_id !== null ? (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); makePrimary(p); }}
+                              title="Tornar este o modelo principal do agente"
+                              className="shrink-0 px-1.5 py-0.5 text-[11px] font-medium rounded text-[#003083] dark:text-[#5b9bff] hover:bg-[#003083]/[0.06] dark:hover:bg-[#5b9bff]/[0.12]"
+                            >
+                              Tornar principal
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 min-w-0">
+                          <span className={`text-[13px] font-mono truncate ${FC.sub}`}>{p.default_model}</span>
+                          <span className={`inline-flex items-center h-6 px-2 rounded-md bg-black/[0.03] dark:bg-white/[0.05] border ${FC.hair} text-[11.5px] font-mono shrink-0 ${FC.mut}`}>
+                            {p.api_key_suffix ? `••••••••${p.api_key_suffix}` : "sem key"}
+                          </span>
+                        </div>
+                        {p.fallback_chain && p.fallback_chain.length > 0 && (
+                          <div className={`mt-1 text-[11px] font-mono truncate ${FC.mut}`}>↳ {p.fallback_chain.map((f) => f.model).join(" → ")}</div>
+                        )}
+                      </div>
 
-                    {/* Ativo */}
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <Switch on={p.active} onClick={() => toggleActive(p)} title={p.active ? "Ligado — clique pra desligar" : "Desligado — clique pra ligar"} />
+                      {/* Ações: testar · deletar · TOGGLE (liga/desliga) */}
+                      <div className="flex items-center gap-1 shrink-0 self-center" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => testProvider(p)}
+                          disabled={testing === p.id}
+                          title="Testar conexão com o LLM"
+                          className={`${iconBtn} ${tr ? (tr.ok ? "!text-[#0a8f5a]" : "!text-[#E5484D]") : ""} hover:!text-[#003083] hover:!bg-[#003083]/[0.06]`}
+                        >
+                          {testing === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />) : <Zap className="w-4 h-4" />}
+                        </button>
+                        <button onClick={() => onDelete(p.id)} title="Deletar" className={`${iconBtn} hover:!text-[#E5484D] hover:!bg-[#E5484D]/[0.08]`}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <div className="pl-1.5">
+                          <Switch on={p.active} onClick={() => toggleActive(p)} title={p.active ? "Ligado — clique pra desligar" : "Desligado — clique pra ligar"} />
+                        </div>
+                      </div>
                     </div>
-
-                    {/* Ações */}
-                    <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => testProvider(p)}
-                        disabled={testing === p.id}
-                        title="Testar conexão com o LLM"
-                        className={`${iconBtn} ${tr ? (tr.ok ? "!text-[#0a8f5a]" : "!text-[#E5484D]") : ""} hover:!text-[#003083] hover:!bg-[#003083]/[0.06]`}
-                      >
-                        {testing === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : tr ? (tr.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />) : <Zap className="w-4 h-4" />}
-                      </button>
-                      <button onClick={() => onDelete(p.id)} className={`${iconBtn} hover:!text-[#E5484D] hover:!bg-[#E5484D]/[0.08]`}>
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </Row>
-          );
-        })()}
+                  );
+                })}
+              </div>
+            ));
+          })()}
+        </Row>
       </PageFrame>
 
       {/* ─── Modal de detalhes (centralizado, consistente com Canais) ─── */}
