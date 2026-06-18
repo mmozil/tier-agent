@@ -92,7 +92,7 @@ export default function AdminLayout() {
   }
 
   const itemClass = (active: boolean) =>
-    `tier-jelly relative flex h-9 items-center overflow-hidden rounded-[10px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none active:scale-[0.98] ${
+    `tier-jelly relative flex h-8 items-center overflow-hidden rounded-[10px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none active:scale-[0.98] ${
       collapsed ? "w-9" : "w-full"
     } ${
       active
@@ -156,7 +156,7 @@ export default function AdminLayout() {
                         <div className={itemClass(act)}>
                           {/* ícone — SEMPRE absolute na faixa de 36px à esquerda: posição
                               estável ao recolher (não pula); o label desliza/some por baixo */}
-                          <div className="absolute left-0 top-0 flex h-9 w-9 items-center justify-center">
+                          <div className="absolute left-0 top-0 flex h-8 w-9 items-center justify-center">
                             <item.icon className={iconClass(act)} />
                           </div>
                           {/* label — sempre montado; some com fade + slide e é clipado pelo
