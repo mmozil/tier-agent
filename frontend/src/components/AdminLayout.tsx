@@ -5,6 +5,7 @@ import { ArrowUpRight, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settin
 import UserMenu from "./UserMenu";
 import NotificationBell from "./NotificationBell";
 import OnlineToggle from "./OnlineToggle";
+import ErrorBoundary from "./ErrorBoundary";
 import { PRIMARY_SHADOW, ScrambleText } from "./ds/fc";
 import {
   AgentsMenuIcon,
@@ -118,7 +119,9 @@ export default function AdminLayout() {
         className="min-h-screen bg-[#F9F9F9] px-8 pt-6 pb-8"
         style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
-        <Outlet />
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </div>
     );
   }
@@ -274,7 +277,9 @@ export default function AdminLayout() {
             </div>
           </div>
 
-          <Outlet />
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </main>
     </div>
