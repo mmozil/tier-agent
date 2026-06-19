@@ -11,6 +11,18 @@ export const api = axios.create({
   withCredentials: true,
 });
 
+// SSO federado: se o ERP embutiu o inbox (token no sessionStorage via #sso_token),
+// manda como Bearer. O backend prioriza o header sobre o cookie → não colide com
+// o tier_session do ERP. Usuários normais do Agent continuam no cookie.
+api.interceptors.request.use((config) => {
+  const sso = sessionStorage.getItem("ta_sso");
+  if (sso) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${sso}`;
+  }
+  return config;
+});
+
 // Só redireciona pra /login em rotas PROTEGIDAS. Páginas públicas
 // (Landing /, /login, /signup) montam o AuthProvider e disparam /auth/me,
 // que retorna 401 quando deslogado — isso NÃO pode quicar a landing.
