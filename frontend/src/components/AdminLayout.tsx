@@ -111,10 +111,11 @@ export default function AdminLayout() {
     }`;
 
   // Embed: sem sidebar/topbar — só o inbox, pra encaixar dentro do Tier Empresas.
+  // Mantém o padding padrão do Agent (px-8) pra não ficar grudado na sidebar do ERP.
   if (embed) {
     return (
       <div
-        className="min-h-screen bg-white px-4 py-3"
+        className="min-h-screen bg-[#F9F9F9] px-8 pt-6 pb-8"
         style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         <Outlet />
