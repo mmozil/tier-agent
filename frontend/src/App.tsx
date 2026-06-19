@@ -18,7 +18,6 @@ import AgentesPage from "./pages/admin/AgentesPage";
 import LlmProvidersPage from "./pages/admin/LlmProvidersPage";
 import FontesDadosPage from "./pages/admin/FontesDadosPage";
 import McpOAuthCallback from "./pages/public/McpOAuthCallback";
-import FeaturesPage from "./pages/admin/FeaturesPage";
 import CanaisPage from "./pages/admin/CanaisPage";
 import KnowledgePage from "./pages/admin/KnowledgePage";
 import CobrancaPage from "./pages/admin/CobrancaPage";
@@ -83,7 +82,6 @@ export default function App() {
         <Route path="agentes" element={<AgentesPage />} />
         <Route path="llm" element={<Navigate to="/admin/configuracoes/llm" replace />} />
         <Route path="fontes-dados" element={<Navigate to="/admin/configuracoes/integracoes" replace />} />
-        <Route path="features" element={<Navigate to="/admin/configuracoes/features" replace />} />
         <Route path="atencao" element={<AtencaoPage />} />
         <Route path="macros" element={<Navigate to="/admin/configuracoes/macros" replace />} />
         <Route path="conversas" element={<ConversasPage />} />
@@ -107,7 +105,6 @@ export default function App() {
           <Route path="integracoes" element={<FontesDadosPage />} />
           <Route path="macros" element={<MacrosPage />} />
           <Route path="parametros" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
-          <Route path="features" element={<FeaturesPage />} />
           <Route path="equipe" element={<EquipePage />} />
           <Route path="cobranca" element={<CobrancaPage />} />
           <Route path="perfil" element={<PerfilPage />} />

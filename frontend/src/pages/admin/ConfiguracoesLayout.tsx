@@ -5,7 +5,6 @@ import {
   CreditCard,
   Plug,
   SlidersHorizontal,
-  ToggleLeft,
   UserCircle,
   Users,
   Zap,
@@ -24,7 +23,6 @@ const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: L
       { to: "/admin/configuracoes/integracoes", label: "Integrações", icon: Plug },
       { to: "/admin/configuracoes/macros", label: "Macros", icon: Zap },
       { to: "/admin/configuracoes/parametros", label: "Parâmetros", icon: SlidersHorizontal },
-      { to: "/admin/configuracoes/features", label: "Feature Flags", icon: ToggleLeft },
     ],
   },
   {
