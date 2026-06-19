@@ -165,8 +165,10 @@ async def list_providers(
     if not user.is_admin:
         # Cliente vê SÓ os modelos dele. O provider global é infra da plataforma (rede de
         # segurança pra agentes que ainda não escolheram o seu) — não aparece pro cliente,
-        # pra não confundir com um toggle que ele não controla. O motor continua usando o
-        # global como fallback automático quando o tenant não tem nenhum ativo.
+        # pra não confundir com um toggle que ele não controla. IMPORTANTE (jun/2026):
+        # o motor só cai no global quando o tenant NUNCA configurou nenhuma LLM. Se o
+        # tenant tem provider(s) e desliga TODAS, o agente fica em silêncio (respeita o
+        # desligamento) — ver tier_engine.ProvidersAllDisabled.
         stmt = stmt.where(TaLlmProvider.tenant_id == user.tenant_id)
     rows = list(
         (

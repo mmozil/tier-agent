@@ -266,6 +266,14 @@ export default function LlmProvidersPage() {
     );
   }
 
+  // Cliente: vê só os providers do tenant. Se tem provider(s) mas TODOS desligados, o
+  // agente fica em silêncio (não cai no modelo global da plataforma — ver
+  // tier_engine.ProvidersAllDisabled). Aviso só na visão do cliente (admin enxerga o
+  // global, tenant_id=null, então não dispara o banner).
+  const isAdminView = providers.some((p) => p.tenant_id === null);
+  const tenantProviders = providers.filter((p) => p.tenant_id !== null);
+  const agentSilent = !isAdminView && tenantProviders.length > 0 && !tenantProviders.some((p) => p.active);
+
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
@@ -280,6 +288,23 @@ export default function LlmProvidersPage() {
             </>
           }
         />
+
+        {/* Aviso: cliente desligou TODAS as LLMs → agente parado (não usa o global). */}
+        {agentSilent && (
+          <Row>
+            <div className="flex items-start gap-2.5 px-4 py-3">
+              <span className="mt-[5px] w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+              <div className="text-[13px] leading-5">
+                <p className={`font-medium ${FC.ink}`}>Seu agente está parado</p>
+                <p className={`mt-0.5 ${FC.sub}`}>
+                  Você tem LLM(s) configurada(s), mas todas estão <b>desligadas</b>. Ligue ao menos uma
+                  para o agente voltar a responder — enquanto as suas estiverem off, ele <b>não</b> usa o
+                  modelo padrão da plataforma.
+                </p>
+              </div>
+            </div>
+          </Row>
+        )}
 
         {/* ─── Formulário de novo provider (aparece ao clicar em "Novo provider") ─── */}
         {showForm && (

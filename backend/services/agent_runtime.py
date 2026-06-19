@@ -789,6 +789,14 @@ async def handle_inbound_message(
             use_cache=not (memory_block or rag_block),  # contextual → sem cache
             customer_phone=_phone or None,  # telefone real do contato → injetado nas tools de cadastro/busca
         )
+    except tier_engine.ProvidersAllDisabled:
+        # Tenant desligou todas as LLMs de propósito → agente fica em silêncio (sem
+        # cair no modelo global da plataforma). NÃO manda nada pro cliente.
+        logger.info(
+            "LLM do tenant desativada (todas off) — agente em silêncio tenant=%s agent=%s",
+            agent.tenant_id, agent.id,
+        )
+        return {"status": "llm_disabled"}
     except Exception as e:
         logger.exception("Engine falhou tenant=%s agent=%s", agent.tenant_id, agent.id)
         return {"status": "engine_error", "error": str(e)}
