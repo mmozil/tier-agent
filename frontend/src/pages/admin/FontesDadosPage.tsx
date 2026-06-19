@@ -60,7 +60,7 @@ const PRESETS: Preset[] = [
   {
     key: "tier-erp",
     nome: "Tier Empresas (ERP)",
-    desc: "Financeiro do seu ERP: DRE, fluxo de caixa, KPIs, contas a receber e a pagar.",
+    desc: "Financeiro + Vendas/CRM do seu ERP: DRE, caixa, KPIs, contas, funil de vendas, oportunidades e contato do decisor por CNPJ.",
     url: "https://api.tier.finance/api/mcp/erp/server",
     badge: "Somente leitura",
     available: true,
