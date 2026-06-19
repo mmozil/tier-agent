@@ -20,6 +20,7 @@ interface Provider {
   tenant_id: number | null;
   active: boolean;
   priority: number;
+  api_key_prefix: string | null;
   api_key_suffix: string | null;
   created_at: string | null;
   in_use: boolean;
@@ -38,6 +39,14 @@ interface TestResult {
   latency_ms?: number;
   sample?: string;
   detail?: string;
+}
+
+// Máscara da chave no padrão Firecrawl: prefixo + pontos + sufixo (ex: sk-proj•••••f7bf).
+// Sem prefixo (keys antigas/curtas) cai no fallback só-sufixo.
+function maskKey(prefix: string | null, suffix: string | null): string {
+  if (prefix && suffix) return `${prefix}${"•".repeat(14)}${suffix}`;
+  if (suffix) return `••••••••${suffix}`;
+  return "sem key";
 }
 
 export default function LlmProvidersPage() {
@@ -489,13 +498,16 @@ export default function LlmProvidersPage() {
                         </div>
                       </div>
 
-                      {/* Conteúdo em UMA linha: provider · modelo · key · fallback */}
-                      <div className="min-w-0 flex-1 flex items-center gap-3 self-center">
-                        <div className="flex items-center gap-2 w-[210px] shrink-0">
+                      {/* Conteúdo em UMA linha: provider (esquerda) · modelo + chave (direita) */}
+                      <div className="min-w-0 flex-1 flex items-center gap-4 self-center">
+                        {/* Provider — ocupa o espaço à esquerda */}
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
                           <ProviderLogo provider={p.provider} className="w-5 h-5 shrink-0" />
                           <span className={`text-[15px] font-medium truncate ${FC.ink}`}>{p.provider}</span>
                           {p.in_use ? (
-                            <span className="shrink-0 px-1.5 py-0.5 bg-[#0a8f5a]/[0.12] text-[#0a8f5a] text-[10px] font-semibold rounded uppercase tracking-wide">Em uso</span>
+                            <span className="inline-flex items-center gap-1.5 shrink-0 pl-1.5 pr-2 py-0.5 rounded-full bg-[#0a8f5a]/[0.10] text-[#0a8f5a] dark:text-[#3ddc84] text-[10.5px] font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#0a8f5a] dark:bg-[#3ddc84]" /> Em uso
+                            </span>
                           ) : p.tenant_id !== null ? (
                             <button
                               onClick={(e) => { e.stopPropagation(); makePrimary(p); }}
@@ -506,15 +518,11 @@ export default function LlmProvidersPage() {
                             </button>
                           ) : null}
                         </div>
-                        <span className={`text-[13px] font-mono truncate w-[170px] shrink-0 ${FC.sub}`}>{p.default_model}</span>
+                        {/* Modelo + chave — alinhados à direita */}
+                        <span className={`text-[13px] font-mono truncate max-w-[200px] text-right shrink-0 ${FC.sub}`} title={p.default_model}>{p.default_model}</span>
                         <span className={`inline-flex items-center h-6 px-2 rounded-md bg-black/[0.03] dark:bg-white/[0.05] border ${FC.hair} text-[11.5px] font-mono shrink-0 ${FC.mut}`}>
-                          {p.api_key_suffix ? `••••••••${p.api_key_suffix}` : "sem key"}
+                          {maskKey(p.api_key_prefix, p.api_key_suffix)}
                         </span>
-                        {p.fallback_chain && p.fallback_chain.length > 0 ? (
-                          <span className={`text-[11px] font-mono truncate flex-1 min-w-0 ${FC.mut}`}>↳ {p.fallback_chain.map((f) => f.model).join(" → ")}</span>
-                        ) : (
-                          <span className="flex-1" />
-                        )}
                       </div>
 
                       {/* Ações: testar · deletar · TOGGLE (liga/desliga) */}
@@ -634,7 +642,7 @@ export default function LlmProvidersPage() {
                   <Field label="Ordem (priority)" value={`${detail.priority}`} tabular />
                   <Field label="Status" value={detail.active ? "Ligado" : "Desligado"} />
                   <Field label="Modelo" value={detail.default_model} mono />
-                  <Field label="API Key" value={detail.api_key_suffix ? `••••${detail.api_key_suffix}` : "—"} mono />
+                  <Field label="API Key" value={detail.api_key_suffix ? maskKey(detail.api_key_prefix, detail.api_key_suffix) : "—"} mono />
                   <Field label="Temperature" value={`${detail.temperature}`} tabular />
                   <Field label="Max tokens" value={`${detail.max_tokens}`} tabular />
                   <Field label="Timeout" value={`${detail.timeout_s}s`} tabular />

@@ -127,6 +127,7 @@ class LlmProviderOut(BaseModel):
     priority: int = 100
     has_api_key: bool = True
     # Campos computados (preenchidos no list, não vêm direto do ORM):
+    api_key_prefix: str | None = None  # primeiros chars (ex: "sk-proj") — padrão fc-5ddf0•••
     api_key_suffix: str | None = None  # últimos 4 chars da key, pra diferenciar duplicatas
     created_at: datetime | None = None
     in_use: bool = False  # True = é o provider que o motor REALMENTE usa neste escopo
@@ -203,8 +204,12 @@ async def list_providers(
         try:
             raw = decrypt(row.api_key_enc) or ""
             out.api_key_suffix = raw[-4:] if len(raw) >= 4 else "••••"
+            # prefixo (ex: "sk-proj", "sk-ant-", "sk-or-v1") — só se a key for longa o
+            # bastante pra não revelar o segredo (precisa sobrar miolo entre prefixo e sufixo)
+            out.api_key_prefix = raw[:7] if len(raw) >= 16 else None
         except Exception:
             out.api_key_suffix = None
+            out.api_key_prefix = None
         items.append(out)
     return items
 
