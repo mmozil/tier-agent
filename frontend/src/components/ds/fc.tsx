@@ -1,7 +1,47 @@
 import type { ComponentType, MouseEvent, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { Children, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Check, ChevronDown } from "lucide-react";
+
+// ScrambleText — efeito "decode" (estilo Firecrawl): no mount as letras aparecem
+// embaralhadas e se resolvem da esquerda pra direita até o texto final. Anti-jitter:
+// um sizer invisível com o texto final reserva a largura; o scramble fica por cima.
+const SCRAMBLE_GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&@$<>/";
+export function ScrambleText({ text, className = "", speed = 38 }: { text: string; className?: string; speed?: number }) {
+  const [display, setDisplay] = useState(text);
+  useEffect(() => {
+    const total = text.length;
+    const revealAt = text.split("").map((_, i) => 3 + Math.floor(i * 1.4) + Math.floor(Math.random() * 4));
+    const maxFrame = (revealAt.length ? Math.max(...revealAt) : 1) + 1;
+    let frame = 0;
+    const id = setInterval(() => {
+      frame++;
+      let out = "";
+      for (let i = 0; i < total; i++) {
+        const ch = text[i];
+        if (ch === " ") out += " ";
+        else out += frame >= revealAt[i] ? ch : SCRAMBLE_GLYPHS[Math.floor(Math.random() * SCRAMBLE_GLYPHS.length)];
+      }
+      setDisplay(out);
+      if (frame >= maxFrame) {
+        clearInterval(id);
+        setDisplay(text);
+      }
+    }, speed);
+    return () => clearInterval(id);
+  }, [text, speed]);
+  return (
+    <span className={`relative inline-block align-bottom ${className}`}>
+      <span aria-hidden style={{ visibility: "hidden" }}>{text}</span>
+      <span className="absolute inset-0 whitespace-nowrap text-left">{display}</span>
+    </span>
+  );
+}
+
+// Aplica scramble nos filhos-texto (mantém ícones intactos).
+function scrambleChildren(children: ReactNode): ReactNode {
+  return Children.map(children, (c) => (typeof c === "string" ? <ScrambleText text={c} /> : c));
+}
 
 /* ───────────────────────────────────────────────────────────────
    Design System Firecrawl × Tier — primitivos.
@@ -35,7 +75,7 @@ export const PRIMARY_SHADOW =
 // Firecrawl). Use em <button> crus pra ficarem idênticos ao componente <Button>.
 // Prefixe "w-full" quando precisar largura cheia.
 export const btnPrimary =
-  `btn-sheen h-8 px-3 rounded-[10px] text-[13px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
+  `h-8 px-3 rounded-[10px] text-[13px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
 
 // CurvyRect — os 4 corner brackets do Firecrawl (classe .curvy-rect). 11×11,
 // preenchidos com border-faint (#EDEDED). Arredondam o canto do container e,
@@ -278,6 +318,7 @@ export function Button({
   type = "button",
   disabled = false,
   title,
+  scramble,
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "ghost" | "danger";
@@ -287,6 +328,7 @@ export function Button({
   type?: "button" | "submit";
   disabled?: boolean;
   title?: string;
+  scramble?: boolean; // efeito decode no texto (default: ligado no primary)
 }) {
   const base =
     "inline-flex items-center justify-center gap-1.5 rounded-[10px] font-medium transition-all active:scale-[0.98] select-none disabled:opacity-50 disabled:pointer-events-none";
@@ -296,15 +338,16 @@ export function Button({
   const padX = size === "sm" ? "px-2.5" : "px-3";
   const v =
     variant === "primary"
-      ? `btn-sheen ${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`
+      ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`
       : variant === "secondary"
         ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)]`
         : variant === "danger"
           ? `${padX} text-[#c0362c] dark:text-[#ff6b5e] hover:bg-[#c0362c]/[0.06] dark:hover:bg-[#ff6b5e]/[0.10]`
           : `${size === "sm" ? "px-2" : "px-3"} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
+  const doScramble = scramble ?? variant === "primary"; // primary tem decode por padrão
   return (
     <button type={type} onClick={onClick} disabled={disabled} title={title} className={`${base} ${sz} ${v} ${className}`}>
-      {children}
+      {doScramble ? scrambleChildren(children) : children}
     </button>
   );
 }

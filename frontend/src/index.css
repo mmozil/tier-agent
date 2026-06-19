@@ -5,24 +5,6 @@
 @tailwind utilities;
 
 @layer utilities {
-  /* ─── Brilho (sheen) que varre o botão no load (estilo Firecrawl "Start scraping") ───
-     Pseudo-overlay diagonal translúcido; 2 passadas e para. Clipado pelo overflow-hidden.
-     Respeita prefers-reduced-motion. */
-  @keyframes btnSheen { to { transform: translateX(320%); } }
-  .btn-sheen { position: relative; overflow: hidden; }
-  .btn-sheen::after {
-    content: "";
-    position: absolute;
-    top: 0; bottom: 0; left: 0;
-    width: 55%;
-    background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%);
-    transform: translateX(-180%);
-    animation: btnSheen 1.5s ease-out 0.25s 2;
-    pointer-events: none;
-  }
-  /* Sempre ativo (sheen é brilho sutil de 2 passadas no load, sem transform/parallax)
-     — o dono pediu pra ver o efeito mesmo com "reduzir animações" ligado no SO. */
-
   /* ─── Motifs Attio-grade ─── */
   .bg-dots { background-image: radial-gradient(circle, #D1D3D6 1px, transparent 1px); background-size: 16px 16px; }
   .bg-dots-lg { background-image: radial-gradient(circle, #D1D3D6 1px, transparent 1px); background-size: 24px 24px; }

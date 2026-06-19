@@ -5,7 +5,7 @@ import { ArrowUpRight, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settin
 import UserMenu from "./UserMenu";
 import NotificationBell from "./NotificationBell";
 import OnlineToggle from "./OnlineToggle";
-import { PRIMARY_SHADOW } from "./ds/fc";
+import { PRIMARY_SHADOW, ScrambleText } from "./ds/fc";
 import {
   AgentsMenuIcon,
   AttentionMenuIcon,
@@ -267,9 +267,9 @@ export default function AdminLayout() {
               </Link>
               <Link
                 to="/admin/cobranca"
-                className={`btn-sheen ml-0.5 h-9 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[14px] font-medium text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] ${PRIMARY_SHADOW}`}
+                className={`ml-0.5 h-9 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[14px] font-medium text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] ${PRIMARY_SHADOW}`}
               >
-                <ArrowUpRight className="w-4 h-4" /> Upgrade
+                <ArrowUpRight className="w-4 h-4" /> <ScrambleText text="Upgrade" />
               </Link>
             </div>
           </div>
