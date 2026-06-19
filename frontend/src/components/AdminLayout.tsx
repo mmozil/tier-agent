@@ -7,6 +7,9 @@ import NotificationBell from "./NotificationBell";
 import OnlineToggle from "./OnlineToggle";
 import ThemeToggle from "./ThemeToggle";
 import ErrorBoundary from "./ErrorBoundary";
+import CommandPalette from "./CommandPalette";
+
+const CMDK_LABEL = typeof navigator !== "undefined" && /mac/i.test(navigator.userAgent) ? "⌘K" : "Ctrl K";
 
 // Botão-ícone ghost da topbar (32px) — reutilizado pelo tema (sol/lua) e engrenagem.
 const topIconBtn =
@@ -281,14 +284,16 @@ export default function AdminLayout() {
       >
         <div className="px-8 pb-8">
           <div className="h-[60px] flex items-center justify-between">
-            <div className="relative w-[320px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#262626]/40 dark:text-[#6b7280] pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Buscar..."
-                className="w-full h-8 pl-9 pr-3 text-[13px] rounded-[10px] bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event("ta:cmdk"))}
+              title="Buscar telas e ações"
+              className="relative w-[320px] h-8 pl-9 pr-2 inline-flex items-center rounded-[10px] bg-[#F1F3F5] dark:bg-[#16191f] text-[13px] text-[#262626]/45 dark:text-[#6b7280] hover:bg-[#ECEEF1] dark:hover:bg-[#1b1f26] transition-colors"
+            >
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" />
+              <span className="flex-1 text-left">Buscar...</span>
+              <kbd className="text-[10.5px] font-medium border border-[#E2E4E8] dark:border-[#2a2f37] rounded px-1.5 py-0.5">{CMDK_LABEL}</kbd>
+            </button>
             {/* Topbar estilo Firecrawl (32px): ícones ghost (sino · tema · engrenagem) ·
                 Ajuda/Docs outlined · Upgrade filled */}
             <div className="flex items-center gap-1.5">
@@ -318,6 +323,7 @@ export default function AdminLayout() {
           </ErrorBoundary>
         </div>
       </main>
+      <CommandPalette />
     </div>
   );
 }
