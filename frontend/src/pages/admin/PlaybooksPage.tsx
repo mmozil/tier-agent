@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Plus, Workflow, Loader2, CheckCircle2, Archive, FileText } from "lucide-react";
+import { Plus, Workflow, Loader2, CheckCircle2, Archive, FileText, Zap, ArrowRight, Sparkles } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button, btnPrimary, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, HairCells, Button, btnPrimary, SkeletonBar } from "@/components/ds/fc";
 
 interface PlaybookListItem {
   id: number;
@@ -108,37 +108,76 @@ export default function PlaybooksPage() {
     }
   }
 
+  // Card de template inline: 1 agente → cria direto; vários → abre o modal pra escolher.
+  function useTemplateInline(templateKey: string) {
+    if (creating) return;
+    if (agents.length === 1) {
+      setSelectedTemplate(templateKey);
+      onCreateFromTemplate(templateKey);
+      return;
+    }
+    setShowCreate(true);
+    setCreateMode("template");
+    setSelectedTemplate(templateKey);
+  }
+
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="flex items-start justify-between gap-4 p-6">
-            <div>
-              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Playbooks</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
-                Fluxos visuais de atendimento — desenhe gatilhos, ações e o agente IA segue quando faz sentido.
-              </p>
-            </div>
-            {agents.length > 0 && (
-              <Button variant="primary" onClick={openCreate} className="shrink-0"><Plus className="w-3.5 h-3.5" /> Novo playbook</Button>
-            )}
-          </div>
-        </Row>
+        <PageHero
+          title="Playbooks"
+          subtitle="Fluxos visuais de atendimento — desenhe gatilhos, ações e o agente IA segue o roteiro quando faz sentido."
+          right={
+            agents.length > 0 ? (
+              <Button variant="primary" onClick={openCreate}><Plus className="w-3.5 h-3.5" /> Novo playbook</Button>
+            ) : undefined
+          }
+        />
 
         {loading ? (
-          <Row last>
-            <PlaybooksSkeleton />
-          </Row>
-        ) : playbooks.length === 0 ? (
-          <Row last><EmptyState hasAgents={agents.length > 0} onCreate={openCreate} /></Row>
+          <Row last><PlaybooksSkeleton /></Row>
+        ) : agents.length === 0 ? (
+          <Row last><EmptyState hasAgents={false} onCreate={openCreate} /></Row>
         ) : (
-          <Row last>
-            <HairCells cols={3} gridLines>
-              {playbooks.map((pb) => (
-                <PlaybookCard key={pb.id} pb={pb} />
-              ))}
-            </HairCells>
-          </Row>
+          <>
+            <SectionRow
+              title="Seus playbooks"
+              subtitle={
+                playbooks.length > 0
+                  ? `${playbooks.length} ${playbooks.length === 1 ? "fluxo configurado" : "fluxos configurados"}`
+                  : "Você ainda não criou nenhum — comece em branco ou puxe um template abaixo."
+              }
+            />
+            <Row last={templates.length === 0}>
+              <HairCells cols={3} gridLines>
+                {playbooks.map((pb) => (
+                  <PlaybookCard key={pb.id} pb={pb} />
+                ))}
+                <GhostCard onClick={openCreate} />
+              </HairCells>
+            </Row>
+
+            {templates.length > 0 && (
+              <>
+                <SectionRow
+                  title="Comece rápido com um template"
+                  subtitle="Fluxos prontos pra editar — um clique cria a cópia no seu agente."
+                />
+                <Row last>
+                  <HairCells cols={3} gridLines>
+                    {templates.map((t) => (
+                      <TemplateCard
+                        key={t.key}
+                        t={t}
+                        busy={creating && selectedTemplate === t.key}
+                        onUse={() => useTemplateInline(t.key)}
+                      />
+                    ))}
+                  </HairCells>
+                </Row>
+              </>
+            )}
+          </>
         )}
       </PageFrame>
 
@@ -234,30 +273,123 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
-function PlaybookCard({ pb }: { pb: PlaybookListItem }) {
-  const StatusBadge = () => {
-    if (pb.status === "published")
-      return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#0a8f5a]/[0.12] text-[#0a8f5a]"><CheckCircle2 className="w-3 h-3" /> Publicado</span>;
-    if (pb.status === "archived")
-      return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#262626]/[0.08] ${FC.sub}`}><Archive className="w-3 h-3" /> Arquivado</span>;
-    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#F5A300]/[0.14] text-[#9a6700]"><FileText className="w-3 h-3" /> Rascunho</span>;
-  };
-
+// SectionRow — cabeçalho de seção (label-x-large + subtítulo) numa Row FC, pra
+// ficar conectado ao grid logo abaixo (linha única entre eles).
+function SectionRow({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <Link to={`/admin/playbooks/${pb.id}`} className={`block p-5 h-full transition-colors ${FC.hover}`}>
+    <Row>
+      <div className="px-6 py-5">
+        <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 fc-crisp ${FC.ink}`}>{title}</h2>
+        {subtitle && <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>{subtitle}</p>}
+      </div>
+    </Row>
+  );
+}
+
+// FlowMini — preview estilizado do fluxo: nó-gatilho (azul, raio) → passos, sobre
+// textura de pontos (motif Firecrawl). Dá identidade visual ("isto é um fluxo de N
+// passos") sem precisar buscar a estrutura real dos nós.
+function FlowMini({ count }: { count: number }) {
+  const n = Math.min(Math.max(count, 2), 4);
+  const extra = count - n;
+  const line = "h-px flex-1 bg-[#262626]/[0.14] dark:bg-white/[0.14]";
+  return (
+    <div className={`relative mb-3.5 h-12 rounded-lg border ${FC.hair} bg-dots overflow-hidden flex items-center px-3`}>
+      {Array.from({ length: n }).map((_, idx) => (
+        <Fragment key={idx}>
+          {idx > 0 && <span className={line} />}
+          <span
+            className={`relative z-10 w-5 h-5 rounded-[6px] shrink-0 flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${
+              idx === 0
+                ? "bg-[#003083] dark:bg-[#5b9bff] shadow-[0_1px_3px_rgba(0,48,131,0.30)]"
+                : `bg-white dark:bg-[#14171c] border ${FC.hair}`
+            }`}
+          >
+            {idx === 0 ? (
+              <Zap className="w-2.5 h-2.5 text-white dark:text-[#0c0e12]" />
+            ) : (
+              <span className="w-1.5 h-1.5 rounded-full bg-[#262626]/40 dark:bg-white/40" />
+            )}
+          </span>
+        </Fragment>
+      ))}
+      {extra > 0 && (
+        <>
+          <span className={line} />
+          <span className={`relative z-10 text-[10px] font-medium shrink-0 ${FC.mut}`}>+{extra}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: PlaybookListItem["status"] }) {
+  if (status === "published")
+    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#0a8f5a]/[0.12] text-[#0a8f5a]"><CheckCircle2 className="w-3 h-3" /> Publicado</span>;
+  if (status === "archived")
+    return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#262626]/[0.08] ${FC.sub}`}><Archive className="w-3 h-3" /> Arquivado</span>;
+  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#F5A300]/[0.14] text-[#9a6700]"><FileText className="w-3 h-3" /> Rascunho</span>;
+}
+
+function PlaybookCard({ pb }: { pb: PlaybookListItem }) {
+  return (
+    <Link to={`/admin/playbooks/${pb.id}`} className={`group block p-5 h-full transition-colors ${FC.hover}`}>
       <div className="flex items-start justify-between mb-3">
         <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center">
           <Workflow className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
         </div>
-        <StatusBadge />
+        <StatusBadge status={pb.status} />
       </div>
       <div className={`text-[14px] font-medium mb-1 truncate ${FC.ink}`}>{pb.nome}</div>
-      {pb.descricao && <p className={`text-[12px] leading-relaxed mb-3 line-clamp-2 ${FC.sub}`}>{pb.descricao}</p>}
-      <div className={`flex items-center justify-between text-[11px] ${FC.sub}`}>
-        <span>{pb.nodes_count} {pb.nodes_count === 1 ? "nó" : "nós"}</span>
-        <span>Atualizado {new Date(pb.updated_at).toLocaleDateString("pt-BR")}</span>
+      <p className={`text-[12px] leading-relaxed mb-3 line-clamp-2 min-h-[32px] ${FC.sub}`}>{pb.descricao || "Sem descrição."}</p>
+      <FlowMini count={pb.nodes_count} />
+      <div className="flex items-center justify-between text-[11px]">
+        <span className={FC.sub}>
+          {pb.nodes_count} {pb.nodes_count === 1 ? "nó" : "nós"} · {new Date(pb.updated_at).toLocaleDateString("pt-BR")}
+        </span>
+        <span className="inline-flex items-center gap-1 font-medium text-[#003083] dark:text-[#5b9bff] opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
+          Abrir <ArrowRight className="w-3 h-3" />
+        </span>
       </div>
     </Link>
+  );
+}
+
+function TemplateCard({ t, busy, onUse }: { t: TemplateInfo; busy: boolean; onUse: () => void }) {
+  return (
+    <button onClick={onUse} disabled={busy} className={`group block w-full text-left p-5 h-full transition-colors ${FC.hover} disabled:opacity-60`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center">
+          {busy ? (
+            <Loader2 className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff] animate-spin" />
+          ) : (
+            <Sparkles className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
+          )}
+        </div>
+        <span className="text-[10px] uppercase tracking-[0.06em] font-medium text-[#262626]/35 dark:text-[#6b7280]">Template</span>
+      </div>
+      <div className={`text-[14px] font-medium mb-1 truncate ${FC.ink}`}>{t.nome}</div>
+      <p className={`text-[12px] leading-relaxed mb-3 line-clamp-2 min-h-[32px] ${FC.sub}`}>{t.descricao}</p>
+      <FlowMini count={t.nodes_count} />
+      <div className="flex items-center justify-between text-[11px]">
+        <span className={FC.sub}>{t.nodes_count} {t.nodes_count === 1 ? "nó" : "nós"}</span>
+        <span className="inline-flex items-center gap-1 font-medium text-[#003083] dark:text-[#5b9bff] opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
+          {busy ? "Criando…" : "Usar template"} <ArrowRight className="w-3 h-3" />
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function GhostCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`group flex w-full h-full min-h-[210px] flex-col items-center justify-center gap-2 p-5 transition-colors ${FC.hover}`}>
+      <div className={`w-11 h-11 rounded-xl border border-dashed ${FC.hair} flex items-center justify-center group-hover:border-[#003083] dark:group-hover:border-[#5b9bff] transition-colors`}>
+        <Plus className={`w-5 h-5 ${FC.mut} group-hover:text-[#003083] dark:group-hover:text-[#5b9bff] transition-colors`} />
+      </div>
+      <span className={`text-[13px] font-medium ${FC.dim} group-hover:text-[#262626] dark:group-hover:text-white transition-colors`}>Novo playbook</span>
+      <span className={`text-[11px] ${FC.mut}`}>Em branco ou de um template</span>
+    </button>
   );
 }
 
