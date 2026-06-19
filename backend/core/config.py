@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     tier_oauth_client_secret: str = ""
     tier_oauth_redirect_uri: str = "https://agent.tier.finance/integracoes/tier/callback"
 
+    # Integração ERP (Tier Empresas) ↔ Agent: shared secret pros endpoints
+    # /integrations/tier/provision + /sso (provisiona tenant + SSO sem 2º login).
+    # Vazio = integração desligada (endpoints respondem 503). Setar nos 2 lados (Coolify).
+    tier_erp_integration_secret: str = ""
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
