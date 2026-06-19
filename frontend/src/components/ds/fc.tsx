@@ -126,25 +126,10 @@ export function SectionHeader({
   );
 }
 
-// PageHeroRidge — FOGO ASCII (alusão ao "fire" do Firecrawl), em chama AZUL Tier.
-// Canvas no canto inferior direito: base quente (brilho), chamas tremeluzem e brasas
-// sobem. Cada caractere do "ridge" é colorido por um campo de calor animado.
-// pointer-events-none, mascarado (radial, denso no canto).
-const HERO_RIDGE = [
-  "",
-  " ..::..           ....",
-  ":--==--::.......::----::.                 .::::::...  ..::",
-  "=++*+++==-------==++++==-:              .:-=====---:::--==",
-  "*xxxxxx**+++=+++**xxxx**+-:.          .:-=+*****+++===+++*",
-  "X######XXxx***xxXXX###Xxx+=-:.      .:-=+*xXXXXXxxx****xxX",
-  "###########XXX##########Xx*+=::....::=+*xX#########XXXX###",
-];
-const HERO_ROWS = HERO_RIDGE.length;
-const HERO_COLS = Math.max(...HERO_RIDGE.map((l) => l.length));
-const HERO_CELLS: { c: number; r: number; ch: string }[] = [];
-HERO_RIDGE.forEach((line, r) => {
-  for (let c = 0; c < line.length; c++) if (line[c].trim()) HERO_CELLS.push({ c, r, ch: line[c] });
-});
+// PageHeroRidge — chuva "MATRIX" em azul Tier no canto inferior direito: colunas de
+// caracteres caem devagar; cabeça brilhante (azul claro) + rastro azul que some.
+// Canvas, ritmo calmo, mascarado (radial, denso no canto). pointer-events-none.
+const HERO_GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽ0123456789<>=+*#%XY".split("");
 
 function PageHeroRidge() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -154,14 +139,12 @@ function PageHeroRidge() {
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     const cx = ctx;
-    const FS = 12; // tamanho do caractere (maior que antes)
-    const LH = 12;
+    const FS = 11;
+    const LH = 13;
+    const W = 380;
+    const H = 132;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const font = `${FS}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-    cx.font = font;
-    const cw = cx.measureText("X").width || FS * 0.6;
-    const W = Math.ceil(HERO_COLS * cw);
-    const H = HERO_ROWS * LH;
     cv.width = W * dpr;
     cv.height = H * dpr;
     cv.style.width = `${W}px`;
@@ -169,29 +152,30 @@ function PageHeroRidge() {
     cx.scale(dpr, dpr);
     cx.font = font;
     cx.textBaseline = "top";
-    let t = 0, raf = 0;
+    const cw = cx.measureText("0").width || FS * 0.6;
+    const cols = Math.floor(W / cw);
+    const rows = Math.ceil(H / LH) + 1;
+    const TRAIL = 9;
+    const rnd = () => Math.random();
+    const head = Array.from({ length: cols }, () => -Math.floor(rnd() * rows * 1.6));
+    const speed = Array.from({ length: cols }, () => 0.04 + rnd() * 0.07); // LENTO/calmo
+    let frame = 0, raf = 0;
+    const glyph = (c: number, row: number) => HERO_GLYPHS[Math.abs((c * 31 + row * 17 + (frame >> 4)) % HERO_GLYPHS.length)];
     const draw = () => {
-      const dark = document.documentElement.classList.contains("dark");
       cx.clearRect(0, 0, W, H);
-      for (const cell of HERO_CELLS) {
-        const rb = (HERO_ROWS - cell.r) / HERO_ROWS; // 1 na base (quente) → 0 no topo
-        const flick = Math.sin(cell.c * 0.6 + t * 2.4) * Math.sin(cell.r * 0.8 - t * 3.0);
-        const rise = Math.sin((cell.c * 0.25 + cell.r * 0.55) - t * 2.8); // brasas subindo
-        let heat = rb * 0.78 + 0.26 * flick + 0.18 * rise;
-        heat = Math.max(0, Math.min(1, heat));
-        let col: string;
-        if (heat < 0.32) {
-          const a = 0.09 + heat * 0.12;
-          col = dark ? `rgba(255,255,255,${a * 0.8})` : `rgba(38,38,38,${a})`; // frio/faint
-        } else if (heat < 0.66) {
-          col = `rgba(0,48,131,${0.22 + (heat - 0.32) * 0.7})`; // corpo da chama: azul Tier
-        } else {
-          col = `rgba(91,155,255,${0.5 + (heat - 0.66) * 1.2})`; // núcleo quente: azul claro
+      for (let c = 0; c < cols; c++) {
+        head[c] += speed[c];
+        if (head[c] - TRAIL > rows) head[c] = -Math.floor(rnd() * rows); // reinicia escalonado
+        const h = Math.floor(head[c]);
+        for (let k = 0; k < TRAIL; k++) {
+          const row = h - k;
+          if (row < 0 || row >= rows) continue;
+          if (k === 0) cx.fillStyle = "rgba(120,170,255,0.95)"; // cabeça brilhante
+          else cx.fillStyle = `rgba(0,48,131,${(1 - k / TRAIL) * 0.5})`; // rastro azul Tier
+          cx.fillText(glyph(c, row), c * cw, row * LH);
         }
-        cx.fillStyle = col;
-        cx.fillText(cell.ch, cell.c * cw, cell.r * LH);
       }
-      t += 0.06;
+      frame++;
       raf = requestAnimationFrame(draw);
     };
     draw();
@@ -202,8 +186,8 @@ function PageHeroRidge() {
       aria-hidden
       className="pointer-events-none select-none absolute right-0 bottom-0 hidden md:block"
       style={{
-        WebkitMaskImage: "radial-gradient(135% 135% at 100% 100%, #000 38%, transparent 80%)",
-        maskImage: "radial-gradient(135% 135% at 100% 100%, #000 38%, transparent 80%)",
+        WebkitMaskImage: "radial-gradient(150% 150% at 100% 100%, #000 42%, transparent 84%)",
+        maskImage: "radial-gradient(150% 150% at 100% 100%, #000 42%, transparent 84%)",
       }}
     >
       <canvas ref={ref} />
