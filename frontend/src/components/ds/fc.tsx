@@ -127,8 +127,9 @@ export function SectionHeader({
 }
 
 // PageHeroRidge — decoração ASCII topográfica ANIMADA (twinkle): caracteres acendem
-// e apagam de leve, dando vida ao hero. Ancorada à ESQUERDA, faint, mascarada.
-// Respeita prefers-reduced-motion (fica estática). pointer-events-none.
+// e apagam de leve (azul Tier), dando vida ao hero — à DIREITA, faint, mascarada.
+// Animação sempre ativa (é só uma troca sutil de cor, sem transform/parallax).
+// pointer-events-none.
 const HERO_RIDGE = [
   "",
   "",
@@ -146,26 +147,25 @@ const HERO_RIDGE_IDXS = HERO_RIDGE_CHARS.map((c, i) => (c.trim() ? i : -1)).filt
 function PageHeroRidge() {
   const [lit, setLit] = useState<Set<number>>(() => new Set());
   useEffect(() => {
-    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const id = setInterval(() => {
       const s = new Set<number>();
-      const k = Math.max(4, Math.round(HERO_RIDGE_IDXS.length * 0.035));
+      const k = Math.max(6, Math.round(HERO_RIDGE_IDXS.length * 0.05));
       for (let j = 0; j < k; j++) s.add(HERO_RIDGE_IDXS[Math.floor(Math.random() * HERO_RIDGE_IDXS.length)]);
       setLit(s);
-    }, 450);
+    }, 360);
     return () => clearInterval(id);
   }, []);
   return (
     <div
       aria-hidden
-      className="pointer-events-none select-none absolute left-0 top-0 bottom-0 hidden md:flex items-end justify-start pl-6 overflow-hidden"
+      className="pointer-events-none select-none absolute right-0 top-0 bottom-0 hidden md:flex items-end justify-end pr-8 overflow-hidden"
       style={{
-        width: 440,
-        WebkitMaskImage: "linear-gradient(to right, #000 35%, transparent 100%)",
-        maskImage: "linear-gradient(to right, #000 35%, transparent 100%)",
+        width: 480,
+        WebkitMaskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
+        maskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
       }}
     >
-      <pre className="font-mono text-[8px] leading-[8px] whitespace-pre mb-2">
+      <pre className="font-mono text-[8px] leading-[8px] whitespace-pre mb-7">
         {HERO_RIDGE_CHARS.map((c, i) =>
           c === "\n" ? (
             "\n"
@@ -174,7 +174,7 @@ function PageHeroRidge() {
               key={i}
               className={`transition-colors duration-500 ${
                 lit.has(i)
-                  ? "text-[#003083]/55 dark:text-[#5b9bff]/70"
+                  ? "text-[#003083]/60 dark:text-[#5b9bff]/80"
                   : "text-[#262626]/[0.10] dark:text-white/[0.07]"
               }`}
             >
