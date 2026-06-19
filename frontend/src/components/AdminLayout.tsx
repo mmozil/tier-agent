@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { ArrowUpRight, BookOpen, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settings } from "lucide-react";
 
@@ -171,8 +171,8 @@ export default function AdminLayout() {
               )}
               <div className={`flex flex-col gap-1 ${collapsed ? "items-center" : ""}`}>
                 {section.items.map((item) => (
+                  <Fragment key={item.to}>
                   <NavLink
-                    key={item.to}
                     to={item.to}
                     end={item.end}
                     title={collapsed ? item.label : undefined}
@@ -216,6 +216,12 @@ export default function AdminLayout() {
                       );
                     }}
                   </NavLink>
+                  {/* Slot do portal: a sub-nav do inbox (filas/canais/etiquetas) é
+                      injetada aqui pelo ConversasPage quando essa tela está aberta. */}
+                  {item.to === "/admin/conversas" && (
+                    <div id="ta-conversas-subnav" className={collapsed ? "hidden" : "mt-0.5 pl-2"} />
+                  )}
+                  </Fragment>
                 ))}
               </div>
             </div>

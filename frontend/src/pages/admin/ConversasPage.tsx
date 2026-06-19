@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode, type ComponentType } from "react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
@@ -552,53 +553,56 @@ export default function ConversasPage() {
     { k: "snoozed", label: "Adiadas" },
   ] as { k: "todas" | "mine" | "unassigned" | "snoozed"; label: string }[];
 
-  return (
-    <div className="-mx-8 -mb-8 h-[calc(100vh-60px)] flex bg-white dark:bg-[#0c0e12] border-t border-[#EDEDED] dark:border-[#23272e]">
-      {/* ═══════════ ZONA 1 — sub-navegação ═══════════ */}
-      <aside className={`w-[208px] shrink-0 border-r ${FC.hair} flex flex-col min-h-0 ${FC.base}`}>
-        <div className={`h-14 shrink-0 flex items-center px-4 border-b ${FC.hair}`}>
-          <h1 className="text-[15px] font-[550] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
+  // Sub-nav (filas/canais/etiquetas): renderizada no sidebar PRINCIPAL, abaixo do
+  // item "Conversas" (via portal pro slot #ta-conversas-subnav). Antes era uma coluna
+  // de 208px aqui dentro do inbox — movê-la pro sidebar libera esse espaço horizontal.
+  const [subNavSlot, setSubNavSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setSubNavSlot(document.getElementById("ta-conversas-subnav"));
+  }, []);
+  const subNav = (
+    <div className="space-y-0.5">
+      <SubNavItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
+      <SubNavItem icon={Clock} label="Não atendidas" count={unattendedCount} active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
+      <SubNavItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
+      <SubNavItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => selectNav({ type: "participants" })} />
+      {channels.length > 0 && (
+        <div className="pt-2">
+          <SectionLabel>Canais</SectionLabel>
+          {channels.map((ch) => (
+            <SubNavItem
+              key={ch}
+              icon={MessageSquare}
+              label={channelLabel(ch === "outro" ? null : ch)}
+              count={convs.filter((c) => (c.connector_kind || "outro") === ch).length}
+              active={navFilter.type === "channel" && navFilter.value === ch}
+              onClick={() => selectNav({ type: "channel", value: ch })}
+            />
+          ))}
         </div>
-        <nav className="flex-1 overflow-y-auto sidebar-scroll px-2 py-3 min-h-0 space-y-0.5">
-          <SubNavItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
-          <SubNavItem icon={Clock} label="Não atendidas" count={unattendedCount} active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
-          <SubNavItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
-          <SubNavItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => selectNav({ type: "participants" })} />
+      )}
+      {allTags.length > 0 && (
+        <div className="pt-2">
+          <SectionLabel>Etiquetas</SectionLabel>
+          {allTags.map((t) => (
+            <SubNavItem
+              key={t}
+              label={t}
+              dotColor={tagColor(t)}
+              count={convs.filter((c) => (c.tags || []).includes(t)).length}
+              active={navFilter.type === "tag" && navFilter.value === t}
+              onClick={() => selectNav({ type: "tag", value: t })}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
-          {channels.length > 0 && (
-            <div className="pt-3">
-              <SectionLabel>Canais</SectionLabel>
-              {channels.map((ch) => (
-                <SubNavItem
-                  key={ch}
-                  icon={MessageSquare}
-                  label={channelLabel(ch === "outro" ? null : ch)}
-                  count={convs.filter((c) => (c.connector_kind || "outro") === ch).length}
-                  active={navFilter.type === "channel" && navFilter.value === ch}
-                  onClick={() => selectNav({ type: "channel", value: ch })}
-                />
-              ))}
-            </div>
-          )}
-
-          {allTags.length > 0 && (
-            <div className="pt-3">
-              <SectionLabel>Etiquetas</SectionLabel>
-              {allTags.map((t) => (
-                <SubNavItem
-                  key={t}
-                  label={t}
-                  dotColor={tagColor(t)}
-                  count={convs.filter((c) => (c.tags || []).includes(t)).length}
-                  active={navFilter.type === "tag" && navFilter.value === t}
-                  onClick={() => selectNav({ type: "tag", value: t })}
-                />
-              ))}
-            </div>
-          )}
-        </nav>
-      </aside>
-
+  return (
+    <>
+      {subNavSlot && createPortal(subNav, subNavSlot)}
+      <div className="-mx-8 -mb-8 h-[calc(100vh-60px)] flex bg-white dark:bg-[#0c0e12] border-t border-[#EDEDED] dark:border-[#23272e]">
       {/* ═══════════ ZONA 2 — lista ═══════════ */}
       <section className={`w-[340px] shrink-0 border-r ${FC.hair} flex flex-col min-h-0 bg-white dark:bg-[#0c0e12]`}>
         <div className={`shrink-0 px-4 pt-3.5 pb-2.5 border-b ${FC.hair}`}>
@@ -930,7 +934,7 @@ export default function ConversasPage() {
 
       {/* ═══════════ ZONA 4 — contato / ações ═══════════ */}
       {openConv && showContact && (
-        <aside className={`w-[304px] shrink-0 border-l ${FC.hair} flex flex-col min-h-0 bg-white dark:bg-[#0c0e12]`}>
+        <aside className={`w-[384px] shrink-0 border-l ${FC.hair} flex flex-col min-h-0 bg-white dark:bg-[#0c0e12]`}>
           <div className={`h-14 shrink-0 flex items-center justify-between px-4 border-b ${FC.hair}`}>
             <h3 className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb]">Contato</h3>
             <button onClick={() => setShowContact(false)} className={iconBtn} title="Fechar"><X className="w-4 h-4" /></button>
@@ -1113,6 +1117,7 @@ export default function ConversasPage() {
           </div>
         </aside>
       )}
-    </div>
+      </div>
+    </>
   );
 }
