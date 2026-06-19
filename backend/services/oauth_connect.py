@@ -38,7 +38,7 @@ PRESETS: dict[str, dict] = {
         "authorize_url": "https://erp.tier.finance/oauth/authorize",
         "token_url": "https://api.tier.finance/api/oauth/token",
         "mcp_url": "https://api.tier.finance/api/mcp/erp/server",
-        "scope": "financeiro:read vendas:read conversas:read clientes:read",
+        "scope": "financeiro:read vendas:read vendas:write conversas:read clientes:read",
         "client_id": "tier-agent",
         "secret_env": "TIER_OAUTH_CLIENT_SECRET",
     },
