@@ -126,12 +126,11 @@ export function SectionHeader({
   );
 }
 
-// PageHeroRidge — decoração ASCII topográfica ANIMADA (twinkle): caracteres acendem
-// e apagam de leve (azul Tier), dando vida ao hero — à DIREITA, faint, mascarada.
-// Animação sempre ativa (é só uma troca sutil de cor, sem transform/parallax).
-// pointer-events-none.
+// PageHeroRidge — FOGO ASCII (alusão ao "fire" do Firecrawl), em chama AZUL Tier.
+// Canvas no canto inferior direito: base quente (brilho), chamas tremeluzem e brasas
+// sobem. Cada caractere do "ridge" é colorido por um campo de calor animado.
+// pointer-events-none, mascarado (radial, denso no canto).
 const HERO_RIDGE = [
-  "",
   "",
   " ..::..           ....",
   ":--==--::.......::----::.                 .::::::...  ..::",
@@ -140,49 +139,74 @@ const HERO_RIDGE = [
   "X######XXxx***xxXXX###Xxx+=-:.      .:-=+*xXXXXXxxx****xxX",
   "###########XXX##########Xx*+=::....::=+*xX#########XXXX###",
 ];
-const HERO_RIDGE_TXT = HERO_RIDGE.join("\n");
-const HERO_RIDGE_CHARS = HERO_RIDGE_TXT.split("");
-const HERO_RIDGE_IDXS = HERO_RIDGE_CHARS.map((c, i) => (c.trim() ? i : -1)).filter((i) => i >= 0);
+const HERO_ROWS = HERO_RIDGE.length;
+const HERO_COLS = Math.max(...HERO_RIDGE.map((l) => l.length));
+const HERO_CELLS: { c: number; r: number; ch: string }[] = [];
+HERO_RIDGE.forEach((line, r) => {
+  for (let c = 0; c < line.length; c++) if (line[c].trim()) HERO_CELLS.push({ c, r, ch: line[c] });
+});
 
 function PageHeroRidge() {
-  const [lit, setLit] = useState<Set<number>>(() => new Set());
+  const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    const id = setInterval(() => {
-      const s = new Set<number>();
-      const k = Math.max(6, Math.round(HERO_RIDGE_IDXS.length * 0.05));
-      for (let j = 0; j < k; j++) s.add(HERO_RIDGE_IDXS[Math.floor(Math.random() * HERO_RIDGE_IDXS.length)]);
-      setLit(s);
-    }, 360);
-    return () => clearInterval(id);
+    const cv = ref.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    const cx = ctx;
+    const FS = 12; // tamanho do caractere (maior que antes)
+    const LH = 12;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const font = `${FS}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    cx.font = font;
+    const cw = cx.measureText("X").width || FS * 0.6;
+    const W = Math.ceil(HERO_COLS * cw);
+    const H = HERO_ROWS * LH;
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    cv.style.width = `${W}px`;
+    cv.style.height = `${H}px`;
+    cx.scale(dpr, dpr);
+    cx.font = font;
+    cx.textBaseline = "top";
+    let t = 0, raf = 0;
+    const draw = () => {
+      const dark = document.documentElement.classList.contains("dark");
+      cx.clearRect(0, 0, W, H);
+      for (const cell of HERO_CELLS) {
+        const rb = (HERO_ROWS - cell.r) / HERO_ROWS; // 1 na base (quente) → 0 no topo
+        const flick = Math.sin(cell.c * 0.6 + t * 2.4) * Math.sin(cell.r * 0.8 - t * 3.0);
+        const rise = Math.sin((cell.c * 0.25 + cell.r * 0.55) - t * 2.8); // brasas subindo
+        let heat = rb * 0.78 + 0.26 * flick + 0.18 * rise;
+        heat = Math.max(0, Math.min(1, heat));
+        let col: string;
+        if (heat < 0.32) {
+          const a = 0.09 + heat * 0.12;
+          col = dark ? `rgba(255,255,255,${a * 0.8})` : `rgba(38,38,38,${a})`; // frio/faint
+        } else if (heat < 0.66) {
+          col = `rgba(0,48,131,${0.22 + (heat - 0.32) * 0.7})`; // corpo da chama: azul Tier
+        } else {
+          col = `rgba(91,155,255,${0.5 + (heat - 0.66) * 1.2})`; // núcleo quente: azul claro
+        }
+        cx.fillStyle = col;
+        cx.fillText(cell.ch, cell.c * cw, cell.r * LH);
+      }
+      t += 0.06;
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(raf);
   }, []);
   return (
     <div
       aria-hidden
-      className="pointer-events-none select-none absolute right-0 top-0 bottom-0 hidden md:flex items-end justify-end pr-8 overflow-hidden"
+      className="pointer-events-none select-none absolute right-0 bottom-0 hidden md:block"
       style={{
-        width: 480,
-        WebkitMaskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
-        maskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
+        WebkitMaskImage: "radial-gradient(135% 135% at 100% 100%, #000 38%, transparent 80%)",
+        maskImage: "radial-gradient(135% 135% at 100% 100%, #000 38%, transparent 80%)",
       }}
     >
-      <pre className="font-mono text-[8px] leading-[8px] whitespace-pre mb-7">
-        {HERO_RIDGE_CHARS.map((c, i) =>
-          c === "\n" ? (
-            "\n"
-          ) : (
-            <span
-              key={i}
-              className={`transition-colors duration-500 ${
-                lit.has(i)
-                  ? "text-[#003083]/60 dark:text-[#5b9bff]/80"
-                  : "text-[#262626]/[0.10] dark:text-white/[0.07]"
-              }`}
-            >
-              {c}
-            </span>
-          ),
-        )}
-      </pre>
+      <canvas ref={ref} />
     </div>
   );
 }
