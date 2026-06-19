@@ -286,37 +286,34 @@ function SectionRow({ title, subtitle }: { title: string; subtitle?: string }) {
   );
 }
 
-// FlowMini — preview estilizado do fluxo: nó-gatilho (azul, raio) → passos, sobre
-// textura de pontos (motif Firecrawl). Dá identidade visual ("isto é um fluxo de N
-// passos") sem precisar buscar a estrutura real dos nós.
+// FlowMini — mini-diagrama do fluxo: chips de nó conectados (gatilho azul com raio →
+// passos), conectados por traços curtos. Sem box/textura: alto contraste, limpo. No
+// hover do card os chips sobem em cascata (sensação de "fluxo vivo").
 function FlowMini({ count }: { count: number }) {
-  const n = Math.min(Math.max(count, 2), 4);
+  const n = Math.min(Math.max(count, 3), 4);
   const extra = count - n;
-  const line = "h-px flex-1 bg-[#262626]/[0.14] dark:bg-white/[0.14]";
+  const link = "h-px w-3.5 shrink-0 bg-[#262626]/[0.18] dark:bg-white/20 group-hover:bg-[#003083]/35 dark:group-hover:bg-[#5b9bff]/40 transition-colors";
   return (
-    <div className={`relative mb-3.5 h-12 rounded-lg border ${FC.hair} bg-dots overflow-hidden flex items-center px-3`}>
+    <div className="flex items-center mt-1.5 mb-4 h-7">
       {Array.from({ length: n }).map((_, idx) => (
         <Fragment key={idx}>
-          {idx > 0 && <span className={line} />}
+          {idx > 0 && <span className={link} />}
           <span
-            className={`relative z-10 w-5 h-5 rounded-[6px] shrink-0 flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${
+            className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-transform duration-200 ease-out group-hover:-translate-y-1 ${
               idx === 0
-                ? "bg-[#003083] dark:bg-[#5b9bff] shadow-[0_1px_3px_rgba(0,48,131,0.30)]"
-                : `bg-white dark:bg-[#14171c] border ${FC.hair}`
+                ? "bg-[#003083] dark:bg-[#5b9bff] text-white dark:text-[#0c0e12] shadow-[0_2px_6px_rgba(0,48,131,0.28)]"
+                : `bg-white dark:bg-[#14171c] border ${FC.hair} ${FC.mut}`
             }`}
+            style={{ transitionDelay: `${idx * 45}ms` }}
           >
-            {idx === 0 ? (
-              <Zap className="w-2.5 h-2.5 text-white dark:text-[#0c0e12]" />
-            ) : (
-              <span className="w-1.5 h-1.5 rounded-full bg-[#262626]/40 dark:bg-white/40" />
-            )}
+            {idx === 0 ? <Zap className="w-3.5 h-3.5" /> : <span className="w-1.5 h-1.5 rounded-full bg-current opacity-55" />}
           </span>
         </Fragment>
       ))}
       {extra > 0 && (
         <>
-          <span className={line} />
-          <span className={`relative z-10 text-[10px] font-medium shrink-0 ${FC.mut}`}>+{extra}</span>
+          <span className={link} />
+          <span className={`text-[11px] font-medium shrink-0 ${FC.mut}`}>+{extra}</span>
         </>
       )}
     </div>
