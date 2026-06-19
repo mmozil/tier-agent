@@ -577,13 +577,15 @@ export default function ConversasPage() {
     { k: "snoozed", label: "Adiadas" },
   ] as { k: "todas" | "mine" | "unassigned" | "snoozed"; label: string }[];
 
-  // Sub-nav (filas/canais/etiquetas): renderizada no sidebar PRINCIPAL, abaixo do
-  // item "Conversas" (via portal pro slot #ta-conversas-subnav). Antes era uma coluna
-  // de 208px aqui dentro do inbox — movê-la pro sidebar libera esse espaço horizontal.
+  // Sub-nav (filas/canais/etiquetas/times). Em modo STANDALONE vai pro sidebar
+  // principal (via portal pro slot #ta-conversas-subnav) — libera espaço no inbox.
+  // Em modo EMBED (?embed=1, ex: inbox dentro do Tier Empresas), o sidebar do Agent
+  // é escondido → renderizamos a sub-nav como COLUNA aqui dentro (senão ela some).
+  const embed = new URLSearchParams(window.location.search).get("embed") === "1";
   const [subNavSlot, setSubNavSlot] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    setSubNavSlot(document.getElementById("ta-conversas-subnav"));
-  }, []);
+    if (!embed) setSubNavSlot(document.getElementById("ta-conversas-subnav"));
+  }, [embed]);
   const subNav = (
     <div className="space-y-0.5">
       <SubNavItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
@@ -637,8 +639,17 @@ export default function ConversasPage() {
 
   return (
     <>
-      {subNavSlot && createPortal(subNav, subNavSlot)}
+      {!embed && subNavSlot && createPortal(subNav, subNavSlot)}
       <div className="-mx-8 -mb-8 h-[calc(100vh-60px)] flex bg-white dark:bg-[#0c0e12] border-t border-[#EDEDED] dark:border-[#23272e]">
+      {/* ═══════════ ZONA 1 — sub-nav (só no modo embed; standalone usa o sidebar) ═══════════ */}
+      {embed && (
+        <aside className={`w-[208px] shrink-0 border-r ${FC.hair} flex flex-col min-h-0 ${FC.base}`}>
+          <div className={`h-14 shrink-0 flex items-center px-4 border-b ${FC.hair}`}>
+            <h1 className="text-[15px] font-[550] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
+          </div>
+          <nav className="flex-1 overflow-y-auto sidebar-scroll px-2 py-3 min-h-0">{subNav}</nav>
+        </aside>
+      )}
       {/* ═══════════ ZONA 2 — lista ═══════════ */}
       <section className={`w-[340px] shrink-0 border-r ${FC.hair} flex flex-col min-h-0 bg-white dark:bg-[#0c0e12]`}>
         <div className={`shrink-0 px-4 pt-3.5 pb-2.5 border-b ${FC.hair}`}>
