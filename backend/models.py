@@ -240,6 +240,10 @@ class TaConversation(Base):
     # quando o último alerta de SLA foi disparado (anti-spam do job)
     snoozed_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # conversa adiada (snooze) — escondida da inbox ativa até esse horário
+    priority: Mapped[str] = mapped_column(String(16), default="none", nullable=False)
+    # prioridade: none | low | medium | high | urgent (runtime DDL)
+    team_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # FK lógica pra ta_team.id (Time atribuído)
 
 
 class TaMessageLog(Base):
@@ -263,6 +267,8 @@ class TaMessageLog(Base):
     brakes_fired: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # observabilidade/eval: nomes dos freios determinísticos que dispararam no turno
     # (ambas via ensure_message_content_column() — runtime DDL, nullable, retrocompatível).
+    attachments_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # anexos da mensagem [{kind, url, mime}] — mídia WhatsApp (R2) persistida (runtime DDL)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 
@@ -574,6 +580,18 @@ class TaCannedResponse(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class TaTeam(Base):
+    """Time — grupo pra organizar/atribuir conversas (ex: Vendas, Suporte, Financeiro).
+    Paridade Chatwoot. Criado via runtime DDL (ensure_message_content_column)."""
+
+    __tablename__ = "ta_team"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("ta_tenant.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class TaMacro(Base):

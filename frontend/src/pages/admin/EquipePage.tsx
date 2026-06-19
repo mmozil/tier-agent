@@ -16,6 +16,11 @@ interface Member {
   invite_token: string | null;
 }
 
+interface Team {
+  id: number;
+  name: string;
+}
+
 function inviteLink(token: string): string {
   return `${window.location.origin}/convite/${token}`;
 }
@@ -28,16 +33,44 @@ export default function EquipePage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ nome: "", email: "", password: "", role: "atendente", max_conversas: 0 });
   const [saving, setSaving] = useState(false);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [newTeam, setNewTeam] = useState("");
 
   async function load() {
     setLoading(true);
     try {
-      const { data } = await api.get<Member[]>("/team/members");
-      setMembers(data);
+      const [mRes, tRes] = await Promise.all([
+        api.get<Member[]>("/team/members"),
+        api.get<Team[]>("/team/teams"),
+      ]);
+      setMembers(mRes.data);
+      setTeams(tRes.data);
     } catch {
       toast.error("Falha ao carregar equipe");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function addTeam() {
+    const name = newTeam.trim();
+    if (!name) return;
+    try {
+      const { data } = await api.post<Team>("/team/teams", { name });
+      setTeams((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewTeam("");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao criar time");
+    }
+  }
+
+  async function deleteTeam(t: Team) {
+    if (!confirm(`Remover o time "${t.name}"?`)) return;
+    try {
+      await api.delete(`/team/teams/${t.id}`);
+      setTeams((prev) => prev.filter((x) => x.id !== t.id));
+    } catch {
+      toast.error("Erro ao remover time");
     }
   }
 
@@ -233,6 +266,34 @@ export default function EquipePage() {
             </div>
           </Row>
         ) : null}
+
+        {/* ─── Times (grupos pra organizar/atribuir conversas) ─── */}
+        <Row last>
+          <div className="p-6">
+            <h3 className={`text-[15px] font-medium ${FC.ink}`}>Times</h3>
+            <p className={`text-[13px] mt-0.5 mb-3 ${FC.sub}`}>
+              Grupos pra organizar e atribuir conversas (ex: Vendas, Suporte, Financeiro). Use em <b>Time atribuído</b> no painel da conversa.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {teams.map((t) => (
+                <span key={t.id} className={`inline-flex items-center gap-1.5 h-8 pl-3 pr-1.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[13px] ${FC.ink}`}>
+                  <Users className="w-3.5 h-3.5 opacity-60" /> {t.name}
+                  <button onClick={() => deleteTeam(t)} className="ml-0.5 text-[#262626]/40 dark:text-[#6b7280] hover:text-[#c0362c] dark:hover:text-[#ff6b5e]" title="Remover time">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              ))}
+              <input
+                value={newTeam}
+                onChange={(e) => setNewTeam(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTeam(); } }}
+                placeholder="+ novo time"
+                className={`${inputCls} w-36`}
+              />
+              <Button variant="secondary" size="sm" onClick={addTeam}><Plus className="w-3.5 h-3.5" /> Adicionar</Button>
+            </div>
+          </div>
+        </Row>
       </PageFrame>
     </div>
   );

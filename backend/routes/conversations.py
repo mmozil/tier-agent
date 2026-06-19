@@ -40,16 +40,20 @@ class ConversationOut(BaseModel):
     csat_state: str = "none"
     csat_score: int | None = None
     snoozed_until: datetime | None = None
+    priority: str = "none"
+    team_id: int | None = None
 
     model_config = {"from_attributes": True}
 
     # Dados antigos podem ter NULL em campos str obrigatórios (ex.: csat_state) — sem isto
     # UMA conversa com csat_state NULL derruba a LISTA inteira com 500 (mascarado de CORS).
-    @field_validator("csat_state", "external_id", "status", mode="before")
+    @field_validator("csat_state", "external_id", "status", "priority", mode="before")
     @classmethod
     def _none_to_default(cls, v, info):
         if v is None:
-            return {"csat_state": "none", "external_id": "", "status": "active"}.get(info.field_name, "")
+            return {"csat_state": "none", "external_id": "", "status": "active", "priority": "none"}.get(
+                info.field_name, ""
+            )
         return v
 
 
@@ -59,6 +63,7 @@ class MessageOut(BaseModel):
     content: str | None = None
     model_used: str | None = None
     created_at: datetime
+    attachments_json: list | None = None  # [{kind, url, mime}] — mídia da mensagem (R2)
 
     model_config = {"from_attributes": True}
 
@@ -164,6 +169,8 @@ async def list_conversations(
                 csat_state=c.csat_state,
                 csat_score=c.csat_score,
                 snoozed_until=c.snoozed_until,
+                priority=c.priority,
+                team_id=c.team_id,
             )
         )
     return out
@@ -210,6 +217,8 @@ async def conversation_detail(
             csat_state=conv.csat_state,
             csat_score=conv.csat_score,
             snoozed_until=conv.snoozed_until,
+            priority=conv.priority,
+            team_id=conv.team_id,
         ).model_dump(),
         "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
     }
@@ -455,6 +464,60 @@ async def assign(
         conv.assigned_to = m.nome
     await db.commit()
     return {"conversation_id": conv.id, "assigned_member_id": conv.assigned_member_id, "assigned_to": conv.assigned_to}
+
+
+class PriorityIn(BaseModel):
+    priority: str  # none | low | medium | high | urgent
+
+
+_VALID_PRIORITIES = {"none", "low", "medium", "high", "urgent"}
+
+
+@router.put("/{conversation_id}/priority", response_model=dict)
+async def set_priority(
+    conversation_id: int,
+    body: PriorityIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Define a prioridade da conversa (none/low/medium/high/urgent)."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    p = (body.priority or "none").lower()
+    if p not in _VALID_PRIORITIES:
+        raise HTTPException(400, "Prioridade inválida")
+    conv.priority = p
+    await db.commit()
+    return {"conversation_id": conv.id, "priority": conv.priority}
+
+
+class TeamAssignIn(BaseModel):
+    team_id: int | None = None
+
+
+@router.put("/{conversation_id}/team", response_model=dict)
+async def set_team(
+    conversation_id: int,
+    body: TeamAssignIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atribui a conversa a um Time (team_id) ou desatribui (null)."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    if body.team_id is None:
+        conv.team_id = None
+    else:
+        from models import TaTeam
+
+        t = await db.get(TaTeam, body.team_id)
+        if not t or t.tenant_id != user.tenant_id:
+            raise HTTPException(404, "Time não encontrado")
+        conv.team_id = t.id
+    await db.commit()
+    return {"conversation_id": conv.id, "team_id": conv.team_id}
 
 
 class ReplyIn(BaseModel):

@@ -202,6 +202,7 @@ async def log_message(
     content: str | None = None,
     tool_calls_json: list | None = None,
     brakes_fired: list | None = None,
+    attachments_json: list | None = None,
 ) -> None:
     log = TaMessageLog(
         conversation_id=conversation_id,
@@ -214,6 +215,7 @@ async def log_message(
         content=(content or "")[:8000] or None,
         tool_calls_json=tool_calls_json or None,
         brakes_fired=brakes_fired or None,
+        attachments_json=attachments_json or None,
     )
     db.add(log)
 
@@ -425,10 +427,15 @@ async def handle_inbound_message(
         contact_name=sender_name,
     )
 
-    # Log mensagem do user
+    # Log mensagem do user (com mídia, se houver — pra aparecer em Anexos/inline)
+    _att = [
+        {"kind": getattr(a, "kind", "file"), "url": getattr(a, "url", None), "mime": getattr(a, "mime", None)}
+        for a in (attachments or [])
+        if getattr(a, "url", None)
+    ]
     await log_message(
         db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", tokens_in=0,
-        content=text_content,
+        content=text_content, attachments_json=_att or None,
     )
 
     # ─── Conversa já assumida por humano? Bot fica em silêncio ───

@@ -102,6 +102,9 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS sla_alerted_at TIMESTAMP",
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS assigned_member_id INTEGER",
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMP",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS priority VARCHAR(16) DEFAULT 'none'",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS team_id INTEGER",
+                "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS attachments_json JSONB",
                 "ALTER TABLE ta_notification ADD COLUMN IF NOT EXISTS target_member_id INTEGER",
                 "ALTER TABLE ta_llm_provider ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 100",
                 "ALTER TABLE ta_agent ADD COLUMN IF NOT EXISTS avatar_url TEXT",
@@ -123,6 +126,22 @@ async def _ensure_message_content_column():
             )
             await db.execute(
                 _sql_text("CREATE INDEX IF NOT EXISTS ix_ta_macro_tenant ON ta_macro (tenant_id)")
+            )
+            # Times (paridade Chatwoot) — grupos pra organizar/atribuir conversas
+            await db.execute(
+                _sql_text(
+                    """
+                    CREATE TABLE IF NOT EXISTS ta_team (
+                        id SERIAL PRIMARY KEY,
+                        tenant_id INTEGER NOT NULL REFERENCES ta_tenant(id) ON DELETE CASCADE,
+                        name VARCHAR(120) NOT NULL,
+                        created_at TIMESTAMP DEFAULT now()
+                    )
+                    """
+                )
+            )
+            await db.execute(
+                _sql_text("CREATE INDEX IF NOT EXISTS ix_ta_team_tenant ON ta_team (tenant_id)")
             )
             await db.commit()
         logger.info("ensure_message_content_column ok")

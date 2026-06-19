@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
-from models import TaMember, TaTenant
+from models import TaMember, TaTeam, TaTenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/team", tags=["team"])
@@ -198,6 +198,69 @@ async def set_online(
     m.online = bool(body.online)
     await db.commit()
     return {"online": m.online}
+
+
+# ─────────────────────────────────────────────────────────────
+# Times (grupos pra organizar/atribuir conversas) — paridade Chatwoot
+# ─────────────────────────────────────────────────────────────
+class TeamOut(BaseModel):
+    id: int
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+class TeamIn(BaseModel):
+    name: str
+
+
+@router.get("/teams", response_model=list[TeamOut])
+async def list_teams(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    rows = (
+        await db.execute(select(TaTeam).where(TaTeam.tenant_id == user.tenant_id).order_by(TaTeam.name.asc()))
+    ).scalars().all()
+    return rows
+
+
+@router.post("/teams", response_model=TeamOut, status_code=201)
+async def create_team(
+    body: TeamIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    _require_manager(user)
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "Nome do time é obrigatório")
+    t = TaTeam(tenant_id=user.tenant_id, name=name[:120])
+    db.add(t)
+    await db.commit()
+    await db.refresh(t)
+    return t
+
+
+@router.delete("/teams/{team_id}", response_model=dict)
+async def delete_team(
+    team_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    _require_manager(user)
+    t = await db.get(TaTeam, team_id)
+    if not t or t.tenant_id != user.tenant_id:
+        raise HTTPException(404, "Time não encontrado")
+    await db.delete(t)
+    await db.commit()
+    return {"deleted": team_id}
 
 
 # ─────────────────────────────────────────────────────────────

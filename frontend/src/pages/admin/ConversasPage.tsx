@@ -21,6 +21,25 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${m.cls}`}>{m.label}</span>;
 }
 
+const PRIORITY_META: Record<string, { label: string; tint: string }> = {
+  none: { label: "Nenhuma", tint: "#697386" },
+  low: { label: "Baixa", tint: "#0a8f5a" },
+  medium: { label: "Média", tint: "#003083" },
+  high: { label: "Alta", tint: "#9a6700" },
+  urgent: { label: "Urgente", tint: "#E5484D" },
+};
+const PRIORITY_OPTS = (["none", "low", "medium", "high", "urgent"] as const).map((v) => ({ value: v, label: PRIORITY_META[v].label }));
+
+function PriorityBadge({ priority }: { priority: string }) {
+  if (!priority || priority === "none") return null;
+  const m = PRIORITY_META[priority] || PRIORITY_META.none;
+  return (
+    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: m.tint + "1F", color: m.tint }}>
+      {m.label}
+    </span>
+  );
+}
+
 interface Conversation {
   id: number;
   agent_id: number;
@@ -37,6 +56,13 @@ interface Conversation {
   csat_state: string;
   csat_score: number | null;
   snoozed_until: string | null;
+  priority: string;
+  team_id: number | null;
+}
+
+interface Team {
+  id: number;
+  name: string;
 }
 
 interface Member {
@@ -47,12 +73,19 @@ interface Member {
   status: string;
 }
 
+interface Attachment {
+  kind: string;
+  url: string;
+  mime?: string | null;
+}
+
 interface Message {
   id: number;
   role: string;
   content: string | null;
   model_used: string | null;
   created_at: string;
+  attachments_json?: Attachment[] | null;
 }
 
 type NavFilter =
@@ -207,6 +240,7 @@ export default function ConversasPage() {
   const [tagInput, setTagInput] = useState("");
   const [noteMode, setNoteMode] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [me, setMe] = useState<{ role: string; member_id: number | null } | null>(null);
   const [scope, setScope] = useState<"todas" | "mine" | "unassigned" | "snoozed">("todas");
   const [mentions, setMentions] = useState<number[]>([]);
@@ -298,6 +332,7 @@ export default function ConversasPage() {
   useEffect(() => {
     load();
     api.get<Member[]>("/team/members").then(({ data }) => setMembers(data)).catch(() => {});
+    api.get<Team[]>("/team/teams").then(({ data }) => setTeams(data)).catch(() => {});
     api.get<{ role: string; member_id: number | null }>("/team/me").then(({ data }) => setMe(data)).catch(() => {});
     api.get<{ id: number; name: string }[]>("/macros").then(({ data }) => setMacros(data)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -396,6 +431,26 @@ export default function ConversasPage() {
     }
   }
 
+  async function savePriority(convId: number, priority: string) {
+    setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, priority } : prev));
+    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, priority } : c)));
+    try {
+      await api.put(`/conversations/${convId}/priority`, { priority });
+    } catch {
+      toast.error("Erro ao salvar prioridade");
+    }
+  }
+
+  async function saveTeam(convId: number, teamId: number | null) {
+    setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, team_id: teamId } : prev));
+    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, team_id: teamId } : c)));
+    try {
+      await api.put(`/conversations/${convId}/team`, { team_id: teamId });
+    } catch {
+      toast.error("Erro ao atribuir time");
+    }
+  }
+
   async function changeStatus(id: number, action: "handoff" | "resume" | "resolve") {
     try {
       const { data } = await api.post<{ status: string }>(`/conversations/${id}/${action}`);
@@ -467,17 +522,25 @@ export default function ConversasPage() {
 
   const activeMembers = members.filter((m) => m.status === "active");
   const assignedMember = openConv ? members.find((m) => m.id === openConv.assigned_member_id) : undefined;
-  // Anexos: extrai links/arquivos compartilhados no corpo das mensagens (a mídia nativa
-  // do WhatsApp ainda não é persistida pela Engine — só o texto).
-  const attachments: { url: string; label: string }[] = [];
+  const assignedTeam = openConv?.team_id ? teams.find((t) => t.id === openConv.team_id) : undefined;
+  // Anexos: mídia real das mensagens (foto/áudio/doc do WhatsApp, persistida em R2) +
+  // links/arquivos compartilhados no corpo das mensagens.
+  const label40 = (s: string) => (s.length > 38 ? s.slice(0, 38) + "…" : s);
+  const attachments: { url: string; label: string; kind: string }[] = [];
   if (openConv) {
     const seen = new Set<string>();
     for (const m of msgs) {
+      for (const a of m.attachments_json || []) {
+        if (!a.url || seen.has(a.url)) continue;
+        seen.add(a.url);
+        const tail = a.url.split("?")[0].split("/").filter(Boolean).pop() || a.kind || "arquivo";
+        attachments.push({ url: a.url, kind: a.kind || "file", label: label40(tail) });
+      }
       for (const u of (m.content || "").match(/https?:\/\/[^\s)<>"']+/g) || []) {
         if (seen.has(u)) continue;
         seen.add(u);
         const tail = u.split("?")[0].split("/").filter(Boolean).pop() || u.replace(/^https?:\/\//, "");
-        attachments.push({ url: u, label: tail.length > 38 ? tail.slice(0, 38) + "…" : tail });
+        attachments.push({ url: u, kind: "link", label: label40(tail) });
       }
     }
   }
@@ -702,6 +765,12 @@ export default function ConversasPage() {
                   <p className={`text-[12px] ${FC.mut} flex items-center gap-2`}>
                     <span>{channelLabel(openConv.connector_kind)}</span>
                     <StatusBadge status={openConv.status} />
+                    <PriorityBadge priority={openConv.priority} />
+                    {assignedTeam && (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-black/[0.05] dark:bg-white/[0.07] text-[#262626]/[0.7] dark:text-[#cdd2da]">
+                        <Users className="w-2.5 h-2.5" /> {assignedTeam.name}
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -786,7 +855,27 @@ export default function ConversasPage() {
                             : `rounded-2xl rounded-tr-md bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12] border border-[#003083]/[0.08] dark:border-[#5b9bff]/[0.16] ${FC.ink}`
                       }`}
                     >
-                      {m.content ? renderRich(m.content) : <span className="opacity-60 italic">[sem texto]</span>}
+                      {(() => {
+                        const media = m.attachments_json || [];
+                        const placeholder = !!m.content && /^\[(image|audio|video|document|sticker|file)\]$/i.test(m.content.trim());
+                        const showText = m.content && !(placeholder && media.length > 0);
+                        return (
+                          <>
+                            {media.map((a, i) =>
+                              a.kind === "image" ? (
+                                <img key={i} src={a.url} alt="" loading="lazy" onClick={() => window.open(a.url, "_blank")} className="rounded-lg max-w-full max-h-60 object-cover mb-1 cursor-pointer" />
+                              ) : a.kind === "audio" ? (
+                                <audio key={i} controls src={a.url} className="max-w-full mb-1" />
+                              ) : (
+                                <a key={i} href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 underline text-[12.5px] mb-1">
+                                  <Paperclip className="w-3.5 h-3.5 shrink-0" /> {a.kind === "video" ? "Vídeo" : "Documento"}
+                                </a>
+                              ),
+                            )}
+                            {showText ? renderRich(m.content!) : !m.content && media.length === 0 ? <span className="opacity-60 italic">[sem texto]</span> : null}
+                          </>
+                        );
+                      })()}
                     </div>
                     <span className={`text-[10px] mt-1 px-1 flex items-center gap-1 ${FC.mut}`}>
                       {isAgent ? <><User className="w-2.5 h-2.5" /> Você</> : isUser ? null : <><Bot className="w-2.5 h-2.5" /> IA</>}
@@ -883,11 +972,29 @@ export default function ConversasPage() {
                 </div>
                 <div>
                   <label className={`block text-[12px] ${FC.sub} mb-1`}>Time atribuído</label>
-                  <div className={`h-8 px-2.5 flex items-center rounded-[8px] border border-dashed ${FC.hair} text-[12px] text-[#262626]/40 dark:text-[#6b7280]`}>Sem times — em breve</div>
+                  {teams.length > 0 ? (
+                    <Select
+                      value={openConv.team_id ?? 0}
+                      onChange={(v) => saveTeam(openConv.id, v === 0 ? null : (v as number))}
+                      placeholder="— nenhum —"
+                      options={[{ value: 0, label: "— nenhum —" }, ...teams.map((t) => ({ value: t.id, label: t.name }))]}
+                    />
+                  ) : (
+                    <a
+                      href="/admin/equipe"
+                      className={`flex items-center justify-between gap-2 h-8 px-2.5 rounded-[8px] border border-dashed ${FC.hair} text-[12px] ${FC.sub} hover:border-[#003083] dark:hover:border-[#5b9bff] hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors`}
+                    >
+                      Crie times em Equipe <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
+                    </a>
+                  )}
                 </div>
                 <div>
                   <label className={`block text-[12px] ${FC.sub} mb-1`}>Prioridade</label>
-                  <div className={`h-8 px-2.5 flex items-center rounded-[8px] border border-dashed ${FC.hair} text-[12px] text-[#262626]/40 dark:text-[#6b7280]`}>Nenhuma — em breve</div>
+                  <Select
+                    value={openConv.priority || "none"}
+                    onChange={(v) => savePriority(openConv.id, v as string)}
+                    options={PRIORITY_OPTS}
+                  />
                 </div>
               </div>
             </AccordionSection>
@@ -960,8 +1067,17 @@ export default function ConversasPage() {
             <AccordionSection title="Notas do contato" defaultOpen={false}><SoonHint text="Notas internas aparecem no histórico do chat (modo Nota interna)." /></AccordionSection>
             <AccordionSection title={`Anexos${attachments.length ? ` (${attachments.length})` : ""}`} defaultOpen={false}>
               {attachments.length > 0 ? (
-                <div className="space-y-0.5">
-                  {attachments.map((a, i) => (
+                <div className="space-y-2">
+                  {attachments.some((a) => a.kind === "image") && (
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {attachments.filter((a) => a.kind === "image").map((a, i) => (
+                        <a key={i} href={a.url} target="_blank" rel="noreferrer" title={a.label} className={`block aspect-square rounded-[8px] overflow-hidden border ${FC.hair} bg-black/[0.03] dark:bg-white/[0.05]`}>
+                          <img src={a.url} alt={a.label} loading="lazy" className="w-full h-full object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {attachments.filter((a) => a.kind !== "image").map((a, i) => (
                     <a
                       key={i}
                       href={a.url}
@@ -977,7 +1093,7 @@ export default function ConversasPage() {
                   ))}
                 </div>
               ) : (
-                <SoonHint text="Sem anexos nesta conversa. Links e arquivos compartilhados no chat aparecem aqui." />
+                <SoonHint text="Sem anexos nesta conversa. Fotos, documentos e links compartilhados no chat aparecem aqui." />
               )}
             </AccordionSection>
             <AccordionSection title="Participantes da conversa" defaultOpen={false}>
