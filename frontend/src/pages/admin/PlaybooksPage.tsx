@@ -345,7 +345,7 @@ function WorkflowCard({
         </div>
         <ArrowUpRight className="w-4 h-4 text-[#262626]/25 dark:text-[#6b7280] group-hover:text-[#003083] dark:group-hover:text-[#5b9bff] group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all" />
       </div>
-      <div className="mt-8">
+      <div className="mt-6">
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <h3 className={`text-[15px] font-medium tracking-[-0.01em] ${FC.ink}`}>{title}</h3>
           {tag && <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${tone}`}>{tag}</span>}
@@ -354,7 +354,7 @@ function WorkflowCard({
       </div>
     </>
   );
-  const cls = `group relative flex flex-col min-h-[148px] rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 transition-all duration-150 hover:border-[#003083]/70 dark:hover:border-[#5b9bff]/70 hover:shadow-[0_2px_10px_rgba(0,48,131,0.06)]`;
+  const cls = `group relative flex flex-col min-h-[124px] rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 transition-all duration-150 hover:border-[#003083]/70 dark:hover:border-[#5b9bff]/70 hover:shadow-[0_2px_10px_rgba(0,48,131,0.06)]`;
   if (to) return <Link to={to} className={cls}>{inner}</Link>;
   return <button onClick={onClick} disabled={busy} className={`${cls} text-left disabled:opacity-60`}>{inner}</button>;
 }
@@ -363,7 +363,7 @@ function GhostCard({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className={`group flex min-h-[148px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed ${FC.hair} bg-transparent p-5 transition-all hover:border-[#003083]/60 dark:hover:border-[#5b9bff]/60 hover:bg-black/[0.015] dark:hover:bg-white/[0.02]`}
+      className={`group flex min-h-[124px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed ${FC.hair} bg-transparent p-5 transition-all hover:border-[#003083]/60 dark:hover:border-[#5b9bff]/60 hover:bg-black/[0.015] dark:hover:bg-white/[0.02]`}
     >
       <div className="w-10 h-10 rounded-[10px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.1] flex items-center justify-center group-hover:bg-[#003083]/[0.12] dark:group-hover:bg-[#5b9bff]/[0.18] transition-colors">
         <Plus className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
@@ -406,12 +406,12 @@ function PlaybooksSkeleton() {
     <div className="p-5">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className={`rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 min-h-[148px]`}>
+          <div key={i} className={`rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 min-h-[124px]`}>
             <div className="flex items-start justify-between">
               <SkeletonBar className="w-10 h-10 rounded-[10px]" />
               <SkeletonBar className="w-4 h-4 rounded" />
             </div>
-            <div className="mt-8">
+            <div className="mt-6">
               <SkeletonBar className="h-3.5 w-1/2 mb-2" />
               <SkeletonBar className="h-3 w-4/5" />
             </div>
