@@ -36,7 +36,7 @@ export default function OnlineToggle() {
       onClick={toggle}
       disabled={loading}
       title={online ? "Você está recebendo conversas" : "Você não está no rodízio"}
-      className={`h-9 px-3 inline-flex items-center gap-1.5 rounded-full text-[13px] font-medium transition-colors ${
+      className={`h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-[13px] font-medium transition-colors ${
         online ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
       }`}
     >

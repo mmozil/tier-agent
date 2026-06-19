@@ -245,7 +245,7 @@ export default function AdminLayout() {
               <input
                 type="text"
                 placeholder="Buscar..."
-                className="w-full h-9 pl-9 pr-3 text-[14px] rounded-[10px] bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
+                className="w-full h-8 pl-9 pr-3 text-[13px] rounded-[10px] bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
               />
             </div>
             {/* Topbar estilo Firecrawl (36px): ícones ghost · Ajuda outlined · Upgrade filled */}
@@ -255,21 +255,21 @@ export default function AdminLayout() {
               <Link
                 to="/admin/configuracoes"
                 title="Configurações"
-                className="w-9 h-9 inline-flex items-center justify-center rounded-[10px] text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.95]"
+                className="w-8 h-8 inline-flex items-center justify-center rounded-[10px] text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.95]"
               >
-                <Settings className="w-[18px] h-[18px]" />
+                <Settings className="w-4 h-4" />
               </Link>
               <Link
                 to="/admin/suporte"
-                className="h-9 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#14171c] text-[13px] font-medium text-[#262626]/[0.82] dark:text-[#cdd2da] hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98] shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+                className="h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#14171c] text-[13px] font-medium text-[#262626]/[0.82] dark:text-[#cdd2da] hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98] shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
               >
-                <HelpCircle className="w-4 h-4" /> Ajuda
+                <HelpCircle className="w-3.5 h-3.5" /> Ajuda
               </Link>
               <Link
                 to="/admin/cobranca"
-                className={`ml-0.5 h-9 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[14px] font-medium text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] ${PRIMARY_SHADOW}`}
+                className={`ml-0.5 h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[13px] font-medium text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] ${PRIMARY_SHADOW}`}
               >
-                <ArrowUpRight className="w-4 h-4" /> <ScrambleText text="Upgrade" />
+                <ArrowUpRight className="w-3.5 h-3.5" /> <ScrambleText text="Upgrade" />
               </Link>
             </div>
           </div>

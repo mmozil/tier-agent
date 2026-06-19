@@ -31,7 +31,7 @@ export function ScrambleText({ text, className = "", speed = 38 }: { text: strin
     return () => clearInterval(id);
   }, [text, speed]);
   return (
-    <span className={`relative inline-block align-bottom ${className}`}>
+    <span className={`relative inline-block align-bottom overflow-hidden ${className}`}>
       <span aria-hidden style={{ visibility: "hidden" }}>{text}</span>
       <span className="absolute inset-0 whitespace-nowrap text-left">{display}</span>
     </span>
