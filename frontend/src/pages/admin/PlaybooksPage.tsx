@@ -1,10 +1,13 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Plus, Workflow, Loader2, CheckCircle2, Archive, FileText, Zap, ArrowRight, Sparkles } from "lucide-react";
+import {
+  Plus, Workflow, Loader2, FileText, ArrowUpRight,
+  LifeBuoy, TrendingUp, Repeat, Megaphone, MessageSquare,
+} from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, PageHero, Row, HairCells, Button, btnPrimary, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button, btnPrimary, SkeletonBar } from "@/components/ds/fc";
 
 interface PlaybookListItem {
   id: number;
@@ -148,33 +151,43 @@ export default function PlaybooksPage() {
                   : "Você ainda não criou nenhum — comece em branco ou puxe um template abaixo."
               }
             />
-            <Row last={templates.length === 0}>
-              <HairCells cols={3} gridLines>
-                {playbooks.map((pb) => (
-                  <PlaybookCard key={pb.id} pb={pb} />
-                ))}
-                <GhostCard onClick={openCreate} />
-              </HairCells>
-            </Row>
+            <CardGrid last={templates.length === 0}>
+              {playbooks.map((pb) => (
+                <WorkflowCard
+                  key={pb.id}
+                  to={`/admin/playbooks/${pb.id}`}
+                  icon={Workflow}
+                  title={pb.nome}
+                  tag={statusLabel(pb.status)}
+                  tagTone={statusTone(pb.status)}
+                  desc={pb.descricao || "Sem descrição."}
+                />
+              ))}
+              <GhostCard onClick={openCreate} />
+            </CardGrid>
 
             {templates.length > 0 && (
               <>
                 <SectionRow
                   title="Comece rápido com um template"
-                  subtitle="Fluxos prontos pra editar — um clique cria a cópia no seu agente."
+                  subtitle="Skills prontas pra editar — um clique cria a cópia no seu agente."
                 />
-                <Row last>
-                  <HairCells cols={3} gridLines>
-                    {templates.map((t) => (
-                      <TemplateCard
+                <CardGrid last>
+                  {templates.map((t) => {
+                    const cat = templateTag(t);
+                    return (
+                      <WorkflowCard
                         key={t.key}
-                        t={t}
+                        onClick={() => useTemplateInline(t.key)}
                         busy={creating && selectedTemplate === t.key}
-                        onUse={() => useTemplateInline(t.key)}
+                        icon={CAT_META[cat].icon}
+                        title={t.nome}
+                        tag={cat}
+                        desc={t.descricao}
                       />
-                    ))}
-                  </HairCells>
-                </Row>
+                    );
+                  })}
+                </CardGrid>
               </>
             )}
           </>
@@ -286,130 +299,126 @@ function SectionRow({ title, subtitle }: { title: string; subtitle?: string }) {
   );
 }
 
-// FlowMini — mini-diagrama do fluxo: chips de nó conectados (gatilho azul com raio →
-// passos), conectados por traços curtos. Sem box/textura: alto contraste, limpo. No
-// hover do card os chips sobem em cascata (sensação de "fluxo vivo").
-function FlowMini({ count }: { count: number }) {
-  const n = Math.min(Math.max(count, 3), 4);
-  const extra = count - n;
-  const link = "h-px w-3.5 shrink-0 bg-[#262626]/[0.18] dark:bg-white/20 group-hover:bg-[#003083]/35 dark:group-hover:bg-[#5b9bff]/40 transition-colors";
+// CardGrid — grade de 2 colunas com gap (cards arredondados individuais), no padrão
+// da página /app/workflows do Firecrawl. Fica dentro de uma Row pra manter os rails.
+function CardGrid({ children, last = false }: { children: ReactNode; last?: boolean }) {
   return (
-    <div className="flex items-center mt-1.5 mb-4 h-7">
-      {Array.from({ length: n }).map((_, idx) => (
-        <Fragment key={idx}>
-          {idx > 0 && <span className={link} />}
-          <span
-            className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-transform duration-200 ease-out group-hover:-translate-y-1 ${
-              idx === 0
-                ? "bg-[#003083] dark:bg-[#5b9bff] text-white dark:text-[#0c0e12] shadow-[0_2px_6px_rgba(0,48,131,0.28)]"
-                : `bg-white dark:bg-[#14171c] border ${FC.hair} ${FC.mut}`
-            }`}
-            style={{ transitionDelay: `${idx * 45}ms` }}
-          >
-            {idx === 0 ? <Zap className="w-3.5 h-3.5" /> : <span className="w-1.5 h-1.5 rounded-full bg-current opacity-55" />}
-          </span>
-        </Fragment>
-      ))}
-      {extra > 0 && (
-        <>
-          <span className={link} />
-          <span className={`text-[11px] font-medium shrink-0 ${FC.mut}`}>+{extra}</span>
-        </>
-      )}
-    </div>
+    <Row last={last}>
+      <div className="p-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>
+      </div>
+    </Row>
   );
 }
 
-function StatusBadge({ status }: { status: PlaybookListItem["status"] }) {
-  if (status === "published")
-    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#0a8f5a]/[0.12] text-[#0a8f5a]"><CheckCircle2 className="w-3 h-3" /> Publicado</span>;
-  if (status === "archived")
-    return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#262626]/[0.08] ${FC.sub}`}><Archive className="w-3 h-3" /> Arquivado</span>;
-  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#F5A300]/[0.14] text-[#9a6700]"><FileText className="w-3 h-3" /> Rascunho</span>;
-}
-
-function PlaybookCard({ pb }: { pb: PlaybookListItem }) {
-  return (
-    <Link to={`/admin/playbooks/${pb.id}`} className={`group block p-5 h-full transition-colors ${FC.hover}`}>
-      <div className="flex items-start justify-between mb-3">
-        <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center">
-          <Workflow className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
-        </div>
-        <StatusBadge status={pb.status} />
-      </div>
-      <div className={`text-[14px] font-medium mb-1 truncate ${FC.ink}`}>{pb.nome}</div>
-      <p className={`text-[12px] leading-relaxed mb-3 line-clamp-2 min-h-[32px] ${FC.sub}`}>{pb.descricao || "Sem descrição."}</p>
-      <FlowMini count={pb.nodes_count} />
-      <div className="flex items-center justify-between text-[11px]">
-        <span className={FC.sub}>
-          {pb.nodes_count} {pb.nodes_count === 1 ? "nó" : "nós"} · {new Date(pb.updated_at).toLocaleDateString("pt-BR")}
-        </span>
-        <span className="inline-flex items-center gap-1 font-medium text-[#003083] dark:text-[#5b9bff] opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
-          Abrir <ArrowRight className="w-3 h-3" />
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-function TemplateCard({ t, busy, onUse }: { t: TemplateInfo; busy: boolean; onUse: () => void }) {
-  return (
-    <button onClick={onUse} disabled={busy} className={`group block w-full text-left p-5 h-full transition-colors ${FC.hover} disabled:opacity-60`}>
-      <div className="flex items-start justify-between mb-3">
-        <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center">
+// WorkflowCard — card no estilo Firecrawl workflows: ícone tintado + seta ↗ no topo,
+// título + tag, descrição. Hover = borda na cor de destaque (azul Tier) + seta azul.
+function WorkflowCard({
+  icon: Icon, title, tag, tagTone = "neutral", desc, to, onClick, busy,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  tag?: string;
+  tagTone?: "neutral" | "amber" | "green" | "gray";
+  desc: string;
+  to?: string;
+  onClick?: () => void;
+  busy?: boolean;
+}) {
+  const tone =
+    tagTone === "amber"
+      ? "bg-[#F5A300]/[0.14] text-[#9a6700] dark:text-[#e0a93a]"
+      : tagTone === "green"
+        ? "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]"
+        : tagTone === "gray"
+          ? "bg-[#262626]/[0.06] text-[#262626]/[0.5] dark:bg-white/[0.08] dark:text-[#8b93a0]"
+          : "bg-[#262626]/[0.06] text-[#262626]/[0.6] dark:bg-white/[0.08] dark:text-[#9aa1ab]";
+  const inner = (
+    <>
+      <div className="flex items-start justify-between">
+        <div className="w-10 h-10 rounded-[10px] bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center">
           {busy ? (
             <Loader2 className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff] animate-spin" />
           ) : (
-            <Sparkles className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
+            <Icon className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
           )}
         </div>
-        <span className="text-[10px] uppercase tracking-[0.06em] font-medium text-[#262626]/35 dark:text-[#6b7280]">Template</span>
+        <ArrowUpRight className="w-4 h-4 text-[#262626]/25 dark:text-[#6b7280] group-hover:text-[#003083] dark:group-hover:text-[#5b9bff] group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all" />
       </div>
-      <div className={`text-[14px] font-medium mb-1 truncate ${FC.ink}`}>{t.nome}</div>
-      <p className={`text-[12px] leading-relaxed mb-3 line-clamp-2 min-h-[32px] ${FC.sub}`}>{t.descricao}</p>
-      <FlowMini count={t.nodes_count} />
-      <div className="flex items-center justify-between text-[11px]">
-        <span className={FC.sub}>{t.nodes_count} {t.nodes_count === 1 ? "nó" : "nós"}</span>
-        <span className="inline-flex items-center gap-1 font-medium text-[#003083] dark:text-[#5b9bff] opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
-          {busy ? "Criando…" : "Usar template"} <ArrowRight className="w-3 h-3" />
-        </span>
+      <div className="mt-8">
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <h3 className={`text-[15px] font-medium tracking-[-0.01em] ${FC.ink}`}>{title}</h3>
+          {tag && <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${tone}`}>{tag}</span>}
+        </div>
+        <p className={`text-[13px] leading-5 line-clamp-1 ${FC.sub}`}>{desc}</p>
       </div>
-    </button>
+    </>
   );
+  const cls = `group relative flex flex-col min-h-[148px] rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 transition-all duration-150 hover:border-[#003083]/70 dark:hover:border-[#5b9bff]/70 hover:shadow-[0_2px_10px_rgba(0,48,131,0.06)]`;
+  if (to) return <Link to={to} className={cls}>{inner}</Link>;
+  return <button onClick={onClick} disabled={busy} className={`${cls} text-left disabled:opacity-60`}>{inner}</button>;
 }
 
 function GhostCard({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`group flex w-full h-full min-h-[210px] flex-col items-center justify-center gap-2 p-5 transition-colors ${FC.hover}`}>
-      <div className={`w-11 h-11 rounded-xl border border-dashed ${FC.hair} flex items-center justify-center group-hover:border-[#003083] dark:group-hover:border-[#5b9bff] transition-colors`}>
-        <Plus className={`w-5 h-5 ${FC.mut} group-hover:text-[#003083] dark:group-hover:text-[#5b9bff] transition-colors`} />
+    <button
+      onClick={onClick}
+      className={`group flex min-h-[148px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed ${FC.hair} bg-transparent p-5 transition-all hover:border-[#003083]/60 dark:hover:border-[#5b9bff]/60 hover:bg-black/[0.015] dark:hover:bg-white/[0.02]`}
+    >
+      <div className="w-10 h-10 rounded-[10px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.1] flex items-center justify-center group-hover:bg-[#003083]/[0.12] dark:group-hover:bg-[#5b9bff]/[0.18] transition-colors">
+        <Plus className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
       </div>
-      <span className={`text-[13px] font-medium ${FC.dim} group-hover:text-[#262626] dark:group-hover:text-white transition-colors`}>Novo playbook</span>
+      <span className={`text-[13px] font-medium ${FC.ink}`}>Novo playbook</span>
       <span className={`text-[11px] ${FC.mut}`}>Em branco ou de um template</span>
     </button>
   );
 }
 
+// Status do playbook → tag (rótulo + tom).
+function statusLabel(s: PlaybookListItem["status"]) {
+  return s === "published" ? "Publicado" : s === "archived" ? "Arquivado" : "Rascunho";
+}
+function statusTone(s: PlaybookListItem["status"]): "amber" | "green" | "gray" {
+  return s === "published" ? "green" : s === "archived" ? "gray" : "amber";
+}
+
+// Categoria do template (heurística por palavra-chave) + ícone — pro look "catálogo"
+// do Firecrawl (tags variadas Suporte/Vendas/Pós-venda/Marketing).
+const CAT_META: Record<string, { icon: ComponentType<{ className?: string }> }> = {
+  Suporte: { icon: LifeBuoy },
+  Vendas: { icon: TrendingUp },
+  "Pós-venda": { icon: Repeat },
+  Marketing: { icon: Megaphone },
+  Atendimento: { icon: MessageSquare },
+};
+function templateTag(t: TemplateInfo): keyof typeof CAT_META {
+  const s = `${t.nome} ${t.descricao}`.toLowerCase();
+  if (/faq|suporte|atendimento|triagem|\bl1\b|\bl2\b|d[úu]vida/.test(s)) return "Suporte";
+  if (/sdr|qualific|\blead\b|bant|prospec|reuni[ãa]o/.test(s)) return "Vendas";
+  if (/carrinho|recompra|reativ|\bnps\b|p[óo]s[- ]compra|cupom|fideliz/.test(s)) return "Pós-venda";
+  if (/marketing|campanha|disparo|broadcast/.test(s)) return "Marketing";
+  return "Atendimento";
+}
+
 // Carregando, a grade mostra a própria forma (cards) — não um spinner no vazio.
 function PlaybooksSkeleton() {
   return (
-    <HairCells cols={3} gridLines>
-      {[0, 1, 2, 3, 4, 5].map((i) => (
-        <div key={i} className="p-5">
-          <div className="flex items-start justify-between mb-3">
-            <SkeletonBar className="w-9 h-9 rounded-md" />
-            <SkeletonBar className="h-4 w-20 rounded" />
+    <div className="p-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className={`rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 min-h-[148px]`}>
+            <div className="flex items-start justify-between">
+              <SkeletonBar className="w-10 h-10 rounded-[10px]" />
+              <SkeletonBar className="w-4 h-4 rounded" />
+            </div>
+            <div className="mt-8">
+              <SkeletonBar className="h-3.5 w-1/2 mb-2" />
+              <SkeletonBar className="h-3 w-4/5" />
+            </div>
           </div>
-          <SkeletonBar className="h-3.5 w-2/3 mb-2" />
-          <SkeletonBar className="h-3 w-full mb-1.5" />
-          <SkeletonBar className="h-3 w-4/5 mb-4" />
-          <div className="flex items-center justify-between">
-            <SkeletonBar className="h-3 w-10" />
-            <SkeletonBar className="h-3 w-24" />
-          </div>
-        </div>
-      ))}
-    </HairCells>
+        ))}
+      </div>
+    </div>
   );
 }
 
