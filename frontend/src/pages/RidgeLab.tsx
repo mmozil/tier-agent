@@ -162,7 +162,67 @@ function FlowCanvasRidge() {
   );
 }
 
+/* 6 — Vanta BIRDS (nossas cores): bando de pássaros (boids) Three.js via CDN */
+let vantaPromise: Promise<void> | null = null;
+function loadVanta(): Promise<void> {
+  if ((window as any).VANTA?.BIRDS) return Promise.resolve();
+  if (vantaPromise) return vantaPromise;
+  const inject = (src: string) =>
+    new Promise<void>((res, rej) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      s.onload = () => res();
+      s.onerror = () => rej(new Error("load " + src));
+      document.head.appendChild(s);
+    });
+  vantaPromise = inject("https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js")
+    .then(() => inject("https://cdn.jsdelivr.net/npm/vanta@0.5.24/dist/vanta.birds.min.js"))
+    .then(() => undefined);
+  return vantaPromise;
+}
+
+function VantaBirdsRidge() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let effect: any;
+    let cancelled = false;
+    loadVanta()
+      .then(() => {
+        if (cancelled || !ref.current || !(window as any).VANTA?.BIRDS) return;
+        effect = (window as any).VANTA.BIRDS({
+          el: ref.current,
+          THREE: (window as any).THREE,
+          mouseControls: false,
+          touchControls: false,
+          gyroControls: false,
+          backgroundAlpha: 0,
+          color1: 0x003083, // azul Tier
+          color2: 0x1f42e4, // azul mais claro da marca
+          birdSize: 1.0,
+          wingSpan: 22,
+          speedLimit: 4,
+          separation: 40,
+          alignment: 24,
+          cohesion: 24,
+          quantity: 3,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      try {
+        effect?.destroy();
+      } catch {
+        /* noop */
+      }
+    };
+  }, []);
+  return <div ref={ref} aria-hidden className={wrap} style={{ ...wrapStyle, width: 640 }} />;
+}
+
 const VARIANTS: { n: number; name: string; desc: string; C: () => JSX.Element }[] = [
+  { n: 6, name: "Vanta BIRDS ★ (nossas cores)", desc: "Bando de pássaros (boids) Three.js, em azul Tier — o que você pediu.", C: VantaBirdsRidge },
   { n: 0, name: "Atual (estático)", desc: "O que está hoje — sem movimento.", C: StaticRidge },
   { n: 1, name: "Shimmer", desc: "Uma luz azul varre o ridge (CSS, leve e elegante).", C: ShimmerRidge },
   { n: 2, name: "Drift / respira", desc: "O ridge desliza e pulsa a opacidade (CSS).", C: DriftRidge },
