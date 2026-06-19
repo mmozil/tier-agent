@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
 // Laboratório de variantes ANIMADAS pro ridge decorativo do hero (PageHeroRidge).
-// Rota pública /ridge-lab — só pra escolher qual efeito usar. Removo depois.
+// Rota pública /ridge-lab — só pra escolher. AQUI o efeito está EXAGERADO (mais forte
+// e rápido) pra dar pra ver o movimento; no hero real fica bem mais sutil.
+// Animação FORÇADA (ignora prefers-reduced-motion) só nesta página de teste.
 
 const RIDGE = [
-  "",
   "",
   " ..::..           ....",
   ":--==--::.......::----::.                 .::::::...  ..::",
@@ -15,36 +16,37 @@ const RIDGE = [
 ];
 const RIDGE_TXT = RIDGE.join("\n");
 
-const wrap = "pointer-events-none select-none absolute right-0 top-0 bottom-0 hidden md:flex items-end justify-end pr-8 overflow-hidden";
+const wrap = "pointer-events-none select-none absolute right-0 top-0 bottom-0 flex items-end justify-end pr-6 overflow-hidden";
 const wrapStyle = {
-  width: 480,
-  WebkitMaskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
-  maskImage: "linear-gradient(to left, #000 35%, transparent 100%)",
+  width: 520,
+  WebkitMaskImage: "linear-gradient(to left, #000 45%, transparent 100%)",
+  maskImage: "linear-gradient(to left, #000 45%, transparent 100%)",
 } as const;
-const preBase = "font-mono text-[8px] leading-[8px] whitespace-pre mb-7";
+// texto maior (11px) e mais visível que o hero real, só pra demo
+const preBase = "font-mono text-[11px] leading-[11px] whitespace-pre mb-6";
 
 /* 0 — Atual (estático), pra comparar */
 function StaticRidge() {
   return (
     <div aria-hidden className={wrap} style={wrapStyle}>
-      <pre className={`${preBase} text-[#262626]/[0.10]`}>{RIDGE_TXT}</pre>
+      <pre className={`${preBase} text-[#262626]/[0.14]`}>{RIDGE_TXT}</pre>
     </div>
   );
 }
 
-/* 1 — Shimmer: uma luz azul varre o ridge da direita pra esquerda */
+/* 1 — Shimmer: uma luz azul varre o ridge (forte e rápido na demo) */
 function ShimmerRidge() {
   return (
     <div aria-hidden className={wrap} style={wrapStyle}>
-      <div className="relative mb-7">
-        <pre className={`${preBase} mb-0 text-[#262626]/[0.10]`}>{RIDGE_TXT}</pre>
+      <div className="relative mb-6">
+        <pre className={`${preBase} mb-0 text-[#262626]/[0.16]`}>{RIDGE_TXT}</pre>
         <pre className={`${preBase} mb-0 absolute inset-0 ridge-shimmer`}>{RIDGE_TXT}</pre>
       </div>
     </div>
   );
 }
 
-/* 2 — Drift: o ridge desliza devagar e "respira" (opacidade) */
+/* 2 — Drift: o ridge desliza e "respira" (bem visível na demo) */
 function DriftRidge() {
   return (
     <div aria-hidden className={wrap} style={wrapStyle}>
@@ -58,13 +60,12 @@ function TwinkleRidge() {
   const chars = RIDGE_TXT.split("");
   const [lit, setLit] = useState<Set<number>>(new Set());
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const idxs = chars.map((c, i) => (c.trim() ? i : -1)).filter((i) => i >= 0);
     const id = setInterval(() => {
       const s = new Set<number>();
-      for (let k = 0; k < 10; k++) s.add(idxs[Math.floor(Math.random() * idxs.length)]);
+      for (let k = 0; k < 22; k++) s.add(idxs[Math.floor(Math.random() * idxs.length)]);
       setLit(s);
-    }, 360);
+    }, 240);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -75,7 +76,7 @@ function TwinkleRidge() {
           c === "\n" ? (
             "\n"
           ) : (
-            <span key={i} style={{ color: lit.has(i) ? "rgba(0,48,131,0.55)" : "rgba(38,38,38,0.10)", transition: "color 0.5s ease" }}>
+            <span key={i} style={{ color: lit.has(i) ? "rgba(0,48,131,0.75)" : "rgba(38,38,38,0.12)", transition: "color 0.45s ease" }}>
               {c}
             </span>
           ),
@@ -85,8 +86,7 @@ function TwinkleRidge() {
   );
 }
 
-/* 4 — Wave (canvas): campo topográfico de pontos que ondula (estilo Firecrawl real) */
-function WaveCanvasRidge() {
+function useCanvas(drawFactory: (cx: CanvasRenderingContext2D, W: number, H: number) => (t: number) => void) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;
@@ -94,85 +94,78 @@ function WaveCanvasRidge() {
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     const cx = ctx;
-    const W = 480, H = 150, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = 520, H = 150, dpr = Math.min(window.devicePixelRatio || 1, 2);
     cv.width = W * dpr;
     cv.height = H * dpr;
     cx.scale(dpr, dpr);
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const gap = 7;
+    const frame = drawFactory(cx, W, H);
     let t = 0, raf = 0;
-    function draw() {
-      cx.clearRect(0, 0, W, H);
-      for (let y = 0; y < H; y += gap) {
-        for (let x = 0; x < W; x += gap) {
-          const v = Math.sin(x * 0.026 + t) * Math.cos(y * 0.05 - t * 0.7) + Math.sin((x + y) * 0.02 + t * 1.2);
-          const n = (v + 2) / 4; // 0..1
-          const a = Math.max(0, n - 0.5) * 0.55 * (y / H + 0.25);
-          if (a > 0.02) {
-            cx.fillStyle = `rgba(0,48,131,${a})`;
-            cx.fillRect(x, y, 1.7, 1.7);
-          }
+    const loop = () => {
+      frame(t);
+      t += 1;
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return ref;
+}
+
+/* 4 — Wave (canvas): campo topográfico de pontos que ondula (estilo Firecrawl real) */
+function WaveCanvasRidge() {
+  const ref = useCanvas((cx, W, H) => (t) => {
+    const tt = t * 0.045;
+    cx.clearRect(0, 0, W, H);
+    const gap = 6;
+    for (let y = 0; y < H; y += gap) {
+      for (let x = 0; x < W; x += gap) {
+        const v = Math.sin(x * 0.03 + tt) * Math.cos(y * 0.05 - tt * 0.8) + Math.sin((x + y) * 0.02 + tt * 1.4);
+        const n = (v + 2) / 4;
+        const a = Math.max(0, n - 0.45) * 0.85 * (y / H + 0.25);
+        if (a > 0.02) {
+          cx.fillStyle = `rgba(0,48,131,${a})`;
+          cx.fillRect(x, y, 2.4, 2.4);
         }
       }
-      t += 0.02;
-      if (!reduce) raf = requestAnimationFrame(draw);
     }
-    draw();
-    return () => cancelAnimationFrame(raf);
-  }, []);
+  });
   return (
     <div aria-hidden className={wrap} style={wrapStyle}>
-      <canvas ref={ref} style={{ width: 480, height: 150 }} className="mb-1" />
+      <canvas ref={ref} style={{ width: 520, height: 150 }} className="mb-1" />
     </div>
   );
 }
 
 /* 5 — Flow (canvas): a densidade escorre pra baixo, tipo chuva fininha */
 function FlowCanvasRidge() {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const cv = ref.current;
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-    const cx = ctx;
-    const W = 480, H = 150, dpr = Math.min(window.devicePixelRatio || 1, 2);
-    cv.width = W * dpr;
-    cv.height = H * dpr;
-    cx.scale(dpr, dpr);
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const gap = 7;
-    let t = 0, raf = 0;
-    function draw() {
-      cx.clearRect(0, 0, W, H);
-      for (let y = 0; y < H; y += gap) {
-        for (let x = 0; x < W; x += gap) {
-          const phase = Math.sin(x * 0.04 + t * 1.5 + y * 0.08);
-          const n = (phase + 1) / 2;
-          const a = Math.max(0, n - 0.45) * 0.5 * (y / H + 0.2);
-          if (a > 0.02) {
-            cx.fillStyle = `rgba(0,48,131,${a})`;
-            cx.fillRect(x, y, 1.6, 2.4);
-          }
+  const ref = useCanvas((cx, W, H) => (t) => {
+    const tt = t * 0.06;
+    cx.clearRect(0, 0, W, H);
+    const gap = 6;
+    for (let y = 0; y < H; y += gap) {
+      for (let x = 0; x < W; x += gap) {
+        const phase = Math.sin(x * 0.045 + tt * 1.6 + y * 0.09);
+        const n = (phase + 1) / 2;
+        const a = Math.max(0, n - 0.4) * 0.8 * (y / H + 0.2);
+        if (a > 0.02) {
+          cx.fillStyle = `rgba(0,48,131,${a})`;
+          cx.fillRect(x, y, 2, 3);
         }
       }
-      t += 0.03;
-      if (!reduce) raf = requestAnimationFrame(draw);
     }
-    draw();
-    return () => cancelAnimationFrame(raf);
-  }, []);
+  });
   return (
     <div aria-hidden className={wrap} style={wrapStyle}>
-      <canvas ref={ref} style={{ width: 480, height: 150 }} className="mb-1" />
+      <canvas ref={ref} style={{ width: 520, height: 150 }} className="mb-1" />
     </div>
   );
 }
 
 const VARIANTS: { n: number; name: string; desc: string; C: () => JSX.Element }[] = [
   { n: 0, name: "Atual (estático)", desc: "O que está hoje — sem movimento.", C: StaticRidge },
-  { n: 1, name: "Shimmer", desc: "Uma luz azul varre o ridge devagar (CSS, leve, elegante).", C: ShimmerRidge },
-  { n: 2, name: "Drift / respira", desc: "O ridge desliza de leve e pulsa a opacidade (CSS, bem sutil).", C: DriftRidge },
+  { n: 1, name: "Shimmer", desc: "Uma luz azul varre o ridge (CSS, leve e elegante).", C: ShimmerRidge },
+  { n: 2, name: "Drift / respira", desc: "O ridge desliza e pulsa a opacidade (CSS).", C: DriftRidge },
   { n: 3, name: "Twinkle / brasas", desc: "Caracteres acendem e apagam aleatoriamente — textura viva.", C: TwinkleRidge },
   { n: 4, name: "Wave (canvas) ★", desc: "Campo topográfico de pontos que ondula — o mais perto do Firecrawl real.", C: WaveCanvasRidge },
   { n: 5, name: "Flow (canvas)", desc: "A densidade escorre pra baixo, tipo chuva fininha de pontos.", C: FlowCanvasRidge },
@@ -183,27 +176,27 @@ export default function RidgeLab() {
     <div className="min-h-screen bg-[#F9F9F9] text-[#262626] py-10 px-6">
       <style>{`
         .ridge-shimmer {
-          background: linear-gradient(110deg, transparent 38%, rgba(0,48,131,0.45) 50%, transparent 62%);
-          background-size: 280% 100%;
+          background: linear-gradient(110deg, transparent 40%, rgba(0,48,131,0.7) 50%, transparent 60%);
+          background-size: 260% 100%;
           -webkit-background-clip: text; background-clip: text;
           -webkit-text-fill-color: transparent; color: transparent;
-          animation: ridgeShimmer 4.5s linear infinite;
+          animation: ridgeShimmer 3s linear infinite;
         }
         @keyframes ridgeShimmer { from { background-position: 200% 0; } to { background-position: -120% 0; } }
-        .ridge-drift { color: rgba(0,48,131,0.10); animation: ridgeDrift 16s ease-in-out infinite; }
+        .ridge-drift { color: rgba(0,48,131,0.16); animation: ridgeDrift 7s ease-in-out infinite; }
         @keyframes ridgeDrift {
-          0%,100% { transform: translateX(0); opacity: 0.55; }
-          50%     { transform: translateX(-16px); opacity: 1; }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .ridge-shimmer, .ridge-drift { animation: none; }
+          0%,100% { transform: translateX(0); opacity: 0.5; }
+          50%     { transform: translateX(-34px); opacity: 1; }
         }
       `}</style>
 
       <div className="max-w-[1000px] mx-auto">
         <h1 className="text-[28px] font-semibold tracking-[-0.4px]">Ridge — variantes animadas</h1>
-        <p className="text-[14px] text-[#262626]/60 mt-1 mb-8">
-          Cada bloco é uma simulação do hero (igual “LLM Providers”). O efeito fica no canto direito. Me diz o número que você curtir.
+        <p className="text-[14px] text-[#262626]/60 mt-1">
+          Cada bloco simula o hero (igual “LLM Providers”). O efeito fica no canto direito. Me diz o número que você curtir.
+        </p>
+        <p className="text-[13px] text-[#9a6700] bg-[#F5A300]/[0.10] border border-[#F5A300]/30 rounded-lg px-3 py-2 mt-3 mb-8 inline-block">
+          ⚠️ Aqui o efeito está <b>exagerado</b> (mais forte e rápido) e a animação é <b>forçada</b> só pra você VER o movimento. No hero real eu deixo bem mais sutil.
         </p>
 
         <div className="space-y-5">
@@ -225,9 +218,7 @@ export default function RidgeLab() {
           ))}
         </div>
 
-        <p className="text-[13px] text-[#262626]/45 mt-8">
-          Todas respeitam <code className="font-mono">prefers-reduced-motion</code> (param desligado = estático). Página temporária — removo depois de escolhermos.
-        </p>
+        <p className="text-[13px] text-[#262626]/45 mt-8">Página temporária — removo depois de escolhermos.</p>
       </div>
     </div>
   );
