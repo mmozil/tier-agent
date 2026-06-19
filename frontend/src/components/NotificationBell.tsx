@@ -3,7 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { Bell, Phone, ArrowRight } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { iconBtn } from "./ds/fc";
+
+// Botão-ícone da topbar (36px — a topbar é maior que os botões do corpo, que são 32px)
+const topIconBtn =
+  "w-9 h-9 inline-flex items-center justify-center rounded-[10px] text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.95]";
 
 interface Stats {
   unread: number;
@@ -92,7 +95,7 @@ export default function NotificationBell() {
 
   return (
     <div className="relative" ref={ref}>
-      <button onClick={toggle} className={`${iconBtn} relative`} title="Notificações">
+      <button onClick={toggle} className={`${topIconBtn} relative`} title="Notificações">
         <Bell className="w-[18px] h-[18px]" />
         {count > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-semibold inline-flex items-center justify-center">

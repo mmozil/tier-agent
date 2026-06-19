@@ -35,7 +35,7 @@ export const PRIMARY_SHADOW =
 // Firecrawl). Use em <button> crus pra ficarem idênticos ao componente <Button>.
 // Prefixe "w-full" quando precisar largura cheia.
 export const btnPrimary =
-  `h-9 px-3.5 rounded-[10px] text-[14px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
+  `btn-sheen h-8 px-3 rounded-[10px] text-[13px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
 
 // CurvyRect — os 4 corner brackets do Firecrawl (classe .curvy-rect). 11×11,
 // preenchidos com border-faint (#EDEDED). Arredondam o canto do container e,
@@ -259,11 +259,11 @@ export function HairCells({
   );
 }
 
-// iconBtn — botão-ícone quadrado (w-9 h-9 = MESMA altura dos botões de texto), ghost.
-// Use em <button>/<Link> só-ícone (topbar, ações de tabela). Ícone interno: w-4 h-4
-// (ou w-[18px] em destaque). Spec Firecrawl: 36px, rounded-10.
+// iconBtn — botão-ícone quadrado (w-8 h-8 = MESMA altura dos botões de texto), ghost.
+// Use em <button>/<Link> só-ícone (ações de tabela, modais). Ícone interno: w-4 h-4.
+// Spec Firecrawl (corpo): 32px, rounded-10. (Topbar usa tamanho próprio, maior.)
 export const iconBtn =
-  `w-9 h-9 inline-flex items-center justify-center rounded-[10px] ${FC.dim} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-all active:scale-[0.95] disabled:opacity-50 disabled:pointer-events-none`;
+  `w-8 h-8 inline-flex items-center justify-center rounded-[10px] ${FC.dim} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-all active:scale-[0.95] disabled:opacity-50 disabled:pointer-events-none`;
 
 // Button — botão canônico do admin no spec REAL do Firecrawl: ALTURA e FONTE ÚNICAS
 // (h-9 / 36px · texto 14px/label-medium · rounded-10), só o padding-x muda entre
@@ -290,13 +290,13 @@ export function Button({
 }) {
   const base =
     "inline-flex items-center justify-center gap-1.5 rounded-[10px] font-medium transition-all active:scale-[0.98] select-none disabled:opacity-50 disabled:pointer-events-none";
-  // Altura E FONTE ÚNICAS (h-9 / 36px · 14px) pros dois tamanhos — só o padding-x
-  // varia (sm = mais compacto). Garante que todo botão de ação tenha o MESMO tamanho.
-  const sz = "h-9 text-[14px]";
-  const padX = size === "sm" ? "px-3" : "px-3.5";
+  // Altura E FONTE ÚNICAS (h-8 / 32px · 13px — padrão Firecrawl pro corpo) pros dois
+  // tamanhos; só o padding-x varia (sm = mais compacto). A topbar usa tamanho próprio.
+  const sz = "h-8 text-[13px]";
+  const padX = size === "sm" ? "px-2.5" : "px-3";
   const v =
     variant === "primary"
-      ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`
+      ? `btn-sheen ${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`
       : variant === "secondary"
         ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)]`
         : variant === "danger"
