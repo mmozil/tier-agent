@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { ArrowUpRight, BookOpen, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settings } from "lucide-react";
+import { ArrowUpRight, BookOpen, ChevronDown, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settings } from "lucide-react";
 
 import UserMenu from "./UserMenu";
 import NotificationBell from "./NotificationBell";
@@ -94,6 +94,9 @@ export default function AdminLayout() {
   // a casca do Agent (sidebar + topbar) e mostra só o conteúdo. "Um vidro só".
   const embed = new URLSearchParams(location.search).get("embed") === "1";
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("tier-admin-collapsed") === "1");
+  // Conversas é colapsável (chevron) — quando fechado, esconde a sub-nav do inbox
+  // (filas/canais/etiquetas/times) que o ConversasPage injeta no slot abaixo.
+  const [convNavOpen, setConvNavOpen] = useState(() => localStorage.getItem("ta-convnav") !== "0");
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -102,6 +105,15 @@ export default function AdminLayout() {
       return next;
     });
   }
+
+  function toggleConvNav() {
+    setConvNavOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem("ta-convnav", next ? "1" : "0");
+      return next;
+    });
+  }
+
 
   const itemClass = (active: boolean) =>
     `tier-jelly relative flex h-8 items-center overflow-hidden rounded-[10px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none active:scale-[0.98] ${
@@ -204,11 +216,22 @@ export default function AdminLayout() {
                             >
                               {item.label}
                             </span>
-                            {item.metaLabel && (
+                            {item.metaLabel && !(item.to === "/admin/conversas" && act) && (
                               <span className="ml-auto relative flex items-center pl-2">
                                 <span className="pointer-events-none font-mono text-[11px] leading-4 text-[#262626]/[0.32] dark:text-[#6b7280] opacity-0 -translate-x-1 transition-all duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none group-hover:translate-x-0 group-hover:opacity-100">
                                   {item.metaLabel}
                                 </span>
+                              </span>
+                            )}
+                            {item.to === "/admin/conversas" && act && !collapsed && (
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleConvNav(); }}
+                                className="ml-auto shrink-0 -mr-1 p-0.5 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-[#262626]/50 dark:text-[#8b93a0]"
+                                aria-label="Expandir ou recolher Conversas"
+                              >
+                                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${convNavOpen ? "" : "-rotate-90"}`} />
                               </span>
                             )}
                           </div>
@@ -216,10 +239,10 @@ export default function AdminLayout() {
                       );
                     }}
                   </NavLink>
-                  {/* Slot do portal: a sub-nav do inbox (filas/canais/etiquetas) é
+                  {/* Slot do portal: a sub-nav do inbox (filas/canais/etiquetas/times) é
                       injetada aqui pelo ConversasPage quando essa tela está aberta. */}
                   {item.to === "/admin/conversas" && (
-                    <div id="ta-conversas-subnav" className={collapsed ? "hidden" : "mt-0.5 pl-2"} />
+                    <div id="ta-conversas-subnav" className={collapsed || !convNavOpen ? "hidden" : "mt-0.5 pl-2"} />
                   )}
                   </Fragment>
                 ))}

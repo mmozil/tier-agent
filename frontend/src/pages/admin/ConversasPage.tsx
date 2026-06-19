@@ -95,7 +95,8 @@ type NavFilter =
   | { type: "mentions" }
   | { type: "participants" }
   | { type: "channel"; value: string }
-  | { type: "tag"; value: string };
+  | { type: "tag"; value: string }
+  | { type: "team"; value: number };
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -172,8 +173,29 @@ function channelLabel(k: string | null): string {
 
 // ─── Componentes presentacionais (módulo) ───
 
-function SectionLabel({ children }: { children: ReactNode }) {
-  return <div className="px-2.5 mb-1 mt-1 text-[11px] font-medium uppercase tracking-[0.06em] text-[#262626]/40 dark:text-[#565d68]">{children}</div>;
+// Seção colapsável da sub-nav do inbox (Canais / Etiquetas / Times) — estilo Chatwoot:
+// header com ícone + chevron, itens aninhados com linha de árvore (border-l 1px).
+function SubNavGroup({
+  title, icon: Icon, children, defaultOpen = true,
+}: { title: string; icon?: ComponentType<{ className?: string }>; children: ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="pt-1.5">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="group w-full flex items-center gap-2 h-7 px-2.5 rounded-[8px] text-[11px] font-semibold uppercase tracking-[0.06em] text-[#262626]/45 dark:text-[#565d68] hover:text-[#262626]/70 dark:hover:text-[#9aa1ab] transition-colors"
+      >
+        {Icon && <Icon className="w-3.5 h-3.5 shrink-0 opacity-80" />}
+        <span className="flex-1 text-left tracking-[0.06em]">{title}</span>
+        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${open ? "" : "-rotate-90"}`} />
+      </button>
+      {open && (
+        <div className="mt-0.5 ml-[15px] pl-1.5 border-l border-[#EDEDED] dark:border-[#23272e] space-y-0.5">
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SubNavItem({
@@ -497,6 +519,7 @@ export default function ConversasPage() {
   const filteredConvs = convs.filter((c) => {
     if (navFilter.type === "channel" && (c.connector_kind || "outro") !== navFilter.value) return false;
     if (navFilter.type === "tag" && !(c.tags || []).includes(navFilter.value)) return false;
+    if (navFilter.type === "team" && c.team_id !== navFilter.value) return false;
     if (navFilter.type === "unattended" && (c.status === "closed" || c.assigned_member_id)) return false;
     // menções/participantes já vêm filtradas do backend (view=…); aqui só a busca
     if (search.trim()) {
@@ -515,6 +538,7 @@ export default function ConversasPage() {
     : navFilter.type === "mentions" ? "Menções"
     : navFilter.type === "participants" ? "Participantes"
     : navFilter.type === "channel" ? channelLabel(navFilter.value === "outro" ? null : navFilter.value)
+    : navFilter.type === "team" ? (teams.find((t) => t.id === navFilter.value)?.name || "Time")
     : `#${navFilter.value}`;
 
   const priorConvs = openConv
@@ -567,8 +591,7 @@ export default function ConversasPage() {
       <SubNavItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
       <SubNavItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => selectNav({ type: "participants" })} />
       {channels.length > 0 && (
-        <div className="pt-2">
-          <SectionLabel>Canais</SectionLabel>
+        <SubNavGroup title="Canais" icon={MessageSquare}>
           {channels.map((ch) => (
             <SubNavItem
               key={ch}
@@ -579,11 +602,10 @@ export default function ConversasPage() {
               onClick={() => selectNav({ type: "channel", value: ch })}
             />
           ))}
-        </div>
+        </SubNavGroup>
       )}
       {allTags.length > 0 && (
-        <div className="pt-2">
-          <SectionLabel>Etiquetas</SectionLabel>
+        <SubNavGroup title="Etiquetas" icon={Tag}>
           {allTags.map((t) => (
             <SubNavItem
               key={t}
@@ -594,7 +616,21 @@ export default function ConversasPage() {
               onClick={() => selectNav({ type: "tag", value: t })}
             />
           ))}
-        </div>
+        </SubNavGroup>
+      )}
+      {teams.length > 0 && (
+        <SubNavGroup title="Times" icon={Users}>
+          {teams.map((tm) => (
+            <SubNavItem
+              key={tm.id}
+              icon={Users}
+              label={tm.name}
+              count={convs.filter((c) => c.team_id === tm.id).length}
+              active={navFilter.type === "team" && navFilter.value === tm.id}
+              onClick={() => selectNav({ type: "team", value: tm.id })}
+            />
+          ))}
+        </SubNavGroup>
       )}
     </div>
   );
