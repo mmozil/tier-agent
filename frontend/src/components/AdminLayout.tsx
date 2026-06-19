@@ -1,11 +1,19 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { ArrowUpRight, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settings } from "lucide-react";
+import { ArrowUpRight, BookOpen, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settings } from "lucide-react";
 
 import UserMenu from "./UserMenu";
 import NotificationBell from "./NotificationBell";
 import OnlineToggle from "./OnlineToggle";
+import ThemeToggle from "./ThemeToggle";
 import ErrorBoundary from "./ErrorBoundary";
+
+// Botão-ícone ghost da topbar (32px) — reutilizado pelo tema (sol/lua) e engrenagem.
+const topIconBtn =
+  "w-8 h-8 inline-flex items-center justify-center rounded-[10px] text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.95]";
+// Botão outlined da topbar (Ajuda · Docs).
+const topPillBtn =
+  "h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#14171c] text-[13px] font-medium text-[#262626]/[0.82] dark:text-[#cdd2da] hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98] shadow-[0_1px_2px_rgba(0,0,0,0.04)]";
 import { PRIMARY_SHADOW, ScrambleText } from "./ds/fc";
 import {
   AgentsMenuIcon,
@@ -116,7 +124,7 @@ export default function AdminLayout() {
   if (embed) {
     return (
       <div
-        className="min-h-screen bg-[#F9F9F9] px-8 pt-6 pb-8"
+        className="min-h-screen bg-[#F9F9F9] dark:bg-[#0c0e12] px-8 pt-6 pb-8"
         style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         <ErrorBoundary key={location.pathname}>
@@ -127,13 +135,13 @@ export default function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex">
+    <div className="min-h-screen bg-white dark:bg-[#0c0e12] flex">
       <aside
-        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#F9F9F9] border-r border-[#EDEDED] transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#F9F9F9] dark:bg-[#0c0e12] border-r border-[#EDEDED] dark:border-[#23272e] transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ width: collapsed ? 64 : 240, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         {/* Logo — crossfade entre a marca (3 quadrados, recolhido) e o logo completo */}
-        <div className="h-16 shrink-0 relative overflow-hidden border-b border-[#EDEDED]">
+        <div className="h-16 shrink-0 relative overflow-hidden border-b border-[#EDEDED] dark:border-[#23272e]">
           <div
             className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
               collapsed ? "opacity-100 scale-100" : "opacity-0 scale-90 pointer-events-none"
@@ -146,7 +154,8 @@ export default function AdminLayout() {
               collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
             }`}
           >
-            <img src="/tier-agent-escuro.png" alt="Tier Agent" style={{ height: 28, width: "auto", display: "block" }} />
+            <img src="/tier-agent-escuro.png" alt="Tier Agent" className="h-7 w-auto block dark:hidden" />
+            <img src="/tier-agent-claro.png" alt="Tier Agent" className="h-7 w-auto hidden dark:block" />
           </div>
         </div>
 
@@ -238,7 +247,7 @@ export default function AdminLayout() {
       </aside>
 
       <main
-        className="flex-1 min-h-screen bg-[#F9F9F9] transition-[margin] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        className="flex-1 min-h-screen bg-[#F9F9F9] dark:bg-[#0c0e12] transition-[margin] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ marginLeft: collapsed ? 64 : 240, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         <div className="px-8 pb-8">
@@ -251,23 +260,21 @@ export default function AdminLayout() {
                 className="w-full h-8 pl-9 pr-3 text-[13px] rounded-[10px] bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow"
               />
             </div>
-            {/* Topbar estilo Firecrawl (36px): ícones ghost · Ajuda outlined · Upgrade filled */}
+            {/* Topbar estilo Firecrawl (32px): ícones ghost (sino · tema · engrenagem) ·
+                Ajuda/Docs outlined · Upgrade filled */}
             <div className="flex items-center gap-1.5">
               <OnlineToggle />
               <NotificationBell />
-              <Link
-                to="/admin/configuracoes"
-                title="Configurações"
-                className="w-8 h-8 inline-flex items-center justify-center rounded-[10px] text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.95]"
-              >
+              <ThemeToggle className={topIconBtn} />
+              <Link to="/admin/configuracoes" title="Configurações" className={topIconBtn}>
                 <Settings className="w-4 h-4" />
               </Link>
-              <Link
-                to="/admin/suporte"
-                className="h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#14171c] text-[13px] font-medium text-[#262626]/[0.82] dark:text-[#cdd2da] hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98] shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
-              >
+              <Link to="/admin/suporte" className={topPillBtn}>
                 <HelpCircle className="w-3.5 h-3.5" /> Ajuda
               </Link>
+              <a href="https://docs.tier.finance" target="_blank" rel="noopener noreferrer" className={topPillBtn}>
+                <BookOpen className="w-3.5 h-3.5" /> Docs
+              </a>
               <Link
                 to="/admin/cobranca"
                 className={`ml-0.5 h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[13px] font-medium text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] ${PRIMARY_SHADOW}`}

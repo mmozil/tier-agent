@@ -20,6 +20,15 @@ import "./index.css";
   }
 })();
 
+// Tema (claro/escuro) aplicado ANTES do render pra não dar flash. Default = claro.
+(() => {
+  try {
+    if (localStorage.getItem("ta-theme") === "dark") document.documentElement.classList.add("dark");
+  } catch {
+    /* ignore */
+  }
+})();
+
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 const appShell = (
