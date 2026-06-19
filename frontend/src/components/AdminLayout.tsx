@@ -81,6 +81,9 @@ function TierLogoMark({ className }: { className?: string }) {
 
 export default function AdminLayout() {
   const location = useLocation();
+  // Modo embed (?embed=1): o Tier Empresas embute o inbox num iframe — esconde
+  // a casca do Agent (sidebar + topbar) e mostra só o conteúdo. "Um vidro só".
+  const embed = new URLSearchParams(location.search).get("embed") === "1";
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("tier-admin-collapsed") === "1");
 
   function toggleCollapsed() {
@@ -106,6 +109,18 @@ export default function AdminLayout() {
         ? "text-[#003083] dark:text-[#8ab4ff]"
         : "text-[#262626]/[0.72] opacity-80 dark:text-[#d9dde5] dark:opacity-60 group-hover:opacity-100"
     }`;
+
+  // Embed: sem sidebar/topbar — só o inbox, pra encaixar dentro do Tier Empresas.
+  if (embed) {
+    return (
+      <div
+        className="min-h-screen bg-white px-4 py-3"
+        style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
+      >
+        <Outlet />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white flex">
