@@ -105,6 +105,7 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMP",
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS priority VARCHAR(16) DEFAULT 'none'",
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS team_id INTEGER",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS last_followup_at TIMESTAMP",
                 "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS attachments_json JSONB",
                 "ALTER TABLE ta_notification ADD COLUMN IF NOT EXISTS target_member_id INTEGER",
                 "ALTER TABLE ta_llm_provider ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 100",

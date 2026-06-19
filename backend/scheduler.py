@@ -18,7 +18,7 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from core.db import db_context
 from models import (
@@ -408,6 +408,113 @@ async def mirror_pet_conversations_job() -> None:
         logger.exception("mirror_pet_conversations_job falhou")
 
 
+async def _send_proactive(db, conv: TaConversation, text_content: str) -> bool:
+    """Envia uma mensagem proativa (follow-up) pro contato da conversa, via connector."""
+    import json
+
+    from core.encryption import decrypt
+    from models import TaConnector
+    from services.connectors.base import ConnectorConfig, OutboundMessage
+    from services.connectors.registry import registry as connectors_registry
+
+    conn = (
+        await db.execute(
+            select(TaConnector).where(
+                TaConnector.agent_id == conv.agent_id,
+                TaConnector.kind == conv.connector_kind,
+                TaConnector.enabled.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not conn:
+        return False
+    try:
+        impl = connectors_registry.get(conv.connector_kind)
+        cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
+        await impl.send(cfg, OutboundMessage(external_chat_id=conv.external_id, content=text_content))
+    except Exception:
+        logger.exception("followup: envio falhou conv=%s", conv.id)
+        return False
+    return True
+
+
+async def followup_inactivity_job() -> None:
+    """Follow-up por inatividade: conversa 'active' parada > N horas → 1 nudge.
+
+    Fecha o gap do "Follow-up" aposentado do CRM (Fase 4). Config por tenant
+    (TaRuntimeParam scope=tenant): followup_enabled='true', followup_hours='24',
+    followup_message. Idempotente via last_followup_at (reseta quando entra msg
+    nova). DESLIGADO por padrão (enabled != 'true') → seguro.
+    """
+    DEFAULT_MSG = "Oi! Vi que nossa conversa parou — posso te ajudar com mais alguma coisa? 😊"
+    try:
+        async with db_context() as db:
+            now = _now_utc_naive()
+            enabled = (
+                await db.execute(
+                    select(TaRuntimeParam.escopo_id).where(
+                        TaRuntimeParam.escopo == "tenant",
+                        TaRuntimeParam.key == "followup_enabled",
+                        TaRuntimeParam.value == "true",
+                    )
+                )
+            ).scalars().all()
+            if not enabled:
+                return
+            cfg_rows = (
+                await db.execute(
+                    select(TaRuntimeParam.escopo_id, TaRuntimeParam.key, TaRuntimeParam.value).where(
+                        TaRuntimeParam.escopo == "tenant",
+                        TaRuntimeParam.escopo_id.in_(enabled),
+                        TaRuntimeParam.key.in_(["followup_hours", "followup_message"]),
+                    )
+                )
+            ).all()
+            hours_by: dict[int, int] = {}
+            msg_by: dict[int, str] = {}
+            for tid, key, val in cfg_rows:
+                if key == "followup_hours":
+                    try:
+                        hours_by[tid] = max(1, int(val))
+                    except (TypeError, ValueError):
+                        pass
+                elif key == "followup_message":
+                    msg_by[tid] = val
+
+            sent_total = 0
+            for tid in enabled:
+                threshold = now - timedelta(hours=hours_by.get(tid, 24))
+                message = (msg_by.get(tid) or DEFAULT_MSG).strip() or DEFAULT_MSG
+                convs = (
+                    await db.execute(
+                        select(TaConversation)
+                        .where(
+                            TaConversation.agent_id.in_(
+                                select(TaAgent.id).where(TaAgent.tenant_id == tid)
+                            ),
+                            TaConversation.status == "active",
+                            TaConversation.last_message_at < threshold,
+                            or_(
+                                TaConversation.last_followup_at.is_(None),
+                                TaConversation.last_followup_at < TaConversation.last_message_at,
+                            ),
+                        )
+                        .limit(50)  # cap defensivo por tick
+                    )
+                ).scalars().all()
+                for conv in convs:
+                    if await _send_proactive(db, conv, message):
+                        conv.last_followup_at = now
+                        db.add(TaMessageLog(conversation_id=conv.id, role="assistant", content=message))
+                        sent_total += 1
+                if convs:
+                    await db.commit()
+            if sent_total:
+                logger.info("followup_inactivity: %s nudges enviados", sent_total)
+    except Exception:
+        logger.exception("followup_inactivity_job falhou")
+
+
 async def _job_lock(name: str, ttl: int) -> bool:
     """Lock Redis por tick — com >1 worker, só quem pega o lock roda o job.
     TTL < intervalo do job → próximo tick re-disputa (auto-recupera se 1 worker cai).
@@ -473,10 +580,17 @@ def init_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         max_instances=1,
     )
+    sched.add_job(
+        _locked(followup_inactivity_job, "followup_inactivity", 280),
+        trigger=IntervalTrigger(seconds=300),
+        id="followup_inactivity",
+        replace_existing=True,
+        max_instances=1,
+    )
     sched.start()
     logger.info(
         "Scheduler iniciado: resume_waiting (30s) + fire_cron (60s) + sla_watch (120s) "
-        "+ mirror_pet (60s) [lock Redis por tick]"
+        "+ mirror_pet (60s) + followup_inactivity (300s) [lock Redis por tick]"
     )
     _scheduler = sched
     return sched

@@ -21,6 +21,7 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 _ALERT_KEYS = (
     "alert_whatsapp", "alert_email", "alert_enabled", "sla_minutes",
     "bh_enabled", "bh_days", "bh_start", "bh_end", "bh_message",
+    "followup_enabled", "followup_hours", "followup_message",
 )
 
 
@@ -123,6 +124,10 @@ class AlertConfig(BaseModel):
     bh_start: str = "09:00"
     bh_end: str = "18:00"
     bh_message: str = ""
+    # Follow-up por inatividade (Fase 4 gap — substitui o Follow-up do CRM)
+    followup_enabled: bool = False
+    followup_hours: int = 24
+    followup_message: str = ""
 
 
 @router.get("/alert-config", response_model=AlertConfig)
@@ -147,6 +152,10 @@ async def get_alert_config(
         sla = int(vals.get("sla_minutes", "0") or 0)
     except (TypeError, ValueError):
         sla = 0
+    try:
+        fu_hours = int(vals.get("followup_hours", "24") or 24)
+    except (TypeError, ValueError):
+        fu_hours = 24
     return AlertConfig(
         alert_whatsapp=vals.get("alert_whatsapp") or None,
         alert_email=vals.get("alert_email") or None,
@@ -157,6 +166,9 @@ async def get_alert_config(
         bh_start=vals.get("bh_start") or "09:00",
         bh_end=vals.get("bh_end") or "18:00",
         bh_message=vals.get("bh_message") or "",
+        followup_enabled=vals.get("followup_enabled", "false") == "true",
+        followup_hours=fu_hours,
+        followup_message=vals.get("followup_message") or "",
     )
 
 
@@ -178,6 +190,9 @@ async def put_alert_config(
         "bh_start": (cfg.bh_start or "09:00").strip(),
         "bh_end": (cfg.bh_end or "18:00").strip(),
         "bh_message": (cfg.bh_message or "").strip(),
+        "followup_enabled": "true" if cfg.followup_enabled else "false",
+        "followup_hours": str(max(1, cfg.followup_hours or 24)),
+        "followup_message": (cfg.followup_message or "").strip(),
     }
     existing = (
         await db.execute(
@@ -207,6 +222,9 @@ async def put_alert_config(
         bh_start=desired["bh_start"],
         bh_end=desired["bh_end"],
         bh_message=desired["bh_message"],
+        followup_enabled=cfg.followup_enabled,
+        followup_hours=max(1, cfg.followup_hours or 24),
+        followup_message=desired["followup_message"],
     )
 
 

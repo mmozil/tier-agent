@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
-from . import code, flow, integrations, llm, mcp, memory, routing, text, triggers, voice
+from . import code, flow, integrations, llm, mcp, memory, persistence, routing, text, triggers, voice
 from .base import ExecutionContext, NodeResult
 
 NodeExecutor = Callable[[ExecutionContext, dict], Awaitable[NodeResult]]
@@ -48,6 +48,8 @@ REGISTRY: dict[str, NodeExecutor] = {
     "send_audio": voice.execute_send_audio,
     # Q3.3: CodeAct Python via E2B sandbox
     "code_step": code.execute_code_step,
+    # Fase 4 gap: auto-tag (regra keyword→tag via playbook)
+    "add_tag": persistence.execute_add_tag,
 }
 
 __all__ = ["REGISTRY", "ExecutionContext", "NodeResult", "NodeExecutor"]

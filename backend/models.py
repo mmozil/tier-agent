@@ -226,6 +226,9 @@ class TaConversation(Base):
     msg_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     # status: active | closed | handed_off
+    # Follow-up por inatividade (Fase 4 gap): quando o último nudge foi enviado.
+    # NULL ou < last_message_at = pode enviar (reseta a cada msg nova). Runtime DDL.
+    last_followup_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
     # lista de etiquetas (ex: ["orçamento", "vip"]) — adicionada via ensure runtime DDL
     assigned_to: Mapped[str | None] = mapped_column(String(120), nullable=True)
