@@ -243,9 +243,17 @@ export default function AdminLayout() {
                     }}
                   </NavLink>
                   {/* Slot do portal: a sub-nav do inbox (filas/canais/etiquetas/times) é
-                      injetada aqui pelo ConversasPage quando essa tela está aberta. */}
+                      injetada aqui pelo ConversasPage. Abre/fecha com slide (accordion via
+                      grid-rows 0fr↔1fr — técnica do animate-ui) ao clicar no chevron.
+                      O slot fica SEMPRE no DOM pra o portal nunca perder o alvo. */}
                   {item.to === "/admin/conversas" && (
-                    <div id="ta-conversas-subnav" className={collapsed || !convNavOpen ? "hidden" : "mt-0.5 pl-2"} />
+                    <div
+                      className={`grid transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+                        !collapsed && convNavOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"
+                      }`}
+                    >
+                      <div id="ta-conversas-subnav" className="overflow-hidden min-h-0 pl-2" />
+                    </div>
                   )}
                   </Fragment>
                 ))}
