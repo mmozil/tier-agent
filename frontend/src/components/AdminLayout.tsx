@@ -144,7 +144,9 @@ export default function AdminLayout() {
         { height: `${startH}px`, opacity: open ? 0 : 1 },
         { height: `${endH}px`, opacity: open ? 1 : 0 },
       ],
-      { duration: 380, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+      // ease-in-out-sine: movimento espalhado no tempo todo (lento no início e no fim)
+      // → o slide fica claramente perceptível, em vez de "saltar" tudo no começo.
+      { duration: 460, easing: "cubic-bezier(0.37, 0, 0.63, 1)" },
     );
     anim.onfinish = () => {
       el.style.height = open ? "auto" : "0px";
