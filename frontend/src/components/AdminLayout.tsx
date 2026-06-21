@@ -12,6 +12,10 @@ import CommandPalette from "./CommandPalette";
 
 const CMDK_LABEL = typeof navigator !== "undefined" && /mac/i.test(navigator.userAgent) ? "⌘K" : "Ctrl K";
 
+// Spring canônico do Animate UI (motion-highlight.tsx:119) — usado na bolha de destaque
+// que desliza entre os itens e nos slides da sub-nav.
+const SPRING = { type: "spring", stiffness: 350, damping: 35 } as const;
+
 // Botão-ícone ghost da topbar (32px) — reutilizado pelo tema (sol/lua) e engrenagem.
 const topIconBtn =
   "w-8 h-8 inline-flex items-center justify-center rounded-[10px] text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.95]";
@@ -120,12 +124,14 @@ export default function AdminLayout() {
 
 
 
+  // overflow-hidden saiu do item: senão a "bolha" (motion layoutId) é cortada ao deslizar
+  // entre itens. O clip do label no modo recolhido foi pro próprio wrapper do label.
   const itemClass = (active: boolean) =>
-    `tier-jelly relative flex h-8 items-center overflow-hidden rounded-[10px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none active:scale-[0.98] ${
+    `tier-jelly relative flex h-8 items-center rounded-[10px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none active:scale-[0.98] ${
       collapsed ? "w-9" : "w-full"
     } ${
       active
-        ? "tier-sidebar-item-active text-[#003083] dark:text-[#8ab4ff]"
+        ? "text-[#003083] dark:text-[#8ab4ff]"
         : "text-[#262626]/[0.56] hover:text-[#262626]/[0.72] dark:text-[#8b93a0] dark:hover:text-[#d9dde5]"
     }`;
 
@@ -207,16 +213,26 @@ export default function AdminLayout() {
                       const act = item.end ? isActive : isActive || location.pathname.startsWith(item.to);
                       return (
                         <div className={itemClass(act)}>
+                          {/* Bolha de destaque do item ativo — motion com layoutId COMPARTILHADO:
+                              ao trocar de item, ela DESLIZA do antigo pro novo (FLIP), spring
+                              350/35. É o efeito-assinatura do Animate UI (motion-highlight). */}
+                          {act && (
+                            <motion.div
+                              layoutId="ta-sidebar-active"
+                              className="absolute inset-0 z-0 rounded-[10px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.14]"
+                              transition={SPRING}
+                            />
+                          )}
                           {/* ícone — SEMPRE absolute na faixa de 36px à esquerda: posição
                               estável ao recolher (não pula); o label desliza/some por baixo */}
-                          <div className="absolute left-0 top-0 flex h-8 w-9 items-center justify-center">
+                          <div className="absolute left-0 top-0 z-10 flex h-8 w-9 items-center justify-center">
                             <item.icon className={iconClass(act)} />
                           </div>
                           {/* label — sempre montado; some com fade + slide e é clipado pelo
-                              overflow-hidden do item conforme a largura encolhe (recolher elegante) */}
+                              overflow-hidden DESTE wrapper conforme a largura encolhe (recolher). */}
                           <div
                             aria-hidden={collapsed}
-                            className={`flex flex-1 items-center pl-9 pr-2 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+                            className={`relative z-10 flex flex-1 items-center overflow-hidden pl-9 pr-2 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
                               collapsed ? "opacity-0 -translate-x-1" : "opacity-100 translate-x-0"
                             }`}
                           >
@@ -263,7 +279,7 @@ export default function AdminLayout() {
                         height: !collapsed && convNavOpen ? "auto" : 0,
                         opacity: !collapsed && convNavOpen ? 1 : 0,
                       }}
-                      transition={{ type: "spring", stiffness: 300, damping: 26 }}
+                      transition={SPRING}
                       style={{ overflow: "hidden" }}
                     >
                       <div id="ta-conversas-subnav" className="pl-2 pt-0.5" />

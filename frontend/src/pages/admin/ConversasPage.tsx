@@ -190,11 +190,11 @@ function SubNavGroup({
         <span className="flex-1 text-left tracking-[0.06em]">{title}</span>
         <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${open ? "" : "-rotate-90"}`} />
       </button>
-      {/* Spring (framer-motion) — mesmo efeito mola do animate-ui. */}
+      {/* Spring (framer-motion) — spring canônico do Animate UI (350/35). */}
       <motion.div
         initial={false}
         animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
-        transition={{ type: "spring", stiffness: 320, damping: 26 }}
+        transition={{ type: "spring", stiffness: 350, damping: 35 }}
         style={{ overflow: "hidden" }}
       >
         <div className="mt-0.5 ml-[15px] pl-1.5 border-l border-[#EDEDED] dark:border-[#23272e] space-y-0.5">
@@ -219,22 +219,30 @@ function SubNavItem({
   return (
     <button
       onClick={onClick}
-      className={`group w-full flex items-center gap-2.5 h-8 px-2.5 rounded-[8px] text-[13px] transition-colors ${
+      className={`group relative w-full flex items-center gap-2.5 h-8 px-2.5 rounded-[8px] text-[13px] transition-colors ${
         active
-          ? "bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#8ab4ff] font-medium"
+          ? "text-[#003083] dark:text-[#8ab4ff] font-medium"
           : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white font-[450]"
       }`}
     >
+      {/* Bolha deslizante (layoutId compartilhado) — viaja entre os itens da sub-nav. */}
+      {active && (
+        <motion.span
+          layoutId="ta-subnav-active"
+          className="absolute inset-0 z-0 rounded-[8px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12]"
+          transition={{ type: "spring", stiffness: 350, damping: 35 }}
+        />
+      )}
       {dotColor ? (
-        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dotColor }} />
+        <span className="relative z-10 w-2 h-2 rounded-full shrink-0" style={{ background: dotColor }} />
       ) : Icon ? (
-        <Icon className="w-4 h-4 shrink-0 opacity-70 group-hover:opacity-100" />
+        <Icon className="relative z-10 w-4 h-4 shrink-0 opacity-70 group-hover:opacity-100" />
       ) : null}
-      <span className="truncate flex-1 text-left">{label}</span>
+      <span className="relative z-10 truncate flex-1 text-left">{label}</span>
       {soon ? (
-        <span className="text-[9.5px] uppercase tracking-wide text-[#262626]/35 dark:text-[#6b7280] shrink-0">em breve</span>
+        <span className="relative z-10 text-[9.5px] uppercase tracking-wide text-[#262626]/35 dark:text-[#6b7280] shrink-0">em breve</span>
       ) : count != null && count > 0 ? (
-        <span className="text-[11px] tabular-nums text-[#262626]/[0.5] dark:text-[#8b93a0] shrink-0">{count}</span>
+        <span className="relative z-10 text-[11px] tabular-nums text-[#262626]/[0.5] dark:text-[#8b93a0] shrink-0">{count}</span>
       ) : null}
     </button>
   );
