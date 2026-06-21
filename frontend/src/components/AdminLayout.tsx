@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { motion } from "framer-motion";
 import { ArrowUpRight, BookOpen, ChevronDown, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settings } from "lucide-react";
 
 import UserMenu from "./UserMenu";
@@ -117,42 +118,6 @@ export default function AdminLayout() {
     });
   }
 
-  // Slide da sub-nav de Conversas via Web Animations API (JS) em vez de transição CSS:
-  // imune a reduce-motion / extensões que matam transição CSS (igual o scramble dos botões).
-  const subNavRef = useRef<HTMLDivElement | null>(null);
-  const subNavFirstRun = useRef(true);
-  useEffect(() => {
-    const el = subNavRef.current;
-    if (!el) return;
-    const open = !collapsed && convNavOpen;
-    if (subNavFirstRun.current) {
-      subNavFirstRun.current = false;
-      el.style.height = open ? "auto" : "0px";
-      el.style.opacity = open ? "1" : "0";
-      return;
-    }
-    el.getAnimations?.().forEach((a) => a.cancel());
-    const startH = el.getBoundingClientRect().height;
-    let endH = 0;
-    if (open) {
-      el.style.height = "auto";
-      endH = el.scrollHeight;
-      el.style.height = `${startH}px`;
-    }
-    const anim = el.animate(
-      [
-        { height: `${startH}px`, opacity: open ? 0 : 1 },
-        { height: `${endH}px`, opacity: open ? 1 : 0 },
-      ],
-      // ease-in-out-sine: movimento espalhado no tempo todo (lento no início e no fim)
-      // → o slide fica claramente perceptível, em vez de "saltar" tudo no começo.
-      { duration: 460, easing: "cubic-bezier(0.37, 0, 0.63, 1)" },
-    );
-    anim.onfinish = () => {
-      el.style.height = open ? "auto" : "0px";
-      el.style.opacity = open ? "1" : "0";
-    };
-  }, [convNavOpen, collapsed]);
 
 
   const itemClass = (active: boolean) =>
@@ -292,9 +257,17 @@ export default function AdminLayout() {
                       grid-rows 0fr↔1fr — técnica do animate-ui) ao clicar no chevron.
                       O slot fica SEMPRE no DOM pra o portal nunca perder o alvo. */}
                   {item.to === "/admin/conversas" && (
-                    <div ref={subNavRef} className="overflow-hidden" style={{ height: 0, opacity: 0 }}>
+                    <motion.div
+                      initial={false}
+                      animate={{
+                        height: !collapsed && convNavOpen ? "auto" : 0,
+                        opacity: !collapsed && convNavOpen ? 1 : 0,
+                      }}
+                      transition={{ type: "spring", stiffness: 300, damping: 26 }}
+                      style={{ overflow: "hidden" }}
+                    >
                       <div id="ta-conversas-subnav" className="pl-2 pt-0.5" />
-                    </div>
+                    </motion.div>
                   )}
                   </Fragment>
                 ))}

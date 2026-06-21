@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type ComponentType } from "react";
 import { createPortal } from "react-dom";
+import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
@@ -189,11 +190,17 @@ function SubNavGroup({
         <span className="flex-1 text-left tracking-[0.06em]">{title}</span>
         <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${open ? "" : "-rotate-90"}`} />
       </button>
-      {open && (
+      {/* Spring (framer-motion) — mesmo efeito mola do animate-ui. */}
+      <motion.div
+        initial={false}
+        animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
+        transition={{ type: "spring", stiffness: 320, damping: 26 }}
+        style={{ overflow: "hidden" }}
+      >
         <div className="mt-0.5 ml-[15px] pl-1.5 border-l border-[#EDEDED] dark:border-[#23272e] space-y-0.5">
           {children}
         </div>
-      )}
+      </motion.div>
     </div>
   );
 }
