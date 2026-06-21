@@ -191,6 +191,14 @@ export default function AdminLayout() {
                     to={item.to}
                     end={item.end}
                     title={collapsed ? item.label : undefined}
+                    onClick={(e) => {
+                      // Conversas: clicar na linha já estando no inbox alterna a sub-nav
+                      // (com o slide) em vez de re-navegar — torna o efeito descobrível.
+                      if (item.to === "/admin/conversas" && !collapsed && location.pathname.startsWith("/admin/conversas")) {
+                        e.preventDefault();
+                        toggleConvNav();
+                      }
+                    }}
                     className={`group tier-sidebar-item block rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003083]/25 ${collapsed ? "w-9" : ""}`}
                   >
                     {({ isActive }) => {
