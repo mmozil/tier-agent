@@ -245,22 +245,26 @@ export default function AdminLayout() {
                             >
                               {item.label}
                             </span>
-                            {item.metaLabel && !(item.to === "/admin/conversas" && act) && (
+                            {item.metaLabel && item.to !== "/admin/conversas" && (
                               <span className="ml-auto relative flex items-center pl-2">
                                 <span className="pointer-events-none font-mono text-[11px] leading-4 text-[#262626]/[0.32] dark:text-[#6b7280] opacity-0 -translate-x-1 transition-all duration-150 ease-out motion-reduce:translate-x-0 motion-reduce:transition-none group-hover:translate-x-0 group-hover:opacity-100">
                                   {item.metaLabel}
                                 </span>
                               </span>
                             )}
-                            {item.to === "/admin/conversas" && act && !collapsed && (
+                            {/* Chevron de Conversas: aparece SEMPRE (descoberta). Na página
+                                de Conversas alterna a sub-nav; fora dela, navega pra lá. */}
+                            {item.to === "/admin/conversas" && !collapsed && (
                               <span
                                 role="button"
                                 tabIndex={0}
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleConvNav(); }}
+                                onClick={(e) => {
+                                  if (act) { e.preventDefault(); e.stopPropagation(); toggleConvNav(); }
+                                }}
                                 className="ml-auto shrink-0 -mr-1 p-0.5 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-[#262626]/50 dark:text-[#8b93a0]"
                                 aria-label="Expandir ou recolher Conversas"
                               >
-                                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${convNavOpen ? "" : "-rotate-90"}`} />
+                                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${act && convNavOpen ? "" : "-rotate-90"}`} />
                               </span>
                             )}
                           </div>
