@@ -279,11 +279,12 @@ export default function AdminLayout() {
                   {item.to === "/admin/conversas" && (
                     <motion.div
                       initial={false}
-                      animate={{
-                        height: !collapsed && convNavOpen ? "auto" : 0,
-                        opacity: !collapsed && convNavOpen ? 1 : 0,
-                      }}
-                      transition={SPRING}
+                      animate={
+                        !collapsed && convNavOpen
+                          ? { opacity: 1, height: "auto", y: 0 }
+                          : { opacity: 0, height: 0, y: 20 }
+                      }
+                      transition={{ duration: 0.35, ease: "easeInOut" }}
                       style={{ overflow: "hidden" }}
                     >
                       <div id="ta-conversas-subnav" className="pl-2 pt-0.5" />

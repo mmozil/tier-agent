@@ -190,11 +190,12 @@ function SubNavGroup({
         <span className="flex-1 text-left tracking-[0.06em]">{title}</span>
         <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${open ? "" : "-rotate-90"}`} />
       </button>
-      {/* Spring (framer-motion) — spring canônico do Animate UI (350/35). */}
+      {/* Efeito EXATO do Collapsible do Animate UI: fade + height + slide de baixo
+          (y:20→0), tween 0.35s easeInOut (primitives/radix/collapsible). */}
       <motion.div
         initial={false}
-        animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
-        transition={{ type: "spring", stiffness: 350, damping: 35 }}
+        animate={open ? { opacity: 1, height: "auto", y: 0 } : { opacity: 0, height: 0, y: 20 }}
+        transition={{ duration: 0.35, ease: "easeInOut" }}
         style={{ overflow: "hidden" }}
       >
         <div className="mt-0.5 ml-[15px] pl-1.5 border-l border-[#EDEDED] dark:border-[#23272e] space-y-0.5">
