@@ -160,7 +160,7 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-white dark:bg-[#0c0e12] flex">
       <aside
-        className="fixed left-0 top-0 h-screen z-50 flex flex-col bg-[#F9F9F9] dark:bg-[#0c0e12] border-r border-[#EDEDED] dark:border-[#23272e] transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        className="fixed left-0 top-0 h-screen z-50 flex flex-col overflow-x-hidden bg-[#F9F9F9] dark:bg-[#0c0e12] border-r border-[#EDEDED] dark:border-[#23272e] transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ width: collapsed ? 64 : 240, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         {/* Logo — crossfade entre a marca (3 quadrados, recolhido) e o logo completo */}
@@ -232,7 +232,7 @@ export default function AdminLayout() {
                               overflow-hidden DESTE wrapper conforme a largura encolhe (recolher). */}
                           <div
                             aria-hidden={collapsed}
-                            className={`relative z-10 flex flex-1 items-center overflow-hidden pl-9 pr-2 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+                            className={`relative z-10 flex flex-1 items-center pl-9 pr-2 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
                               collapsed ? "opacity-0 -translate-x-1" : "opacity-100 translate-x-0"
                             }`}
                           >
