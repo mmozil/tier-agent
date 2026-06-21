@@ -248,11 +248,18 @@ export default function AdminLayout() {
                       O slot fica SEMPRE no DOM pra o portal nunca perder o alvo. */}
                   {item.to === "/admin/conversas" && (
                     <div
-                      className={`grid transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+                      className={`grid transition-all duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
                         !collapsed && convNavOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"
                       }`}
                     >
-                      <div id="ta-conversas-subnav" className="overflow-hidden min-h-0 pl-2" />
+                      <div className="overflow-hidden min-h-0">
+                        <div
+                          id="ta-conversas-subnav"
+                          className={`pl-2 transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                            !collapsed && convNavOpen ? "translate-y-0" : "-translate-y-2"
+                          }`}
+                        />
+                      </div>
                     </div>
                   )}
                   </Fragment>
