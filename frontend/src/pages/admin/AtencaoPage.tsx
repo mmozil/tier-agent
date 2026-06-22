@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { BellRing, Hand, UserX, RefreshCw, MessageSquare } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { BellRing, Hand, UserX, RefreshCw, MessageSquare, ArrowUpRight } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, EmptyHint, SkeletonBar, SKEL, iconBtn } from "@/components/ds/fc";
 
 interface ConvItem {
   conversation_id: number;
@@ -54,6 +54,11 @@ const CAT_COLOR: Record<string, string> = {
   error: "text-[#E5484D] bg-[#E5484D]/[0.10]",
 };
 
+const LINK_SECONDARY =
+  `h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] border text-[13px] font-medium ` +
+  `transition-all active:scale-[0.98] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)] ` +
+  `${FC.hair} ${FC.ink} ${FC.hover}`;
+
 export default function AtencaoPage() {
   const [data, setData] = useState<AttentionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,6 +81,7 @@ export default function AtencaoPage() {
   }, []);
 
   const c = data?.counts || { aguardando: 0, nao_atribuidas: 0, alertas: 0, total: 0 };
+  const ready = !loading || !!data;
   const open = (id: number | null) => id && nav(`/admin/conversas?open=${id}`);
 
   const Avatar = ({ name }: { name: string | null }) => (
@@ -85,10 +91,16 @@ export default function AtencaoPage() {
   );
 
   const SectionHead = ({ icon: Icon, title, count, tone }: { icon: any; title: string; count: number; tone: string }) => (
-    <div className={`flex items-center gap-2 px-6 py-3 border-b ${FC.hair}`}>
-      <Icon className={`w-4 h-4 ${tone}`} />
+    <div className={`flex items-center gap-2 px-6 py-3.5 border-b ${FC.hair}`}>
+      <span className={`w-6 h-6 rounded-[7px] flex items-center justify-center bg-black/[0.04] dark:bg-white/[0.06] ${tone}`}>
+        <Icon className="w-3.5 h-3.5" />
+      </span>
       <span className={`text-[13px] font-medium ${FC.ink}`}>{title}</span>
-      <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${count > 0 ? "bg-[#E5484D]/[0.12] text-[#E5484D]" : "bg-black/[0.04] dark:bg-white/[0.06] " + FC.mut}`}>
+      <span
+        className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums ${
+          count > 0 ? "bg-[#E5484D]/[0.12] text-[#E5484D]" : "bg-black/[0.04] dark:bg-white/[0.06] " + FC.mut
+        }`}
+      >
         {count}
       </span>
     </div>
@@ -113,18 +125,63 @@ export default function AtencaoPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
+        {/* Header */}
         <Row>
-          <div className="flex items-start justify-between gap-4 p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between p-6">
             <div>
               <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Precisa de você</h2>
               <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
                 Tudo que demanda um humano agora, em um lugar só — conversas aguardando, não atribuídas e leads/alertas.
               </p>
             </div>
-            <button onClick={load} className={iconBtn} title="Atualizar">
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link to="/admin/conversas" className={LINK_SECONDARY}>
+                Abrir conversas
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </Link>
+              <button onClick={load} className={iconBtn} title="Atualizar">
+                <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              </button>
+            </div>
           </div>
+        </Row>
+
+        {/* Resumo — KPIs (padrão Visão geral) */}
+        <Row>
+          <HairCells cols={4}>
+            <Kpi
+              loading={!ready}
+              label="Aguardando humano"
+              value={c.aguardando}
+              dot="#003083"
+              tone={c.aguardando > 0 ? "warn" : ready ? "good" : undefined}
+              hint={c.aguardando > 0 ? "Handoff pendente — assuma a conversa" : "Fila de handoff limpa"}
+            />
+            <Kpi
+              loading={!ready}
+              label="Não atribuídas"
+              value={c.nao_atribuidas}
+              dot="#dc6803"
+              tone={c.nao_atribuidas > 0 ? "warn" : ready ? "good" : undefined}
+              hint={c.nao_atribuidas > 0 ? "Sem responsável definido" : "Todas têm responsável"}
+            />
+            <Kpi
+              loading={!ready}
+              label="Leads e alertas"
+              value={c.alertas}
+              dot="#0a8f5a"
+              tone={c.alertas > 0 ? "good" : undefined}
+              hint={c.alertas > 0 ? "Novos leads / alertas a revisar" : "Nada novo no radar"}
+            />
+            <Kpi
+              loading={!ready}
+              label="Total na fila"
+              value={c.total}
+              dot="#8b5cf6"
+              tone={c.total > 0 ? "critical" : ready ? "good" : undefined}
+              hint={c.total > 0 ? "Itens precisam de você agora" : "Tudo em dia — nada pendente"}
+            />
+          </HairCells>
         </Row>
 
         {/* Aguardando humano */}
@@ -136,14 +193,7 @@ export default function AtencaoPage() {
               <EmptyHint icon={Hand} text="Ninguém aguardando — a fila está limpa." />
             )}
             {data?.aguardando.map((it) => (
-              <button key={it.conversation_id} onClick={() => open(it.conversation_id)} className={`w-full text-left flex items-center gap-3 px-6 py-3 ${FC.hover}`}>
-                <Avatar name={it.contato} />
-                <div className="min-w-0 flex-1">
-                  <div className={`text-[14px] font-medium truncate ${FC.ink}`}>{it.contato || it.telefone}</div>
-                  <div className={`text-[12px] truncate ${FC.sub}`}>{it.preview || "—"}</div>
-                </div>
-                <span className={`text-[11px] tabular-nums ${FC.sub} shrink-0`}>{relTime(it.last_message_at)}</span>
-              </button>
+              <ConvRow key={it.conversation_id} it={it} onOpen={() => open(it.conversation_id)} />
             ))}
           </div>
         </Row>
@@ -157,14 +207,7 @@ export default function AtencaoPage() {
               <EmptyHint icon={UserX} text="Todas as conversas já têm um responsável." />
             )}
             {data?.nao_atribuidas.map((it) => (
-              <button key={it.conversation_id} onClick={() => open(it.conversation_id)} className={`w-full text-left flex items-center gap-3 px-6 py-3 ${FC.hover}`}>
-                <Avatar name={it.contato} />
-                <div className="min-w-0 flex-1">
-                  <div className={`text-[14px] font-medium truncate ${FC.ink}`}>{it.contato || it.telefone}</div>
-                  <div className={`text-[12px] truncate ${FC.sub}`}>{it.preview || "—"}</div>
-                </div>
-                <span className={`text-[11px] tabular-nums ${FC.sub} shrink-0`}>{relTime(it.last_message_at)}</span>
-              </button>
+              <ConvRow key={it.conversation_id} it={it} onOpen={() => open(it.conversation_id)} />
             ))}
           </div>
         </Row>
@@ -182,7 +225,7 @@ export default function AtencaoPage() {
                 key={it.notification_id}
                 onClick={() => open(it.conversation_id)}
                 disabled={!it.conversation_id}
-                className={`w-full text-left flex items-center gap-3 px-6 py-3 ${it.conversation_id ? FC.hover : "cursor-default"}`}
+                className={`w-full text-left flex items-center gap-3 px-6 py-3 transition-colors ${it.conversation_id ? FC.hover : "cursor-default"}`}
               >
                 <Avatar name={it.contato} />
                 <div className="min-w-0 flex-1">
@@ -201,6 +244,73 @@ export default function AtencaoPage() {
           </div>
         </Row>
       </PageFrame>
+    </div>
+  );
+}
+
+// Linha de conversa (aguardando / não atribuída) — avatar + nome + preview + tags + tempo.
+function ConvRow({ it, onOpen }: { it: ConvItem; onOpen: () => void }) {
+  return (
+    <button onClick={onOpen} className={`w-full text-left flex items-center gap-3 px-6 py-3 transition-colors ${FC.hover}`}>
+      <div className="w-8 h-8 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[12px] font-semibold text-[#003083] dark:text-[#5b9bff] shrink-0">
+        {(it.contato || "?").slice(0, 1).toUpperCase()}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{it.contato || it.telefone}</span>
+          {(it.tags || []).slice(0, 2).map((t) => (
+            <span
+              key={t}
+              className={`hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] ${FC.sub} shrink-0`}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+        <div className={`text-[12px] truncate ${FC.sub}`}>{it.preview || "—"}</div>
+      </div>
+      <span className={`text-[11px] tabular-nums ${FC.sub} shrink-0`}>{relTime(it.last_message_at)}</span>
+    </button>
+  );
+}
+
+// Kpi — mesmo card da Visão geral (label + dot · valor 28px · hint).
+function Kpi({
+  label,
+  value,
+  tone,
+  dot,
+  hint,
+  loading = false,
+}: {
+  label: string;
+  value: string | number;
+  tone?: "good" | "warn" | "critical";
+  dot?: string;
+  hint?: string;
+  loading?: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="px-6 py-5" aria-hidden>
+        <div className={`h-3 w-24 ${SKEL}`} />
+        <div className={`mt-3 h-8 w-16 ${SKEL}`} />
+        <div className={`mt-2 h-3 w-28 ${SKEL}`} />
+      </div>
+    );
+  }
+  const valueColor =
+    tone === "good" ? "#0a8f5a" : tone === "warn" ? "#F5A300" : tone === "critical" ? "#E5484D" : undefined;
+  return (
+    <div className="px-6 py-5">
+      <div className="flex items-center gap-1.5">
+        {dot && <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dot }} />}
+        <div className={`text-[11px] font-semibold uppercase tracking-wide ${FC.sub}`}>{label}</div>
+      </div>
+      <div className="mt-2 tabular-nums text-[28px] font-medium leading-none" style={{ color: valueColor }}>
+        {value}
+      </div>
+      {hint && <div className={`mt-1.5 text-[11px] ${FC.sub}`}>{hint}</div>}
     </div>
   );
 }
