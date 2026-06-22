@@ -75,7 +75,7 @@ export const PRIMARY_SHADOW =
 // Firecrawl). Use em <button> crus pra ficarem idênticos ao componente <Button>.
 // Prefixe "w-full" quando precisar largura cheia.
 export const btnPrimary =
-  `h-8 px-3 rounded-[10px] text-[13px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
+  `h-8 px-2.5 rounded-[10px] text-[14px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
 
 // CurvyRect — os 4 corner brackets do Firecrawl (classe .curvy-rect). 11×11,
 // preenchidos com border-faint (#EDEDED). Arredondam o canto do container e,
@@ -331,11 +331,10 @@ export function Button({
   scramble?: boolean; // efeito decode no texto (default: ligado no primary)
 }) {
   const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-[10px] font-medium transition-all active:scale-[0.98] select-none disabled:opacity-50 disabled:pointer-events-none";
-  // Altura E FONTE ÚNICAS (h-8 / 32px · 13px — padrão Firecrawl pro corpo) pros dois
-  // tamanhos; só o padding-x varia (sm = mais compacto). A topbar usa tamanho próprio.
-  const sz = "h-8 text-[13px]";
-  const padX = size === "sm" ? "px-2.5" : "px-3";
+    "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] text-[14px] font-medium transition-all active:scale-[0.98] select-none outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 disabled:opacity-50 disabled:pointer-events-none [&_svg]:shrink-0";
+  // Tamanho default do shadcn (radix): h-8 / 32px · text-sm (14px) · px-2.5 · gap-1.5.
+  const sz = "h-8";
+  const padX = size === "sm" ? "px-2" : "px-2.5";
   const v =
     variant === "primary"
       ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`
@@ -343,7 +342,7 @@ export function Button({
         ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)]`
         : variant === "danger"
           ? `${padX} text-[#c0362c] dark:text-[#ff6b5e] hover:bg-[#c0362c]/[0.06] dark:hover:bg-[#ff6b5e]/[0.10]`
-          : `${size === "sm" ? "px-2" : "px-3"} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
+          : `${size === "sm" ? "px-2" : "px-2.5"} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
   const doScramble = scramble ?? variant === "primary"; // primary tem decode por padrão
   return (
     <button type={type} onClick={onClick} disabled={disabled} title={title} className={`${base} ${sz} ${v} ${className}`}>
