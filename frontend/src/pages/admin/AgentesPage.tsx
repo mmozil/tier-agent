@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, CurvyRect, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
 
 // Blueprint — fundo "planta técnica" do Firecrawl: grade hairline + marcas "+" nos
 // cruzamentos, esmaecendo pra baixo. pointer-events-none, atrás do conteúdo.
@@ -366,20 +366,25 @@ export default function AgentesPage() {
                       title="Seus agentes"
                       subtitle={`${agents.length} ${agents.length === 1 ? "agente configurado" : "agentes configurados"}`}
                     />
-                    <CardGrid>
-                      {agents.map((a) => (
-                        <AgentCard
-                          key={a.id}
-                          agent={a}
-                          templateLabel={templates.find((t) => t.key === a.template_kind)?.label}
-                          menuOpen={openMenuId === a.id}
-                          onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
-                          onClick={() => setSelectedAgentId(a.id)}
-                          onToggleActive={() => toggleActive(a)}
-                          onDelete={() => deleteAgent(a)}
-                        />
-                      ))}
-                    </CardGrid>
+                    <Row>
+                      <div className="relative">
+                        <CurvyRect />
+                        <HairCells cols={3} gridLines>
+                          {agents.map((a) => (
+                            <AgentCard
+                              key={a.id}
+                              agent={a}
+                              templateLabel={templates.find((t) => t.key === a.template_kind)?.label}
+                              menuOpen={openMenuId === a.id}
+                              onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
+                              onClick={() => setSelectedAgentId(a.id)}
+                              onToggleActive={() => toggleActive(a)}
+                              onDelete={() => deleteAgent(a)}
+                            />
+                          ))}
+                        </HairCells>
+                      </div>
+                    </Row>
                   </>
                 )}
 
@@ -461,7 +466,7 @@ function AgentCard({
   return (
     <div
       onClick={onClick}
-      className={`group relative flex min-h-[156px] flex-col cursor-pointer rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 transition-all duration-150 hover:border-[#003083]/40 dark:hover:border-[#5b9bff]/50 hover:shadow-[0_4px_16px_rgba(0,48,131,0.08)]`}
+      className={`group relative flex h-full min-h-[156px] flex-col cursor-pointer p-5 transition-colors ${FC.hover}`}
     >
       {/* Topo: avatar/glifo + menu */}
       <div className="flex items-start justify-between">
