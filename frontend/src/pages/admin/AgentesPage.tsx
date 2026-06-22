@@ -405,7 +405,7 @@ function AgentCard({
               : "bg-[#262626]/[0.05] text-[#262626]/40 dark:bg-white/[0.06] dark:text-[#6b7280]"
           }`}
         >
-          <Bot className="w-[18px] h-[18px]" />
+          <AgentGlyph className="w-[22px] h-[22px]" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[14px] font-semibold text-[#262626] dark:text-[#e6e8eb] truncate leading-5">{agent.nome}</div>
@@ -611,8 +611,8 @@ function AgentDetailsDrawer({
         {/* Header */}
         <div className="px-5 py-4 border-b border-[#EDEDED] flex items-center justify-between sticky top-0 bg-white z-10">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] flex items-center justify-center shrink-0">
-              <Bot className="w-[18px] h-[18px] text-[#003083]" />
+            <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center shrink-0 text-[#003083] dark:text-[#5b9bff]">
+              <AgentGlyph className="w-[22px] h-[22px]" />
             </div>
             <div className="min-w-0">
               <div className="text-[15px] font-semibold text-[#262626] truncate">{agent.nome}</div>
@@ -703,7 +703,7 @@ function AgentDetailsDrawer({
                     />
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-[#003083]/[0.08] flex items-center justify-center text-[#003083] shrink-0">
-                      <Bot className="w-5 h-5" />
+                      <AgentGlyph className="w-7 h-7" />
                     </div>
                   )}
                   <input
