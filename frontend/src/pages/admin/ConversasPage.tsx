@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, Search, Zap,
-  Paperclip, ExternalLink, ArrowUpRight,
+  Paperclip, ExternalLink, ArrowUpRight, Copy,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -39,6 +39,78 @@ function PriorityBadge({ priority }: { priority: string }) {
     <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: m.tint + "1F", color: m.tint }}>
       {m.label}
     </span>
+  );
+}
+
+// ActionMenu — dropdown de AÇÃO no padrão DS (h-8, igual aos botões da barra).
+// Substitui o <select> nativo do SO (que abre o popup feio do browser) por um
+// trigger "secondary" + painel flutuante no mesmo estilo do <Select> do fc.tsx.
+function ActionMenu({
+  label,
+  icon,
+  items,
+  title,
+}: {
+  label: string;
+  icon?: ReactNode;
+  title?: string;
+  items: { label: ReactNode; onSelect: () => void }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        title={title}
+        onClick={() => setOpen((o) => !o)}
+        className={`h-8 px-2.5 rounded-[10px] text-[13px] font-medium inline-flex items-center gap-1.5 ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)] transition-all active:scale-[0.98] ${
+          open ? "shadow-[0_0_0_2px_#003083]" : ""
+        }`}
+      >
+        {icon}
+        {label}
+        <ChevronDown className={`w-3.5 h-3.5 ${FC.mut} transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          className={`absolute z-50 left-0 mt-1 min-w-[184px] rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.12)]`}
+        >
+          {items.length === 0 ? (
+            <div className={`px-2.5 py-2 text-[13px] ${FC.mut}`}>Nenhuma opção</div>
+          ) : (
+            items.map((it, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  it.onSelect();
+                  setOpen(false);
+                }}
+                className={`w-full h-8 px-2.5 rounded-[7px] inline-flex items-center gap-2 text-[13px] text-left ${FC.ink} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors`}
+              >
+                {it.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -868,20 +940,27 @@ export default function ConversasPage() {
                   </button>
                 )}
                 {openConv.snoozed_until ? (
-                  <Button variant="secondary" size="sm" onClick={() => unsnoozeConv(openConv.id)}>💤 Reativar</Button>
+                  <Button variant="secondary" size="sm" onClick={() => unsnoozeConv(openConv.id)}>
+                    <Clock className="w-3.5 h-3.5" /> Reativar
+                  </Button>
                 ) : (
-                  <select value="" onChange={(e) => e.target.value && snoozeConv(openConv.id, Number(e.target.value))} className={`h-9 px-2.5 text-[13px] rounded-[10px] border ${FC.hair} ${FC.dim} dark:bg-[#14171c] outline-none`}>
-                    <option value="">💤 Adiar…</option>
-                    <option value="60">1 hora</option>
-                    <option value="240">4 horas</option>
-                    <option value="1440">Amanhã (24h)</option>
-                  </select>
+                  <ActionMenu
+                    label="Adiar"
+                    icon={<Clock className="w-3.5 h-3.5" />}
+                    items={[
+                      { label: "1 hora", onSelect: () => snoozeConv(openConv.id, 60) },
+                      { label: "4 horas", onSelect: () => snoozeConv(openConv.id, 240) },
+                      { label: "Amanhã (24h)", onSelect: () => snoozeConv(openConv.id, 1440) },
+                    ]}
+                  />
                 )}
                 {macros.length > 0 && (
-                  <select value="" onChange={(e) => e.target.value && applyMacro(Number(e.target.value))} className={`h-9 px-2.5 text-[13px] rounded-[10px] border ${FC.hair} ${FC.dim} dark:bg-[#14171c] outline-none`} title="Aplicar macro">
-                    <option value="">⚡ Macro…</option>
-                    {macros.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
+                  <ActionMenu
+                    label="Macro"
+                    title="Aplicar macro"
+                    icon={<Zap className="w-3.5 h-3.5" />}
+                    items={macros.map((m) => ({ label: m.name, onSelect: () => applyMacro(m.id) }))}
+                  />
                 )}
                 {openConv.status === "handed_off" && <span className="text-[11px] text-[#003083] dark:text-[#8ab4ff] ml-auto">IA pausada — você está no controle</span>}
               </div>
@@ -1005,13 +1084,26 @@ export default function ConversasPage() {
 
           <div className="flex-1 overflow-y-auto sidebar-scroll min-h-0">
             {/* cartão do contato */}
-            <div className={`px-4 py-5 flex flex-col items-center text-center border-b ${FC.hair}`}>
-              <div className="w-14 h-14 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[20px] font-semibold text-[#003083] dark:text-[#5b9bff]">
+            <div className={`px-5 py-6 flex flex-col items-center text-center border-b ${FC.hair}`}>
+              <div className="w-16 h-16 rounded-full flex items-center justify-center text-[22px] font-semibold text-[#003083] dark:text-[#5b9bff] select-none bg-gradient-to-b from-[#003083]/[0.12] to-[#003083]/[0.04] dark:from-[#5b9bff]/[0.20] dark:to-[#5b9bff]/[0.07] ring-1 ring-inset ring-[#003083]/[0.12] dark:ring-[#5b9bff]/[0.20]">
                 {(openConv.contact_name || openConv.external_id || "?").trim().charAt(0).toUpperCase()}
               </div>
-              <p className="mt-2.5 text-[15px] font-medium text-[#262626] dark:text-[#e6e8eb]">{openConv.contact_name || fmtPhone(openConv.external_id || "")}</p>
-              <p className={`text-[12.5px] ${FC.sub} mt-0.5`}>{fmtPhone(openConv.external_id || "")}</p>
-              <div className="mt-2"><StatusBadge status={openConv.status} /></div>
+              <p className="mt-3 text-[16px] font-medium text-[#262626] dark:text-[#e6e8eb] leading-tight">{openConv.contact_name || fmtPhone(openConv.external_id || "")}</p>
+              {openConv.external_id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(fmtPhone(openConv.external_id || ""));
+                    toast.success("Número copiado");
+                  }}
+                  title="Copiar número"
+                  className={`group mt-1 inline-flex items-center gap-1.5 text-[12.5px] ${FC.sub} hover:text-[#262626] dark:hover:text-[#e6e8eb] transition-colors`}
+                >
+                  {fmtPhone(openConv.external_id || "")}
+                  <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              )}
+              <div className="mt-3"><StatusBadge status={openConv.status} /></div>
             </div>
 
             <AccordionSection title="Ações da conversa">
