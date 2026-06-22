@@ -79,7 +79,7 @@ function ActionMenu({
         type="button"
         title={title}
         onClick={() => setOpen((o) => !o)}
-        className={`h-8 px-2.5 rounded-[10px] text-[13px] font-medium inline-flex items-center gap-1.5 ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)] transition-all active:scale-[0.98] ${
+        className={`h-8 px-2.5 rounded-[10px] text-[14px] font-medium inline-flex items-center gap-1.5 ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)] transition-all active:scale-[0.98] ${
           open ? "shadow-[0_0_0_2px_#003083]" : ""
         }`}
       >
