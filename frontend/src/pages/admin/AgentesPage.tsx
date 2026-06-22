@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
+  ArrowUpRight,
   Bot,
   CheckCircle2,
   DollarSign,
@@ -32,10 +33,10 @@ function Blueprint() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-x-0 top-0 h-[560px] overflow-hidden"
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-[460px] overflow-hidden"
       style={{
-        WebkitMaskImage: "linear-gradient(to bottom, #000 0%, #000 28%, transparent 92%)",
-        maskImage: "linear-gradient(to bottom, #000 0%, #000 28%, transparent 92%)",
+        WebkitMaskImage: "linear-gradient(to top, #000 0%, #000 24%, transparent 88%)",
+        maskImage: "linear-gradient(to top, #000 0%, #000 24%, transparent 88%)",
       }}
     >
       <div className="bp-grid absolute inset-0" />
@@ -370,6 +371,7 @@ export default function AgentesPage() {
                         <AgentCard
                           key={a.id}
                           agent={a}
+                          templateLabel={templates.find((t) => t.key === a.template_kind)?.label}
                           menuOpen={openMenuId === a.id}
                           onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
                           onClick={() => setSelectedAgentId(a.id)}
@@ -426,6 +428,7 @@ export default function AgentesPage() {
 
 function AgentCard({
   agent,
+  templateLabel,
   menuOpen,
   onOpenMenu,
   onClick,
@@ -433,6 +436,7 @@ function AgentCard({
   onDelete,
 }: {
   agent: Agent;
+  templateLabel?: string;
   menuOpen: boolean;
   onOpenMenu: (open: boolean) => void;
   onClick: () => void;
@@ -441,6 +445,7 @@ function AgentCard({
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const RoleIcon = agent.template_kind ? KEY_ICON[agent.template_kind] : null;
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -456,19 +461,27 @@ function AgentCard({
   return (
     <div
       onClick={onClick}
-      className={`group relative flex min-h-[128px] flex-col cursor-pointer rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 transition-all duration-150 hover:border-[#003083]/70 dark:hover:border-[#5b9bff]/70 hover:shadow-[0_2px_10px_rgba(0,48,131,0.06)]`}
+      className={`group relative flex min-h-[156px] flex-col cursor-pointer rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 transition-all duration-150 hover:border-[#003083]/40 dark:hover:border-[#5b9bff]/50 hover:shadow-[0_4px_16px_rgba(0,48,131,0.08)]`}
     >
-      {/* Topo: glifo + menu */}
+      {/* Topo: avatar/glifo + menu */}
       <div className="flex items-start justify-between">
-        <div
-          className={`w-10 h-10 rounded-[10px] flex items-center justify-center shrink-0 ${
-            agent.active
-              ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.12] dark:text-[#5b9bff]"
-              : "bg-[#262626]/[0.05] text-[#262626]/40 dark:bg-white/[0.06] dark:text-[#6b7280]"
-          }`}
-        >
-          <AgentGlyph className="w-[22px] h-[22px]" />
-        </div>
+        {agent.avatar_url ? (
+          <img
+            src={agent.avatar_url}
+            alt=""
+            className={`w-11 h-11 rounded-[12px] object-cover shrink-0 ${agent.active ? "" : "grayscale opacity-70"}`}
+          />
+        ) : (
+          <div
+            className={`w-11 h-11 rounded-[12px] flex items-center justify-center shrink-0 ${
+              agent.active
+                ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.12] dark:text-[#5b9bff]"
+                : "bg-[#262626]/[0.05] text-[#262626]/40 dark:bg-white/[0.06] dark:text-[#6b7280]"
+            }`}
+          >
+            <AgentGlyph className="w-6 h-6" />
+          </div>
+        )}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -481,15 +494,15 @@ function AgentCard({
       </div>
 
       {/* Nome + status + persona */}
-      <div className="mt-6">
-        <div className="flex items-center gap-2 flex-wrap mb-1">
-          <h3 className={`text-[15px] font-medium tracking-[-0.01em] ${FC.ink}`}>{agent.nome}</h3>
+      <div className="mt-4 flex-1">
+        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+          <h3 className={`text-[15px] font-semibold tracking-[-0.01em] ${FC.ink}`}>{agent.nome}</h3>
           {agent.active ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#0a8f5a]/[0.12] text-[#0a8f5a]">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-medium bg-[#0a8f5a]/[0.12] text-[#0a8f5a]">
               <span className="w-1.5 h-1.5 rounded-full bg-[#0a8f5a]" /> Ativo
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#262626]/[0.06] text-[#262626]/[0.5] dark:bg-white/[0.08] dark:text-[#8b93a0]">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-medium bg-[#262626]/[0.06] text-[#262626]/[0.5] dark:bg-white/[0.08] dark:text-[#8b93a0]">
               <span className="w-1.5 h-1.5 rounded-full bg-[#262626]/30 dark:bg-white/30" /> Pausado
             </span>
           )}
@@ -497,6 +510,18 @@ function AgentCard({
         <p className={`text-[13px] leading-5 line-clamp-2 ${FC.sub}`}>
           {agent.persona || "Sem persona definida."}
         </p>
+      </div>
+
+      {/* Rodapé: papel/modelo + abrir */}
+      <div className={`mt-3 pt-3 flex items-center justify-between gap-2 border-t ${FC.hair}`}>
+        <span className={`inline-flex min-w-0 items-center gap-1.5 text-[11px] ${FC.sub}`}>
+          {RoleIcon && <RoleIcon className="w-3.5 h-3.5 shrink-0" />}
+          <span className="truncate">{templateLabel || agent.template_kind || "Sem modelo"}</span>
+        </span>
+        <span className="font-mono text-[11px] text-[#262626]/30 dark:text-[#6b7280] group-hover:hidden">#{agent.id}</span>
+        <span className="hidden items-center gap-0.5 text-[11px] font-medium text-[#003083] dark:text-[#5b9bff] group-hover:inline-flex">
+          Abrir <ArrowUpRight className="w-3 h-3" />
+        </span>
       </div>
 
       {menuOpen && (
