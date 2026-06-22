@@ -379,7 +379,7 @@ export default function AgentesPage() {
 
             <div>
               <label className={`block text-[12px] font-medium mb-2 ${FC.sub}`}>Template inicial</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[42vh] overflow-y-auto sidebar-scroll pr-0.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {templates.map((t) => {
                   const Icon = KEY_ICON[t.key] || ICONS[t.icon] || ShoppingBag;
                   const active = form.template_kind === t.key;
