@@ -302,6 +302,16 @@ export default function AgentesPage() {
         <PageHero
           title="Agentes"
           subtitle="Funcionários digitais do seu workspace — cada um com persona, skills e canais. Comece por um modelo abaixo."
+          right={
+            <Button
+              variant="primary"
+              onClick={() =>
+                document.getElementById("ag-modelos")?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+            >
+              <Plus className="w-3.5 h-3.5" /> Novo agente
+            </Button>
+          }
         />
 
         {loading ? (
@@ -332,26 +342,28 @@ export default function AgentesPage() {
               </>
             )}
 
-            <SectionRow
-              title={agents.length > 0 ? "Criar a partir de um modelo" : "Comece com um modelo"}
-              subtitle="Um clique cria o agente já com a persona e as skills do modelo — você ajusta tudo depois."
-            />
-            <CardGrid last>
-              {templates.map((t) => (
-                <TemplateCard
-                  key={t.key}
-                  template={t}
-                  busy={creatingKey === t.key}
-                  disabled={!!creatingKey}
-                  onClick={() => createAgent(t.key, t.label)}
-                />
-              ))}
-              <GhostCard
-                busy={creatingKey === "__blank__"}
-                disabled={!!creatingKey}
-                onClick={() => createAgent(null, "Novo agente")}
+            <div id="ag-modelos" className="scroll-mt-4">
+              <SectionRow
+                title={agents.length > 0 ? "Criar a partir de um modelo" : "Comece com um modelo"}
+                subtitle="Um clique cria o agente já com a persona e as skills do modelo — você ajusta tudo depois."
               />
-            </CardGrid>
+              <CardGrid last>
+                {templates.map((t) => (
+                  <TemplateCard
+                    key={t.key}
+                    template={t}
+                    busy={creatingKey === t.key}
+                    disabled={!!creatingKey}
+                    onClick={() => createAgent(t.key, t.label)}
+                  />
+                ))}
+                <GhostCard
+                  busy={creatingKey === "__blank__"}
+                  disabled={!!creatingKey}
+                  onClick={() => createAgent(null, "Novo agente")}
+                />
+              </CardGrid>
+            </div>
           </>
         )}
       </PageFrame>
