@@ -81,7 +81,7 @@ function GhostCard({ onClick, busy, disabled }: { onClick: () => void; busy?: bo
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`group flex min-h-[128px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed ${FC.hair} bg-transparent p-5 transition-all hover:border-[#003083]/60 dark:hover:border-[#5b9bff]/60 hover:bg-black/[0.015] dark:hover:bg-white/[0.02] disabled:opacity-60`}
+      className={`group flex min-h-[96px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed ${FC.hair} bg-transparent p-4 transition-all hover:border-[#003083]/60 dark:hover:border-[#5b9bff]/60 hover:bg-black/[0.015] dark:hover:bg-white/[0.02] disabled:opacity-60`}
     >
       <div className="w-10 h-10 rounded-[10px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.1] flex items-center justify-center text-[#003083] dark:text-[#5b9bff] group-hover:bg-[#003083]/[0.12] dark:group-hover:bg-[#5b9bff]/[0.18] transition-colors">
         {busy ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Plus className="w-[18px] h-[18px]" />}
@@ -109,20 +109,20 @@ function TemplateCard({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`group relative flex min-h-[128px] flex-col rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 text-left transition-all duration-150 hover:border-[#003083]/70 dark:hover:border-[#5b9bff]/70 hover:shadow-[0_2px_10px_rgba(0,48,131,0.06)] disabled:opacity-60`}
+      className={`group relative flex min-h-[96px] flex-col rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-4 text-left transition-all duration-150 hover:border-[#003083]/70 dark:hover:border-[#5b9bff]/70 hover:shadow-[0_2px_10px_rgba(0,48,131,0.06)] disabled:opacity-60`}
     >
       <div className="flex items-start justify-between">
-        <div className="w-10 h-10 rounded-[10px] bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center text-[#003083] dark:text-[#5b9bff]">
-          {busy ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Icon className="w-[18px] h-[18px]" />}
+        <div className="w-9 h-9 rounded-[10px] bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center text-[#003083] dark:text-[#5b9bff]">
+          {busy ? <Loader2 className="w-[17px] h-[17px] animate-spin" /> : <Icon className="w-[17px] h-[17px]" />}
         </div>
         <span className="inline-flex w-7 h-7 items-center justify-center rounded-[8px] text-[#262626]/30 dark:text-[#6b7280] transition-all group-hover:bg-[#003083]/[0.06] group-hover:text-[#003083] dark:group-hover:bg-[#5b9bff]/[0.12] dark:group-hover:text-[#5b9bff]">
           <Plus className="w-4 h-4" />
         </span>
       </div>
-      <div className="mt-6">
-        <h3 className={`text-[15px] font-medium tracking-[-0.01em] mb-1 ${FC.ink}`}>{t.label}</h3>
-        <p className={`text-[13px] leading-5 line-clamp-2 ${FC.sub}`}>{t.description}</p>
-        <div className="mt-2 flex gap-1 flex-wrap">
+      <div className="mt-3">
+        <h3 className={`text-[15px] font-medium tracking-[-0.01em] mb-0.5 ${FC.ink}`}>{t.label}</h3>
+        <p className={`text-[13px] leading-5 line-clamp-1 ${FC.sub}`}>{t.description}</p>
+        <div className="mt-1.5 flex gap-1 flex-wrap">
           {t.suggested_channels.map((c) => (
             <span
               key={c}
