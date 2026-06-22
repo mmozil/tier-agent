@@ -171,7 +171,7 @@ export function SectionHeader({
 // Canvas, ritmo calmo, mascarado (radial, denso no canto). pointer-events-none.
 const HERO_GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽ0123456789<>=+*#%XY".split("");
 
-function PageHeroRidge() {
+export function PageHeroRidge() {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;

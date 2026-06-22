@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
   ArrowRight,
@@ -26,7 +27,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Spacer, HairCells, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Spacer, HairCells, CurvyRect, PageHeroRidge, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
 
 // Padrão de input/label do Firecrawl (igual PlaybooksPage).
 const inputCls = `w-full h-9 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] ${FC.ink} border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow`;
@@ -281,122 +282,148 @@ export default function AgentesPage() {
         />
       )}
 
-      {/* Modal "Novo agente" — mesmo padrão Firecrawl da página de Playbooks */}
-      {showForm && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8"
-          onClick={() => setShowForm(false)}
-        >
-          <form
-            onSubmit={onSubmit}
-            onClick={(e) => e.stopPropagation()}
-            className={`relative my-auto w-full max-w-[760px] rounded-xl border ${FC.hair} bg-white dark:bg-[#0c0e12] p-6 shadow-xl`}
+      {/* Modal "Novo agente" — identidade Firecrawl: traços (hairlines + "+"),
+          matrix (chuva de código no header) e botão com efeito code (scramble). */}
+      <AnimatePresence>
+        {showForm && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0c0e12]/55 p-4 backdrop-blur-[2px] sm:p-8"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            onClick={() => setShowForm(false)}
           >
-            <button
-              type="button"
-              onClick={() => setShowForm(false)}
-              className={`${iconBtn} absolute right-4 top-4`}
-              title="Fechar"
+            <motion.form
+              onSubmit={onSubmit}
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, y: 14, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.99 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className={`relative my-auto w-full max-w-[760px] overflow-hidden rounded-[14px] border ${FC.hair} bg-white dark:bg-[#0c0e12] shadow-[0_30px_90px_rgba(0,0,0,0.32)]`}
             >
-              <X className="w-4 h-4" />
-            </button>
-
-            <h2 className={`text-[20px] font-[500] leading-7 fc-crisp ${FC.ink}`}>Novo agente</h2>
-            <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
-              Escolha um template e ajuste a persona — dá pra editar tudo depois.
-            </p>
-
-            <div className="mt-5 space-y-4">
-              <FormField label="Nome do agente">
-                <input
-                  type="text"
-                  value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  placeholder="ex: Atendente principal"
-                  className={inputCls}
-                  required
-                  autoFocus
-                />
-              </FormField>
-
-              <div>
-                <label className={`block text-[12px] font-medium mb-2 ${FC.sub}`}>Template inicial</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {templates.map((t) => {
-                    const Icon = KEY_ICON[t.key] || ICONS[t.icon] || ShoppingBag;
-                    const active = form.template_kind === t.key;
-                    return (
-                      <label
-                        key={t.key}
-                        className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
-                          active
-                            ? "border-[#003083] dark:border-[#5b9bff] bg-[#003083]/[0.04] dark:bg-[#5b9bff]/[0.08]"
-                            : `${FC.hair} hover:border-[#003083] dark:hover:border-[#5b9bff]`
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="template"
-                          value={t.key}
-                          checked={active}
-                          onChange={(e) => setForm({ ...form, template_kind: e.target.value })}
-                          className="sr-only"
-                        />
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center shrink-0 mt-0.5">
-                            <Icon className="w-3.5 h-3.5 text-[#003083] dark:text-[#5b9bff]" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`text-[13px] font-medium ${FC.ink}`}>{t.label}</span>
-                              {active && <Check className="w-3.5 h-3.5 shrink-0 text-[#003083] dark:text-[#5b9bff]" />}
-                            </div>
-                            <div className={`text-[11px] mt-0.5 ${FC.sub}`}>{t.description}</div>
-                            <div className="mt-1.5 flex gap-1 flex-wrap">
-                              {t.suggested_channels.map((c) => (
-                                <span
-                                  key={c}
-                                  className={`px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide bg-[#262626]/[0.06] dark:bg-white/[0.08] ${FC.dim}`}
-                                >
-                                  {c}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-                {selectedTemplate && (
-                  <p className={`mt-2 text-[11px] ${FC.sub}`}>
-                    A persona e o prompt deste template são aplicados automaticamente — dá pra sobrescrever editando depois.
+              {/* Header com matrix (chuva de código azul Tier) */}
+              <div className={`relative overflow-hidden border-b ${FC.hair}`}>
+                <PageHeroRidge />
+                <div className="relative px-6 py-5">
+                  <h2 className={`text-[22px] font-semibold leading-7 tracking-[-0.3px] fc-crisp ${FC.ink}`}>Novo agente</h2>
+                  <p className={`mt-1.5 max-w-[460px] text-[13px] leading-5 ${FC.sub}`}>
+                    Escolha um template e ajuste a persona — dá pra editar tudo depois.
                   </p>
-                )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className={`${iconBtn} absolute right-3.5 top-3.5 z-20`}
+                  title="Fechar"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              <FormField label="Persona (livre)">
-                <textarea
-                  value={form.persona}
-                  onChange={(e) => setForm({ ...form, persona: e.target.value })}
-                  placeholder="ex: Você é um atendente cordial e direto, fala em pt-BR..."
-                  rows={4}
-                  className={`w-full px-3 py-2.5 text-[13px] rounded-lg bg-white dark:bg-[#14171c] ${FC.ink} border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow font-mono resize-none`}
-                />
-              </FormField>
-            </div>
+              {/* Body */}
+              <div className="max-h-[60vh] space-y-5 overflow-y-auto px-6 py-6 sidebar-scroll">
+                <FormField label="Nome do agente">
+                  <input
+                    type="text"
+                    value={form.nome}
+                    onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                    placeholder="ex: Atendente principal"
+                    className={inputCls}
+                    required
+                    autoFocus
+                  />
+                </FormField>
 
-            <div className="flex justify-end gap-2 pt-5">
-              <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" variant="primary">
-                <Plus className="w-4 h-4" /> Criar agente
-              </Button>
-            </div>
-          </form>
-        </div>
-      )}
+                <div>
+                  <label className={`mb-2 block text-[12px] font-medium ${FC.sub}`}>Template inicial</label>
+                  {/* Grade flush com traços: bordas internas se cruzam ("+") + CurvyRect nos cantos */}
+                  <div className={`relative overflow-hidden rounded-[12px] border ${FC.hair}`}>
+                    <CurvyRect />
+                    <div className="grid grid-cols-1 sm:grid-cols-2">
+                      {templates.map((t, i) => {
+                        const Icon = KEY_ICON[t.key] || ICONS[t.icon] || ShoppingBag;
+                        const active = form.template_kind === t.key;
+                        const rows = Math.ceil(templates.length / 2);
+                        const notLastRow = Math.floor(i / 2) < rows - 1;
+                        const hasRight = i % 2 === 0 && i + 1 < templates.length;
+                        return (
+                          <label
+                            key={t.key}
+                            className={`relative flex cursor-pointer items-start gap-2.5 p-3.5 transition-colors ${
+                              notLastRow ? `border-b ${FC.hair}` : ""
+                            } ${hasRight ? `sm:border-r ${FC.hair}` : ""} ${
+                              active ? "bg-[#003083]/[0.05] dark:bg-[#5b9bff]/[0.10]" : FC.hover
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="template"
+                              value={t.key}
+                              checked={active}
+                              onChange={(e) => setForm({ ...form, template_kind: e.target.value })}
+                              className="sr-only"
+                            />
+                            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12]">
+                              <Icon className="h-4 w-4 text-[#003083] dark:text-[#5b9bff]" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-[13px] font-medium ${FC.ink}`}>{t.label}</span>
+                                {active && <Check className="h-3.5 w-3.5 shrink-0 text-[#003083] dark:text-[#5b9bff]" />}
+                              </div>
+                              <div className={`mt-0.5 text-[11px] ${FC.sub}`}>{t.description}</div>
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {t.suggested_channels.map((c) => (
+                                  <span
+                                    key={c}
+                                    className={`rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-[#262626]/[0.06] dark:bg-white/[0.08] ${FC.dim}`}
+                                  >
+                                    {c}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {selectedTemplate && (
+                    <p className={`mt-2 text-[11px] ${FC.sub}`}>
+                      A persona e o prompt deste template são aplicados automaticamente — dá pra sobrescrever editando depois.
+                    </p>
+                  )}
+                </div>
+
+                <FormField label="Persona (livre)">
+                  <textarea
+                    value={form.persona}
+                    onChange={(e) => setForm({ ...form, persona: e.target.value })}
+                    placeholder="ex: Você é um atendente cordial e direto, fala em pt-BR..."
+                    rows={4}
+                    className={`w-full resize-none rounded-lg border px-3 py-2.5 text-[13px] font-mono outline-none transition-shadow bg-white dark:bg-[#14171c] ${FC.ink} ${FC.hair} focus:shadow-[0_0_0_2px_#003083]`}
+                  />
+                </FormField>
+              </div>
+
+              {/* Footer */}
+              <div className={`flex items-center gap-2 border-t px-6 py-4 ${FC.hair} ${FC.base}`}>
+                <span className={`hidden text-[11px] sm:block ${FC.mut}`}>Você ajusta persona, skills e canais depois.</span>
+                <div className="ml-auto flex gap-2">
+                  <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" variant="primary">
+                    <Plus className="w-4 h-4" /> Criar agente
+                  </Button>
+                </div>
+              </div>
+            </motion.form>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
