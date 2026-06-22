@@ -1,8 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { Bell, Phone, ArrowRight } from "lucide-react";
 
 import { api } from "@/lib/api";
+
+// Animação de "tocar" o sininho (estilo animate-ui Bell): balança feito pêndulo,
+// pivotando no topo. Toca no hover e, quando há mensagens, toca em loop suave.
+const bellAnim = {
+  idle: { rotate: 0 },
+  ring: {
+    rotate: [0, 14, -11, 8, -6, 4, -2, 0],
+    transition: { duration: 0.9, ease: "easeInOut", repeat: Infinity, repeatDelay: 4 },
+  },
+  hover: {
+    rotate: [0, 12, -10, 7, -4, 0],
+    transition: { duration: 0.6, ease: "easeInOut" },
+  },
+};
 
 // Botão-ícone da topbar (36px — a topbar é maior que os botões do corpo, que são 32px)
 const topIconBtn =
@@ -95,14 +110,27 @@ export default function NotificationBell() {
 
   return (
     <div className="relative" ref={ref}>
-      <button onClick={toggle} className={`${topIconBtn} relative`} title="Notificações">
-        <Bell className="w-4 h-4" />
+      <motion.button
+        onClick={toggle}
+        className={`${topIconBtn} relative`}
+        title="Notificações"
+        initial="idle"
+        animate={count > 0 ? "ring" : "idle"}
+        whileHover="hover"
+      >
+        <motion.span
+          className="inline-flex"
+          style={{ transformOrigin: "50% 12%" }}
+          variants={bellAnim}
+        >
+          <Bell className="w-4 h-4" />
+        </motion.span>
         {count > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-semibold inline-flex items-center justify-center">
             {count > 99 ? "99+" : count}
           </span>
         )}
-      </button>
+      </motion.button>
 
       {open && (
         <div className="absolute right-0 mt-2 w-[340px] bg-white rounded-xl shadow-lg ring-1 ring-black/5 z-50 overflow-hidden">
