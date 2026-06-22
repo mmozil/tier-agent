@@ -342,7 +342,7 @@ export default function AdminLayout() {
             <div className="flex items-center gap-1.5">
               <OnlineToggle />
               <NotificationBell />
-              <ThemeToggle className={topIconBtn} />
+              <ThemeToggle />
               <Link to="/admin/configuracoes" title="Configurações" className={topIconBtn}>
                 <Settings className="w-4 h-4" />
               </Link>
