@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
-  ArrowRight,
   Bot,
   Check,
   CheckCircle2,
@@ -27,7 +25,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Spacer, HairCells, CurvyRect, PageHeroRidge, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, PageHero, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
 
 // Padrão de input/label do Firecrawl (igual PlaybooksPage).
 const inputCls = `w-full h-9 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] ${FC.ink} border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow`;
@@ -37,6 +35,102 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
     <div>
       <label className={`block text-[12px] font-medium mb-1 ${FC.sub}`}>{label}</label>
       {children}
+    </div>
+  );
+}
+
+// SectionRow — cabeçalho de seção (label-x-large + subtítulo) numa Row FC.
+function SectionRow({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <Row>
+      <div className="px-6 py-5">
+        <h2 className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 fc-crisp ${FC.ink}`}>{title}</h2>
+        {subtitle && <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>{subtitle}</p>}
+      </div>
+    </Row>
+  );
+}
+
+// CardGrid — grade 2 colunas (cards arredondados c/ gap), padrão /app/workflows do FC.
+function CardGrid({ children, last = false }: { children: React.ReactNode; last?: boolean }) {
+  return (
+    <Row last={last}>
+      <div className="p-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>
+      </div>
+    </Row>
+  );
+}
+
+// GhostCard — card tracejado "Novo agente" (padrão Playbooks).
+function GhostCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`group flex min-h-[128px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed ${FC.hair} bg-transparent p-5 transition-all hover:border-[#003083]/60 dark:hover:border-[#5b9bff]/60 hover:bg-black/[0.015] dark:hover:bg-white/[0.02]`}
+    >
+      <div className="w-10 h-10 rounded-[10px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.1] flex items-center justify-center group-hover:bg-[#003083]/[0.12] dark:group-hover:bg-[#5b9bff]/[0.18] transition-colors">
+        <Plus className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
+      </div>
+      <span className={`text-[13px] font-medium ${FC.ink}`}>Novo agente</span>
+      <span className={`text-[11px] ${FC.mut}`}>Escolha um template e ajuste a persona</span>
+    </button>
+  );
+}
+
+// Skeleton da grade (mostra a forma, não spinner no vazio).
+function AgentsSkeleton() {
+  return (
+    <div className="p-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className={`rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 min-h-[128px]`}>
+            <div className="flex items-start justify-between">
+              <SkeletonBar className="w-10 h-10 rounded-[10px]" />
+              <SkeletonBar className="w-4 h-4 rounded" />
+            </div>
+            <div className="mt-6">
+              <SkeletonBar className="h-3.5 w-1/2 mb-2" />
+              <SkeletonBar className="h-3 w-4/5" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Estado vazio (padrão Playbooks: ícone num quadrado hairline + título + CTA).
+function AgentsEmpty({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="p-12 text-center">
+      <div className={`inline-flex w-12 h-12 rounded-md ${FC.base} items-center justify-center mb-4 border ${FC.hair} text-[#003083] dark:text-[#5b9bff]`}>
+        <AgentGlyph className="w-6 h-6" />
+      </div>
+      <h3 className={`text-[20px] font-[500] leading-7 fc-crisp mb-1 ${FC.ink}`}>Nenhum agente ainda</h3>
+      <p className={`text-[13px] mb-5 max-w-md mx-auto ${FC.sub}`}>
+        Agentes são os funcionários digitais do workspace — cada um com persona, skills e canais. Crie o primeiro a partir de um template.
+      </p>
+      <Button variant="primary" onClick={onCreate} className="mx-auto">
+        <Plus className="w-3.5 h-3.5" /> Criar agente
+      </Button>
+    </div>
+  );
+}
+
+// Modal limpo (padrão Playbooks): card rounded-xl + hairline + shadow, centralizado.
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className={`my-auto w-full max-w-[680px] rounded-xl border ${FC.hair} bg-white dark:bg-[#0c0e12] p-6 shadow-xl`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -206,68 +300,46 @@ export default function AgentesPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <Row>
-          <div className="flex items-start justify-between gap-4 p-6">
-            <div>
-              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Agentes</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Crie e gerencie os funcionários digitais do seu workspace.</p>
-            </div>
-            <Button variant="primary" onClick={() => setShowForm(!showForm)} className="shrink-0">
-              <Plus className="w-4 h-4" /> Novo agente
-            </Button>
-          </div>
-        </Row>
-
-        <Spacer />
-
-      <Row last curvy={false}>
-        {loading ? (
-          // skeleton ecoa a grade de 3 cards (forma da página, não spinner no vazio)
-          <HairCells cols={3} gridLines>
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="flex h-full flex-col p-5">
-                <div className="flex items-start gap-3">
-                  <SkeletonBar className="w-9 h-9 rounded-[10px] shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <SkeletonBar className="h-3.5 w-32 mb-2" />
-                    <SkeletonBar className="h-3 w-20" />
-                  </div>
-                </div>
-                <SkeletonBar className="mt-3 h-3 w-full" />
-                <SkeletonBar className="mt-2 h-3 w-3/4" />
-                <div className="mt-3 pt-3 border-t border-[#EDEDED] dark:border-[#23272e]">
-                  <SkeletonBar className="h-3 w-24" />
-                </div>
-              </div>
-            ))}
-          </HairCells>
-        ) : agents.length === 0 ? (
-          <div className="flex flex-col items-center text-center py-16">
-            <AgentGlyph className="w-10 h-10 text-[#003083] dark:text-[#5b9bff] mb-3.5" />
-            <p className="text-[15px] font-medium text-[#262626] dark:text-[#e6e8eb]">Nenhum agente ainda</p>
-            <p className={`text-[13px] leading-5 mt-1 mb-4 max-w-[360px] ${FC.sub}`}>
-              Crie o primeiro funcionário digital do workspace — escolha um template e ajuste a persona.
-            </p>
+        <PageHero
+          title="Agentes"
+          subtitle="Crie e gerencie os funcionários digitais do seu workspace — cada um com persona, skills e canais."
+          right={
             <Button variant="primary" onClick={() => setShowForm(true)}>
-              <Plus className="w-4 h-4" /> Novo agente
+              <Plus className="w-3.5 h-3.5" /> Novo agente
             </Button>
-          </div>
+          }
+        />
+
+        {loading ? (
+          <Row last>
+            <AgentsSkeleton />
+          </Row>
+        ) : agents.length === 0 ? (
+          <Row last>
+            <AgentsEmpty onCreate={() => setShowForm(true)} />
+          </Row>
         ) : (
-          <HairCells cols={3} gridLines>
-            {agents.map((a) => (
-              <AgentCard
-                key={a.id}
-                agent={a}
-                menuOpen={openMenuId === a.id}
-                onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
-                onClick={() => setSelectedAgentId(a.id)}
-                onToggleActive={() => toggleActive(a)}
-                onDelete={() => deleteAgent(a)}
-              />
-            ))}
-          </HairCells>
+          <>
+            <SectionRow
+              title="Seus agentes"
+              subtitle={`${agents.length} ${agents.length === 1 ? "agente configurado" : "agentes configurados"}`}
+            />
+            <CardGrid last>
+              {agents.map((a) => (
+                <AgentCard
+                  key={a.id}
+                  agent={a}
+                  menuOpen={openMenuId === a.id}
+                  onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
+                  onClick={() => setSelectedAgentId(a.id)}
+                  onToggleActive={() => toggleActive(a)}
+                  onDelete={() => deleteAgent(a)}
+                />
+              ))}
+              <GhostCard onClick={() => setShowForm(true)} />
+            </CardGrid>
+          </>
         )}
-      </Row>
       </PageFrame>
 
       {selectedAgent && (
@@ -282,148 +354,106 @@ export default function AgentesPage() {
         />
       )}
 
-      {/* Modal "Novo agente" — identidade Firecrawl: traços (hairlines + "+"),
-          matrix (chuva de código no header) e botão com efeito code (scramble). */}
-      <AnimatePresence>
-        {showForm && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0c0e12]/55 p-4 backdrop-blur-[2px] sm:p-8"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.16 }}
-            onClick={() => setShowForm(false)}
-          >
-            <motion.form
-              onSubmit={onSubmit}
-              onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, y: 14, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.99 }}
-              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className={`relative my-auto w-full max-w-[760px] overflow-hidden rounded-[14px] border ${FC.hair} bg-white dark:bg-[#0c0e12] shadow-[0_30px_90px_rgba(0,0,0,0.32)]`}
-            >
-              {/* Header com matrix (chuva de código azul Tier) */}
-              <div className={`relative overflow-hidden border-b ${FC.hair}`}>
-                <PageHeroRidge />
-                <div className="relative px-6 py-5">
-                  <h2 className={`text-[22px] font-semibold leading-7 tracking-[-0.3px] fc-crisp ${FC.ink}`}>Novo agente</h2>
-                  <p className={`mt-1.5 max-w-[460px] text-[13px] leading-5 ${FC.sub}`}>
-                    Escolha um template e ajuste a persona — dá pra editar tudo depois.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className={`${iconBtn} absolute right-3.5 top-3.5 z-20`}
-                  title="Fechar"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+      {/* Modal "Novo agente" — limpo, padrão Firecrawl/Playbooks */}
+      {showForm && (
+        <Modal onClose={() => setShowForm(false)}>
+          <form onSubmit={onSubmit} className="space-y-5">
+            <div>
+              <h2 className={`text-[20px] font-[500] leading-7 fc-crisp ${FC.ink}`}>Novo agente</h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.sub}`}>
+                Escolha um template e ajuste a persona — dá pra editar tudo depois.
+              </p>
+            </div>
+
+            <FormField label="Nome do agente">
+              <input
+                type="text"
+                value={form.nome}
+                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                placeholder="ex: Atendente principal"
+                className={inputCls}
+                required
+                autoFocus
+              />
+            </FormField>
+
+            <div>
+              <label className={`block text-[12px] font-medium mb-2 ${FC.sub}`}>Template inicial</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[42vh] overflow-y-auto sidebar-scroll pr-0.5">
+                {templates.map((t) => {
+                  const Icon = KEY_ICON[t.key] || ICONS[t.icon] || ShoppingBag;
+                  const active = form.template_kind === t.key;
+                  return (
+                    <label
+                      key={t.key}
+                      className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
+                        active
+                          ? "border-[#003083] dark:border-[#5b9bff] bg-[#003083]/[0.04] dark:bg-[#5b9bff]/[0.08]"
+                          : `${FC.hair} hover:border-[#003083] dark:hover:border-[#5b9bff]`
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="template"
+                        value={t.key}
+                        checked={active}
+                        onChange={(e) => setForm({ ...form, template_kind: e.target.value })}
+                        className="sr-only"
+                      />
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center shrink-0 mt-0.5">
+                          <Icon className="w-3.5 h-3.5 text-[#003083] dark:text-[#5b9bff]" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[13px] font-medium ${FC.ink}`}>{t.label}</span>
+                            {active && <Check className="w-3.5 h-3.5 shrink-0 text-[#003083] dark:text-[#5b9bff]" />}
+                          </div>
+                          <div className={`text-[11px] mt-0.5 ${FC.sub}`}>{t.description}</div>
+                          <div className="mt-1.5 flex gap-1 flex-wrap">
+                            {t.suggested_channels.map((c) => (
+                              <span
+                                key={c}
+                                className={`px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide bg-[#262626]/[0.06] dark:bg-white/[0.08] ${FC.dim}`}
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
+              {selectedTemplate && (
+                <p className={`mt-2 text-[11px] ${FC.sub}`}>
+                  A persona e o prompt deste template são aplicados automaticamente — dá pra sobrescrever editando depois.
+                </p>
+              )}
+            </div>
 
-              {/* Body */}
-              <div className="max-h-[60vh] space-y-5 overflow-y-auto px-6 py-6 sidebar-scroll">
-                <FormField label="Nome do agente">
-                  <input
-                    type="text"
-                    value={form.nome}
-                    onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                    placeholder="ex: Atendente principal"
-                    className={inputCls}
-                    required
-                    autoFocus
-                  />
-                </FormField>
+            <FormField label="Persona (livre)">
+              <textarea
+                value={form.persona}
+                onChange={(e) => setForm({ ...form, persona: e.target.value })}
+                placeholder="ex: Você é um atendente cordial e direto, fala em pt-BR..."
+                rows={4}
+                className={`w-full px-3 py-2.5 text-[13px] rounded-lg bg-white dark:bg-[#14171c] ${FC.ink} border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083] transition-shadow font-mono resize-none`}
+              />
+            </FormField>
 
-                <div>
-                  <label className={`mb-2 block text-[12px] font-medium ${FC.sub}`}>Template inicial</label>
-                  {/* Grade flush com traços: bordas internas se cruzam ("+") + CurvyRect nos cantos */}
-                  <div className={`relative overflow-hidden rounded-[12px] border ${FC.hair}`}>
-                    <CurvyRect />
-                    <div className="grid grid-cols-1 sm:grid-cols-2">
-                      {templates.map((t, i) => {
-                        const Icon = KEY_ICON[t.key] || ICONS[t.icon] || ShoppingBag;
-                        const active = form.template_kind === t.key;
-                        const rows = Math.ceil(templates.length / 2);
-                        const notLastRow = Math.floor(i / 2) < rows - 1;
-                        const hasRight = i % 2 === 0 && i + 1 < templates.length;
-                        return (
-                          <label
-                            key={t.key}
-                            className={`relative flex cursor-pointer items-start gap-2.5 p-3.5 transition-colors ${
-                              notLastRow ? `border-b ${FC.hair}` : ""
-                            } ${hasRight ? `sm:border-r ${FC.hair}` : ""} ${
-                              active ? "bg-[#003083]/[0.05] dark:bg-[#5b9bff]/[0.10]" : FC.hover
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="template"
-                              value={t.key}
-                              checked={active}
-                              onChange={(e) => setForm({ ...form, template_kind: e.target.value })}
-                              className="sr-only"
-                            />
-                            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12]">
-                              <Icon className="h-4 w-4 text-[#003083] dark:text-[#5b9bff]" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`text-[13px] font-medium ${FC.ink}`}>{t.label}</span>
-                                {active && <Check className="h-3.5 w-3.5 shrink-0 text-[#003083] dark:text-[#5b9bff]" />}
-                              </div>
-                              <div className={`mt-0.5 text-[11px] ${FC.sub}`}>{t.description}</div>
-                              <div className="mt-1.5 flex flex-wrap gap-1">
-                                {t.suggested_channels.map((c) => (
-                                  <span
-                                    key={c}
-                                    className={`rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-[#262626]/[0.06] dark:bg-white/[0.08] ${FC.dim}`}
-                                  >
-                                    {c}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  {selectedTemplate && (
-                    <p className={`mt-2 text-[11px] ${FC.sub}`}>
-                      A persona e o prompt deste template são aplicados automaticamente — dá pra sobrescrever editando depois.
-                    </p>
-                  )}
-                </div>
-
-                <FormField label="Persona (livre)">
-                  <textarea
-                    value={form.persona}
-                    onChange={(e) => setForm({ ...form, persona: e.target.value })}
-                    placeholder="ex: Você é um atendente cordial e direto, fala em pt-BR..."
-                    rows={4}
-                    className={`w-full resize-none rounded-lg border px-3 py-2.5 text-[13px] font-mono outline-none transition-shadow bg-white dark:bg-[#14171c] ${FC.ink} ${FC.hair} focus:shadow-[0_0_0_2px_#003083]`}
-                  />
-                </FormField>
-              </div>
-
-              {/* Footer */}
-              <div className={`flex items-center gap-2 border-t px-6 py-4 ${FC.hair} ${FC.base}`}>
-                <span className={`hidden text-[11px] sm:block ${FC.mut}`}>Você ajusta persona, skills e canais depois.</span>
-                <div className="ml-auto flex gap-2">
-                  <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" variant="primary">
-                    <Plus className="w-4 h-4" /> Criar agente
-                  </Button>
-                </div>
-              </div>
-            </motion.form>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="primary">
+                <Plus className="w-4 h-4" /> Criar agente
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -460,63 +490,47 @@ function AgentCard({
   return (
     <div
       onClick={onClick}
-      className="group relative flex h-full flex-col p-5 cursor-pointer transition-colors hover:bg-black/[0.025] dark:hover:bg-white/[0.03]"
+      className={`group relative flex min-h-[128px] flex-col cursor-pointer rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 transition-all duration-150 hover:border-[#003083]/70 dark:hover:border-[#5b9bff]/70 hover:shadow-[0_2px_10px_rgba(0,48,131,0.06)]`}
     >
-      {/* Topo: avatar + nome + status + menu */}
-      <div className="flex items-start gap-3">
+      {/* Topo: glifo + menu */}
+      <div className="flex items-start justify-between">
         <div
-          className={`w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0 ${
+          className={`w-10 h-10 rounded-[10px] flex items-center justify-center shrink-0 ${
             agent.active
-              ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
+              ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.12] dark:text-[#5b9bff]"
               : "bg-[#262626]/[0.05] text-[#262626]/40 dark:bg-white/[0.06] dark:text-[#6b7280]"
           }`}
         >
           <AgentGlyph className="w-[22px] h-[22px]" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[14px] font-semibold text-[#262626] dark:text-[#e6e8eb] truncate leading-5">{agent.nome}</div>
-          <div className="mt-1 flex items-center gap-1.5 text-[11px]">
-            {agent.active ? (
-              <span className="inline-flex items-center gap-1 font-medium text-[#0a8f5a]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#0a8f5a]" /> Ativo
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 font-medium text-[#262626]/40 dark:text-[#6b7280]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#262626]/25" /> Pausado
-              </span>
-            )}
-            <span className="text-[#262626]/25">·</span>
-            <span className="text-[#262626]/40 dark:text-[#6b7280] tabular-nums">#{agent.id}</span>
-          </div>
         </div>
         <button
           onClick={(e) => {
             e.stopPropagation();
             onOpenMenu(!menuOpen);
           }}
-          className={`${iconBtn} -mr-1 -mt-0.5`}
+          className={`${iconBtn} -mr-1 -mt-1`}
         >
           <MoreVertical className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Persona */}
-      <p className="mt-3 text-[12.5px] leading-relaxed text-[#262626]/[0.56] dark:text-[#8b93a0] line-clamp-2 min-h-[36px]">
-        {agent.persona || <span className="italic text-[#262626]/30 dark:text-[#565d68]">Sem persona definida.</span>}
-      </p>
-
-      {/* Rodapé: template + abrir */}
-      <div className="mt-3 pt-3 flex items-center justify-between border-t border-[#EDEDED] dark:border-[#23272e]">
-        {agent.template_kind ? (
-          <span className="inline-flex items-center text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab]">
-            {agent.template_kind}
-          </span>
-        ) : (
-          <span className="text-[10.5px] text-[#262626]/30">sem template</span>
-        )}
-        <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-[#003083] dark:text-[#5b9bff] opacity-0 group-hover:opacity-100 transition-opacity">
-          Abrir <ArrowRight className="w-3 h-3" />
-        </span>
+      {/* Nome + status + persona */}
+      <div className="mt-6">
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <h3 className={`text-[15px] font-medium tracking-[-0.01em] ${FC.ink}`}>{agent.nome}</h3>
+          {agent.active ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#0a8f5a]/[0.12] text-[#0a8f5a]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#0a8f5a]" /> Ativo
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#262626]/[0.06] text-[#262626]/[0.5] dark:bg-white/[0.08] dark:text-[#8b93a0]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#262626]/30 dark:bg-white/30" /> Pausado
+            </span>
+          )}
+        </div>
+        <p className={`text-[13px] leading-5 line-clamp-2 ${FC.sub}`}>
+          {agent.persona || "Sem persona definida."}
+        </p>
       </div>
 
       {menuOpen && (
