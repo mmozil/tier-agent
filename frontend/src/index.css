@@ -60,7 +60,10 @@
      Thumb transparente por padrão; ao passar o mouse no container ele surge com fade
      suave. A borda transparente + background-clip deixa o thumb fino e afastado da
      borda. Webkit (Chrome/Edge) + Firefox. */
-  .sidebar-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  /* scrollbar-gutter: stable reserva o espaço da scrollbar SEMPRE — senão, ao abrir/
+     fechar a sub-nav de Conversas o conteúdo cruza o limite de overflow, a scrollbar
+     aparece/some e a LARGURA do sidebar "pula". Com gutter estável a largura é fixa. */
+  .sidebar-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; scrollbar-gutter: stable; }
   .sidebar-scroll:hover { scrollbar-color: rgba(38, 38, 38, 0.22) transparent; }
   .sidebar-scroll::-webkit-scrollbar { width: 8px; }
   .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
