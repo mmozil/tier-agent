@@ -24,7 +24,32 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, PageHero, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
+
+// Blueprint — fundo "planta técnica" do Firecrawl: grade hairline + marcas "+" nos
+// cruzamentos, esmaecendo pra baixo. pointer-events-none, atrás do conteúdo.
+function Blueprint() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 top-0 h-[560px] overflow-hidden"
+      style={{
+        WebkitMaskImage: "linear-gradient(to bottom, #000 0%, #000 28%, transparent 92%)",
+        maskImage: "linear-gradient(to bottom, #000 0%, #000 28%, transparent 92%)",
+      }}
+    >
+      <div className="bp-grid absolute inset-0" />
+      <svg className="absolute inset-0 h-full w-full text-[#003083]/30 dark:text-[#5b9bff]/25" aria-hidden>
+        <defs>
+          <pattern id="ag-plus" width="64" height="64" patternUnits="userSpaceOnUse">
+            <path d="M0 -4v8M-4 0h8" stroke="currentColor" strokeWidth="1" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#ag-plus)" />
+      </svg>
+    </div>
+  );
+}
 
 // SectionRow — cabeçalho de seção (label-x-large + subtítulo) numa Row FC.
 function SectionRow({ title, subtitle }: { title: string; subtitle?: string }) {
@@ -299,73 +324,89 @@ export default function AgentesPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <PageHero
-          title="Agentes"
-          subtitle="Funcionários digitais do seu workspace — cada um com persona, skills e canais. Comece por um modelo abaixo."
-          right={
-            <Button
-              variant="primary"
-              onClick={() =>
-                document.getElementById("ag-modelos")?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }
-            >
-              <Plus className="w-3.5 h-3.5" /> Novo agente
-            </Button>
-          }
-        />
+        <div className="relative">
+          {/* Fundo "planta técnica" do Firecrawl — grade + marcas "+" esmaecendo */}
+          <Blueprint />
 
-        {loading ? (
-          <Row last>
-            <AgentsSkeleton />
-          </Row>
-        ) : (
-          <>
-            {agents.length > 0 && (
+          <div className="relative z-10">
+            {/* Hero */}
+            <Row>
+              <div className="flex items-start justify-between gap-4 px-6 py-11">
+                <div className="min-w-0">
+                  <div className={`mb-2.5 inline-flex items-center gap-2 font-mono text-[11px] ${FC.mut}`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0a8f5a]" />
+                    {agents.filter((a) => a.active).length} ativos · {agents.length} no total
+                  </div>
+                  <h1 className={`text-[28px] font-semibold tracking-[-0.4px] leading-9 fc-crisp ${FC.ink}`}>Agentes</h1>
+                  <p className={`mt-2 max-w-[600px] text-[14px] leading-6 ${FC.sub}`}>
+                    Funcionários digitais do seu workspace — cada um com persona, skills e canais. Comece por um modelo abaixo.
+                  </p>
+                </div>
+                <Button
+                  variant="primary"
+                  onClick={() =>
+                    document.getElementById("ag-modelos")?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
+                >
+                  <Plus className="w-3.5 h-3.5" /> Novo agente
+                </Button>
+              </div>
+            </Row>
+
+            {loading ? (
+              <Row last>
+                <AgentsSkeleton />
+              </Row>
+            ) : (
               <>
-                <SectionRow
-                  title="Seus agentes"
-                  subtitle={`${agents.length} ${agents.length === 1 ? "agente configurado" : "agentes configurados"}`}
-                />
-                <CardGrid>
-                  {agents.map((a) => (
-                    <AgentCard
-                      key={a.id}
-                      agent={a}
-                      menuOpen={openMenuId === a.id}
-                      onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
-                      onClick={() => setSelectedAgentId(a.id)}
-                      onToggleActive={() => toggleActive(a)}
-                      onDelete={() => deleteAgent(a)}
+                {agents.length > 0 && (
+                  <>
+                    <SectionRow
+                      title="Seus agentes"
+                      subtitle={`${agents.length} ${agents.length === 1 ? "agente configurado" : "agentes configurados"}`}
                     />
-                  ))}
-                </CardGrid>
+                    <CardGrid>
+                      {agents.map((a) => (
+                        <AgentCard
+                          key={a.id}
+                          agent={a}
+                          menuOpen={openMenuId === a.id}
+                          onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
+                          onClick={() => setSelectedAgentId(a.id)}
+                          onToggleActive={() => toggleActive(a)}
+                          onDelete={() => deleteAgent(a)}
+                        />
+                      ))}
+                    </CardGrid>
+                  </>
+                )}
+
+                <div id="ag-modelos" className="scroll-mt-4">
+                  <SectionRow
+                    title={agents.length > 0 ? "Criar a partir de um modelo" : "Comece com um modelo"}
+                    subtitle="Um clique cria o agente já com a persona e as skills do modelo — você ajusta tudo depois."
+                  />
+                  <CardGrid last>
+                    {templates.map((t) => (
+                      <TemplateCard
+                        key={t.key}
+                        template={t}
+                        busy={creatingKey === t.key}
+                        disabled={!!creatingKey}
+                        onClick={() => createAgent(t.key, t.label)}
+                      />
+                    ))}
+                    <GhostCard
+                      busy={creatingKey === "__blank__"}
+                      disabled={!!creatingKey}
+                      onClick={() => createAgent(null, "Novo agente")}
+                    />
+                  </CardGrid>
+                </div>
               </>
             )}
-
-            <div id="ag-modelos" className="scroll-mt-4">
-              <SectionRow
-                title={agents.length > 0 ? "Criar a partir de um modelo" : "Comece com um modelo"}
-                subtitle="Um clique cria o agente já com a persona e as skills do modelo — você ajusta tudo depois."
-              />
-              <CardGrid last>
-                {templates.map((t) => (
-                  <TemplateCard
-                    key={t.key}
-                    template={t}
-                    busy={creatingKey === t.key}
-                    disabled={!!creatingKey}
-                    onClick={() => createAgent(t.key, t.label)}
-                  />
-                ))}
-                <GhostCard
-                  busy={creatingKey === "__blank__"}
-                  disabled={!!creatingKey}
-                  onClick={() => createAgent(null, "Novo agente")}
-                />
-              </CardGrid>
-            </div>
-          </>
-        )}
+          </div>
+        </div>
       </PageFrame>
 
       {selectedAgent && (
