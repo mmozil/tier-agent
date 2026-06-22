@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type ComponentType } from "react";
 import { createPortal } from "react-dom";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
@@ -87,29 +87,35 @@ function ActionMenu({
         {label}
         <ChevronDown className={`w-3.5 h-3.5 ${FC.mut} transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && (
-        <div
-          className={`absolute z-50 left-0 mt-1 min-w-[184px] rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.12)]`}
-        >
-          {items.length === 0 ? (
-            <div className={`px-2.5 py-2 text-[13px] ${FC.mut}`}>Nenhuma opção</div>
-          ) : (
-            items.map((it, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => {
-                  it.onSelect();
-                  setOpen(false);
-                }}
-                className={`w-full h-8 px-2.5 rounded-[7px] inline-flex items-center gap-2 text-[13px] text-left ${FC.ink} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors`}
-              >
-                {it.label}
-              </button>
-            ))
-          )}
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
+            className={`absolute z-50 left-0 mt-1 min-w-[220px] w-max max-w-[360px] origin-top rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.12)]`}
+          >
+            {items.length === 0 ? (
+              <div className={`px-3 py-2 text-[13px] ${FC.mut}`}>Nenhuma opção</div>
+            ) : (
+              items.map((it, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    it.onSelect();
+                    setOpen(false);
+                  }}
+                  className={`w-full h-8 px-3 rounded-[7px] inline-flex items-center gap-2 text-[13px] text-left whitespace-nowrap ${FC.ink} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors`}
+                >
+                  {it.label}
+                </button>
+              ))
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -327,9 +333,30 @@ function AccordionSection({ title, children, defaultOpen = true }: { title: stri
     <div className={`border-b ${FC.hair}`}>
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-3 text-left group">
         <span className="text-[13px] font-medium text-[#262626] dark:text-[#e6e8eb]">{title}</span>
-        <ChevronDown className={`w-4 h-4 text-[#262626]/40 dark:text-[#6b7280] transition-transform ${open ? "" : "-rotate-90"}`} />
+        <ChevronDown className={`w-4 h-4 text-[#262626]/40 dark:text-[#6b7280] transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${open ? "" : "-rotate-90"}`} />
       </button>
-      {open && <div className="px-4 pb-3.5 -mt-0.5">{children}</div>}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] }, opacity: { duration: 0.22, ease: "easeInOut" } }}
+            style={{ overflow: "hidden" }}
+          >
+            <motion.div
+              initial={{ y: -6 }}
+              animate={{ y: 0 }}
+              exit={{ y: -6 }}
+              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              className="px-4 pb-3.5 -mt-0.5"
+            >
+              {children}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
