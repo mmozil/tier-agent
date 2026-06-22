@@ -7,13 +7,17 @@ import {
   CheckCircle2,
   DollarSign,
   Edit3,
+  HandCoins,
   LifeBuoy,
   Loader2,
   MoreVertical,
   PauseCircle,
+  PawPrint,
   PlayCircle,
   Plus,
   ShoppingBag,
+  Stethoscope,
+  Store,
   Target,
   Trash2,
   Workflow,
@@ -21,7 +25,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, Spacer, HairCells, Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, Spacer, HairCells, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
 
 interface Agent {
   id: number;
@@ -57,7 +61,59 @@ const ICONS: Record<string, typeof ShoppingBag> = {
   Target,
   LifeBuoy,
   DollarSign,
+  PawPrint,
+  Store,
+  Stethoscope,
+  HandCoins,
 };
+
+// Ícone distinto por papel (o backend ainda repete ShoppingBag/LifeBuoy/DollarSign
+// em alguns templates). Resolve por key primeiro; cai pro icon do backend e default.
+const KEY_ICON: Record<string, typeof ShoppingBag> = {
+  atendente_loja: ShoppingBag,
+  sdr: Target,
+  suporte: LifeBuoy,
+  cobranca: DollarSign,
+  atendente_petshop: PawPrint,
+  vendedor_marketplace: Store,
+  recepcionista_medica: Stethoscope,
+  cobrador_inteligente: HandCoins,
+};
+
+// Glifo do agente (ícone "navigation-ai" da marca, recolorido p/ currentColor +
+// fill none p/ funcionar claro/escuro). Usado a 40px no estado vazio (ilustração).
+function AgentGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 40 40" fill="none" className={className} xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path
+        d="M20 30.5c5.799 0 10.5-4.7 10.5-10.5 0-5.798-4.701-10.5-10.5-10.5S9.5 14.203 9.5 20c0 5.8 4.701 10.5 10.5 10.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        opacity=".6"
+        d="M22.5 9.501c4.815-3.224 10.795-5.896 12.346-4.345 1.996 1.996-.71 8.08-6.2 14.692M26.5 22.303a70.145 70.145 0 0 1-2.055 2.142C16.247 32.644 7.61 37.3 5.155 34.845 3.686 33.376 6.96 27.714 10 23.002"
+        stroke="currentColor"
+        strokeWidth=".7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray="1.6 1.6"
+      />
+      <path
+        opacity=".6"
+        d="M8.999 16.736C5.839 11.966 3.46 6.541 5 5c1.817-1.821 5.925 1.537 11.83 6.062 2.093 1.604 4.276 3.517 6.429 5.674 8.223 8.24 14.139 15.64 11.677 18.106-1.555 1.558-6.848-.601-11.677-3.841"
+        stroke="currentColor"
+        strokeWidth=".7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray="1.6 1.6"
+      />
+    </svg>
+  );
+}
 
 export default function AgentesPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -170,7 +226,7 @@ export default function AgentesPage() {
             <span className="text-[12px] text-[#262626]/[0.72] block mb-2">Template inicial</span>
             <div className="grid grid-cols-2 gap-2">
               {templates.map((t) => {
-                const Icon = ICONS[t.icon] || ShoppingBag;
+                const Icon = KEY_ICON[t.key] || ICONS[t.icon] || ShoppingBag;
                 const active = form.template_kind === t.key;
                 return (
                   <label
@@ -263,11 +319,16 @@ export default function AgentesPage() {
             ))}
           </HairCells>
         ) : agents.length === 0 ? (
-          <EmptyHint
-            icon={Bot}
-            text='Nenhum agente ainda — clique em "Novo agente" pra criar o primeiro funcionário digital.'
-            className="py-12"
-          />
+          <div className="flex flex-col items-center text-center py-16">
+            <AgentGlyph className="w-10 h-10 text-[#003083] dark:text-[#5b9bff] mb-3.5" />
+            <p className="text-[15px] font-medium text-[#262626] dark:text-[#e6e8eb]">Nenhum agente ainda</p>
+            <p className={`text-[13px] leading-5 mt-1 mb-4 max-w-[360px] ${FC.sub}`}>
+              Crie o primeiro funcionário digital do workspace — escolha um template e ajuste a persona.
+            </p>
+            <Button variant="primary" onClick={() => setShowForm(true)}>
+              <Plus className="w-4 h-4" /> Novo agente
+            </Button>
+          </div>
         ) : (
           <HairCells cols={3} gridLines>
             {agents.map((a) => (
