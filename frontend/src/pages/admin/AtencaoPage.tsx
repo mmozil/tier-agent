@@ -90,14 +90,14 @@ export default function AtencaoPage() {
     </div>
   );
 
-  const SectionHead = ({ icon: Icon, title, count, tone }: { icon: any; title: string; count: number; tone: string }) => (
-    <div className={`flex items-center gap-2 px-6 py-3.5 border-b ${FC.hair}`}>
-      <span className={`w-6 h-6 rounded-[7px] flex items-center justify-center bg-black/[0.04] dark:bg-white/[0.06] ${tone}`}>
-        <Icon className="w-3.5 h-3.5" />
-      </span>
-      <span className={`text-[13px] font-medium ${FC.ink}`}>{title}</span>
+  // Header de seção no estilo Firecrawl: ícone monocromático muted (@40%) + título
+  // label-large (16px/450) + contagem alinhada à direita. Sem chip colorido.
+  const SectionHead = ({ icon: Icon, title, count }: { icon: any; title: string; count: number }) => (
+    <div className={`flex items-center gap-2.5 px-6 py-3.5 border-b ${FC.hair}`}>
+      <Icon className={`w-4 h-4 shrink-0 ${FC.mut}`} strokeWidth={1.75} />
+      <h3 className={`text-[16px] font-[450] tracking-[-0.1px] leading-6 ${FC.ink}`}>{title}</h3>
       <span
-        className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums ${
+        className={`ml-auto inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-[11px] font-medium tabular-nums ${
           count > 0 ? "bg-[#E5484D]/[0.12] text-[#E5484D]" : "bg-black/[0.04] dark:bg-white/[0.06] " + FC.mut
         }`}
       >
@@ -186,7 +186,7 @@ export default function AtencaoPage() {
 
         {/* Aguardando humano */}
         <Row>
-          <SectionHead icon={Hand} title="Aguardando humano" count={c.aguardando} tone="text-[#003083] dark:text-[#5b9bff]" />
+          <SectionHead icon={Hand} title="Aguardando humano" count={c.aguardando} />
           <div className={`divide-y ${FC.hair}`}>
             {loading && !data && <ListSkeleton />}
             {!loading && (data?.aguardando.length ?? 0) === 0 && (
@@ -200,7 +200,7 @@ export default function AtencaoPage() {
 
         {/* Não atribuídas */}
         <Row>
-          <SectionHead icon={UserX} title="Não atribuídas" count={c.nao_atribuidas} tone="text-[#dc6803]" />
+          <SectionHead icon={UserX} title="Não atribuídas" count={c.nao_atribuidas} />
           <div className={`divide-y ${FC.hair}`}>
             {loading && !data && <ListSkeleton />}
             {!loading && (data?.nao_atribuidas.length ?? 0) === 0 && (
@@ -214,7 +214,7 @@ export default function AtencaoPage() {
 
         {/* Leads / alertas */}
         <Row last>
-          <SectionHead icon={BellRing} title="Leads e alertas" count={c.alertas} tone="text-[#0a8f5a]" />
+          <SectionHead icon={BellRing} title="Leads e alertas" count={c.alertas} />
           <div className={`divide-y ${FC.hair}`}>
             {loading && !data && <ListSkeleton />}
             {!loading && (data?.alertas.length ?? 0) === 0 && (
