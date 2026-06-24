@@ -49,8 +49,9 @@ def _summary(kind: str, cfg: dict) -> dict:
             "phone": cfg.get("phone") or cfg.get("display_phone") or "—",
             "phone_number_id": cfg.get("phone_number_id"),
             "waba_id": cfg.get("waba_id"),
-            # Cloud não pareia (OAuth): tem token => conectado
-            "status": "connected" if cfg.get("token") else "pending",
+            # Cloud não pareia (OAuth): tem token => conectado. Respeita um
+            # status explícito (ex: "disconnected" gravado no /disconnect).
+            "status": cfg.get("status") or ("connected" if cfg.get("token") else "pending"),
             "tipo": "WhatsApp Cloud API (oficial)",
             "oficial": True,
             "transporte": "Meta Graph API v21.0",
@@ -257,6 +258,10 @@ async def status(
     await _ensure_agent_owned(db, conn.agent_id, user)
 
     cfg = json.loads(decrypt(conn.config_json_enc))
+    # Cloud API (Meta) não tem instância na Engine — devolve status local (sem QR).
+    if conn.kind == "whatsapp_cloud" or not cfg.get("instance_id"):
+        st = cfg.get("status") or ("connected" if cfg.get("token") else "pending")
+        return {"status": st, "phone": cfg.get("display_phone") or cfg.get("phone"), "qr_code": None}
     try:
         result = await engine_client.get_status(cfg["instance_id"], cfg["api_key"])
     except engine_client.EngineError as e:
@@ -295,10 +300,12 @@ async def disconnect(
     await _ensure_agent_owned(db, conn.agent_id, user)
 
     cfg = json.loads(decrypt(conn.config_json_enc))
-    try:
-        await engine_client.disconnect_instance(cfg["instance_id"], cfg["api_key"])
-    except engine_client.EngineError as e:
-        raise HTTPException(502, f"Tier Engine: {e}")
+    # Baileys tem instância remota na Engine pra encerrar; Cloud API (Meta) não.
+    if conn.kind == "whatsapp" and cfg.get("instance_id"):
+        try:
+            await engine_client.disconnect_instance(cfg["instance_id"], cfg["api_key"])
+        except engine_client.EngineError as e:
+            raise HTTPException(502, f"Tier Engine: {e}")
     cfg["status"] = "disconnected"
     conn.config_json_enc = encrypt(json.dumps(cfg))
     conn.enabled = False
