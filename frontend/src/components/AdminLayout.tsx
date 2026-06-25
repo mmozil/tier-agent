@@ -23,7 +23,7 @@ const topIconBtn =
 // h-8, px-3, fundo branco, borda fininha, sem sombra pesada, rounded-10, texto 14px.
 const topPillBtn =
   "h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#14171c] text-[14px] font-medium text-[#262626] dark:text-[#cdd2da] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30";
-import { ScrambleText } from "./ds/fc";
+import { PRIMARY_SHADOW, ScrambleText } from "./ds/fc";
 import {
   AgentsMenuIcon,
   AttentionMenuIcon,
@@ -402,7 +402,10 @@ export default function AdminLayout() {
               <a href="https://docs.tier.finance" target="_blank" rel="noopener noreferrer" className={topPillBtn}>
                 <BookOpen className="w-3.5 h-3.5" /> Docs
               </a>
-              <Link to="/admin/cobranca" className={topPillBtn}>
+              <Link
+                to="/admin/cobranca"
+                className={`ml-0.5 h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[14px] font-medium text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 ${PRIMARY_SHADOW}`}
+              >
                 <ArrowUpRight className="w-3.5 h-3.5" /> <ScrambleText text="Upgrade" />
               </Link>
             </div>
