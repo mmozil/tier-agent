@@ -122,6 +122,39 @@ export default function AdminLayout() {
     });
   }
 
+  // Sidebar redimensionável — arrasta a borda direita pra alargar/encolher.
+  // Persiste no localStorage; duplo-clique na borda reseta pra 240.
+  const SIDEBAR_MIN = 200;
+  const SIDEBAR_MAX = 420;
+  const [sidebarW, setSidebarW] = useState(() => {
+    const v = parseInt(localStorage.getItem("ta-sidebar-w") || "240", 10);
+    return Number.isNaN(v) ? 240 : Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, v));
+  });
+  const [resizing, setResizing] = useState(false);
+
+  function startResize(e: { preventDefault: () => void }) {
+    e.preventDefault();
+    setResizing(true);
+    const onMove = (ev: MouseEvent) => {
+      setSidebarW(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX)));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      setResizing(false);
+      setSidebarW((w) => {
+        localStorage.setItem("ta-sidebar-w", String(w));
+        return w;
+      });
+    };
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
 
 
   // overflow-hidden saiu do item: senão a "bolha" (motion layoutId) é cortada ao deslizar
@@ -161,7 +194,7 @@ export default function AdminLayout() {
     <div className="min-h-screen bg-white dark:bg-[#0c0e12] flex">
       <aside
         className="fixed left-0 top-0 h-screen z-50 flex flex-col overflow-x-hidden bg-[#F9F9F9] dark:bg-[#0c0e12] border-r border-[#EDEDED] dark:border-[#23272e] transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
-        style={{ width: collapsed ? 64 : 240, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
+        style={{ width: collapsed ? 64 : sidebarW, transition: resizing ? "none" : undefined, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         {/* Logo — crossfade entre a marca (3 quadrados, recolhido) e o logo completo */}
         <div className="h-16 shrink-0 relative overflow-hidden border-b border-[#EDEDED] dark:border-[#23272e]">
@@ -321,9 +354,25 @@ export default function AdminLayout() {
         </div>
       </aside>
 
+      {/* Borda arrastável pra redimensionar o sidebar (some quando recolhido) */}
+      {!collapsed && (
+        <div
+          onMouseDown={startResize}
+          onDoubleClick={() => {
+            setSidebarW(240);
+            localStorage.setItem("ta-sidebar-w", "240");
+          }}
+          title="Arraste para redimensionar (duplo-clique reseta)"
+          className="fixed top-0 z-[60] h-screen w-1.5 cursor-col-resize group"
+          style={{ left: sidebarW - 3 }}
+        >
+          <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-transparent group-hover:bg-[#003083]/50 dark:group-hover:bg-[#5b9bff]/50 transition-colors" />
+        </div>
+      )}
+
       <main
         className="flex-1 min-h-screen bg-[#F9F9F9] dark:bg-[#0c0e12] transition-[margin] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
-        style={{ marginLeft: collapsed ? 64 : 240, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
+        style={{ marginLeft: collapsed ? 64 : sidebarW, transition: resizing ? "none" : undefined, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         <div className="px-8 pb-8">
           <div className="h-[60px] flex items-center justify-between">
