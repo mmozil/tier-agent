@@ -29,9 +29,9 @@ interface OverviewLive {
 }
 
 const HOUR_TICKS = [0, 4, 8, 12, 16, 20];
-// Tamanho "Small" do animate-ui (h-7 · 28px · px-3 · gap-1 · rounded-8 · 14px) — teste.
+// Tamanho Default do animate-ui (h-8 · 32px · px-3 · gap-1.5 · rounded-10) com fonte 12px.
 const LINK_GHOST =
-  `h-7 px-3 inline-flex items-center justify-center gap-1 rounded-[8px] text-[14px] font-medium ` +
+  `h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[12px] font-medium ` +
   `transition-all active:scale-[0.98] ${FC.ink} ${FC.hover}`;
 
 export default function VisaoGeralPage() {

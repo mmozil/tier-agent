@@ -19,10 +19,10 @@ const SPRING = { type: "spring", stiffness: 350, damping: 35 } as const;
 // Botão-ícone ghost da topbar (32px) — reutilizado pelo tema (sol/lua) e engrenagem.
 const topIconBtn =
   "w-8 h-8 inline-flex items-center justify-center rounded-[10px] text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.95]";
-// Pills outline da topbar (Ajuda · Docs) — tamanho Small do animate-ui:
-// h-7 · 28px · px-3 · gap-1 · rounded-8 · texto 14px. Upgrade usa o mesmo tamanho (filled azul).
+// Pills outline da topbar (Ajuda · Docs) — tamanho Default do animate-ui:
+// h-8 · 32px · px-3 · gap-1.5 · rounded-10 · texto 12px. Upgrade usa o mesmo tamanho (filled azul).
 const topPillBtn =
-  "h-7 px-3 inline-flex items-center justify-center gap-1 rounded-[8px] border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#14171c] text-[14px] font-medium text-[#262626] dark:text-[#cdd2da] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30";
+  "h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#14171c] text-[12px] font-medium text-[#262626] dark:text-[#cdd2da] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30";
 import { PRIMARY_SHADOW, ScrambleText } from "./ds/fc";
 import {
   AgentsMenuIcon,
@@ -404,7 +404,7 @@ export default function AdminLayout() {
               </a>
               <Link
                 to="/admin/cobranca"
-                className={`ml-0.5 h-7 px-3 inline-flex items-center justify-center gap-1 rounded-[8px] text-[14px] font-medium text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 ${PRIMARY_SHADOW}`}
+                className={`ml-0.5 h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[12px] font-medium text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 ${PRIMARY_SHADOW}`}
               >
                 <ArrowUpRight className="w-3.5 h-3.5" /> <ScrambleText text="Upgrade" />
               </Link>
