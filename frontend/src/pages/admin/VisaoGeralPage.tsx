@@ -4,7 +4,7 @@ import { ArrowUpRight, MessageSquare, Users } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { api } from "@/lib/api";
-import { btnPrimary, FC, PageFrame, Row, HairCells, EmptyHint, SKEL } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, EmptyHint, SKEL } from "@/components/ds/fc";
 
 interface Report {
   empty?: boolean;
@@ -29,10 +29,9 @@ interface OverviewLive {
 }
 
 const HOUR_TICKS = [0, 4, 8, 12, 16, 20];
-const LINK_SECONDARY =
-  `h-9 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-[10px] border text-[14px] font-medium ` +
-  `transition-all active:scale-[0.98] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)] ` +
-  `${FC.hair} ${FC.ink} ${FC.hover}`;
+const LINK_GHOST =
+  `h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[14px] font-medium ` +
+  `transition-all active:scale-[0.98] ${FC.ink} ${FC.hover}`;
 
 export default function VisaoGeralPage() {
   const [rep, setRep] = useState<Report | null>(null);
@@ -107,11 +106,11 @@ export default function VisaoGeralPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Link to="/admin/conversas" className={LINK_SECONDARY}>
+              <Link to="/admin/conversas" className={LINK_GHOST}>
                 Abrir conversas
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </Link>
-              <Link to="/admin/canais" className={btnPrimary}>
+              <Link to="/admin/canais" className={LINK_GHOST}>
                 Conectar canal
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </Link>
