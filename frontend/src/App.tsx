@@ -38,6 +38,7 @@ import AtencaoPage from "./pages/admin/AtencaoPage";
 import MacrosPage from "./pages/admin/MacrosPage";
 import RelatoriosAtendimentoPage from "./pages/admin/RelatoriosAtendimentoPage";
 import EquipePage from "./pages/admin/EquipePage";
+import DesignSystemPage from "./pages/public/DesignSystemPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
@@ -64,6 +65,7 @@ export default function App() {
       <Route path="/recursos" element={<Recursos />} />
       <Route path="/precos" element={<Precos />} />
       <Route path="/design-proof" element={<DesignProof />} />
+      <Route path="/design-system" element={<DesignSystemPage />} />
       <Route path="/ridge-lab" element={<RidgeLab />} />
       <Route path="/preview/metricas" element={<MetricasPreview />} />
       <Route path="/login" element={<Login />} />
