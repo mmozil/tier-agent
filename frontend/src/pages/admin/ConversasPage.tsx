@@ -123,6 +123,7 @@ function ActionMenu({
 interface Conversation {
   id: number;
   agent_id: number;
+  agent_nome?: string | null;
   connector_kind: string | null;
   external_id: string;
   contact_name: string | null;
@@ -174,6 +175,7 @@ type NavFilter =
   | { type: "mentions" }
   | { type: "participants" }
   | { type: "channel"; value: string }
+  | { type: "agent"; value: string }
   | { type: "tag"; value: string }
   | { type: "team"; value: number };
 
@@ -630,9 +632,11 @@ export default function ConversasPage() {
   // ─── Derivados ───
   const allTags = Array.from(new Set(convs.flatMap((c) => c.tags || []))).sort();
   const channels = Array.from(new Set(convs.map((c) => c.connector_kind || "outro")));
+  const agentsList = Array.from(new Set(convs.map((c) => c.agent_nome).filter(Boolean) as string[])).sort();
 
   const filteredConvs = convs.filter((c) => {
     if (navFilter.type === "channel" && (c.connector_kind || "outro") !== navFilter.value) return false;
+    if (navFilter.type === "agent" && c.agent_nome !== navFilter.value) return false;
     if (navFilter.type === "tag" && !(c.tags || []).includes(navFilter.value)) return false;
     if (navFilter.type === "team" && c.team_id !== navFilter.value) return false;
     if (navFilter.type === "unattended" && (c.status === "closed" || c.assigned_member_id)) return false;
@@ -717,6 +721,20 @@ export default function ConversasPage() {
               count={convs.filter((c) => (c.connector_kind || "outro") === ch).length}
               active={navFilter.type === "channel" && navFilter.value === ch}
               onClick={() => selectNav({ type: "channel", value: ch })}
+            />
+          ))}
+        </SubNavGroup>
+      )}
+      {agentsList.length > 1 && (
+        <SubNavGroup title="Agentes" icon={Bot}>
+          {agentsList.map((ag) => (
+            <SubNavItem
+              key={ag}
+              icon={Bot}
+              label={ag}
+              count={convs.filter((c) => c.agent_nome === ag).length}
+              active={navFilter.type === "agent" && navFilter.value === ag}
+              onClick={() => selectNav({ type: "agent", value: ag })}
             />
           ))}
         </SubNavGroup>
@@ -883,8 +901,13 @@ export default function ConversasPage() {
                       <p className={`mt-0.5 truncate text-[12.5px] ${FC.sub}`}>
                         {c.last_preview || <span className="italic text-[#262626]/30 dark:text-white/30">Sem prévia</span>}
                       </p>
-                      {((c.tags || []).length > 0 || c.assigned_member_id) && (
+                      {(c.agent_nome || (c.tags || []).length > 0 || c.assigned_member_id) && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          {c.agent_nome && (
+                            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.16] dark:text-[#5b9bff]">
+                              <Bot className="w-2.5 h-2.5" /> {c.agent_nome}
+                            </span>
+                          )}
                           {c.assigned_member_id && (
                             <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab]">
                               <User className="w-2.5 h-2.5" /> {members.find((m) => m.id === c.assigned_member_id)?.nome || "Atribuída"}

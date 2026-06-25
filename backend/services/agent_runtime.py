@@ -757,8 +757,48 @@ async def handle_inbound_message(
         "erro de boa, e deixe a porta aberta — NUNCA encerre de forma abrupta ('cancelei, tchau').\n"
         "- Encerre fazendo o cliente se sentir bem-vindo de volta, mesmo que não tenha comprado."
     )
+    # Bloco GENÉRICO (sem petshop) — pra agentes que NÃO são petshop. O `_base` acima
+    # tem instruções de pet/agendamento/Taxidog que SÓ valem pro template petshop;
+    # injetá-las em DevSecOps/genéricos fazia o modelo fraco (MiniMax) "virar" atendente
+    # de pet shop ("Sou a atendente virtual do Pet Shop..."). Agora gateado por template.
+    _base_generic = (
+        "# Data e hora atuais (fuso de São Paulo — use SEMPRE isto como referência)\n"
+        f"- Hoje é {_DIAS[_agora.weekday()]}, {_agora.strftime('%d/%m/%Y')}, {_agora.strftime('%H:%M')}.\n"
+        "- Ao falar de 'hoje', 'amanhã', 'esta semana' ou dias da semana, calcule a partir desta data. "
+        "NUNCA diga que não sabe a data.\n\n"
+        "# Diretrizes de atendimento (sua persona acima tem prioridade)\n"
+        "- Releia o histórico antes de responder. NUNCA repita uma pergunta cuja resposta o cliente já deu.\n"
+        "- Se você tem ferramentas disponíveis, USE-AS para consultar dados (cadastro, preços, status) em "
+        "vez de perguntar ao cliente o que você mesma pode descobrir.\n"
+        "- 🔒 FONTE DA VERDADE = as FERRAMENTAS (dados reais), NUNCA a memória nem suposição. Se a memória/"
+        "contexto disser algo que a ferramenta não confirma, IGNORE e use só o que a ferramenta retorna.\n"
+        "- 🚫 NUNCA AFIRME que fez algo (cadastrou, salvou, agendou, cancelou) ANTES de a ferramenta retornar "
+        "SUCESSO REAL (com id/dados de volta). Se devolver erro ou nada, NÃO está feito: diga o que falta e "
+        "refaça a chamada certo. Mentir que concluiu é o pior erro.\n"
+        "- NUNCA invente dados que não tem (preço, prazo, disponibilidade, horário). Se não tiver via "
+        "ferramenta ou contexto, diga que vai confirmar.\n"
+        "- TELEFONE no WhatsApp: você JÁ tem o número do cliente (no bloco 'Contato atual'). NUNCA pergunte "
+        "'qual seu telefone/WhatsApp' — use o que já tem.\n"
+        "- Avance a conversa a cada mensagem: confirme o que já sabe e pergunte só o que falta.\n"
+        "- IDIOMA: responda SEMPRE 100% em português do Brasil, de forma concisa e natural, sem excesso de "
+        "emoji. NUNCA use chinês, japonês, coreano nem qualquer outro idioma/alfabeto — mesmo que o cliente "
+        "escreva em outra língua, responda em pt-BR.\n\n"
+        "# Atendimento atencioso (padrão de excelência, sempre no tom da sua persona)\n"
+        "- Acolha com cordialidade, entenda a real necessidade e RESOLVA de fato. Ajudar vem antes de vender "
+        "— não empurre upsell; ofereça só quando fizer sentido pro cliente.\n"
+        "- Diante de hesitação, dúvida ou reclamação: valide o sentimento com empatia e ofereça uma "
+        "alternativa em vez de um 'não' seco.\n"
+        "- Ao cancelar ou recusar: confirme com gentileza que foi resolvido, assuma um erro de boa, e deixe "
+        "a porta aberta — NUNCA encerre de forma abrupta ('cancelei, tchau').\n"
+        "- Encerre fazendo o cliente se sentir bem-vindo de volta, mesmo que não tenha comprado."
+    )
+
+    # Petshop usa o bloco completo (_base, com pets/agendamento/Taxidog); os demais usam o genérico.
+    _is_petshop = (agent.template_kind or "") == "atendente_petshop"
+    _final_base = _base if _is_petshop else _base_generic
+
     if _is_wa:
-        _base += (
+        _final_base += (
             "\n\n# Formatação no WhatsApp\n"
             "- Use SÓ a formatação nativa do WhatsApp: *negrito* (UM asterisco), _itálico_. "
             "NUNCA use markdown (**, ##, ###, ou '-' como marcador).\n"
@@ -766,7 +806,7 @@ async def handle_inbound_message(
             "- Emoji com parcimônia (no máximo 1 por mensagem, e nunca como marcador de lista).\n"
             "- Mensagens curtas e escaneáveis; evite blocos longos de texto."
         )
-    system_prompt = f"{system_prompt}\n\n{_base}"
+    system_prompt = f"{system_prompt}\n\n{_final_base}"
 
     # Histórico da conversa → memória do modelo (senão "esquece" o cliente)
     history: list[dict] = []

@@ -27,6 +27,7 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 class ConversationOut(BaseModel):
     id: int
     agent_id: int
+    agent_nome: str | None = None
     connector_kind: str | None = None
     external_id: str
     contact_name: str | None = None
@@ -137,6 +138,14 @@ async def list_conversations(
 
     convs = (await db.execute(stmt)).scalars().all()
 
+    # Nome do agente por conversa — pra UI separar DevSecOps / Tier Empresas / etc.
+    from models import TaAgent as _TaAgent
+
+    _ag_rows = (
+        await db.execute(select(_TaAgent.id, _TaAgent.nome).where(_TaAgent.id.in_(agent_ids)))
+    ).all()
+    agent_names = {aid: nome for aid, nome in _ag_rows}
+
     out: list[ConversationOut] = []
     for c in convs:
         ctags = c.tags or []
@@ -156,6 +165,7 @@ async def list_conversations(
             ConversationOut(
                 id=c.id,
                 agent_id=c.agent_id,
+                agent_nome=agent_names.get(c.agent_id),
                 connector_kind=c.connector_kind,
                 external_id=c.external_id,
                 contact_name=c.contact_name,
