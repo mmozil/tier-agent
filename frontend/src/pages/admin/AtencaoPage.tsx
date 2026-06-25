@@ -55,9 +55,8 @@ const CAT_COLOR: Record<string, string> = {
 };
 
 const LINK_SECONDARY =
-  `h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] border text-[13px] font-medium ` +
-  `transition-all active:scale-[0.98] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)] ` +
-  `${FC.hair} ${FC.ink} ${FC.hover}`;
+  `h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] text-[12px] font-medium ` +
+  `transition-all active:scale-[0.98] ${FC.ink} ${FC.hover}`;
 
 export default function AtencaoPage() {
   const [data, setData] = useState<AttentionData | null>(null);
