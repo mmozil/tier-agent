@@ -537,7 +537,7 @@ export default function LlmProvidersPage() {
                             <button
                               onClick={(e) => { e.stopPropagation(); makePrimary(p); }}
                               title="Tornar este o modelo principal do agente"
-                              className="shrink-0 px-1.5 py-0.5 text-[11px] font-medium rounded text-[#003083] dark:text-[#5b9bff] hover:bg-[#003083]/[0.06] dark:hover:bg-[#5b9bff]/[0.12]"
+                              className="shrink-0 h-8 px-3 text-[12px] font-medium rounded-[10px] inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] text-[#003083] dark:text-[#5b9bff] hover:bg-[#003083]/[0.06] dark:hover:bg-[#5b9bff]/[0.12]"
                             >
                               Tornar principal
                             </button>

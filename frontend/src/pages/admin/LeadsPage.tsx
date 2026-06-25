@@ -142,7 +142,7 @@ function AlertConfigCard() {
                           const ordered = DAYS.map((x) => x.n).filter((n) => set.has(n));
                           setCfg({ ...cfg, bh_days: ordered.join(",") });
                         }}
-                        className={`text-[12px] px-2 py-0.5 rounded-md border ${on ? "bg-[#003083] text-white border-[#003083]" : `${FC.hair} ${FC.sub}`}`}
+                        className={`text-[12px] h-8 px-3 rounded-[10px] inline-flex items-center justify-center gap-1.5 font-medium transition-all active:scale-[0.98] ${on ? "bg-[#003083] text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]" : `border ${FC.hair} ${FC.sub}`}`}
                       >
                         {d.l}
                       </button>

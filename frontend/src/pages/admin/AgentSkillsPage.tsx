@@ -202,7 +202,7 @@ function FilterTab({ label, count, active, onClick }: { label: string; count: nu
   return (
     <button
       onClick={onClick}
-      className={`h-7 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1.5 transition-all active:scale-[0.97] ${
+      className={`h-8 px-3 rounded-[10px] text-[12px] font-medium inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${
         active
           ? "bg-[#003083] text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]"
           : `border ${FC.hair} ${FC.sub} ${FC.hover}`

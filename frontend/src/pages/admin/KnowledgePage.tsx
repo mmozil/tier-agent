@@ -134,7 +134,7 @@ export default function KnowledgePage() {
                   type="button"
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading || !selectedAgent}
-                  className={`w-full h-9 px-3 inline-flex items-center gap-2 rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] text-[13px] ${FC.sub} text-left transition-shadow hover:border-[#d8d8d8] dark:hover:border-[#33373e] focus:outline-none focus:shadow-[0_0_0_2px_#003083] disabled:opacity-50 disabled:pointer-events-none`}
+                  className={`w-full h-8 px-3 inline-flex items-center justify-center gap-1.5 rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] text-[12px] font-medium ${FC.sub} transition-all active:scale-[0.98] hover:border-[#d8d8d8] dark:hover:border-[#33373e] focus:outline-none focus:shadow-[0_0_0_2px_#003083] disabled:opacity-50 disabled:pointer-events-none`}
                 >
                   <Upload className="w-4 h-4 shrink-0 text-[#003083] dark:text-[#5b9bff]" />
                   {uploading ? "Enviando…" : "Escolher arquivo e enviar"}

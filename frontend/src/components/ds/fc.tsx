@@ -75,7 +75,7 @@ export const PRIMARY_SHADOW =
 // Firecrawl). Use em <button> crus pra ficarem idênticos ao componente <Button>.
 // Prefixe "w-full" quando precisar largura cheia.
 export const btnPrimary =
-  `h-8 px-2.5 rounded-[10px] text-[14px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 disabled:opacity-50 disabled:pointer-events-none ${PRIMARY_SHADOW}`;
+  `h-8 px-3 rounded-[10px] text-[12px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 disabled:opacity-50 disabled:pointer-events-none`;
 
 // CurvyRect — os 4 corner brackets do Firecrawl (classe .curvy-rect). 11×11,
 // preenchidos com border-faint (#EDEDED). Arredondam o canto do container e,
@@ -303,7 +303,7 @@ export function HairCells({
 // Use em <button>/<Link> só-ícone (ações de tabela, modais). Ícone interno: w-4 h-4.
 // Spec Firecrawl (corpo): 32px, rounded-10. (Topbar usa tamanho próprio, maior.)
 export const iconBtn =
-  `w-8 h-8 inline-flex items-center justify-center rounded-[10px] ${FC.dim} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-all active:scale-[0.95] disabled:opacity-50 disabled:pointer-events-none`;
+  `w-8 h-8 inline-flex items-center justify-center rounded-[10px] ${FC.dim} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none`;
 
 // Button — botão canônico do admin no spec REAL do Firecrawl: ALTURA e FONTE ÚNICAS
 // (h-9 / 36px · texto 14px/label-medium · rounded-10), só o padding-x muda entre
@@ -331,18 +331,18 @@ export function Button({
   scramble?: boolean; // efeito decode no texto (default: ligado no primary)
 }) {
   const base =
-    "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] text-[14px] font-medium transition-all active:scale-[0.98] select-none outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 disabled:opacity-50 disabled:pointer-events-none [&_svg]:shrink-0";
-  // Tamanho default do shadcn (radix): h-8 / 32px · text-sm (14px) · px-2.5 · gap-1.5.
+    "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] text-[12px] font-medium transition-all active:scale-[0.98] select-none outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 disabled:opacity-50 disabled:pointer-events-none [&_svg]:shrink-0";
+  // Tamanho default: h-8 / 32px · texto 12px · px-3 · gap-1.5.
   const sz = "h-8";
-  const padX = size === "sm" ? "px-2" : "px-2.5";
+  const padX = size === "sm" ? "px-2.5" : "px-3";
   const v =
     variant === "primary"
-      ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`
+      ? `${padX} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff]`
       : variant === "secondary"
-        ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)]`
+        ? `${padX} ${FC.ink} border ${FC.hair} ${FC.hover}`
         : variant === "danger"
           ? `${padX} text-[#c0362c] dark:text-[#ff6b5e] hover:bg-[#c0362c]/[0.06] dark:hover:bg-[#ff6b5e]/[0.10]`
-          : `${size === "sm" ? "px-2" : "px-2.5"} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
+          : `${padX} ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`;
   const doScramble = scramble ?? variant === "primary"; // primary tem decode por padrão
   return (
     <button type={type} onClick={onClick} disabled={disabled} title={title} className={`${base} ${sz} ${v} ${className}`}>
@@ -436,7 +436,7 @@ export function Select<T extends string | number>({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={`w-full h-9 pl-3 pr-2 inline-flex items-center justify-between gap-2 rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} text-[14px] ${FC.ink} outline-none transition-shadow ${
+        className={`w-full h-8 pl-3 pr-2 inline-flex items-center justify-between gap-2 rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} text-[14px] ${FC.ink} outline-none transition-shadow ${
           open ? "shadow-[0_0_0_2px_#003083]" : "hover:border-[#d8d8d8] dark:hover:border-[#33373e]"
         } disabled:opacity-50 disabled:pointer-events-none`}
       >

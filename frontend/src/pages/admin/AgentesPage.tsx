@@ -541,7 +541,7 @@ function AgentCard({
               onOpenMenu(false);
               onClick();
             }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-[#262626]/[0.72] hover:bg-black/[0.03]"
+            className="w-full flex items-center gap-2 px-3 h-8 text-[13px] text-[#262626]/[0.72] hover:bg-black/[0.03]"
           >
             <Edit3 className="w-3.5 h-3.5" /> Ver detalhes
           </button>
@@ -550,7 +550,7 @@ function AgentCard({
               e.stopPropagation();
               onToggleActive();
             }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-[#262626]/[0.72] hover:bg-black/[0.03]"
+            className="w-full flex items-center gap-2 px-3 h-8 text-[13px] text-[#262626]/[0.72] hover:bg-black/[0.03]"
           >
             {agent.active ? (
               <>
@@ -596,7 +596,7 @@ function AgentCard({
                 e.stopPropagation();
                 setConfirmDelete(true);
               }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-red-600 hover:bg-red-50 border-t border-[#EDEDED]"
+              className="w-full flex items-center gap-2 px-3 h-8 text-[13px] text-red-600 hover:bg-red-50 border-t border-[#EDEDED]"
             >
               <Trash2 className="w-3.5 h-3.5" /> Excluir
             </button>

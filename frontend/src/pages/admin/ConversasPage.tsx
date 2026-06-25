@@ -79,7 +79,7 @@ function ActionMenu({
         type="button"
         title={title}
         onClick={() => setOpen((o) => !o)}
-        className={`h-8 px-2.5 rounded-[10px] text-[14px] font-medium inline-flex items-center gap-1.5 ${FC.ink} border ${FC.hair} ${FC.hover} shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04)] transition-all active:scale-[0.98] ${
+        className={`h-8 px-3 rounded-[10px] text-[12px] font-medium inline-flex items-center justify-center gap-1.5 ${FC.ink} border ${FC.hair} ${FC.hover} transition-all active:scale-[0.98] ${
           open ? "shadow-[0_0_0_2px_#003083]" : ""
         }`}
       >
@@ -107,7 +107,7 @@ function ActionMenu({
                     it.onSelect();
                     setOpen(false);
                   }}
-                  className={`w-full h-8 px-3 rounded-[7px] inline-flex items-center gap-2 text-[13px] text-left whitespace-nowrap ${FC.ink} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors`}
+                  className={`w-full h-8 px-3 rounded-[10px] inline-flex items-center gap-1.5 text-[12px] text-left whitespace-nowrap ${FC.ink} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors`}
                 >
                   {it.label}
                 </button>
@@ -264,7 +264,7 @@ function SubNavGroup({
     <div className="pt-1.5">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="group w-full flex items-center gap-2 h-7 px-2.5 rounded-[8px] text-[11px] font-semibold uppercase tracking-[0.06em] text-[#262626]/45 dark:text-[#565d68] hover:text-[#262626]/70 dark:hover:text-[#9aa1ab] transition-colors"
+        className="group w-full flex items-center gap-2 h-8 px-2.5 rounded-[8px] text-[11px] font-semibold uppercase tracking-[0.06em] text-[#262626]/45 dark:text-[#565d68] hover:text-[#262626]/70 dark:hover:text-[#9aa1ab] transition-colors"
       >
         {Icon && <Icon className="w-3.5 h-3.5 shrink-0 opacity-80" />}
         <span className="flex-1 text-left tracking-[0.06em]">{title}</span>
@@ -333,7 +333,7 @@ function AccordionSection({ title, children, defaultOpen = true }: { title: stri
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className={`border-b ${FC.hair}`}>
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-3 text-left group">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 h-8 text-left group">
         <span className="text-[13px] font-medium text-[#262626] dark:text-[#e6e8eb]">{title}</span>
         <ChevronDown className={`w-4 h-4 text-[#262626]/40 dark:text-[#6b7280] transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${open ? "" : "-rotate-90"}`} />
       </button>
@@ -830,7 +830,7 @@ export default function ConversasPage() {
               <button
                 key={t.k}
                 onClick={() => { setScope(t.k); load(t.k); }}
-                className={`shrink-0 px-2 py-1 text-[12.5px] rounded-[7px] transition-colors ${
+                className={`shrink-0 h-8 px-2 text-[12.5px] rounded-[7px] transition-colors ${
                   scope === t.k
                     ? "bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] text-[#003083] dark:text-[#8ab4ff] font-medium"
                     : "text-[#262626]/[0.56] dark:text-[#8b93a0] hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
@@ -1086,8 +1086,8 @@ export default function ConversasPage() {
             {openConv.status !== "closed" && (
               <div className={`border-t ${FC.hair} px-5 py-3 bg-white dark:bg-[#0c0e12] shrink-0`}>
                 <div className="flex items-center gap-1 mb-2">
-                  <button onClick={() => setNoteMode(false)} className={`text-[12px] px-2.5 py-1 rounded-md transition-colors ${!noteMode ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff] font-medium" : `${FC.sub} hover:bg-black/[0.04] dark:hover:bg-white/[0.04]`}`}>Responder</button>
-                  <button onClick={() => setNoteMode(true)} className={`text-[12px] px-2.5 py-1 rounded-md transition-colors ${noteMode ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300 font-medium" : `${FC.sub} hover:bg-black/[0.04] dark:hover:bg-white/[0.04]`}`}>📝 Nota interna</button>
+                  <button onClick={() => setNoteMode(false)} className={`text-[12px] h-8 px-3 rounded-[10px] inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${!noteMode ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff] font-medium" : `${FC.sub} hover:bg-black/[0.04] dark:hover:bg-white/[0.04]`}`}>Responder</button>
+                  <button onClick={() => setNoteMode(true)} className={`text-[12px] h-8 px-3 rounded-[10px] inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${noteMode ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300 font-medium" : `${FC.sub} hover:bg-black/[0.04] dark:hover:bg-white/[0.04]`}`}>📝 Nota interna</button>
                 </div>
                 {noteMode && members.filter((m) => m.status === "active").length > 0 && (
                   <div className="flex flex-wrap items-center gap-1 mb-2">
@@ -1095,7 +1095,7 @@ export default function ConversasPage() {
                     {members.filter((m) => m.status === "active").map((m) => {
                       const on = mentions.includes(m.id);
                       return (
-                        <button key={m.id} onClick={() => setMentions((prev) => (on ? prev.filter((x) => x !== m.id) : [...prev, m.id]))} className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${on ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-500/30" : `${FC.hair} ${FC.sub} ${FC.hover}`}`}>@{m.nome}</button>
+                        <button key={m.id} onClick={() => setMentions((prev) => (on ? prev.filter((x) => x !== m.id) : [...prev, m.id]))} className={`text-[11px] h-8 px-2 rounded-full border transition-colors ${on ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-500/30" : `${FC.hair} ${FC.sub} ${FC.hover}`}`}>@{m.nome}</button>
                       );
                     })}
                   </div>
@@ -1230,7 +1230,7 @@ export default function ConversasPage() {
               {macros.length > 0 ? (
                 <div className="space-y-1">
                   {macros.map((m) => (
-                    <button key={m.id} onClick={() => applyMacro(m.id)} className={`w-full flex items-center gap-2 px-2.5 h-8 rounded-[8px] text-[13px] ${FC.dim} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white transition-colors`}>
+                    <button key={m.id} onClick={() => applyMacro(m.id)} className={`w-full flex items-center justify-center gap-1.5 px-3 h-8 rounded-[10px] text-[12px] font-medium ${FC.dim} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white transition-all active:scale-[0.98]`}>
                       <Zap className="w-3.5 h-3.5 shrink-0 opacity-70" /> <span className="truncate">{m.name}</span>
                     </button>
                   ))}

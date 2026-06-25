@@ -266,7 +266,7 @@ export default function PlaybookEditorPage() {
 
         <Link
           to={`/admin/playbooks/${pb.id}/executions`}
-          className={`h-7 px-3 rounded-lg text-[13px] font-medium inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`}
+          className={`h-8 px-3 rounded-[10px] text-[12px] font-medium inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`}
         >
           <History className="w-3.5 h-3.5" />
           Execuções
