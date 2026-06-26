@@ -131,7 +131,7 @@ export default function ConnectWhatsAppCloud({
     <button
       onClick={connect}
       disabled={loading}
-      className="h-9 px-3.5 bg-[#1877F2] hover:bg-[#1568d8] text-white text-[14px] font-medium rounded-[10px] inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50 whitespace-nowrap"
+      className="h-8 px-3 bg-[#1877F2] hover:bg-[#1568d8] text-white text-[12px] font-medium rounded-[10px] inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50 whitespace-nowrap"
       title="Conectar WhatsApp pela API oficial (Meta) — sem QR, sem ban"
     >
       {loading ? "Conectando…" : "Conectar WhatsApp Oficial"}
