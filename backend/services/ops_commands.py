@@ -111,7 +111,7 @@ async def _red_stats(db: AsyncSession, tenant_id: int, hours: int = 24) -> dict:
             "count(*) FILTER (WHERE m.role='assistant') AS assistant, "
             "count(*) FILTER (WHERE m.role='assistant' AND m.brakes_fired IS NOT NULL "
             "                 AND jsonb_typeof(m.brakes_fired::jsonb) = 'array' "
-            "                 AND jsonb_array_length(m.brakes_fired::jsonb) > 0) AS errors, "
+            "                 AND m.brakes_fired::jsonb <> '[]'::jsonb) AS errors, "
             "avg(m.latency_ms) FILTER (WHERE m.role='assistant' AND m.latency_ms > 0) AS lat_avg, "
             "sum(m.cost_cents) AS cost_cents, "
             "sum(m.tokens_in + m.tokens_out) AS tokens "
@@ -153,7 +153,7 @@ async def _errors_recent(db: AsyncSession, tenant_id: int, hours: int = 24, limi
         "JOIN ta_agent ag ON ag.id = c.agent_id "
         "WHERE ag.tenant_id = :t AND m.role='assistant' AND m.brakes_fired IS NOT NULL "
         "  AND jsonb_typeof(m.brakes_fired::jsonb) = 'array' "
-        "  AND jsonb_array_length(m.brakes_fired::jsonb) > 0 "
+        "  AND m.brakes_fired::jsonb <> '[]'::jsonb "
         "  AND m.created_at > now() - (:h || ' hours')::interval "
         "ORDER BY m.created_at DESC LIMIT :lim"
     )

@@ -290,6 +290,12 @@ async def _log_deterministic_turn(db, agent, connector_kind, external_id, contac
     aqui também deixa a resposta legível no painel mesmo quando o WhatsApp não consegue
     descriptografar (sessão Baileys quebrada)."""
     try:
+        # Recupera a sessão se uma query anterior (ex: telemetria de ops) a deixou abortada
+        # — senão o ensure_conversation falha em cascata com "transaction is aborted".
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         conv = await ensure_conversation(
             db, agent_id=agent.id, connector_kind=connector_kind,
             external_id=external_id, contact_name=contact_name,
