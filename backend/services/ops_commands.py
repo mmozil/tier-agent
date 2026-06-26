@@ -36,6 +36,9 @@ _OPS_WORDS = {
     "metrics", "metricas", "métricas", "errors", "erros", "erro", "sla",
     "incidentes", "incidents", "incidente", "infra", "host",
     "alertas", "alerts", "alerta",
+    # calibragem (parâmetros/thresholds dos alertas)
+    "calibragem", "calibracao", "calibração", "parametros", "parâmetros",
+    "thresholds", "limites",
 }
 
 
@@ -305,6 +308,59 @@ async def _infra_snapshot() -> dict | None:
     return await _infra_from_ssh()
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Calibragem — lê os thresholds + severidades REAIS dos guards do SecOps no host.
+# Fonte da verdade: /usr/local/sbin/tier-secops-checks.sh (ssh/cpu/ram/disco/containers)
+# + tier-scan-monitor.sh (scan/cc). NUNCA hardcodar valores aqui — extrair do script,
+# senão a calibragem "documentada" diverge da que de fato dispara.
+# ──────────────────────────────────────────────────────────────────────────────
+_CALIB_SSH_CMD = (
+    "CHK=/usr/local/sbin/tier-secops-checks.sh; SCN=/usr/local/sbin/tier-scan-monitor.sh; "
+    "echo \"ssh_thr=$(grep -oE 'SSH_IP_THRESHOLD:-[0-9]+' $CHK | grep -oE '[0-9]+' | head -1)"
+    "|ram_thr=$(grep -oE 'RAM_THRESHOLD:-[0-9]+' $CHK | grep -oE '[0-9]+' | head -1)"
+    "|disk_thr=$(grep -oE 'DISK_THRESHOLD:-[0-9]+' $CHK | grep -oE '[0-9]+' | head -1)"
+    "|sustain=$(grep -oE 'SUSTAIN_CYCLES:-[0-9]+' $CHK | grep -oE '[0-9]+' | head -1)"
+    "|cpu_mult=$(grep -oE 'CORES\\*[0-9]+' $CHK | grep -oE '[0-9]+$' | head -1)"
+    "|sev_ssh=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"ssh\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
+    "|sev_cpu=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"cpu\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
+    "|sev_ram=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"ram\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
+    "|sev_disk=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"disk\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
+    "|sev_containers=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"containers\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
+    "|sev_scan=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"scan\\\"' $SCN | grep -oE 'critico|alerta|info' | head -1)"
+    "|sev_cc=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"cc\\\"' $SCN | grep -oE 'critico|alerta|info' | head -1)\""
+)
+
+
+async def _calibragem_from_ssh() -> dict | None:
+    """Thresholds + severidades dos alertas, lidos ao vivo dos scripts dos guards no host."""
+    if not getattr(get_settings(), "tier_agent_ssh_privkey_b64", ""):
+        return None
+    try:
+        from services.container_orchestrator import _ssh_run
+        code, out, _err = await asyncio.to_thread(_ssh_run, _CALIB_SSH_CMD)
+    except Exception:
+        return None
+    if code != 0 or not out:
+        return None
+    try:
+        parts = dict(p.split("=", 1) for p in out.strip().split("|") if "=" in p)
+
+        def _i(k):
+            try:
+                return int(parts.get(k) or 0) or None
+            except Exception:
+                return None
+
+        return {
+            "ssh_thr": _i("ssh_thr"), "ram_thr": _i("ram_thr"), "disk_thr": _i("disk_thr"),
+            "sustain": _i("sustain"), "cpu_mult": _i("cpu_mult"),
+            "sev": {k: (parts.get(f"sev_{k}") or None)
+                    for k in ("ssh", "cpu", "ram", "disk", "containers", "scan", "cc")},
+        }
+    except Exception:
+        return None
+
+
 def _fmt_num(v, suf: str = "", nd: int = 0) -> str:
     if v is None:
         return "?"
@@ -312,6 +368,38 @@ def _fmt_num(v, suf: str = "", nd: int = 0) -> str:
         return f"{float(v):.{nd}f}{suf}"
     except Exception:
         return str(v)
+
+
+# Severidade do guard → (ícone, rótulo, política). Reflete o que o script de fato emite.
+_SEV_META = {
+    "critico": ("🔴", "crítico", "acorda"), "critical": ("🔴", "crítico", "acorda"),
+    "alerta": ("🟠", "alerta", "importante"), "warning": ("🟠", "alerta", "importante"),
+    "info": ("🔵", "info", "registro"),
+}
+
+
+def _status_dot(cur, thr, warn_ratio: float = 0.7) -> str:
+    """🟢/🟠/🔴 conforme quão perto o valor atual está do threshold de alerta."""
+    try:
+        if cur is None or not thr:
+            return "⚪"
+        r = float(cur) / float(thr)
+    except Exception:
+        return "⚪"
+    if r >= 1.0:
+        return "🔴"
+    if r >= warn_ratio:
+        return "🟠"
+    return "🟢"
+
+
+def _canon_sev(s: str | None) -> str:
+    s = (s or "").lower()
+    if s in ("critico", "critical"):
+        return "critico"
+    if s in ("alerta", "warning"):
+        return "alerta"
+    return "info"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -333,7 +421,8 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
             "• *metrics* — RED 24h: volume, erros, latência p95, custo\n"
             "• *errors* — freios/falhas recentes do atendimento\n"
             "• *sla* — conversas estouradas / em espera\n"
-            "• *infra* — CPU/RAM/disco do host\n"
+            "• *infra* — CPU/RAM/disco do host (atual → limite de alerta)\n"
+            "• *calibragem* — parâmetros atuais: quando cada alerta dispara\n"
             "• *uptime* · *ping* — vida do backend\n\n"
             "_Alertas dos guards (scan-guard/C&C-guard/ingress-guard) chegam automaticamente aqui._"
         )
@@ -405,6 +494,45 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
             linhas.append(f"{ic} {quando} · {r.get('title', '')}{st}")
         return "🛎️ *Últimos alertas*\n" + "\n".join(linhas)
 
+    if first in ("calibragem", "calibracao", "calibração", "parametros", "parâmetros", "thresholds", "limites"):
+        cal = await _calibragem_from_ssh()
+        if cal is None:
+            return (
+                "ℹ️ *Calibragem* não acessível aqui (SSH dos guards do SecOps fora).\n"
+                "Os parâmetros vivem em `tier-secops-checks.sh` + `tier-scan-monitor.sh` no host."
+            )
+        sev = cal.get("sev", {})
+        sustain_min = (cal["sustain"] * 2) if cal.get("sustain") else None  # cron roda a cada 2min
+        descr = {
+            "disk": f"Disco / ≥ {cal.get('disk_thr', '?')}%",
+            "containers": "Aplicação fora do ar (algum app sem container no ar)",
+            "scan": "Varredura de portas detectada (scan-guard)",
+            "cc": "Beacon de C&C / trojan (cc-guard)",
+            "cpu": f"CPU: load > {cal.get('cpu_mult', '?')}× vCPUs"
+                   + (f" sustentado ~{sustain_min}min" if sustain_min else ""),
+            "ram": f"RAM ≥ {cal.get('ram_thr', '?')}%"
+                   + (f" sustentado ~{sustain_min}min" if sustain_min else ""),
+            "ssh": f"Força bruta SSH ≥ {cal.get('ssh_thr', '?')} tentativas/10min (fail2ban já bane)",
+        }
+        grupos: dict[str, list[str]] = {}
+        for kind, d in descr.items():  # ordem de inserção preservada dentro do grupo
+            grupos.setdefault(_canon_sev(sev.get(kind)), []).append(d)
+        out = [
+            "🎚️ *Calibragem de alertas*",
+            "_(fonte: guards do SecOps no host · checagem a cada 2min, scan/C&C em tempo real)_",
+            "",
+        ]
+        for canon in ("critico", "alerta", "info"):
+            itens = grupos.get(canon)
+            if not itens:
+                continue
+            ic, lbl, pol = _SEV_META[canon]
+            out.append(f"{ic} *{lbl}* — {pol}")
+            out.extend(f" • {i}" for i in itens)
+        out.append("")
+        out.append("_Crítico acorda (push). Alerta/info ficam no histórico — veja *alertas*._")
+        return "\n".join(out)
+
     if first in ("infra", "host"):
         snap = await _infra_snapshot()
         if snap is None:
@@ -413,18 +541,51 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
                 "Pra ligar: `TIER_INFRA_PROM_URL` (Prometheus) ou a chave SSH "
                 "(`TIER_AGENT_SSH_PRIVKEY_B64`) no backend."
             )
-        ncpu = snap.get("ncpu")
-        cpu_label = f"{_fmt_num(snap.get('cpu'), '%', 1)}" + (f" (carga {ncpu} vCPU)" if ncpu else "")
+        cal = await _calibragem_from_ssh() or {}
+        sev = cal.get("sev", {})
+        ncpu, load1 = snap.get("ncpu"), snap.get("load1")
+        cpu_pct, ram_pct, disk_pct = snap.get("cpu"), snap.get("mem"), snap.get("disk")
         ct = snap.get("containers")
-        lines = [
-            "🖥️ *Infra do host*",
-            f"• CPU: {cpu_label}",
-            f"• RAM: {_fmt_num(snap.get('mem'), '%', 1)}",
-            f"• Disco /: {_fmt_num(snap.get('disk'), '%', 1)}",
-            f"• Load(1m): {_fmt_num(snap.get('load1'), '', 2)}",
-        ]
+        sustain_min = (cal["sustain"] * 2) if cal.get("sustain") else None
+        cpu_mult, ram_thr, disk_thr = cal.get("cpu_mult"), cal.get("ram_thr"), cal.get("disk_thr")
+        cpu_load_thr = (cpu_mult * ncpu) if (cpu_mult and ncpu) else None
+
+        def _tag(kind, fallback):
+            ic, lbl, _pol = _SEV_META[_canon_sev(sev.get(kind) or fallback)]
+            return ic, lbl
+
+        lines = ["🖥️ *Infra do host*  _(atual → limite de alerta)_"]
+
+        cpu_cur = f"{_fmt_num(cpu_pct, '%', 1)} · load {_fmt_num(load1, '', 2)}/{ncpu or '?'} vCPU"
+        if cpu_load_thr:
+            ic, lbl = _tag("cpu", "alerta")
+            mins = f" por ~{sustain_min}min" if sustain_min else ""
+            lines.append(f"{_status_dot(load1, cpu_load_thr)} CPU: {cpu_cur} → {ic} {lbl} se load > {cpu_load_thr} ({cpu_mult}× vCPU){mins}")
+        else:
+            lines.append(f"{_status_dot(load1, cpu_load_thr)} CPU: {cpu_cur}")
+
+        if ram_thr:
+            ic, lbl = _tag("ram", "alerta")
+            mins = f" sustentado ~{sustain_min}min" if sustain_min else ""
+            lines.append(f"{_status_dot(ram_pct, ram_thr)} RAM: {_fmt_num(ram_pct, '%', 1)} → {ic} {lbl} ≥ {ram_thr}%{mins}")
+        else:
+            lines.append(f"{_status_dot(ram_pct, ram_thr)} RAM: {_fmt_num(ram_pct, '%', 1)}")
+
+        if disk_thr:
+            ic, lbl = _tag("disk", "critico")
+            lines.append(f"{_status_dot(disk_pct, disk_thr)} Disco /: {_fmt_num(disk_pct, '%', 1)} → {ic} {lbl} ≥ {disk_thr}%")
+        else:
+            lines.append(f"{_status_dot(disk_pct, disk_thr)} Disco /: {_fmt_num(disk_pct, '%', 1)}")
+
         if ct is not None:
-            lines.append(f"• Containers: {ct}")
+            if sev.get("containers"):
+                ic, lbl = _tag("containers", "critico")
+                lines.append(f"🟢 Containers: {ct} no ar → {ic} {lbl} se algum app sumir")
+            else:
+                lines.append(f"🟢 Containers: {ct} no ar")
+
+        if not cal:
+            lines.append("\n_Thresholds indisponíveis (SSH dos guards fora) — só valores atuais._")
         return "\n".join(lines)
 
     # status / health / saude → saúde real do stack (enriquecido com error rate 24h)
