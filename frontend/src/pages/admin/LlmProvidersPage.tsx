@@ -249,7 +249,7 @@ export default function LlmProvidersPage() {
     }
   }
 
-  const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
+  const inputCls = `mt-1 w-full h-8 px-3 text-[13px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
 
   // Modelos sugeridos do provider — vêm do backend (parâmetro), não hardcoded aqui.
   const modelsFor = (prov: string) => supported.find((s) => s.key === prov)?.models ?? [];
