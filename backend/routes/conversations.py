@@ -234,6 +234,40 @@ async def conversation_detail(
     }
 
 
+@router.get("/{conversation_id}/debug/{message_id}", response_model=dict)
+async def message_debug(
+    conversation_id: int,
+    message_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Debug: o prompt EXATO + memory + RAG enviados ao LLM nesta mensagem do assistant.
+    Útil pra diagnosticar persona/comportamento sem query crua no banco. Escopado por tenant."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await db.get(TaConversation, conversation_id)
+    if not conv:
+        raise HTTPException(404, "Conversa não encontrada")
+    agent_ids = await _tenant_agent_ids(db, user.tenant_id)
+    if conv.agent_id not in agent_ids:
+        raise HTTPException(403, "Conversa de outro tenant")
+    msg = await db.get(TaMessageLog, message_id)
+    if not msg or msg.conversation_id != conversation_id:
+        raise HTTPException(404, "Mensagem não encontrada")
+    return {
+        "message_id": msg.id,
+        "role": msg.role,
+        "model_used": msg.model_used,
+        "tokens_in": msg.tokens_in,
+        "tokens_out": msg.tokens_out,
+        "system_prompt_sent": msg.system_prompt_sent,
+        "memory_block": msg.memory_block,
+        "rag_block": msg.rag_block,
+        "tool_calls_json": msg.tool_calls_json,
+        "brakes_fired": msg.brakes_fired,
+    }
+
+
 class TagsIn(BaseModel):
     tags: list[str]
 

@@ -272,6 +272,11 @@ class TaMessageLog(Base):
     # (ambas via ensure_message_content_column() — runtime DDL, nullable, retrocompatível).
     attachments_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # anexos da mensagem [{kind, url, mime}] — mídia WhatsApp (R2) persistida (runtime DDL)
+    # Observabilidade do prompt (debug "ver o que foi enviado ao LLM") — gravado só na msg
+    # assistant, atrás do flag TA_LOG_PROMPTS. Colunas via runtime DDL, nullable.
+    system_prompt_sent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    memory_block: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rag_block: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 

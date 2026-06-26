@@ -375,6 +375,7 @@ export default function ConversasPage() {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [openConv, setOpenConv] = useState<Conversation | null>(null);
+  const [debugMsg, setDebugMsg] = useState<Record<string, any> | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const [tagInput, setTagInput] = useState("");
@@ -1076,12 +1077,55 @@ export default function ConversasPage() {
                     <span className={`text-[10px] mt-1 px-1 flex items-center gap-1 ${FC.mut}`}>
                       {isAgent ? <><User className="w-2.5 h-2.5" /> Você</> : isUser ? null : <><Bot className="w-2.5 h-2.5" /> IA</>}
                       {fmtTime(m.created_at) && <span>{isUser ? "" : "· "}{fmtTime(m.created_at)}</span>}
+                      {!isUser && !isAgent && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const { data } = await api.get(`/conversations/${openConv?.id}/debug/${m.id}`);
+                              setDebugMsg(data);
+                            } catch {
+                              toast.error("Falha ao carregar debug");
+                            }
+                          }}
+                          className="hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors"
+                          title="Ver o prompt exato enviado ao LLM"
+                        >
+                          🔍
+                        </button>
+                      )}
                     </span>
                   </div>
                 );
               })}
               <div ref={msgsEndRef} />
             </div>
+            {debugMsg && createPortal(
+              <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setDebugMsg(null)}>
+                <div className={`w-full max-w-[760px] max-h-[85vh] overflow-hidden rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair} flex flex-col`} onClick={(e) => e.stopPropagation()}>
+                  <div className={`flex items-center justify-between px-4 h-12 border-b ${FC.hair} shrink-0`}>
+                    <h3 className={`text-[14px] font-medium ${FC.ink}`}>🔍 Debug — prompt enviado ao LLM</h3>
+                    <button onClick={() => setDebugMsg(null)} className={iconBtn}><X className="w-4 h-4" /></button>
+                  </div>
+                  <div className="overflow-y-auto sidebar-scroll p-4 space-y-3">
+                    <div className={`text-[12px] ${FC.sub}`}>
+                      modelo <b className={FC.ink}>{debugMsg.model_used || "—"}</b> · tokens {debugMsg.tokens_in}/{debugMsg.tokens_out}
+                    </div>
+                    {([
+                      ["System prompt", debugMsg.system_prompt_sent, true],
+                      ["Memory (entre conversas)", debugMsg.memory_block, false],
+                      ["RAG (knowledge)", debugMsg.rag_block, false],
+                      ["Tool calls", debugMsg.tool_calls_json ? JSON.stringify(debugMsg.tool_calls_json, null, 2) : "", false],
+                    ] as [string, string, boolean][]).map(([title, body, open]) => (
+                      <details key={title} open={open}>
+                        <summary className={`cursor-pointer text-[12px] font-medium ${FC.ink}`}>{title}</summary>
+                        <pre className={`mt-1 p-2 rounded-lg bg-[#F1F3F5] dark:bg-[#16191f] text-[11px] leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto ${FC.sub}`}>{body || "(vazio / não gravado)"}</pre>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )}
 
             {openConv.status !== "closed" && (
               <div className={`border-t ${FC.hair} px-5 py-3 bg-white dark:bg-[#0c0e12] shrink-0`}>
