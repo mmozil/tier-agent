@@ -500,12 +500,11 @@ export function SegToggle<T extends string | number>({
           <button
             key={String(o.value)}
             onClick={() => onChange(o.value)}
-            className={`h-8 px-3 rounded-[8px] text-[13px] font-medium transition-all active:scale-[0.97] ${
+            className={`h-8 px-3 rounded-[10px] text-[12px] font-medium transition-all active:scale-[0.98] ${
               active
-                ? "bg-[#003083] text-white dark:bg-[#5b9bff] dark:text-[#0c0e12] shadow-[0_1px_2px_rgba(0,48,131,0.18)]"
+                ? "bg-[#003083] text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]"
                 : `${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`
-            }`}
-          >
+            }`}>
             {o.label}
           </button>
         );
