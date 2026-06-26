@@ -16,6 +16,7 @@ Cada query é defensiva (try/except → "?"): um schema fora do esperado degrada
 derruba o comando.
 """
 
+import asyncio
 import time
 
 import httpx
@@ -196,33 +197,75 @@ async def _incidents_open(db: AsyncSession, tenant_id: int, limit: int = 8) -> l
         return []
 
 
-async def _infra_snapshot() -> dict | None:
-    """CPU/RAM/disco do host via Prometheus HTTP API (env TIER_INFRA_PROM_URL). None se não configurado."""
-    settings = get_settings()
-    prom = getattr(settings, "tier_infra_prom_url", None) or ""
-    if not prom:
-        return None
-    prom = prom.rstrip("/")
+async def _infra_from_prometheus(prom: str) -> dict | None:
+    """CPU/RAM/disco via Prometheus HTTP API (node_exporter)."""
     queries = {
         "cpu": '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)',
         "mem": '(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100',
         "disk": '(1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100',
-        "load1": 'node_load1',
+        "load1": "node_load1",
     }
-    out: dict = {}
+    out: dict = {"source": "prometheus"}
     try:
         async with httpx.AsyncClient(timeout=6.0) as cli:
             for key, q in queries.items():
                 try:
                     r = await cli.get(f"{prom}/api/v1/query", params={"query": q})
-                    data = r.json()
-                    res = data.get("data", {}).get("result", [])
+                    res = r.json().get("data", {}).get("result", [])
                     out[key] = float(res[0]["value"][1]) if res else None
                 except Exception:
                     out[key] = None
     except Exception:
         return None
-    return out
+    return out if any(out.get(k) is not None for k in ("cpu", "mem", "disk")) else None
+
+
+# Comando único no host (mesma chave SSH da orquestração). Saída key=value|... pra parse limpo.
+_INFRA_SSH_CMD = (
+    "L=$(cut -d' ' -f1-3 /proc/loadavg); "
+    "N=$(nproc); "
+    "M=$(free -m | awk '/^Mem:/{print $2\",\"$3}'); "
+    "D=$(df -P / | awk 'NR==2{gsub(/%/,\"\",$5);print $5}'); "
+    "C=$(docker ps -q 2>/dev/null | wc -l | tr -d ' '); "
+    "echo \"load=$L|mem=$M|disk=$D|ncpu=$N|containers=$C\""
+)
+
+
+async def _infra_from_ssh() -> dict | None:
+    """CPU(carga)/RAM/disco/containers do host via SSH (paramiko da orquestração)."""
+    if not getattr(get_settings(), "tier_agent_ssh_privkey_b64", ""):
+        return None
+    try:
+        from services.container_orchestrator import _ssh_run
+        code, out, _err = await asyncio.to_thread(_ssh_run, _INFRA_SSH_CMD)
+    except Exception:
+        return None
+    if code != 0 or not out:
+        return None
+    try:
+        parts = dict(p.split("=", 1) for p in out.strip().split("|") if "=" in p)
+        load = (parts.get("load") or "").split()
+        load1 = float(load[0]) if load else None
+        ncpu = int(parts.get("ncpu") or 0) or None
+        mem = (parts.get("mem") or "").split(",")
+        mem_pct = (float(mem[1]) / float(mem[0]) * 100) if len(mem) == 2 and float(mem[0]) else None
+        disk = float(parts["disk"]) if parts.get("disk") else None
+        containers = int(parts["containers"]) if parts.get("containers") else None
+        cpu = (load1 / ncpu * 100) if (load1 is not None and ncpu) else None
+        return {"source": "ssh", "cpu": cpu, "mem": mem_pct, "disk": disk,
+                "load1": load1, "ncpu": ncpu, "containers": containers}
+    except Exception:
+        return None
+
+
+async def _infra_snapshot() -> dict | None:
+    """Métricas do host: Prometheus (se TIER_INFRA_PROM_URL) → fallback SSH-to-host. None se nenhum."""
+    prom = (getattr(get_settings(), "tier_infra_prom_url", None) or "").rstrip("/")
+    if prom:
+        snap = await _infra_from_prometheus(prom)
+        if snap:
+            return snap
+    return await _infra_from_ssh()
 
 
 def _fmt_num(v, suf: str = "", nd: int = 0) -> str:
@@ -316,16 +359,22 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
         if snap is None:
             return (
                 "ℹ️ *Infra do host* não está conectada aqui.\n"
-                "Pra ligar: setar `TIER_INFRA_PROM_URL` (Prometheus) no backend. "
-                "Enquanto isso, CPU/RAM/disco vêm pelo painel.tier.finance e pelos alertas do SecOps."
+                "Pra ligar: `TIER_INFRA_PROM_URL` (Prometheus) ou a chave SSH "
+                "(`TIER_AGENT_SSH_PRIVKEY_B64`) no backend."
             )
-        return (
-            "🖥️ *Infra do host*\n"
-            f"• CPU: {_fmt_num(snap.get('cpu'), '%', 1)}\n"
-            f"• RAM: {_fmt_num(snap.get('mem'), '%', 1)}\n"
-            f"• Disco /: {_fmt_num(snap.get('disk'), '%', 1)}\n"
-            f"• Load(1m): {_fmt_num(snap.get('load1'), '', 2)}"
-        )
+        ncpu = snap.get("ncpu")
+        cpu_label = f"{_fmt_num(snap.get('cpu'), '%', 1)}" + (f" (carga {ncpu} vCPU)" if ncpu else "")
+        ct = snap.get("containers")
+        lines = [
+            "🖥️ *Infra do host*",
+            f"• CPU: {cpu_label}",
+            f"• RAM: {_fmt_num(snap.get('mem'), '%', 1)}",
+            f"• Disco /: {_fmt_num(snap.get('disk'), '%', 1)}",
+            f"• Load(1m): {_fmt_num(snap.get('load1'), '', 2)}",
+        ]
+        if ct is not None:
+            lines.append(f"• Containers: {ct}")
+        return "\n".join(lines)
 
     # status / health / saude → saúde real do stack (enriquecido com error rate 24h)
     db_ok = False
