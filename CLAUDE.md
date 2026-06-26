@@ -8,7 +8,7 @@ Guia pra Claude Code trabalhar neste repositório.
 
 > 🔄 **REFACTOR 04/jun/2026 — motor próprio `tier_engine` (Hermes removido).** O Tier Agent NÃO depende mais do Hermes. A execução de IA agora é **in-process** via `backend/services/tier_engine.py` (client LLM multi-provider lendo `TaLlmProvider` + cache + PII + tool-use), substituindo o antigo `hermes_proxy` + container Hermes por tenant. **Todos os nomes "hermes" foram removidos do código** (`hermes_proxy`→`tier_engine`, `HermesReply`→`EngineReply`, palavra `hermes`→`engine` em ~19 arquivos). Código de orquestração de container (`container_orchestrator.py`, `routes/containers.py`, `ENGINE_IMAGE` ex-`HERMES_IMAGE`, model `TaContainer`) está **dormente** (não usado pelo motor in-process) — remover em limpeza futura. **Pendente: validação runtime + cutover só após shadow (TRAVA: App Review Meta em andamento). Não deployado.** Detalhe: `REFACTOR-HERMES-TIER-ENGINE.md` + Obsidian `[[202606041700 - Refactor Tier Engine (remove Hermes)]]`. As gotchas abaixo sobre "container Hermes / imagem tier/hermes / thinking blocks opus" são **históricas** (do motor antigo).
 
-> 📒 **Organização dos agentes (04/jun/2026, tenant 3 Out Group):** `agent 2` = **"Tier Empresas Atendimento"** (Maria Luiza, WhatsApp **Cloud API oficial**, phone_number_id `1105955629273371`, waba `1306815574284515`) · `agent 5` = **"DevSecOps"** (alertas SecOps, número `11941452082`, Baileys instância `b71e04fd` reusada). **Conector `whatsapp_cloud` é frágil** — clicar a lixeira em Canais apaga a linha **e o token junto** (token só vive ali, criptografado). Se cair em `no_connector`: regenerar **System User token permanente** (business.facebook.com → Usuários do sistema → app `1644748586815003`, scopes whatsapp_business_messaging+management, validade Nunca) e recriar o conector (`TaConnector(agent_id=2, kind='whatsapp_cloud', config={phone_number_id, token, waba_id})`). Validar token: `GET /v21.0/debug_token` → `type=SYSTEM_USER`, `expires_at=0`. **Nunca** logar o token no stdout.
+> 📒 **Organização dos agentes (04/jun/2026, tenant 3 Out Group):** `agent 2` = **"Tier Empresas Atendimento"** (Maria Luiza, WhatsApp **Cloud API oficial**, phone_number_id `1105955629273371`, waba `1306815574284515`) · `agent 5` = **"DevSecOps"** (alertas SecOps, número `11941452082`, Baileys instância `b71e04fd` reusada). **Conector `whatsapp_cloud` é frágil** — clicar a lixeira em Canais apaga a linha **e o token junto** (token só vive ali, criptografado). Se cair em `no_connector`: regenerar **System User token permanente** (business.facebook.com → Usuários do sistema → app `1644748586815003`, scopes whatsapp_business_messaging+management, validade Nunca) e recriar o conector (`TaConnector(agent_id=2, kind='whatsapp_cloud', config={phone_number_id, token, waba_id})`). Validar token: `GET /v21.0/debug_token` → `type=SYSTEM_USER`, `expires_at=0`. **Nunca** logar o token no stdout. **Recuperação <1h (dead tuple, 25/jun)**: se apagou agora, `pg_dirtyread` na `ta_connector` (instalar `postgresql-17-dirtyread` no PG `tog0wc8gg`/DB `tier_agent`) lê a linha morta e reusa o blob cifrado (token nunca exposto) — janela ~1h (HOT-prune). **🛡️ Blindagem env (ATIVA 25/jun)**: `WHATSAPP_CLOUD_TOKEN`/`_PHONE_NUMBER_ID`/`_WABA_ID` no Coolify (`resolve_cloud_creds` fallback) → número sobrevive a delete do conector. Token+IDs no Cofre-Segredos (Obsidian).
 
 - **Repo:** `mmozil/tier-agent` (branch `master`)
 - **Stack:** FastAPI + Postgres + Redis + React/Vite + Tailwind. Backend porta 8100; frontend 5174 (dev).
@@ -130,8 +130,10 @@ Reescrito consultivo: fluxo de agendamento via **ferramentas**, informar **valor
 - **NÃO wirado no `agent_runtime`**: pra conhecimento PEQUENO a persona é MELHOR (RAG com chunks grandes recupera mal). Ativar só quando cliente tiver base GRANDE: chunking menor + `rag_engine.search` injetado no system prompt + `GEMINI_API_KEY` no Coolify.
 
 ### Agente de teste / App Review
-- Agente "Maria Luiza" = `agent_id 2`, tenant **Out Group** (id 3), número **+55 11 92336-2467** (Cloud API oficial, token System User permanente).
-- **App Review submetido** (29/mai, "em análise", ~10 dias). Login de teste do reviewer: `reviewer@tier.finance` / `TierReview2026!` (tenant 5). Pós-aprovação: **Publicar** (tirar de "Não publicado").
+- Agente "Maria Luiza" = `agent_id 2`, tenant **Out Group** (id 3), número **+55 11 92336-2467** (Cloud API oficial, **token System User permanente** — vive no conector criptografado + fallback env `WHATSAPP_CLOUD_TOKEN` no Coolify desde 25/jun).
+- **App Review**: 1º envio 29/mai → **REPROVADO 23/jun** (motivo: screencast não cobria o fluxo completo + faltava declarar server-to-server). **REENVIADO 25/jun** com screencast novo de 3 cenas (sem Embedded Signup) + descrições em inglês declarando **"server-to-server / System User token"** (exatamente o que o revisor pediu). Permissões: `whatsapp_business_messaging` + `whatsapp_business_management`. Caminho painel novo: Casos de uso → Personalizar → **Permissões e recursos** → "Ações → Adicionar à análise do app" → **Análise do app → Avançar → Uso permitido** (descrição+upload+conformidade) + **Tratamento de dados** (revisar pré-preenchido) → Enviar.
+- **🚨 Login de teste = `morais.marcelos@gmail.com`** (tenant 3 Out Group, **a conta que TEM a Maria Luiza conectada**; senha própria não-Google), **NÃO** `reviewer@tier.finance` (tenant 5 VAZIO → reprovaria por conta vazia).
+- **Embedded Signup é bloqueado pelo App Review** (ovo-galinha): "Conectar WhatsApp Oficial" sempre dá "Conexão cancelada ou incompleta" até aprovar. O número Out Group conecta via **System User token** (não pelo popup). Pós-aprovação: **Publicar** (tirar de "Não publicado").
 
 ## Qualidade & Observabilidade do agente (17/jun/2026 — cobertura de gaps de engenharia)
 
@@ -153,12 +155,62 @@ Após avaliar o agente vs boas práticas (eng. de agentes / canal Ronnald Hawk),
 - **tier-agent:** preset OAuth **`hovio-pet-customer`** (`oauth_connect.py`, scope `pet:customer`). A Yanna ainda usa o preset `hovio-pet` (staff) — **dormente**.
 - **Ligar (decisão do dono):** emitir token `pet:customer` p/ a Yanna + smoke 2-clientes (curl `/api/mcp tools/list`: customer NÃO lista as 4 tools que vazam) → trocar a Yanna pro preset customer.
 
+## Agente DevOps/SRE — "DevSecOps" (`agent 5`, tenant 3 Out Group) (26/jun/2026)
+
+Agente INTERNO que monitora a infra do Tier via WhatsApp: telemetria real do stack, triagem de incidentes e remediação por runbook. Número `11941452082` (Baileys via Tier Engine, instância **`7748dba8-0b1e-457d-8700-fa299b0acda2`** — re-pareada 26/jun via painel `/admin/canais`; anteriores `6120f33d`/`54e813c7` descartadas). **TUDO DEPLOYADO.** (Eval anterior dava 2.6/5 — sem disciplina de escopo, injeção funcionava; corrigido.)
+
+### Comandos de ops DETERMINÍSTICOS (`services/ops_commands.py`)
+- Gate `template_kind=="devsecops"` + `is_ops_command` ANTES do LLM. São comandos de **observabilidade** que respondem com DADO REAL (nunca alucinado), NÃO executam shell arbitrário: `status` (saúde do stack), `metrics` (RED 24h de `ta_message_log`: volume/erros/latência p95/custo/modelos), `errors`, `sla`, `incidentes` (abertos), `alertas` (últimos 8 do `ta_incident`), `infra` (CPU/RAM/disco do host: quanto tem + % usado), **`calibragem`** (parâmetros dos alertas, espelha o painel Tier), `uptime`, `ping`, `ajuda` (menu).
+- 🚨 **Over-trigger fix**: `is_ops_command` só dispara se a msg for o comando ISOLADO (1 token) OU tiver prefixo `/!.`; tolera pontuação (`ajuda?`, `status!`). "ajuda com login" NÃO vira menu.
+- 🚨 **Gotcha SQL**: `jsonb_array_length(brakes_fired::jsonb)` quebra se `brakes_fired` for JSON escalar → guardar com `jsonb_typeof(x::jsonb)='array'` antes (ou `x <> '[]'::jsonb`).
+
+### `/calibragem` (26/jun) — espelha o painel Tier
+- ESPELHA a tela "Calibragem de alertas" do painel (`painel.tier.finance` → `static/app.js` array `ALERT_TYPES`): 7 tipos com severidade + Quando/Risco/Ação/Gatilho. O **Re-aviso (throttle)** é lido AO VIVO de `/etc/tier-secops/alert.conf` via SSH (`_throttle_from_ssh`). `ALERT_TYPES` é hardcoded no `ops_commands.py` espelhando o painel — **manter sincronizado** ao mudar limites nos guards.
+
+### `devops_guard` — anti-injeção determinístico (`services/devops_guard.py`)
+- Regex de troca-de-papel ("esqueça as instruções", "agora você é X") ANTES do LLM → recusa fixa que re-ancora a identidade + cria `ta_incident` (source=`agent-guard`). Independente do modelo (o eval provou que o prompt sozinho não segura modelo fraco). **NÃO é whitelist de shell** — é anti-prompt-injection.
+
+### Inbox dos comandos
+- `_log_deterministic_turn` (`agent_runtime`) loga user+assistant dos ops-commands/guard → aparecem nas Conversas do painel (antes retornavam cedo e ficavam invisíveis). Bônus: resposta legível no painel mesmo com o WhatsApp travado.
+- 🚨 **Bug "fica só pensando" no `/ajuda` (26/jun, commit `d1f8356`)**: `_log_deterministic_turn` dava `db.rollback()` na sessão do request pra recuperar transação abortada — mas **rollback expira TODOS os ORMs da AsyncSession** (inclusive `agent` E `connector`). Logo depois o caller lia `connector.config_json_enc` (enviar) e `agent.id` (return): atributo expirado dispara IO implícito proibido → `MissingGreenlet` → o caminho de ops estourava e CAÍA NO LLM ("fica pensando", sem menu). **Fix**: loga numa **`SessionLocal()` própria**, nunca toca no `db`/`agent`/`connector` do caller. Ver memory `feedback_async_session_rollback_expires_orm`.
+
+### `/infra` via SSH-to-host (26/jun: quanto tem + % usado)
+- Sem Prometheus no servidor → `ops_commands._infra_from_ssh` usa `container_orchestrator._ssh_run` (paramiko, config **`tier_agent_ssh_*` JÁ existente**, host `46.224.220.223`). Mostra **quanto tem + % usado**: CPU% **real** (delta de `/proc/stat` em 0.4s, não load/ncpu) + nº vCPUs + load, Memória usada/total GB + %, Disco usado/total GB + %, containers. Limites de alerta saíram daqui (vivem no `/calibragem`). Prometheus opcional via `TIER_INFRA_PROM_URL` (vazio = usa SSH).
+
+### Alertas SecOps → agente (`ta_incident` + webhook `/secops/alert`)
+- **`ta_incident`** (runtime DDL `main._ensure_incident_table`; `tenant_id` NULL = infra-global; fingerprint com índice único parcial p/ dedup).
+- **`POST /api/v1/secops/alert`** (`routes/secops.py`, HMAC-SHA256 header `X-Secops-Signature`, secret `TIER_SECOPS_WEBHOOK_SECRET`): o script `/usr/local/sbin/tier-secops-alert.py` do Hetzner ganhou `send_webhook()` chamado junto de email/WhatsApp (config `/etc/tier-secops/alert.conf`: `SECOPS_WEBHOOK_URL` + `SECOPS_WEBHOOK_SECRET`). `push=False` → NÃO duplica (o webhook só persiste em `ta_incident`; o WhatsApp do alerta o script já manda). Histórico (54 alertas) backfillado em `ta_incident`.
+- 🚨 **Instância dos alertas WhatsApp (corrigido 26/jun)**: o script manda o WhatsApp via `WA_INSTANCE_ID` da `alert.conf` → **`WA_TO="5511994964296"`**. A instância separada antiga `b71e04fd` **sumiu** (HTTP 404 no envio) → reapontei `WA_INSTANCE_ID` pra **a própria instância do agente `7748dba8`** (a mesma que ele usa pra atender). Teste fim-a-fim: `email=True whatsapp=True webhook=True`. Se um dia quiser canal de alerta dedicado (não sair pelo número do agente), parear um chip separado e setar o `WA_INSTANCE_ID` dele.
+- **Responde "último alerta" com DADO REAL**: comando `alertas` + `ops_commands.recent_alerts_block` injeta os últimos 6 do `ta_incident` no system prompt → responde em linguagem natural, sem mandar rodar comando no servidor.
+
+### Calibragem SecOps (SSH brute-force `critico`→`info`)
+- Estava 91% "crítico" (33 = **brute-force SSH** = ruído; o fail2ban já bane, 1380 bans). Severidades em `/usr/local/sbin/tier-secops-checks.sh` (ssh/cpu/ram/disco/containers) + `tier-scan-monitor.sh` (scan/cc). Fix cirúrgico: SSH `critico`→`info` (linha 59, backup `.bak`) + reclassificou histórico `ta_incident` SSH→info. Crítico caiu 52→19. Política: **crítico = acorda** (scan/C&C/app-caiu/disco), **alerta** = cpu/ram, **info** = brute-force ssh.
+
+### Runbook na KB
+- Doc "Runbooks de Operações — Tier" (9 runbooks reais: 502 por CREATE INDEX, CORS=500, ML invalid_grant, purge CF, etc.) ingerido pro `agent 5` via `rag_engine.index_knowledge` (Gemini 768, **18 chunks**). O agente consulta ao guiar remediação (ex: 502 → `pg_terminate` do CREATE INDEX preso).
+
+### Template DEVSECOPS (gotcha persona/guidelines vs system_prompt)
+- 🚨 **GOTCHA**: o runtime usa `agent.persona` como BASE do prompt (`agent_runtime.py:632`) + aplica `template.guidelines` — e **IGNORA `template.system_prompt`** (que é só seed pra agentes novos, não vai pro prompt em runtime). Por isso o COMPORTAMENTO (escopo/anti-injeção/anti-fabricação/triagem) tem que morar em **`guidelines`**, NÃO em `system_prompt`. Agente 5 live atualizado (persona/system_prompt do template).
+
+### Knowledge UI reorg + `GET /knowledge/{id}/chunks`
+- `frontend/src/pages/admin/KnowledgePage.tsx`: agrupada por AGENTE (`SectionHeader` + container único + sub-seções colapsáveis), arquivos com ações (ver chunks/reindexar/remover) + modal de inspeção de chunks. Endpoint novo **`GET /knowledge/{id}/chunks`**.
+
+### WhatsApp re-pareado (instância atual `7748dba8`)
+- O número `11941452082` dava "Aguardando mensagem" (sessão Baileys quebrada / multi-device conflito 440). O user limpou TODOS os aparelhos linkados e re-pareou via painel `/admin/canais` → **instância atual `7748dba8`** (anteriores `6120f33d`/`54e813c7` descartadas). QR ao vivo no painel (o inline expira em ~20s). **Multi-device gotcha**: número aberto em 2 lugares (celular + Baileys) gera conflito 440 → não receber. Número é dedicado só pro Baileys; precisa de um aparelho "dono" que ligue de vez em quando (não deixar em modo avião permanente).
+- A instância `7748dba8` é **a mesma** que agora manda os alertas SecOps (b71e04fd sumiu — ver acima).
+
+### Env vars novas (Coolify backend `f4w8co800kcgog4w08ssww4k`)
+- `TIER_SECOPS_WEBHOOK_SECRET` — valida o webhook `/secops/alert` (HMAC). Deve BATER com `SECOPS_WEBHOOK_SECRET` na `alert.conf` do servidor.
+- `TIER_SECOPS_ALERT_AGENT_ID=5` (+ `TIER_SECOPS_ALERT_CHAT` deixado vazio = sem push do agente, pra não duplicar o WhatsApp).
+- `TIER_INFRA_PROM_URL` (opcional, vazio = `/infra` usa SSH).
+- ⚠️ O SSH do `/infra` reutiliza as JÁ existentes `TIER_AGENT_SSH_HOST` / `TIER_AGENT_SSH_PRIVKEY_B64` — **não há var nova de SSH**.
+
 ## Arquitetura backend
 
 - `routes/` — connectors, agents, webhooks, playbooks, billing, containers, etc.
 - `services/connectors/adapters/` — `whatsapp` (Baileys via Engine), `whatsapp_cloud` (Cloud API oficial), telegram, email, instagram. Registry em `services/connectors/registry.py`.
-- `services/agent_runtime.py` — `handle_inbound_message` (resolve conector por instance_id/phone_number_id → LLM via Hermes container do tenant → responde pelo canal).
-- `services/hermes_proxy.py` — fala com o container Hermes do tenant (1 por tenant). **Usar `container_orchestrator.get_container_by_tenant(db, tenant_id)`**, NUNCA `db.get(TaContainer, tenant_id)` (PK é `id`, não tenant_id).
+- `services/agent_runtime.py` — `handle_inbound_message` (resolve conector por instance_id/phone_number_id → LLM via `tier_engine.send_message` → responde pelo canal).
+- `services/tier_engine.py` — motor de LLM **in-process multi-provider** (substituiu os containers Hermes em jun/2026, commit `3449634`). Config por tenant em `TaLlmProvider` (provider/modelo/temperatura/fallback); handlers anthropic/openai/gemini/deepseek/openrouter/minimax. `_effective_temperature` baixa modelo-compacto pra 0.3 quando está no default.
 - Webhooks: `/webhooks/whatsapp-cloud` (Cloud API, HMAC multi-secret) · `/webhooks/whatsapp-engine` (Baileys) · telegram/instagram/email.
 
 ## Gotchas
@@ -168,8 +220,7 @@ Após avaliar o agente vs boas práticas (eng. de agentes / canal Ronnald Hawk),
 - **Webhook event_id**: usar o `key.id` real da mensagem (a Engine manda `instance_id`/`timestamp` snake_case, não `instanceId`/`ts` — senão event_id vira constante e tudo após a 1ª msg é "duplicata").
 - **FB.login callback** não pode ser `async` (SDK rejeita) — usar função normal + IIFE.
 - **Cloud API**: variação Embedded Signup só via modelo; app precisa ser Tech Provider; Vite vars build-time.
-- **Modelo do agente NÃO é `model.default`**: o `run_agent` da imagem força `claude-opus-4-6` quando provider=anthropic, ignorando a config → thinking-signature 400. Por isso MiniMax é o modelo de produção. Trocar modelo de verdade exige rebuild da imagem.
-- **Conversa "envenenada"**: se um histórico (sessão Hermes `conv-{id}`) acumulou thinking blocks (do opus), fechar a conversa (`TaConversation.status='closed'`) força sessão nova/limpa. Mas isso NÃO conserta o Claude (opus regenera thinking) — só MiniMax resolve.
+- **Modelo é config por tenant (sem rebuild)**: vem de `TaLlmProvider` via `tier_engine` — trocável ao vivo, SEM rebuild de imagem (o Hermes/`run_agent` que forçava opus foi removido). Ex.: tenant 3 (DevOps) = `openrouter/deepseek-v4-flash`@0.3; tenant 6 (Yanna) = `gpt-4o-mini`@0.2. `tier_engine` já faz `_strip_thinking` (remove `<think>`) + filtro CJK. Ver `project_tier_agent_model_agnostic_robustness_20260626` (selo tested/recommended + guardrail de temperatura por porte de modelo).
 - **Editar persona é live (sem deploy)** — `TaAgent.persona` no DB; sempre `llm_cache.invalidate(tenant_id, agent_id)` depois.
 
 ## Convenções
@@ -177,6 +228,8 @@ Após avaliar o agente vs boas práticas (eng. de agentes / canal Ronnald Hawk),
 - Memória canônica: `project_tier_agent_whatsapp_oficial.md` (mais completa — modelo, atendimento, RAG, App Review), `project_tier_agent.md` (+ Q1/Q2/Q3, playbook builder).
 - Obsidian: `projetos/Tier/Tier Agent/`.
 
+_26/jun/2026 — Agente DevOps/SRE "DevSecOps" (`agent 5`): comandos de ops determinísticos de observabilidade (`ops_commands`: status/metrics/alertas/incidentes/infra/**calibragem**) + `devops_guard` anti-injeção + inbox dos comandos, `/infra` via SSH (quanto tem + % usado, CPU% real de `/proc/stat`, reusa `tier_agent_ssh_*`), **`/calibragem`** espelha a tela do painel Tier (ALERT_TYPES + throttle live de `alert.conf`), `ta_incident` + webhook `POST /secops/alert` (script `tier-secops-alert.py` do Hetzner → agente responde "último alerta" com dado real), runbook na KB (18 chunks), gotcha do template (runtime usa persona+guidelines; `template.system_prompt` é só seed), Knowledge UI reorg + `GET /knowledge/{id}/chunks`, calibragem SecOps SSH brute-force `critico`→`info` (crítico 52→19). **Fixes da continuação 26/jun**: (1) `/ajuda` "fica só pensando" = `_log_deterministic_turn` dava `db.rollback()` que expirava agent+connector da AsyncSession → `MissingGreenlet` → caía no LLM; fix = sessão isolada (`d1f8356`); (2) WhatsApp re-pareado p/ instância **`7748dba8`** (multi-device 440; `6120f33d`/`54e813c7` descartadas); (3) instância de alerta `b71e04fd` sumiu → `WA_INSTANCE_ID` da `alert.conf` reapontado pra `7748dba8` (mesma do agente), `WA_TO=5511994964296`. Env novas: `TIER_SECOPS_WEBHOOK_SECRET`, `TIER_SECOPS_ALERT_AGENT_ID=5`, `TIER_INFRA_PROM_URL` (opcional). Fonte canônica: memória `project_tier_agent_devops_observability_20260626`._
+_Também nesta sessão: Fase A/B/C robustez model-agnostic (prompt modular por template, evals de persona, guardrail de temperatura modelo-compacto→0.3, selo tested/recommended na UI de providers) — ver `project_tier_agent_model_agnostic_robustness_20260626`._
 _Última atualização: 17/jun/2026 — Cobertura de gaps de engenharia: observabilidade (`brakes_fired`+`tool_calls_json` em `ta_message_log`, ~16 freios nomeados, trace Langfuse enriquecido), freios de agendamento (`remarcacao` + `confirm_summary_missing`, `confirm_no_book` priorizado), suíte de eval `backend/tests/` (live, 3/3 verde), guard de memória `TIER_EVAL_MODE`, tenancy MCP `pet:customer` (DORMENTE). **Provedor ativo: gpt-4o-mini OpenRouter temp 0.2** (Haiku zerou créditos Anthropic = outage; trocado). Resolvers determinísticos no MCP do Pet (tutor/pet/serviço/profissional por nome) + CEP via ViaCEP + anti-duplicata de remarcação._
 _12/jun/2026 — Federação MCP Hovio Pet (Nicoly / Patinhas & Cia): injeção global de data-hora + diretrizes base + Apple no system prompt, `_format_for_whatsapp` (markdown→nativo), webhook Engine em background (não segura o 200), typing "…digitando" + remoção do sleep aditivo, espelho de conversas Pet←Tier Agent (`pet_mirror` + job 60s), avatar do agente (`TaAgent.avatar_url`), template ATENDENTE_PETSHOP consultivo._
 _29/mai/2026 — atendimento (lead/handoff/inbox/split/consultivo), modelo MiniMax (Haiku bloqueado), filtro CJK, RAG pronto-não-ativado, App Review submetido._
