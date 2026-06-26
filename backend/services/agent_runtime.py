@@ -282,6 +282,25 @@ async def load_history(db: AsyncSession, conversation_id: int, limit: int = 80) 
     return [{"role": r.role, "content": r.content} for r in rows]
 
 
+async def _log_deterministic_turn(db, agent, connector_kind, external_id, contact_name, user_text, reply):
+    """Loga (user + assistant) de um turno DETERMINÍSTICO (ops-command/guard) no inbox.
+
+    Esses caminhos respondem sem LLM e retornam cedo; sem isto, a interação fica invisível
+    nas conversas do painel (foi o motivo de `/ajuda`, `Infra` etc. não aparecerem). Logar
+    aqui também deixa a resposta legível no painel mesmo quando o WhatsApp não consegue
+    descriptografar (sessão Baileys quebrada)."""
+    try:
+        conv = await ensure_conversation(
+            db, agent_id=agent.id, connector_kind=connector_kind,
+            external_id=external_id, contact_name=contact_name,
+        )
+        await log_message(db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", content=user_text)
+        await log_message(db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="assistant", content=reply)
+        await db.commit()
+    except Exception:
+        logger.exception("log de turno determinístico falhou agent=%s", agent.id)
+
+
 async def handle_inbound_message(
     db: AsyncSession,
     *,
@@ -337,6 +356,9 @@ async def handle_inbound_message(
             if ops_commands.is_ops_command(text_content):
                 reply = await ops_commands.handle_ops_command(db, agent, text_content)
                 if reply:
+                    await _log_deterministic_turn(
+                        db, agent, connector_kind, external_chat_id, sender_name, text_content, reply
+                    )
                     try:
                         connector_impl = registry.get(connector_kind)
                         cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
@@ -355,6 +377,9 @@ async def handle_inbound_message(
             from services import devops_guard
 
             if devops_guard.detect_injection(text_content):
+                await _log_deterministic_turn(
+                    db, agent, connector_kind, external_chat_id, sender_name, text_content, devops_guard.REFUSAL
+                )
                 try:
                     connector_impl = registry.get(connector_kind)
                     cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
