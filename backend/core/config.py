@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     tier_whatsapp_engine_tenant_id: str = ""
     tier_whatsapp_webhook_secret: str = ""
 
+    # DevOps/Observability do agente DevSecOps
+    # Webhook que recebe alertas dos guards do servidor (scan-guard/C&C-guard/ingress-guard)
+    # e grava em ta_incident. HMAC-SHA256 do body, header X-Secops-Signature.
+    tier_secops_webhook_secret: str = ""
+    # Empresa/canal pra onde empurrar o alerta em tempo real (push WhatsApp). Opcional.
+    tier_secops_alert_agent_id: int = 0
+    tier_secops_alert_chat: str = ""
+    # Prometheus HTTP API pro comando `infra` (CPU/RAM/disco do host). Vazio = comando degrada.
+    tier_infra_prom_url: str = ""
+
     # Pet → Tier Agent: o Hovio Pet envia status do atendimento (check-in/etapas/pronto)
     # PELA instância WhatsApp do agente (Yanna), sem duplicar a credencial da Engine.
     pet_status_internal_key: str = ""

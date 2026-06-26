@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Upload, FileText, FileSpreadsheet, FileType, Trash2, FolderOpen } from "lucide-react";
+import {
+  Upload, FileText, FileSpreadsheet, FileType, Trash2, FolderOpen,
+  ChevronDown, ChevronRight, RefreshCw, Eye, Bot, X, Layers,
+} from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, PageHero, Row, Select, EmptyHint, SKEL, iconBtn } from "@/components/ds/fc";
@@ -22,10 +25,19 @@ interface Knowledge {
   source_url: string | null;
 }
 
+interface Chunk {
+  id: number;
+  position: number;
+  tokens: number;
+  text: string;
+}
+
 const KIND_META: Record<string, { icon: typeof FileText; color: string; label: string }> = {
   pdf: { icon: FileText, color: "text-[#E5484D]", label: "PDF" },
   sheet: { icon: FileSpreadsheet, color: "text-[#0a8f5a]", label: "Planilha" },
   text: { icon: FileType, color: "text-[#262626]/40", label: "Texto" },
+  manual: { icon: FileType, color: "text-[#003083] dark:text-[#5b9bff]", label: "Manual" },
+  url: { icon: FileType, color: "text-[#003083] dark:text-[#5b9bff]", label: "URL" },
   unknown: { icon: FileType, color: "text-[#262626]/40", label: "—" },
 };
 
@@ -41,6 +53,10 @@ export default function KnowledgePage() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [reindexing, setReindexing] = useState<number | null>(null);
+  const [chunksFor, setChunksFor] = useState<Knowledge | null>(null);
+  const [chunks, setChunks] = useState<Chunk[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -105,14 +121,55 @@ export default function KnowledgePage() {
     }
   }
 
-  const th = `text-left text-[11px] font-semibold uppercase tracking-wider px-6 py-2.5 ${FC.sub}`;
+  async function onReindex(id: number) {
+    setReindexing(id);
+    try {
+      await api.post(`/knowledge/${id}/reindex`);
+      toast.success("Reindexado");
+      load();
+    } catch {
+      toast.error("Erro ao reindexar");
+    } finally {
+      setReindexing(null);
+    }
+  }
+
+  async function openChunks(k: Knowledge) {
+    setChunksFor(k);
+    setChunks(null);
+    try {
+      const r = await api.get<{ chunks: Chunk[] }>(`/knowledge/${k.id}/chunks?limit=100`);
+      setChunks(r.data.chunks);
+    } catch {
+      toast.error("Erro ao carregar chunks");
+      setChunks([]);
+    }
+  }
+
+  function toggle(agentId: number) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+  }
+
+  // Agrupa os arquivos por agente. Agentes sem arquivos não viram seção; órfãos (agente
+  // removido) caem num grupo "Sem agente".
+  const known = new Set(agents.map((a) => a.id));
+  const groups: { id: number; nome: string; files: Knowledge[] }[] = agents
+    .map((a) => ({ id: a.id, nome: a.nome, files: items.filter((k) => k.agent_id === a.id) }))
+    .filter((g) => g.files.length > 0);
+  const orphans = items.filter((k) => !known.has(k.agent_id));
+  if (orphans.length) groups.push({ id: -1, nome: "Sem agente", files: orphans });
 
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
         <PageHero
           title="Knowledge"
-          subtitle="Suba PDF, planilhas e textos. Vira skill consumível pelo agente em segundos."
+          subtitle="Base de conhecimento por agente — suba PDF, planilhas e textos (runbooks, FAQs). Cada agente consulta só os arquivos dele."
         />
 
         <Row>
@@ -152,83 +209,150 @@ export default function KnowledgePage() {
           </div>
         </Row>
 
-        <Row last>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className={`border-b ${FC.hair}`}>
-                  <th className={th}>Arquivo</th>
-                  <th className={th}>Agente</th>
-                  <th className={th}>Chunks</th>
-                  <th className={th}>Status</th>
-                  <th className={`${th} text-right w-[80px]`}>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading &&
-                  [0, 1, 2].map((i) => (
-                    // Skeleton ecoa as colunas da tabela (Arquivo · Agente · Chunks · Status · Ações).
-                    <tr key={i} className={`border-b ${FC.hair}`}>
-                      <td className="px-6 py-2.5">
-                        <div className="inline-flex items-center gap-2">
-                          <div className={`w-4 h-4 rounded ${SKEL}`} />
-                          <div className={`h-3 w-40 ${SKEL}`} />
+        {loading && (
+          <Row last>
+            <div className="p-6 space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <div className={`w-4 h-4 rounded ${SKEL}`} />
+                  <div className={`h-3 w-40 ${SKEL}`} />
+                </div>
+              ))}
+            </div>
+          </Row>
+        )}
+
+        {!loading && groups.length === 0 && (
+          <Row last>
+            <div className="px-6 py-12">
+              <EmptyHint icon={FolderOpen} text="Nenhum conhecimento ainda. Suba o primeiro arquivo no formulário acima." />
+            </div>
+          </Row>
+        )}
+
+        {!loading &&
+          groups.map((g) => {
+            const isCollapsed = collapsed.has(g.id);
+            const totalChunks = g.files.reduce((s, f) => s + (f.chunks_count || 0), 0);
+            return (
+              <Row key={g.id}>
+                {/* Cabeçalho do agente (clicável pra colapsar) */}
+                <button
+                  type="button"
+                  onClick={() => toggle(g.id)}
+                  className={`w-full flex items-center gap-2 px-6 py-3 text-left ${FC.hover}`}
+                >
+                  {isCollapsed ? (
+                    <ChevronRight className={`w-4 h-4 ${FC.sub}`} />
+                  ) : (
+                    <ChevronDown className={`w-4 h-4 ${FC.sub}`} />
+                  )}
+                  <Bot className="w-4 h-4 text-[#003083] dark:text-[#5b9bff]" />
+                  <span className={`text-[14px] font-semibold ${FC.ink}`}>{g.nome}</span>
+                  <span className={`text-[12px] ${FC.sub}`}>
+                    · {g.files.length} {g.files.length === 1 ? "arquivo" : "arquivos"} · {totalChunks} chunks
+                  </span>
+                </button>
+
+                {!isCollapsed && (
+                  <div className={`border-t ${FC.hair}`}>
+                    {g.files.map((k) => {
+                      const km = KIND_META[k.kind] || KIND_META.unknown;
+                      const sm = STATUS_META[k.status] || STATUS_META.indexing;
+                      const Icon = km.icon;
+                      return (
+                        <div
+                          key={k.id}
+                          className={`flex items-center gap-3 px-6 py-2.5 border-b ${FC.hair} last:border-0 ${FC.hover}`}
+                        >
+                          <Icon className={`w-4 h-4 shrink-0 ${km.color}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className={`text-[13px] font-medium truncate ${FC.ink}`}>{k.title}</div>
+                            <div className={`text-[11px] ${FC.sub}`}>
+                              {km.label} · {k.chunks_count} chunks
+                            </div>
+                          </div>
+                          <span className="inline-flex items-center gap-1.5 shrink-0" title={sm.tip}>
+                            <span className={`w-2 h-2 rounded-full ${sm.color}`} />
+                            <span className={`text-[12px] ${FC.sub}`}>{sm.label}</span>
+                          </span>
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              onClick={() => openChunks(k)}
+                              className={iconBtn}
+                              title="Ver conteúdo indexado (chunks)"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => onReindex(k.id)}
+                              disabled={reindexing === k.id}
+                              className={iconBtn}
+                              title="Reindexar"
+                            >
+                              <RefreshCw className={`w-4 h-4 ${reindexing === k.id ? "animate-spin" : ""}`} />
+                            </button>
+                            <button
+                              onClick={() => onDelete(k.id)}
+                              className={`${iconBtn} hover:text-[#E5484D] dark:hover:text-[#ff6b5e] hover:bg-[#E5484D]/[0.08]`}
+                              title="Remover"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                      </td>
-                      <td className="px-6 py-2.5"><div className={`h-3 w-24 ${SKEL}`} /></td>
-                      <td className="px-6 py-2.5"><div className={`h-3 w-8 ${SKEL}`} /></td>
-                      <td className="px-6 py-2.5"><div className={`h-3 w-20 ${SKEL}`} /></td>
-                      <td className="px-6 py-2.5"><div className={`h-3 w-6 ml-auto ${SKEL}`} /></td>
-                    </tr>
-                  ))}
-                {!loading && items.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-12">
-                      <EmptyHint icon={FolderOpen} text="Nenhum conhecimento ainda. Suba seu primeiro arquivo no formulário acima." />
-                    </td>
-                  </tr>
+                      );
+                    })}
+                  </div>
                 )}
-                {items.map((k) => {
-                  const km = KIND_META[k.kind] || KIND_META.unknown;
-                  const sm = STATUS_META[k.status] || STATUS_META.indexing;
-                  const Icon = km.icon;
-                  return (
-                    <tr key={k.id} className={`border-b ${FC.hair} last:border-0 ${FC.hover}`}>
-                      <td className={`px-6 py-2.5 text-[13px] font-medium ${FC.ink}`}>
-                        <div className="inline-flex items-center gap-2">
-                          <Icon className={`w-4 h-4 ${km.color}`} />
-                          {k.title}
-                        </div>
-                      </td>
-                      <td className={`px-6 py-2.5 text-[13px] ${FC.sub}`}>
-                        {agents.find((a) => a.id === k.agent_id)?.nome || `#${k.agent_id}`}
-                      </td>
-                      <td className={`px-6 py-2.5 text-[13px] tabular-nums ${FC.sub}`}>{k.chunks_count}</td>
-                      <td className="px-6 py-2.5 text-[13px]">
-                        <span className="inline-flex items-center gap-1.5" title={sm.tip}>
-                          <span className={`w-2 h-2 rounded-full ${sm.color}`} />
-                          <span className={FC.sub}>{sm.label}</span>
-                        </span>
-                      </td>
-                      <td className="px-6 py-2.5">
-                        <div className="flex justify-end">
-                          <button
-                            onClick={() => onDelete(k.id)}
-                            className={`${iconBtn} hover:text-[#E5484D] dark:hover:text-[#ff6b5e] hover:bg-[#E5484D]/[0.08]`}
-                            title="Remover"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Row>
+              </Row>
+            );
+          })}
       </PageFrame>
+
+      {/* Modal de inspeção de chunks */}
+      {chunksFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setChunksFor(null)}
+        >
+          <div
+            className={`w-full max-w-[680px] max-h-[80vh] flex flex-col rounded-[12px] bg-white dark:bg-[#14171c] border ${FC.hair} shadow-xl`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`flex items-center gap-2 px-5 py-3.5 border-b ${FC.hair}`}>
+              <Layers className="w-4 h-4 text-[#003083] dark:text-[#5b9bff]" />
+              <div className="min-w-0 flex-1">
+                <div className={`text-[14px] font-semibold truncate ${FC.ink}`}>{chunksFor.title}</div>
+                <div className={`text-[11px] ${FC.sub}`}>{chunksFor.chunks_count} chunks indexados</div>
+              </div>
+              <button onClick={() => setChunksFor(null)} className={iconBtn} title="Fechar">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-5 space-y-3">
+              {chunks === null && (
+                <div className="space-y-2">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className={`h-12 rounded ${SKEL}`} />
+                  ))}
+                </div>
+              )}
+              {chunks !== null && chunks.length === 0 && (
+                <EmptyHint icon={FolderOpen} text="Sem chunks. Reindexe o arquivo." />
+              )}
+              {chunks?.map((c) => (
+                <div key={c.id} className={`rounded-[8px] border ${FC.hair} p-3`}>
+                  <div className={`text-[10px] uppercase tracking-wider mb-1.5 ${FC.sub}`}>
+                    #{c.position} · ~{c.tokens} tokens
+                  </div>
+                  <div className={`text-[12px] leading-5 whitespace-pre-wrap ${FC.sub}`}>{c.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

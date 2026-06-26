@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
@@ -251,3 +251,32 @@ async def delete_knowledge(
             await llm_cache.invalidate(tenant_id_inv, agent_id_inv)
         except Exception:
             pass
+
+
+@router.get("/{knowledge_id}/chunks")
+async def list_chunks(
+    knowledge_id: int,
+    limit: int = 30,
+    offset: int = 0,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Inspetor: chunks indexados de um arquivo (debug/auditoria da base de conhecimento)."""
+    k = await db.get(TaKnowledge, knowledge_id)
+    if not k:
+        raise HTTPException(404, "Knowledge não encontrado")
+    await _ensure_agent_owned(db, k.agent_id, user)
+    rows = (await db.execute(sql_text(
+        "SELECT id, position, chunk_text, tokens_count FROM ta_knowledge_chunk "
+        "WHERE knowledge_id = :k ORDER BY position ASC LIMIT :lim OFFSET :off"),
+        {"k": knowledge_id, "lim": min(limit, 100), "off": offset})).mappings().all()
+    return {
+        "knowledge_id": knowledge_id,
+        "title": k.title,
+        "total": k.chunks_count,
+        "chunks": [
+            {"id": r["id"], "position": r["position"], "tokens": r["tokens_count"],
+             "text": (r["chunk_text"] or "")[:2000]}
+            for r in rows
+        ],
+    }

@@ -349,6 +349,43 @@ async def handle_inbound_message(
         except Exception:
             logger.exception("ops_command falhou agent=%s — segue fluxo normal", agent.id)
 
+        # Guard anti-injeção determinístico (independente do modelo). Recusa troca-de-papel
+        # ANTES do LLM e re-ancora a identidade. Registra um incidente info pra observabilidade.
+        try:
+            from services import devops_guard
+
+            if devops_guard.detect_injection(text_content):
+                try:
+                    connector_impl = registry.get(connector_kind)
+                    cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
+                    await connector_impl.send(
+                        cfg, OutboundMessage(external_chat_id=external_chat_id, content=devops_guard.REFUSAL)
+                    )
+                except Exception:
+                    logger.exception("envio do guard anti-injeção falhou agent=%s", agent.id)
+                try:
+                    from sqlalchemy import text as _sql_text
+
+                    await db.execute(
+                        _sql_text(
+                            "INSERT INTO ta_incident (tenant_id, source, severity, kind, title, fingerprint, status) "
+                            "VALUES (:t, 'agent-guard', 'info', 'prompt_injection', :title, :fp, 'open') "
+                            "ON CONFLICT (fingerprint) WHERE status IN ('open','ack') AND fingerprint IS NOT NULL "
+                            "DO UPDATE SET updated_at = now()"
+                        ),
+                        {
+                            "t": agent.tenant_id,
+                            "title": f"Tentativa de injeção de prompt no agente {agent.nome}",
+                            "fp": f"injection|{agent.id}|{external_chat_id}",
+                        },
+                    )
+                    await db.commit()
+                except Exception:
+                    logger.exception("registro de incidente de injeção falhou (não-fatal)")
+                return {"status": "injection_blocked", "agent_id": agent.id}
+        except Exception:
+            logger.exception("guard anti-injeção falhou agent=%s — segue fluxo normal", agent.id)
+
     # ─── CSAT: resposta de avaliação (0-5) a uma conversa resolvida ───
     # Captura ANTES de ensure_conversation pra não abrir conversa nova.
     try:
