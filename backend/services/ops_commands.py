@@ -54,7 +54,9 @@ def is_ops_command(text: str | None) -> bool:
     if not t:
         return False
     toks = t.split()
-    if toks[0] not in _OPS_WORDS:
+    # tolera pontuação no comando ("ajuda?", "status!", "/ajuda.")
+    first = toks[0].strip(".,!?;:…")
+    if first not in _OPS_WORDS:
         return False
     return True if has_prefix else len(toks) == 1
 
@@ -319,7 +321,7 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
     """Responde a um comando de ops. Retorna None se não for comando reconhecido."""
     t = (text or "").strip().lower().lstrip("/!.")
     toks = t.split()
-    first = toks[0] if toks else ""
+    first = (toks[0].strip(".,!?;:…") if toks else "")
     tenant_id = agent.tenant_id
 
     if first in ("ajuda", "help", "comandos"):
