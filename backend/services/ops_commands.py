@@ -35,6 +35,7 @@ _OPS_WORDS = {
     # observabilidade
     "metrics", "metricas", "métricas", "errors", "erros", "erro", "sla",
     "incidentes", "incidents", "incidente", "infra", "host",
+    "alertas", "alerts", "alerta",
 }
 
 
@@ -197,6 +198,40 @@ async def _incidents_open(db: AsyncSession, tenant_id: int, limit: int = 8) -> l
         return []
 
 
+async def _recent_alerts(db: AsyncSession, tenant_id: int, limit: int = 8) -> list[dict]:
+    """Últimos alertas/incidentes registrados (QUALQUER status — histórico + abertos),
+    do tenant OU infra-global. Alimenta o comando `alertas` e o contexto do agente."""
+    sql = (
+        "SELECT id, source, severity, kind, title, status, created_at "
+        "FROM ta_incident WHERE (tenant_id IS NULL OR tenant_id = :t) "
+        "ORDER BY created_at DESC LIMIT :lim"
+    )
+    try:
+        res = await db.execute(sql_text(sql), {"t": tenant_id, "lim": limit})
+        return [dict(r) for r in res.mappings().all()]
+    except Exception:
+        return []
+
+
+async def recent_alerts_block(db: AsyncSession, tenant_id: int, limit: int = 6) -> str:
+    """Bloco de contexto (dados REAIS) injetado no prompt do agente DevOps, pra ele
+    responder 'qual o último alerta?' direto — sem mandar o usuário rodar comando."""
+    rows = await _recent_alerts(db, tenant_id, limit)
+    if not rows:
+        return ""
+    linhas = []
+    for r in rows:
+        quando = r["created_at"].strftime("%d/%m %H:%M") if r.get("created_at") else "?"
+        st = r.get("status")
+        st_txt = "" if st == "resolved" else f", status: {st}"
+        linhas.append(f"- {quando} [{r.get('severity')}] {r.get('title', '')} (fonte: {r.get('source')}{st_txt})")
+    return (
+        "# Últimos alertas/incidentes registrados (dados REAIS do SecOps — use pra responder se "
+        "perguntarem 'qual o último alerta', 'teve algum incidente', etc. NUNCA mande o usuário "
+        "rodar comando no servidor pra isso; você já tem os dados aqui)\n" + "\n".join(linhas)
+    )
+
+
 async def _infra_from_prometheus(prom: str) -> dict | None:
     """CPU/RAM/disco via Prometheus HTTP API (node_exporter)."""
     queries = {
@@ -291,10 +326,11 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
         return (
             "🛡️ *DevOps · comandos*\n"
             "• *status* — saúde do stack (backend/DB/Engine/canais)\n"
+            "• *alertas* — últimos alertas do SecOps (scan/C&C/SSH)\n"
+            "• *incidentes* — alertas de segurança/infra ABERTOS\n"
             "• *metrics* — RED 24h: volume, erros, latência p95, custo\n"
             "• *errors* — freios/falhas recentes do atendimento\n"
             "• *sla* — conversas estouradas / em espera\n"
-            "• *incidentes* — alertas de segurança/infra abertos\n"
             "• *infra* — CPU/RAM/disco do host\n"
             "• *uptime* · *ping* — vida do backend\n\n"
             "_Alertas dos guards (scan-guard/C&C-guard/ingress-guard) chegam automaticamente aqui._"
@@ -353,6 +389,19 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
             quando = r["created_at"].strftime("%d/%m %H:%M") if r.get("created_at") else "?"
             linhas.append(f"{ic} *#{r['id']}* [{r.get('source', '?')}] {r.get('title', '')} · {quando} · {r.get('status')}")
         return "🚨 *Incidentes abertos*\n" + "\n".join(linhas)
+
+    if first in ("alertas", "alerts", "alerta"):
+        rows = await _recent_alerts(db, tenant_id, 8)
+        if not rows:
+            return "✅ *Alertas*: nenhum registrado."
+        sev_icon = {"critical": "🔴", "warning": "🟠", "info": "🔵"}
+        linhas = []
+        for r in rows:
+            ic = sev_icon.get((r.get("severity") or "").lower(), "⚪")
+            quando = r["created_at"].strftime("%d/%m %H:%M") if r.get("created_at") else "?"
+            st = "" if r.get("status") == "resolved" else f" · {r.get('status')}"
+            linhas.append(f"{ic} {quando} · {r.get('title', '')}{st}")
+        return "🛎️ *Últimos alertas*\n" + "\n".join(linhas)
 
     if first in ("infra", "host"):
         snap = await _infra_snapshot()

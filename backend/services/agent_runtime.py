@@ -745,6 +745,18 @@ async def handle_inbound_message(
     if _tmpl is not None and _tmpl.guidelines:
         _final_base = f"{_final_base}\n\n{_tmpl.guidelines}"
 
+    # DevOps: injeta os últimos alertas/incidentes REAIS no contexto, pra responder
+    # "qual o último alerta?" direto — sem mandar o usuário rodar comando no servidor.
+    if (agent.template_kind or "") == "devsecops":
+        try:
+            from services import ops_commands as _ops
+
+            _alerts_blk = await _ops.recent_alerts_block(db, agent.tenant_id, 6)
+            if _alerts_blk:
+                _final_base = f"{_final_base}\n\n{_alerts_blk}"
+        except Exception:
+            logger.exception("inject alerts block falhou agent=%s", agent.id)
+
     if _is_wa:
         _final_base += (
             "\n\n# Formatação no WhatsApp\n"
