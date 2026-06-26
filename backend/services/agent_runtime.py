@@ -288,23 +288,30 @@ async def _log_deterministic_turn(db, agent, connector_kind, external_id, contac
     Esses caminhos respondem sem LLM e retornam cedo; sem isto, a interação fica invisível
     nas conversas do painel (foi o motivo de `/ajuda`, `Infra` etc. não aparecerem). Logar
     aqui também deixa a resposta legível no painel mesmo quando o WhatsApp não consegue
-    descriptografar (sessão Baileys quebrada)."""
+    descriptografar (sessão Baileys quebrada).
+
+    🚨 Usa uma SESSÃO PRÓPRIA (`SessionLocal`), nunca o `db` do caller. A telemetria de ops
+    pode deixar `db` com transação abortada; um `db.rollback()` aqui recuperava a sessão MAS
+    expirava TODOS os ORMs do caller (`agent` E `connector`) — e logo depois o caller acessa
+    `connector.config_json_enc` (enviar resposta) e `agent.id` (return). Em AsyncSession, ler
+    atributo expirado dispara IO implícito proibido → `MissingGreenlet` → o caminho de ops
+    estourava e caía no LLM ("fica só pensando", sem menu). Sessão isolada não toca no caller."""
+    # Captura escalares do ORM em memória (ainda carregado — caller não deu rollback).
+    agent_id = agent.id
+    tenant_id = agent.tenant_id
     try:
-        # Recupera a sessão se uma query anterior (ex: telemetria de ops) a deixou abortada
-        # — senão o ensure_conversation falha em cascata com "transaction is aborted".
-        try:
-            await db.rollback()
-        except Exception:
-            pass
-        conv = await ensure_conversation(
-            db, agent_id=agent.id, connector_kind=connector_kind,
-            external_id=external_id, contact_name=contact_name,
-        )
-        await log_message(db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", content=user_text)
-        await log_message(db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="assistant", content=reply)
-        await db.commit()
+        from core.db import SessionLocal
+
+        async with SessionLocal() as s:
+            conv = await ensure_conversation(
+                s, agent_id=agent_id, connector_kind=connector_kind,
+                external_id=external_id, contact_name=contact_name,
+            )
+            await log_message(s, conversation_id=conv.id, tenant_id=tenant_id, role="user", content=user_text)
+            await log_message(s, conversation_id=conv.id, tenant_id=tenant_id, role="assistant", content=reply)
+            await s.commit()
     except Exception:
-        logger.exception("log de turno determinístico falhou agent=%s", agent.id)
+        logger.exception("log de turno determinístico falhou agent=%s", agent_id)
 
 
 async def handle_inbound_message(
