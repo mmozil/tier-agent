@@ -38,6 +38,15 @@ def _check_case(case: dict, sig: dict) -> list[str]:
         args = H._tool_args(sig, "criar_agendamento")
         if not any(a.get("confirmado") is True for a in args):
             fails.append(f"criar_agendamento sem confirmado:true{_det()}")
+    # Regressão de PERSONA/idioma — asserts de TEXTO sobre as respostas do agente
+    # (ex.: DevSecOps NUNCA pode dizer 'pet shop'). Checa todas as falas do assistant.
+    _text = (sig.get("all_assistant") or sig.get("last_assistant") or "").lower()
+    for sub in case.get("must_not_text", []):
+        if sub.lower() in _text:
+            fails.append(f"texto contém '{sub}' (proibido){_det()}")
+    for sub in case.get("must_contain_text", []):
+        if sub.lower() not in _text:
+            fails.append(f"texto NÃO contém '{sub}' (esperado){_det()}")
     return fails
 
 
@@ -45,7 +54,16 @@ def _check_case(case: dict, sig: dict) -> list[str]:
 async def test_golden_suite():
     resultados: dict[str, list[str]] = {}
     for case in GOLDEN_CASES:
-        sig = await H.run_conversation(case["turns"])
+        kw: dict = {}
+        if "agent_id" in case:
+            kw["agent_id"] = case["agent_id"]
+        if "instance" in case:
+            kw["instance_id"] = case["instance"]
+        if "chat" in case:
+            kw["chat"] = case["chat"]
+        if "connector" in case:
+            kw["connector"] = case["connector"]
+        sig = await H.run_conversation(case["turns"], **kw)
         fails = _check_case(case, sig)
         resultados[case["name"]] = fails
         status = "OK" if not fails else "FALHOU"

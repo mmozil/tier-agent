@@ -74,6 +74,36 @@ def _norm_model(provider: str, model: str | None) -> str:
         return _DEFAULT_MODEL.get(prov, m)
     return m
 
+
+# ── Perfil de temperatura por porte do modelo (robustez model-agnostic) ────────────
+# O dono decidiu: o TENANT escolhe o modelo (barato ou caro) E pode customizar os
+# parâmetros — a gente NÃO força modelo nenhum, só entrega um default são pra quem não
+# mexeu. Modelos compactos/baratos (mini, flash, haiku, minimax, deepseek-chat, 7-8B…)
+# seguem instrução melhor com temperatura BAIXA: menos alucinação e menos vazamento de
+# persona (foi exatamente o que derrubou o DevSecOps num modelo fraco). Por isso, quando o
+# tenant deixou a temperatura no DEFAULT do schema (0.7 = "não personalizei") e o modelo é
+# compacto, baixamos pra 0.3. Qualquer valor != 0.7 é escolha explícita e é respeitado 1:1.
+_SCHEMA_DEFAULT_TEMP = 0.7
+_COMPACT_TEMP_CEILING = 0.3
+_COMPACT_MODEL_HINTS = (
+    "mini", "flash", "haiku", "minimax", "deepseek-chat", "nano", "small",
+    "lite", "7b", "8b", "9b", "13b",
+)
+
+
+def _is_compact_model(provider: str, model: str) -> bool:
+    s = f"{provider or ''} {model or ''}".lower()
+    return any(h in s for h in _COMPACT_MODEL_HINTS)
+
+
+def _effective_temperature(provider: str, model: str, temperature: float | None) -> float:
+    """Temperatura efetiva: respeita a escolha do tenant; só aplica default são pra quem
+    não personalizou (temp == 0.7) rodando modelo compacto → 0.3."""
+    t = float(temperature if temperature is not None else _SCHEMA_DEFAULT_TEMP)
+    if abs(t - _SCHEMA_DEFAULT_TEMP) < 1e-9 and _is_compact_model(provider, model):
+        return _COMPACT_TEMP_CEILING
+    return t
+
 # Modelos de raciocínio (MiniMax-M2, etc.) emitem <think>...</think> na resposta —
 # o cliente NÃO pode ver o raciocínio. Removido antes de devolver.
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
@@ -318,12 +348,13 @@ async def _call_anthropic(
 async def _complete(p: TaLlmProvider, model: str, messages: list[dict], tools: list[dict] | None) -> dict:
     api_key = decrypt(p.api_key_enc)
     base = _base_url(p)
+    temp = _effective_temperature(p.provider, model, p.temperature)
     if p.provider == "anthropic":
         return await _call_anthropic(base_url=base, api_key=api_key, model=model, messages=messages,
-                                     temperature=p.temperature, max_tokens=p.max_tokens, timeout_s=p.timeout_s,
+                                     temperature=temp, max_tokens=p.max_tokens, timeout_s=p.timeout_s,
                                      tools=tools)
     return await _call_openai_compatible(base_url=base, api_key=api_key, model=model, messages=messages,
-                                         temperature=p.temperature, max_tokens=p.max_tokens,
+                                         temperature=temp, max_tokens=p.max_tokens,
                                          timeout_s=p.timeout_s, tools=tools)
 
 

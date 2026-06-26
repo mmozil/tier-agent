@@ -78,6 +78,51 @@ def _provider_models() -> dict[str, list[str]]:
     return _DEFAULT_PROVIDER_MODELS
 
 
+# Curadoria de qualidade — guia a escolha do tenant SEM forçar (ele escolhe o modelo, barato
+# ou caro; só mostramos um selo). `tested` = passou na nossa golden suite de persona+tool-use;
+# `recommended` = bom custo-benefício conhecido pro caso de uso (atendimento multi-turno).
+# Quem não está aqui = `experimental` (funciona, mas ainda não passou pela bateria). Atualizar
+# conforme a matriz de evals cross-model. Sobreescrevível por env LLM_MODEL_TIERS_JSON.
+_DEFAULT_MODEL_TIERS: dict[str, str] = {
+    "openai/gpt-4o-mini": "tested",
+    "gpt-4o-mini": "tested",
+    "minimax-m2": "tested",
+    "claude-haiku-4-5-20251001": "recommended",
+    "claude-haiku-4.5": "recommended",
+    "anthropic/claude-haiku-4.5": "recommended",
+    "gpt-4o": "recommended",
+    "gpt-4.1-mini": "recommended",
+    "gemini-2.5-flash": "recommended",
+    "google/gemini-2.5-flash": "recommended",
+    "gemini-2.0-flash": "recommended",
+    "deepseek-chat": "recommended",
+    "deepseek/deepseek-chat": "recommended",
+    "claude-sonnet-4-6": "recommended",
+}
+
+_MODEL_TIER_LABELS = {
+    "tested": "Validado nos nossos testes de qualidade (persona + ferramentas).",
+    "recommended": "Bom custo-benefício pra atendimento multi-turno.",
+    "experimental": "Funciona, mas ainda não passou pela nossa bateria de testes.",
+}
+
+
+def _model_tiers() -> dict[str, str]:
+    raw = os.environ.get("LLM_MODEL_TIERS_JSON")
+    if raw:
+        try:
+            override = json.loads(raw)
+            if isinstance(override, dict):
+                return {**_DEFAULT_MODEL_TIERS, **{str(k).lower(): str(v) for k, v in override.items()}}
+        except Exception:
+            pass
+    return _DEFAULT_MODEL_TIERS
+
+
+def _model_tier(name: str, tiers: dict[str, str] | None = None) -> str:
+    return (tiers or _model_tiers()).get((name or "").strip().lower(), "experimental")
+
+
 class LlmProviderIn(BaseModel):
     provider: str
     api_key: str  # plaintext na request, encrypted at rest
@@ -142,10 +187,20 @@ async def supported_providers():
     `models` vem do catálogo parametrizável (`_provider_models`), não hardcoded no front.
     """
     catalog = _provider_models()
+    tiers = _model_tiers()
     return {
         "providers": [
-            {"key": k, "label": v, "models": catalog.get(k, [])} for k, v in SUPPORTED_PROVIDERS.items()
-        ]
+            {
+                "key": k,
+                "label": v,
+                "models": catalog.get(k, []),  # back-compat (lista de strings)
+                "models_meta": [
+                    {"name": m, "tier": _model_tier(m, tiers)} for m in catalog.get(k, [])
+                ],
+            }
+            for k, v in SUPPORTED_PROVIDERS.items()
+        ],
+        "tier_labels": _MODEL_TIER_LABELS,
     }
 
 

@@ -60,4 +60,21 @@ GOLDEN_CASES: list[dict] = [
         "must_call": ["listar_servicos"],
         "must_not": [],
     },
+    # ── Regressão de PERSONA por template — cada vertical NÃO vaza pra outra. ──
+    # (Bug fechado nesta maratona: o bloco petshop hardcoded vazava no prompt de TODO
+    #  agente; um agente DevSecOps respondia "Sou a atendente do Pet Shop". Agora o nicho
+    #  vive em templates.py por template_kind. Este caso trava a regressão.)
+    {
+        "name": "devsecops_nao_vira_petshop",
+        "agent_id": 5,
+        "instance": "54e813c7-ee89-417e-b733-43e16d11ef33",
+        "chat": "5500000000091@s.whatsapp.net",
+        "turns": [
+            "olá",
+            "preciso de ajuda, deu um erro no sistema aqui",
+        ],
+        # DevSecOps é suporte técnico — NUNCA se apresenta como petshop nem agenda banho/tosa.
+        "must_not_text": ["pet shop", "petshop", "agendamento", "banho", "tosa", "taxidog", "tutor"],
+        "must_not": ["criar_agendamento", "pet_listar"],
+    },
 ]

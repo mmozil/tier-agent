@@ -26,10 +26,16 @@ interface Provider {
   in_use: boolean;
 }
 
+interface ModelMeta {
+  name: string;
+  tier: string; // "tested" | "recommended" | "experimental"
+}
+
 interface SupportedProvider {
   key: string;
   label: string;
   models?: string[]; // catálogo de modelos servido pelo backend (parametrizável)
+  models_meta?: ModelMeta[]; // selo de qualidade por modelo (guia a escolha, não força)
 }
 
 interface TestResult {
@@ -247,6 +253,27 @@ export default function LlmProvidersPage() {
 
   // Modelos sugeridos do provider — vêm do backend (parâmetro), não hardcoded aqui.
   const modelsFor = (prov: string) => supported.find((s) => s.key === prov)?.models ?? [];
+  // Selo de qualidade por modelo (curadoria do backend). Orienta sem forçar: o tenant
+  // escolhe o modelo que quiser (barato ou caro), mas vê quais já passaram nos testes.
+  const metaFor = (prov: string) => supported.find((s) => s.key === prov)?.models_meta ?? [];
+  const tierFor = (prov: string, model: string) =>
+    metaFor(prov).find((m) => m.name === model)?.tier ?? "experimental";
+
+  // Badge colorido do selo (verde=testado, azul=recomendado, cinza=experimental).
+  function TierBadge({ tier }: { tier: string }) {
+    const map: Record<string, { dot: string; label: string; title: string }> = {
+      tested: { dot: "bg-[#0a8f5a]", label: "testado", title: "Validado na nossa bateria de testes de persona + ferramentas." },
+      recommended: { dot: "bg-[#003083]", label: "recomendado", title: "Bom custo-benefício pra atendimento multi-turno." },
+      experimental: { dot: "bg-slate-400", label: "experimental", title: "Funciona, mas ainda não passou pela nossa bateria de testes." },
+    };
+    const m = map[tier] ?? map.experimental;
+    return (
+      <span title={m.title} className={`inline-flex items-center gap-1 text-[11px] ${FC.sub}`}>
+        <span className={`inline-block h-[6px] w-[6px] rounded-full ${m.dot}`} />
+        {m.label}
+      </span>
+    );
+  }
 
   function scopeLabel(p: Provider) {
     return p.tenant_id === null ? "Global" : `Tenant ${p.tenant_id}`;
@@ -343,9 +370,11 @@ export default function LlmProvidersPage() {
                           }}
                           className={inputCls}
                         >
-                          {models.map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
+                          {models.map((m) => {
+                            const t = tierFor(form.provider, m);
+                            const suf = t === "tested" ? "  ✓ testado" : t === "recommended" ? "  • recomendado" : "";
+                            return <option key={m} value={m}>{m}{suf}</option>;
+                          })}
                           <option value="__custom__">Outro (digitar)…</option>
                         </select>
                         {isCustom && (
@@ -360,9 +389,12 @@ export default function LlmProvidersPage() {
                       </>
                     );
                   })()}
-                  <span className={`text-[11px] mt-1 block ${FC.mut}`}>
-                    Modelos do {form.provider}. Escolha "Outro" pra digitar qualquer um.
-                  </span>
+                  <div className="mt-1 flex items-center gap-2">
+                    {form.default_model && <TierBadge tier={tierFor(form.provider, form.default_model)} />}
+                    <span className={`text-[11px] ${FC.mut}`}>
+                      Modelos do {form.provider}. Escolha "Outro" pra digitar qualquer um.
+                    </span>
+                  </div>
                 </label>
               </div>
               <label className="block">
@@ -629,7 +661,11 @@ export default function LlmProvidersPage() {
                             }}
                             className={inputCls}
                           >
-                            {models.map((m) => (<option key={m} value={m}>{m}</option>))}
+                            {models.map((m) => {
+                              const t = tierFor(detail.provider, m);
+                              const suf = t === "tested" ? "  ✓ testado" : t === "recommended" ? "  • recomendado" : "";
+                              return <option key={m} value={m}>{m}{suf}</option>;
+                            })}
                             <option value="__custom__">Outro (digitar)…</option>
                           </select>
                           {isCustom && (
@@ -643,7 +679,10 @@ export default function LlmProvidersPage() {
                         </>
                       );
                     })()}
-                    <span className={`text-[11px] mt-1 block ${FC.mut}`}>Modelos do {detail.provider}. Escolha "Outro" pra digitar qualquer slug (ex: minimax/minimax-m3).</span>
+                    <div className="mt-1 flex items-center gap-2">
+                      {editForm.default_model && <TierBadge tier={tierFor(detail.provider, editForm.default_model)} />}
+                      <span className={`text-[11px] ${FC.mut}`}>Modelos do {detail.provider}. Escolha "Outro" pra digitar qualquer slug.</span>
+                    </div>
                   </label>
                   <div className="grid grid-cols-2 gap-4">
                     <label className="block">
