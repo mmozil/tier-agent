@@ -139,7 +139,7 @@ export default function RelatoriosAtendimentoPage() {
                   setDays(d);
                   load(d);
                 }}
-                className={`h-8 px-2.5 text-[13px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`}
+                className={`h-8 px-3 text-[13px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`}
               >
                 <option value={7}>7 dias</option>
                 <option value={30}>30 dias</option>
