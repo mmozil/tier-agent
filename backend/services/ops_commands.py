@@ -261,18 +261,22 @@ async def _infra_from_prometheus(prom: str) -> dict | None:
 
 
 # Comando único no host (mesma chave SSH da orquestração). Saída key=value|... pra parse limpo.
+# CPU% real = delta de /proc/stat em 0.4s (idle+iowait vs total). Memória/disco com TOTAIS.
 _INFRA_SSH_CMD = (
-    "L=$(cut -d' ' -f1-3 /proc/loadavg); "
-    "N=$(nproc); "
-    "M=$(free -m | awk '/^Mem:/{print $2\",\"$3}'); "
-    "D=$(df -P / | awk 'NR==2{gsub(/%/,\"\",$5);print $5}'); "
+    "A=$(awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8+$9, $5+$6; exit}' /proc/stat); "
+    "sleep 0.4; "
+    "B=$(awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8+$9, $5+$6; exit}' /proc/stat); "
+    "CPU=$(awk -v a=\"$A\" -v b=\"$B\" 'BEGIN{split(a,X,\" \");split(b,Y,\" \");dt=Y[1]-X[1];di=Y[2]-X[2];if(dt>0)printf \"%.1f\",(1-di/dt)*100;else printf \"0\"}'); "
+    "N=$(nproc); L=$(cut -d' ' -f1 /proc/loadavg); "
+    "M=$(free -m | awk '/^Mem:/{printf \"%d,%d\", $2, $3}'); "
+    "D=$(df -P / | awk 'NR==2{gsub(/%/,\"\",$5); printf \"%.0f,%.0f,%s\", $2/1048576, $3/1048576, $5}'); "
     "C=$(docker ps -q 2>/dev/null | wc -l | tr -d ' '); "
-    "echo \"load=$L|mem=$M|disk=$D|ncpu=$N|containers=$C\""
+    "echo \"cpu=$CPU|ncpu=$N|load1=$L|mem=$M|disk=$D|containers=$C\""
 )
 
 
 async def _infra_from_ssh() -> dict | None:
-    """CPU(carga)/RAM/disco/containers do host via SSH (paramiko da orquestração)."""
+    """CPU%/RAM/disco (com totais) + containers do host via SSH (paramiko da orquestração)."""
     if not getattr(get_settings(), "tier_agent_ssh_privkey_b64", ""):
         return None
     try:
@@ -282,18 +286,29 @@ async def _infra_from_ssh() -> dict | None:
         return None
     if code != 0 or not out:
         return None
+
+    def _f(v):
+        try:
+            return float(v)
+        except Exception:
+            return None
+
     try:
         parts = dict(p.split("=", 1) for p in out.strip().split("|") if "=" in p)
-        load = (parts.get("load") or "").split()
-        load1 = float(load[0]) if load else None
-        ncpu = int(parts.get("ncpu") or 0) or None
+        ncpu = int(parts["ncpu"]) if parts.get("ncpu") else None
         mem = (parts.get("mem") or "").split(",")
-        mem_pct = (float(mem[1]) / float(mem[0]) * 100) if len(mem) == 2 and float(mem[0]) else None
-        disk = float(parts["disk"]) if parts.get("disk") else None
-        containers = int(parts["containers"]) if parts.get("containers") else None
-        cpu = (load1 / ncpu * 100) if (load1 is not None and ncpu) else None
-        return {"source": "ssh", "cpu": cpu, "mem": mem_pct, "disk": disk,
-                "load1": load1, "ncpu": ncpu, "containers": containers}
+        mt, mu = (_f(mem[0]) if len(mem) >= 1 else None), (_f(mem[1]) if len(mem) >= 2 else None)
+        mem_pct = (mu / mt * 100) if (mt and mu is not None) else None
+        disk = (parts.get("disk") or "").split(",")
+        return {
+            "source": "ssh",
+            "cpu": _f(parts.get("cpu")), "ncpu": ncpu, "load1": _f(parts.get("load1")),
+            "mem_total_mb": mt, "mem_used_mb": mu, "mem_pct": mem_pct,
+            "disk_total_gb": _f(disk[0]) if len(disk) >= 1 else None,
+            "disk_used_gb": _f(disk[1]) if len(disk) >= 2 else None,
+            "disk_pct": _f(disk[2]) if len(disk) >= 3 else None,
+            "containers": int(parts["containers"]) if parts.get("containers") else None,
+        }
     except Exception:
         return None
 
@@ -309,56 +324,88 @@ async def _infra_snapshot() -> dict | None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Calibragem — lê os thresholds + severidades REAIS dos guards do SecOps no host.
-# Fonte da verdade: /usr/local/sbin/tier-secops-checks.sh (ssh/cpu/ram/disco/containers)
-# + tier-scan-monitor.sh (scan/cc). NUNCA hardcodar valores aqui — extrair do script,
-# senão a calibragem "documentada" diverge da que de fato dispara.
+# Calibragem de alertas — ESPELHA a tela "Calibragem de alertas" do painel Tier
+# (painel.tier.finance → static/app.js ALERT_TYPES). Mesmos tipos/severidades/gatilhos;
+# o re-aviso (throttle) é lido AO VIVO de /etc/tier-secops/alert.conf no host (igual o
+# painel faz). Manter sincronizado com o painel ao mudar limites nos guards.
 # ──────────────────────────────────────────────────────────────────────────────
-_CALIB_SSH_CMD = (
-    "CHK=/usr/local/sbin/tier-secops-checks.sh; SCN=/usr/local/sbin/tier-scan-monitor.sh; "
-    "echo \"ssh_thr=$(grep -oE 'SSH_IP_THRESHOLD:-[0-9]+' $CHK | grep -oE '[0-9]+' | head -1)"
-    "|ram_thr=$(grep -oE 'RAM_THRESHOLD:-[0-9]+' $CHK | grep -oE '[0-9]+' | head -1)"
-    "|disk_thr=$(grep -oE 'DISK_THRESHOLD:-[0-9]+' $CHK | grep -oE '[0-9]+' | head -1)"
-    "|sustain=$(grep -oE 'SUSTAIN_CYCLES:-[0-9]+' $CHK | grep -oE '[0-9]+' | head -1)"
-    "|cpu_mult=$(grep -oE 'CORES\\*[0-9]+' $CHK | grep -oE '[0-9]+$' | head -1)"
-    "|sev_ssh=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"ssh\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
-    "|sev_cpu=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"cpu\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
-    "|sev_ram=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"ram\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
-    "|sev_disk=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"disk\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
-    "|sev_containers=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"containers\\\"' $CHK | grep -oE 'critico|alerta|info' | head -1)"
-    "|sev_scan=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"scan\\\"' $SCN | grep -oE 'critico|alerta|info' | head -1)"
-    "|sev_cc=$(grep -oE '\\\"(critico|alerta|info)\\\" \\\"cc\\\"' $SCN | grep -oE 'critico|alerta|info' | head -1)\""
+ALERT_TYPES = [
+    {"key": "scan", "sev": "critico", "name": "Varredura de saída (port-scan)",
+     "when": "Um container faz varredura de portas para a internet (detectado e bloqueado em tempo real pelo scan-guard).",
+     "why": "Comportamento de container comprometido — foi o que causou o aviso de abuse da Hetzner.",
+     "action": "Investigar/reiniciar a aplicação e trocar credenciais. O scan-guard já bloqueia o tráfego.",
+     "limit": "evento (tempo real)"},
+    {"key": "cc", "sev": "critico", "name": "Beacon de C&C (malware)",
+     "when": "Um container tenta conectar a um servidor de comando de malware (C&C / sinkhole conhecido) — bloqueado pelo C&C-guard.",
+     "why": "Container comprometido \"ligando pra casa\". Gerou a listagem Spamhaus XBL (trojan ranbyus).",
+     "action": "O C&C-guard já bloqueou. Reiniciar/rebuildar a aplicação e trocar credenciais.",
+     "limit": "evento (tempo real)"},
+    {"key": "containers", "sev": "critico", "name": "Aplicação fora do ar",
+     "when": "Um serviço persistente para de responder (nenhum container no ar).",
+     "why": "Queda real de uma aplicação.",
+     "action": "Ver logs no Coolify e reiniciar.",
+     "limit": "4 camadas anti-falso-positivo"},
+    {"key": "ssh", "sev": "critico", "name": "Força bruta SSH",
+     "when": "Um IP concentra muitas tentativas de login SSH falhas em 10 minutos.",
+     "why": "Tentativa de invasão do servidor.",
+     "action": "O fail2ban já bane o IP automaticamente (4 tentativas → ban 1h). Alerta é só ciência.",
+     "limit": "≥ 40 tentativas / IP / 10 min"},
+    {"key": "cpu", "sev": "alerta", "name": "CPU alta (sobrecarga)",
+     "when": "Carga do servidor (load) acima de 3× os vCPUs, de forma sustentada.",
+     "why": "Apps lentas, possíveis timeouts.",
+     "action": "Ver o app no topo de consumo (a mensagem do alerta mostra).",
+     "limit": "load > 3× vCPUs, por 3 ciclos (6 min)"},
+    {"key": "ram", "sev": "alerta", "name": "RAM alta",
+     "when": "Uso de memória ≥ 95%, de forma sustentada.",
+     "why": "Risco de OOM — o kernel pode matar containers.",
+     "action": "Reiniciar o app que estiver vazando memória.",
+     "limit": "≥ 95%, por 3 ciclos (6 min)"},
+    {"key": "disk", "sev": "critico", "name": "Disco quase cheio",
+     "when": "Partição / com uso ≥ 90%.",
+     "why": "Se encher, bancos e apps param de gravar (quebra geral).",
+     "action": "\"docker image prune -a\" + truncar os maiores logs.",
+     "limit": "≥ 90%"},
+]
+
+
+# Re-aviso (throttle, em segundos) por tipo — lido ao vivo de alert.conf (igual o painel).
+_THROTTLE_SSH_CMD = (
+    "CONF=/etc/tier-secops/alert.conf; "
+    "echo \"default=$(grep -oE 'ALERT_THROTTLE_SEC=\\\"?[0-9]+' $CONF | grep -oE '[0-9]+' | head -1)"
+    "|scan=$(grep -oE 'THROTTLE_scan=\\\"?[0-9]+' $CONF | grep -oE '[0-9]+' | head -1)"
+    "|cc=$(grep -oE 'THROTTLE_cc=\\\"?[0-9]+' $CONF | grep -oE '[0-9]+' | head -1)"
+    "|containers=$(grep -oE 'THROTTLE_containers=\\\"?[0-9]+' $CONF | grep -oE '[0-9]+' | head -1)"
+    "|ssh=$(grep -oE 'THROTTLE_ssh=\\\"?[0-9]+' $CONF | grep -oE '[0-9]+' | head -1)"
+    "|cpu=$(grep -oE 'THROTTLE_cpu=\\\"?[0-9]+' $CONF | grep -oE '[0-9]+' | head -1)"
+    "|ram=$(grep -oE 'THROTTLE_ram=\\\"?[0-9]+' $CONF | grep -oE '[0-9]+' | head -1)"
+    "|disk=$(grep -oE 'THROTTLE_disk=\\\"?[0-9]+' $CONF | grep -oE '[0-9]+' | head -1)\""
 )
 
 
-async def _calibragem_from_ssh() -> dict | None:
-    """Thresholds + severidades dos alertas, lidos ao vivo dos scripts dos guards no host."""
+async def _throttle_from_ssh() -> dict:
+    """Re-aviso (segundos) por tipo, lido de alert.conf no host. {} se SSH indisponível."""
     if not getattr(get_settings(), "tier_agent_ssh_privkey_b64", ""):
-        return None
+        return {}
     try:
         from services.container_orchestrator import _ssh_run
-        code, out, _err = await asyncio.to_thread(_ssh_run, _CALIB_SSH_CMD)
+        code, out, _err = await asyncio.to_thread(_ssh_run, _THROTTLE_SSH_CMD)
     except Exception:
-        return None
+        return {}
     if code != 0 or not out:
-        return None
+        return {}
     try:
-        parts = dict(p.split("=", 1) for p in out.strip().split("|") if "=" in p)
-
-        def _i(k):
-            try:
-                return int(parts.get(k) or 0) or None
-            except Exception:
-                return None
-
-        return {
-            "ssh_thr": _i("ssh_thr"), "ram_thr": _i("ram_thr"), "disk_thr": _i("disk_thr"),
-            "sustain": _i("sustain"), "cpu_mult": _i("cpu_mult"),
-            "sev": {k: (parts.get(f"sev_{k}") or None)
-                    for k in ("ssh", "cpu", "ram", "disk", "containers", "scan", "cc")},
-        }
+        return dict(p.split("=", 1) for p in out.strip().split("|") if "=" in p)
     except Exception:
-        return None
+        return {}
+
+
+def _throttle_label(throttle: dict, key: str) -> str:
+    raw = throttle.get(key) or throttle.get("default") or "600"
+    try:
+        n = int(raw)
+    except Exception:
+        n = 600
+    return f"{round(n / 60)} min" if n >= 60 else f"{n}s"
 
 
 def _fmt_num(v, suf: str = "", nd: int = 0) -> str:
@@ -370,36 +417,12 @@ def _fmt_num(v, suf: str = "", nd: int = 0) -> str:
         return str(v)
 
 
-# Severidade do guard → (ícone, rótulo, política). Reflete o que o script de fato emite.
+# Severidade → (ícone, rótulo). Mesmas labels do painel (crítico/alerta/info).
 _SEV_META = {
-    "critico": ("🔴", "crítico", "acorda"), "critical": ("🔴", "crítico", "acorda"),
-    "alerta": ("🟠", "alerta", "importante"), "warning": ("🟠", "alerta", "importante"),
-    "info": ("🔵", "info", "registro"),
+    "critico": ("🔴", "crítico"), "critical": ("🔴", "crítico"),
+    "alerta": ("🟠", "alerta"), "warning": ("🟠", "alerta"),
+    "info": ("🔵", "info"),
 }
-
-
-def _status_dot(cur, thr, warn_ratio: float = 0.7) -> str:
-    """🟢/🟠/🔴 conforme quão perto o valor atual está do threshold de alerta."""
-    try:
-        if cur is None or not thr:
-            return "⚪"
-        r = float(cur) / float(thr)
-    except Exception:
-        return "⚪"
-    if r >= 1.0:
-        return "🔴"
-    if r >= warn_ratio:
-        return "🟠"
-    return "🟢"
-
-
-def _canon_sev(s: str | None) -> str:
-    s = (s or "").lower()
-    if s in ("critico", "critical"):
-        return "critico"
-    if s in ("alerta", "warning"):
-        return "alerta"
-    return "info"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -421,8 +444,8 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
             "• *metrics* — RED 24h: volume, erros, latência p95, custo\n"
             "• *errors* — freios/falhas recentes do atendimento\n"
             "• *sla* — conversas estouradas / em espera\n"
-            "• *infra* — CPU/RAM/disco do host (atual → limite de alerta)\n"
-            "• *calibragem* — parâmetros atuais: quando cada alerta dispara\n"
+            "• *infra* — CPU/RAM/disco do host (quanto tem + % usado)\n"
+            "• *calibragem* — parâmetros dos alertas (igual ao painel Tier)\n"
             "• *uptime* · *ping* — vida do backend\n\n"
             "_Alertas dos guards (scan-guard/C&C-guard/ingress-guard) chegam automaticamente aqui._"
         )
@@ -495,42 +518,21 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
         return "🛎️ *Últimos alertas*\n" + "\n".join(linhas)
 
     if first in ("calibragem", "calibracao", "calibração", "parametros", "parâmetros", "thresholds", "limites"):
-        cal = await _calibragem_from_ssh()
-        if cal is None:
-            return (
-                "ℹ️ *Calibragem* não acessível aqui (SSH dos guards do SecOps fora).\n"
-                "Os parâmetros vivem em `tier-secops-checks.sh` + `tier-scan-monitor.sh` no host."
-            )
-        sev = cal.get("sev", {})
-        sustain_min = (cal["sustain"] * 2) if cal.get("sustain") else None  # cron roda a cada 2min
-        descr = {
-            "disk": f"Disco / ≥ {cal.get('disk_thr', '?')}%",
-            "containers": "Aplicação fora do ar (algum app sem container no ar)",
-            "scan": "Varredura de portas detectada (scan-guard)",
-            "cc": "Beacon de C&C / trojan (cc-guard)",
-            "cpu": f"CPU: load > {cal.get('cpu_mult', '?')}× vCPUs"
-                   + (f" sustentado ~{sustain_min}min" if sustain_min else ""),
-            "ram": f"RAM ≥ {cal.get('ram_thr', '?')}%"
-                   + (f" sustentado ~{sustain_min}min" if sustain_min else ""),
-            "ssh": f"Força bruta SSH ≥ {cal.get('ssh_thr', '?')} tentativas/10min (fail2ban já bane)",
-        }
-        grupos: dict[str, list[str]] = {}
-        for kind, d in descr.items():  # ordem de inserção preservada dentro do grupo
-            grupos.setdefault(_canon_sev(sev.get(kind)), []).append(d)
+        throttle = await _throttle_from_ssh()
         out = [
             "🎚️ *Calibragem de alertas*",
-            "_(fonte: guards do SecOps no host · checagem a cada 2min, scan/C&C em tempo real)_",
-            "",
+            f"_{len(ALERT_TYPES)} tipos · o que disparam · limites configurados (espelha o painel Tier)_",
         ]
-        for canon in ("critico", "alerta", "info"):
-            itens = grupos.get(canon)
-            if not itens:
-                continue
-            ic, lbl, pol = _SEV_META[canon]
-            out.append(f"{ic} *{lbl}* — {pol}")
-            out.extend(f" • {i}" for i in itens)
+        for ty in ALERT_TYPES:
+            ic, lbl = _SEV_META.get(ty["sev"], ("⚪", ty["sev"]))
+            out.append("")  # separação entre tipos
+            out.append(f"{ic} *{ty['name']}* · {lbl}")
+            out.append(f"_Quando_: {ty['when']}")
+            out.append(f"_Risco_: {ty['why']}")
+            out.append(f"_Ação_: {ty['action']}")
+            out.append(f"⚡ Gatilho: {ty['limit']}  ·  ⏱ Re-aviso: {_throttle_label(throttle, ty['key'])}")
         out.append("")
-        out.append("_Crítico acorda (push). Alerta/info ficam no histórico — veja *alertas*._")
+        out.append("_Cada alerta vai por e-mail + WhatsApp e aparece em *alertas*. Ajustável sem redeploy (alert.conf + tier-secops-checks.sh)._")
         return "\n".join(out)
 
     if first in ("infra", "host"):
@@ -541,51 +543,42 @@ async def handle_ops_command(db: AsyncSession, agent: TaAgent, text: str) -> str
                 "Pra ligar: `TIER_INFRA_PROM_URL` (Prometheus) ou a chave SSH "
                 "(`TIER_AGENT_SSH_PRIVKEY_B64`) no backend."
             )
-        cal = await _calibragem_from_ssh() or {}
-        sev = cal.get("sev", {})
-        ncpu, load1 = snap.get("ncpu"), snap.get("load1")
-        cpu_pct, ram_pct, disk_pct = snap.get("cpu"), snap.get("mem"), snap.get("disk")
+        host = getattr(get_settings(), "tier_agent_ssh_host", "") or ""
+        ncpu, cpu, load1 = snap.get("ncpu"), snap.get("cpu"), snap.get("load1")
+        mt_mb, mu_mb = snap.get("mem_total_mb"), snap.get("mem_used_mb")
+        mem_pct = snap.get("mem_pct") if snap.get("mem_pct") is not None else snap.get("mem")
+        dt, du = snap.get("disk_total_gb"), snap.get("disk_used_gb")
+        disk_pct = snap.get("disk_pct") if snap.get("disk_pct") is not None else snap.get("disk")
         ct = snap.get("containers")
-        sustain_min = (cal["sustain"] * 2) if cal.get("sustain") else None
-        cpu_mult, ram_thr, disk_thr = cal.get("cpu_mult"), cal.get("ram_thr"), cal.get("disk_thr")
-        cpu_load_thr = (cpu_mult * ncpu) if (cpu_mult and ncpu) else None
 
-        def _tag(kind, fallback):
-            ic, lbl, _pol = _SEV_META[_canon_sev(sev.get(kind) or fallback)]
-            return ic, lbl
+        lines = ["🖥️ *Infra do host*" + (f"  _{host}_" if host else "")]
 
-        lines = ["🖥️ *Infra do host*  _(atual → limite de alerta)_"]
+        cpu_line = f"• *CPU*: {_fmt_num(cpu, '%', 1)} em uso"
+        if ncpu:
+            cpu_line += f" · {ncpu} vCPUs"
+        if load1 is not None:
+            cpu_line += f" · load {_fmt_num(load1, '', 2)}"
+        lines.append(cpu_line)
 
-        cpu_cur = f"{_fmt_num(cpu_pct, '%', 1)} · load {_fmt_num(load1, '', 2)}/{ncpu or '?'} vCPU"
-        if cpu_load_thr:
-            ic, lbl = _tag("cpu", "alerta")
-            mins = f" por ~{sustain_min}min" if sustain_min else ""
-            lines.append(f"{_status_dot(load1, cpu_load_thr)} CPU: {cpu_cur} → {ic} {lbl} se load > {cpu_load_thr} ({cpu_mult}× vCPU){mins}")
+        if mt_mb:
+            lines.append(
+                f"• *Memória*: {_fmt_num((mu_mb or 0) / 1024, ' GB', 1)} / {_fmt_num(mt_mb / 1024, ' GB', 1)} em uso "
+                f"· {_fmt_num(mem_pct, '%', 0)}"
+            )
         else:
-            lines.append(f"{_status_dot(load1, cpu_load_thr)} CPU: {cpu_cur}")
+            lines.append(f"• *Memória*: {_fmt_num(mem_pct, '%', 0)} em uso")
 
-        if ram_thr:
-            ic, lbl = _tag("ram", "alerta")
-            mins = f" sustentado ~{sustain_min}min" if sustain_min else ""
-            lines.append(f"{_status_dot(ram_pct, ram_thr)} RAM: {_fmt_num(ram_pct, '%', 1)} → {ic} {lbl} ≥ {ram_thr}%{mins}")
+        if dt:
+            lines.append(
+                f"• *Disco /*: {_fmt_num(du, ' GB', 0)} / {_fmt_num(dt, ' GB', 0)} em uso · {_fmt_num(disk_pct, '%', 0)}"
+            )
         else:
-            lines.append(f"{_status_dot(ram_pct, ram_thr)} RAM: {_fmt_num(ram_pct, '%', 1)}")
-
-        if disk_thr:
-            ic, lbl = _tag("disk", "critico")
-            lines.append(f"{_status_dot(disk_pct, disk_thr)} Disco /: {_fmt_num(disk_pct, '%', 1)} → {ic} {lbl} ≥ {disk_thr}%")
-        else:
-            lines.append(f"{_status_dot(disk_pct, disk_thr)} Disco /: {_fmt_num(disk_pct, '%', 1)}")
+            lines.append(f"• *Disco /*: {_fmt_num(disk_pct, '%', 0)} em uso")
 
         if ct is not None:
-            if sev.get("containers"):
-                ic, lbl = _tag("containers", "critico")
-                lines.append(f"🟢 Containers: {ct} no ar → {ic} {lbl} se algum app sumir")
-            else:
-                lines.append(f"🟢 Containers: {ct} no ar")
+            lines.append(f"• *Containers*: {ct} no ar")
 
-        if not cal:
-            lines.append("\n_Thresholds indisponíveis (SSH dos guards fora) — só valores atuais._")
+        lines.append("\n_Limites de alerta de cada um: veja *calibragem*._")
         return "\n".join(lines)
 
     # status / health / saude → saúde real do stack (enriquecido com error rate 24h)
