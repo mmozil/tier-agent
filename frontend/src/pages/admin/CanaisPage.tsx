@@ -54,7 +54,7 @@ function CodeField({ label, value, full }: { label: string; value: string; full?
   return (
     <div className={full ? "col-span-2" : ""}>
       <div className={`text-[11px] uppercase tracking-[0.06em] mb-1 ${FC.sub}`}>{label}</div>
-      <div className={`group/code flex items-center gap-2 h-8 px-2.5 rounded-lg border ${FC.hair} bg-[#F9F9F9] dark:bg-[#16191f]`}>
+      <div className={`group/code flex items-center gap-2 h-8 px-3 rounded-[10px] border ${FC.hair} bg-[#F9F9F9] dark:bg-[#16191f]`}>
         <code className={`font-mono text-[12px] truncate flex-1 ${FC.ink}`}>{value}</code>
         <button
           type="button"
@@ -64,7 +64,7 @@ function CodeField({ label, value, full }: { label: string; value: string; full?
             setTimeout(() => setCopied(false), 1200);
           }}
           title="Copiar"
-          className={`shrink-0 ${FC.mut} hover:text-[#262626] dark:hover:text-white transition-colors`}
+          className={`shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-[10px] ${FC.mut} hover:text-[#262626] dark:hover:text-white transition-all active:scale-[0.98]`}
         >
           {copied ? <Check className="w-3.5 h-3.5 text-[#0a8f5a]" /> : <Copy className="w-3.5 h-3.5" />}
         </button>
