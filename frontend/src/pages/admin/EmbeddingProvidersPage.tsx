@@ -3,7 +3,8 @@ import toast from "react-hot-toast";
 import { Plus, Trash2, Loader2, Zap, CheckCircle2, XCircle, Database, Pencil, RefreshCw } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SkeletonBar, iconBtn, Select } from "@/components/ds/fc";
+import { ProviderLogo } from "@/components/icons/providerLogos";
 
 interface Provider {
   id: number;
@@ -249,39 +250,35 @@ export default function EmbeddingProvidersPage() {
               </h3>
               <div className="grid grid-cols-2 gap-4">
                 <label className="block">
-                  <span className={`text-[12px] ${FC.sub}`}>Provider</span>
-                  <select
+                  <span className={`text-[12px] ${FC.sub} mb-1 block`}>Provider</span>
+                  <Select
                     value={form.provider}
                     disabled={!!editingId}
-                    onChange={(e) => {
-                      const prov = e.target.value;
-                      setForm({ ...form, provider: prov, default_model: modelsFor(prov)[0] ?? "" });
-                    }}
-                    className={`${inputCls} ${editingId ? "opacity-60" : ""}`}
-                  >
-                    {supported.map((s) => (
-                      <option key={s.key} value={s.key}>{s.label}</option>
-                    ))}
-                  </select>
+                    onChange={(v) => setForm({ ...form, provider: v, default_model: modelsFor(v)[0] ?? "" })}
+                    placeholder="Escolha o provider"
+                    options={supported.map((s) => ({
+                      value: s.key,
+                      label: s.label,
+                      icon: <ProviderLogo provider={s.key} className="w-4 h-4" />,
+                    }))}
+                  />
                 </label>
                 <label className="block">
-                  <span className={`text-[12px] ${FC.sub}`}>Modelo</span>
+                  <span className={`text-[12px] ${FC.sub} mb-1 block`}>Modelo</span>
                   {(() => {
                     const models = modelsFor(form.provider);
                     const isCustom = !models.includes(form.default_model);
                     return (
                       <>
-                        <select
+                        <Select
                           value={isCustom ? "__custom__" : form.default_model}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setForm({ ...form, default_model: v === "__custom__" ? "" : v });
-                          }}
-                          className={inputCls}
-                        >
-                          {models.map((m) => <option key={m} value={m}>{m}</option>)}
-                          <option value="__custom__">Outro (digitar)…</option>
-                        </select>
+                          onChange={(v) => setForm({ ...form, default_model: v === "__custom__" ? "" : v })}
+                          placeholder="Escolha o modelo"
+                          options={[
+                            ...models.map((m) => ({ value: m, label: m })),
+                            { value: "__custom__", label: "Outro (digitar)…" },
+                          ]}
+                        />
                         {isCustom && (
                           <input
                             value={form.default_model}
@@ -379,9 +376,7 @@ export default function EmbeddingProvidersPage() {
                 key={p.id}
                 className={`group relative flex items-center gap-3 px-6 py-3 ${idx > 0 ? `border-t ${FC.hair}` : ""} ${p.in_use ? "bg-[#0a8f5a]/[0.03]" : ""}`}
               >
-                <div className="w-8 h-8 rounded-lg bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center shrink-0">
-                  <Database className="w-4 h-4 text-[#003083] dark:text-[#5b9bff]" />
-                </div>
+                <ProviderLogo provider={p.provider} className="w-6 h-6 shrink-0" />
                 <div className="min-w-0 flex-1 flex items-center gap-4">
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className={`text-[15px] font-medium truncate ${FC.ink}`}>{p.provider}</span>
