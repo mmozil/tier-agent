@@ -469,7 +469,7 @@ export default function CanaisPage() {
                   >
                     {/* Logo da marca do canal */}
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center">
-                      <ChannelLogo kind={c.kind} className="w-6 h-6" />
+                      <ChannelLogo kind={c.kind} className="w-8 h-8" />
                     </span>
 
                     <div className="min-w-0 flex-1">
