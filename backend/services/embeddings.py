@@ -41,7 +41,7 @@ SUPPORTED_EMBEDDING_PROVIDERS: dict[str, str] = {
 
 # Modelos sugeridos por provider (parametrizável por env EMBEDDING_PROVIDER_MODELS_JSON).
 _DEFAULT_EMBEDDING_MODELS: dict[str, list[str]] = {
-    "openrouter": ["openai/text-embedding-3-small", "openai/text-embedding-3-large", "cohere/embed-v4.0"],
+    "openrouter": ["google/gemini-embedding-001", "openai/text-embedding-3-small", "openai/text-embedding-3-large", "cohere/embed-v4.0"],
     "gemini": ["gemini-embedding-001"],
     "openai": ["text-embedding-3-small", "text-embedding-3-large"],
     "voyage": ["voyage-3.5", "voyage-3-large", "voyage-multilingual-2"],
@@ -204,7 +204,10 @@ async def _embed_openai(
     provider 'local' (Ollama/LM Studio/vLLM expõem /v1/embeddings compatível)."""
     base = (base_url or "https://api.openai.com/v1").rstrip("/")
     payload: dict = {"model": model, "input": texts}
-    if dims and "text-embedding-3" in model:
+    # `dimensions` (truncar embedding) só nos modelos que suportam: OpenAI text-embedding-3-*
+    # e Google gemini-embedding-* (validado via OpenRouter: dimensions:768 → 768 dims; sem
+    # o param o gemini volta 3072). Ollama/nomic/bge são dim-fixa → não enviar.
+    if dims and ("text-embedding-3" in model or "gemini-embedding" in model):
         payload["dimensions"] = dims
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=60) as cli:
