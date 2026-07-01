@@ -627,9 +627,11 @@ async def slack_webhook(
     Cliente aponta o Request URL do Slack App (Event Subscriptions) pra
     /webhooks/slack/{connector_id}. Responde o handshake `url_verification` e
     processa eventos `message` (ignora bots/subtypes)."""
+    import json as _json
+
     raw = await request.body()
     try:
-        data = json.loads(raw)
+        data = _json.loads(raw)
     except Exception:
         raise HTTPException(400, "JSON inválido")
 
@@ -644,7 +646,7 @@ async def slack_webhook(
     if not conn or conn.kind != "slack" or not conn.enabled:
         return {"status": "no_connector"}
     try:
-        cfg = json.loads(decrypt(conn.config_json_enc))
+        cfg = _json.loads(decrypt(conn.config_json_enc))
     except Exception:
         cfg = {}
 
