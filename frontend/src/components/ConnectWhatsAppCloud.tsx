@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
@@ -50,9 +51,13 @@ function loadFbSdk(): Promise<void> {
 export default function ConnectWhatsAppCloud({
   agentId,
   onConnected,
+  render,
 }: {
   agentId: number;
   onConnected?: () => void;
+  // Opcional: renderiza um gatilho próprio (ex: card do seletor de canais) em vez
+  // do botão padrão. Recebe {connect, loading} pra disparar o Embedded Signup.
+  render?: (p: { connect: () => void; loading: boolean }) => ReactNode;
 }) {
   const [loading, setLoading] = useState(false);
   // captura waba_id + phone_number_id do postMessage do Embedded Signup
@@ -126,6 +131,8 @@ export default function ConnectWhatsAppCloud({
       },
     );
   }
+
+  if (render) return <>{render({ connect, loading })}</>;
 
   return (
     <button

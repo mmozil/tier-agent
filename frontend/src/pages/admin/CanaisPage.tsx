@@ -1,10 +1,11 @@
+import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Bot, Copy } from "lucide-react";
+import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Bot, Copy, ChevronRight } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/phone";
-import { WhatsAppIcon } from "@/components/icons/channelIcons";
+import { WhatsAppIcon, ChannelLogo, CHANNEL_META } from "@/components/icons/channelIcons";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
 import { FC, PageFrame, PageHero, Row, Select, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
 
@@ -82,6 +83,61 @@ function channelType(kind: string): string {
   return kind;
 }
 
+// ChannelCard — cartão de canal no seletor "Conectar canal" (logo + nome + descrição).
+function ChannelCard({
+  icon: Icon,
+  name,
+  desc,
+  onClick,
+  disabled = false,
+  badge,
+  loading = false,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  name: string;
+  desc: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  badge?: string;
+  loading?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled || loading}
+      onClick={onClick}
+      className={`group relative flex items-center gap-3 rounded-xl border ${FC.hair} p-3.5 text-left transition-all ${
+        disabled
+          ? "opacity-50 cursor-not-allowed"
+          : "hover:border-[#d8d8d8] dark:hover:border-[#33373e] hover:bg-black/[0.02] dark:hover:bg-white/[0.03] active:scale-[0.99]"
+      }`}
+    >
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c]`}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#1877F2]" /> : <Icon className="w-6 h-6" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className={`text-[13.5px] font-medium truncate ${FC.ink}`}>{name}</span>
+          {badge && (
+            <span className="shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-[#003083]/[0.08] text-[#003083] dark:text-[#5b9bff] uppercase tracking-wide">
+              {badge}
+            </span>
+          )}
+          {disabled && (
+            <span className={`shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-[#262626]/[0.06] dark:bg-white/[0.08] uppercase tracking-wide ${FC.mut}`}>
+              em breve
+            </span>
+          )}
+        </span>
+        <span className={`block text-[12px] mt-0.5 truncate ${FC.sub}`}>{desc}</span>
+      </span>
+      {!disabled && (
+        <ChevronRight className={`w-4 h-4 shrink-0 ${FC.mut} opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0`} />
+      )}
+    </button>
+  );
+}
+
 export default function CanaisPage() {
   const [conns, setConns] = useState<Connector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -99,6 +155,7 @@ export default function CanaisPage() {
   const [discordToken, setDiscordToken] = useState("");
   const [discordConnecting, setDiscordConnecting] = useState(false);
   const [discordResult, setDiscordResult] = useState<{ invite_url?: string; bot_username?: string } | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -230,6 +287,16 @@ export default function CanaisPage() {
     }
   }
 
+  // Abre o fluxo de um canal a partir do seletor (fecha o modal, valida agente).
+  function pickChannel(open: () => void) {
+    if (!selectedAgent) {
+      toast.error("Escolha um agente");
+      return;
+    }
+    setShowPicker(false);
+    open();
+  }
+
   const agentName = (id: number) => agents.find((a) => a.id === id)?.nome || `Agente #${id}`;
   const inputCls = `w-full h-9 px-3 text-[14px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
 
@@ -240,67 +307,18 @@ export default function CanaisPage() {
           title="Canais"
           subtitle="Conecte WhatsApp (oficial ou Baileys) e outros canais aos seus agentes. Cada canal fica vinculado a um agente que responde automaticamente."
           right={
-            <div className="flex items-center gap-2 shrink-0">
-              {agents.length > 1 && (
-                <Select
-                  value={selectedAgent}
-                  onChange={(v) => setSelectedAgent(v)}
-                  options={agents.map((a) => ({ value: a.id, label: a.nome }))}
-                  placeholder="Agente"
-                  className="w-[170px]"
-                />
-              )}
-              {selectedAgent ? (
-                <ConnectWhatsAppCloud agentId={selectedAgent} onConnected={load} />
-              ) : (
-                <Button
-                  variant="secondary"
-                  onClick={() => toast.error("Crie um agente primeiro para conectar um canal.")}
-                  title="Crie um agente primeiro para conectar um canal"
-                  className="opacity-60 whitespace-nowrap"
-                >
-                  Conectar WhatsApp Oficial
-                </Button>
-              )}
-              <Button
-                variant="primary"
-                onClick={() => {
-                  if (!selectedAgent) {
-                    toast.error("Crie um agente primeiro para conectar um canal.");
-                    return;
-                  }
-                  setShowProvision(true);
-                }}
-              >
-                <Plus className="w-4 h-4" /> Conectar WhatsApp
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  if (!selectedAgent) {
-                    toast.error("Crie um agente primeiro para conectar um canal.");
-                    return;
-                  }
-                  setSlackWebhook(null);
-                  setShowSlack(true);
-                }}
-              >
-                <Plus className="w-4 h-4" /> Conectar Slack
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  if (!selectedAgent) {
-                    toast.error("Crie um agente primeiro para conectar um canal.");
-                    return;
-                  }
-                  setDiscordResult(null);
-                  setShowDiscord(true);
-                }}
-              >
-                <Plus className="w-4 h-4" /> Conectar Discord
-              </Button>
-            </div>
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (agents.length === 0) {
+                  toast.error("Crie um agente primeiro para conectar um canal.");
+                  return;
+                }
+                setShowPicker(true);
+              }}
+            >
+              <Plus className="w-4 h-4" /> Conectar canal
+            </Button>
           }
         />
 
@@ -426,7 +444,7 @@ export default function CanaisPage() {
             agents.length === 0 ? (
               <EmptyHint icon={Bot} text="Crie um agente primeiro para conectar um canal." ctaLabel="Criar agente" ctaTo="/admin/agentes" className="py-16" />
             ) : (
-              <EmptyHint icon={Smartphone} text='Nenhum canal conectado. Clique em "Conectar WhatsApp" para parear seu número.' className="py-16" />
+              <EmptyHint icon={Smartphone} text='Nenhum canal conectado. Clique em "Conectar canal" para escolher WhatsApp, Slack ou Discord.' className="py-16" />
             )
           ) : (
             <div className={`divide-y ${FC.hair}`}>
@@ -434,7 +452,14 @@ export default function CanaisPage() {
                 const status = c.config_summary?.status || "unknown";
                 const meta = STATUS_META[status] || STATUS_META.unknown;
                 const isCloud = c.kind === "whatsapp_cloud";
+                const isWa = c.kind === "whatsapp" || c.kind === "whatsapp_cloud";
+                const cm = CHANNEL_META[c.kind];
+                const cs = (c.config_summary || {}) as unknown as Record<string, string | undefined>;
                 const tipoLabel = c.config_summary?.tipo || channelType(c.kind);
+                // Linha secundária: WhatsApp → telefone; demais → bot/workspace ou descrição.
+                const secondary = isWa
+                  ? formatPhone(cs.phone)
+                  : cs.bot || cs.team || cm?.short || channelType(c.kind);
                 return (
                   <div
                     key={c.id}
@@ -442,9 +467,9 @@ export default function CanaisPage() {
                     className={`flex items-center gap-3.5 px-6 py-3.5 cursor-pointer ${FC.hover}`}
                     title="Ver detalhes do canal"
                   >
-                    {/* Logo WhatsApp (sem fundo) */}
+                    {/* Logo da marca do canal */}
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center">
-                      <WhatsAppIcon className="w-6 h-6" />
+                      <ChannelLogo kind={c.kind} className="w-6 h-6" />
                     </span>
 
                     <div className="min-w-0 flex-1">
@@ -453,13 +478,13 @@ export default function CanaisPage() {
                         {isCloud ? (
                           <span className="shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-[#003083]/[0.08] text-[#003083] dark:text-[#5b9bff] uppercase tracking-wide">Oficial</span>
                         ) : (
-                          <span className={`shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-[#262626]/[0.06] dark:bg-white/[0.08] uppercase tracking-wide ${FC.mut}`}>Baileys</span>
+                          <span className={`shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-[#262626]/[0.06] dark:bg-white/[0.08] uppercase tracking-wide ${FC.mut}`}>
+                            {c.kind === "whatsapp" ? "Baileys" : cm?.name || c.kind}
+                          </span>
                         )}
                       </div>
                       <div className={`flex items-center gap-2 mt-0.5 text-[13px] ${FC.sub}`}>
-                        <span className="tabular-nums">{formatPhone(c.config_summary?.phone)}</span>
-                        <span className={FC.mut}>·</span>
-                        <span className="truncate">{c.kind === "telegram" ? "Telegram" : c.kind === "email" ? "E-mail" : "WhatsApp"}</span>
+                        <span className="tabular-nums truncate">{secondary}</span>
                       </div>
                     </div>
 
@@ -507,6 +532,84 @@ export default function CanaisPage() {
           )}
         </Row>
       </PageFrame>
+
+      {/* Seletor de canais */}
+      {showPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setShowPicker(false)}>
+          <div className={`w-full max-w-[640px] max-h-[88vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair}`} onClick={(e) => e.stopPropagation()}>
+            <div className={`flex items-center gap-3 border-b ${FC.hair} px-6 py-4`}>
+              <div className="flex-1 min-w-0">
+                <h2 className={`text-[16px] font-medium leading-tight ${FC.ink}`}>Conectar um canal</h2>
+                <p className={`text-[12px] ${FC.sub}`}>Escolha por onde o agente vai conversar</p>
+              </div>
+              <button onClick={() => setShowPicker(false)} className={iconBtn}><X className="h-4 w-4" /></button>
+            </div>
+            <div className="px-6 py-5 space-y-5">
+              <label className="block">
+                <span className={`text-[12px] block mb-1.5 ${FC.sub}`}>Vincular ao agente</span>
+                <Select
+                  value={selectedAgent}
+                  onChange={(v) => setSelectedAgent(v)}
+                  options={agents.map((a) => ({ value: a.id, label: a.nome }))}
+                  placeholder="Escolha um agente"
+                />
+              </label>
+
+              <div>
+                <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2.5 ${FC.mut}`}>Disponíveis</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <ConnectWhatsAppCloud
+                    agentId={selectedAgent ?? 0}
+                    onConnected={() => { setShowPicker(false); load(); }}
+                    render={({ connect, loading }) => (
+                      <ChannelCard
+                        icon={CHANNEL_META.whatsapp_cloud.Icon}
+                        name={CHANNEL_META.whatsapp_cloud.name}
+                        desc={CHANNEL_META.whatsapp_cloud.short}
+                        badge="Meta"
+                        loading={loading}
+                        onClick={() => {
+                          if (!selectedAgent) { toast.error("Escolha um agente"); return; }
+                          setShowPicker(false);
+                          connect();
+                        }}
+                      />
+                    )}
+                  />
+                  <ChannelCard
+                    icon={CHANNEL_META.whatsapp.Icon}
+                    name={CHANNEL_META.whatsapp.name}
+                    desc={CHANNEL_META.whatsapp.short}
+                    badge="QR"
+                    onClick={() => pickChannel(() => setShowProvision(true))}
+                  />
+                  <ChannelCard
+                    icon={CHANNEL_META.slack.Icon}
+                    name={CHANNEL_META.slack.name}
+                    desc={CHANNEL_META.slack.short}
+                    onClick={() => pickChannel(() => { setSlackWebhook(null); setShowSlack(true); })}
+                  />
+                  <ChannelCard
+                    icon={CHANNEL_META.discord.Icon}
+                    name={CHANNEL_META.discord.name}
+                    desc={CHANNEL_META.discord.short}
+                    onClick={() => pickChannel(() => { setDiscordResult(null); setShowDiscord(true); })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2.5 ${FC.mut}`}>Em breve</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <ChannelCard icon={CHANNEL_META.telegram.Icon} name={CHANNEL_META.telegram.name} desc={CHANNEL_META.telegram.short} disabled />
+                  <ChannelCard icon={CHANNEL_META.instagram.Icon} name={CHANNEL_META.instagram.name} desc={CHANNEL_META.instagram.short} disabled />
+                  <ChannelCard icon={CHANNEL_META.email.Icon} name={CHANNEL_META.email.name} desc={CHANNEL_META.email.short} disabled />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* QR Modal */}
       {qrModal &&
@@ -612,16 +715,23 @@ export default function CanaisPage() {
           const st = cs.status || "unknown";
           const m = STATUS_META[st] || STATUS_META.unknown;
           const isCloud = detail.kind === "whatsapp_cloud";
+          const isWa = detail.kind === "whatsapp" || detail.kind === "whatsapp_cloud";
+          const cmD = CHANNEL_META[detail.kind];
+          const csx = cs as unknown as Record<string, string | undefined>;
           const comoFunciona = isCloud
             ? "Canal oficial via Meta Cloud API. Mensagens chegam pelo webhook da Meta e o agente responde com o token (System User). Não usa QR — conecta via Login Facebook (Embedded Signup)."
             : detail.kind === "whatsapp"
             ? "Canal via Baileys (WhatsApp Web). Pareado por QR Code; o número fica vinculado como um aparelho. Passa pelo Tier Engine (whats.tier.finance)."
+            : detail.kind === "slack"
+            ? "Canal Slack via Events API. As mensagens chegam por webhook autenticado (HMAC) e o agente responde com o Bot Token no seu workspace."
+            : detail.kind === "discord"
+            ? "Canal Discord via Gateway (websocket). O bot responde a DMs e, em canais de servidor, quando é @mencionado. Requer o Message Content Intent ativo no portal."
             : "Canal conectado ao agente.";
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setDetail(null)}>
               <div className={`w-full max-w-[560px] overflow-hidden rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair}`} onClick={(e) => e.stopPropagation()}>
                 <div className={`flex items-center gap-3 border-b ${FC.hair} px-6 py-4`}>
-                  <div className="flex h-9 w-9 items-center justify-center"><WhatsAppIcon className="h-7 w-7" /></div>
+                  <div className="flex h-9 w-9 items-center justify-center"><ChannelLogo kind={detail.kind} className="h-7 w-7" /></div>
                   <div className="flex-1 min-w-0">
                     <h2 className={`text-[15px] font-medium leading-tight truncate ${FC.ink}`}>{ag?.nome || `Agente #${detail.agent_id}`}</h2>
                     <p className={`text-[12px] ${FC.sub}`}>{cs.tipo || channelType(detail.kind)}</p>
@@ -636,12 +746,15 @@ export default function CanaisPage() {
                   <div>
                     <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2 ${FC.ink}`}>Conexão</div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
-                      <div><div className={`text-[11px] ${FC.sub}`}>Telefone</div><div className={`tabular-nums ${FC.ink}`}>{formatPhone(cs.phone)}</div></div>
+                      <div>
+                        <div className={`text-[11px] ${FC.sub}`}>{isWa ? "Telefone" : "Conta"}</div>
+                        <div className={`tabular-nums ${FC.ink}`}>{isWa ? formatPhone(cs.phone) : csx.bot || csx.team || "—"}</div>
+                      </div>
                       <div>
                         <div className={`text-[11px] ${FC.sub}`}>Tipo</div>
                         <div className="flex items-center gap-1.5">
-                          <span className={FC.ink}>{isCloud ? "Oficial" : "Não-oficial"}</span>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${isCloud ? "bg-[#003083]/[0.08] text-[#003083]" : "bg-[#262626]/[0.06] " + FC.mut}`}>{isCloud ? "Meta Cloud API" : "Baileys"}</span>
+                          <span className={FC.ink}>{isWa ? (isCloud ? "Oficial" : "Não-oficial") : cmD?.name || detail.kind}</span>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${isCloud ? "bg-[#003083]/[0.08] text-[#003083]" : "bg-[#262626]/[0.06] " + FC.mut}`}>{isWa ? (isCloud ? "Meta Cloud API" : "Baileys") : cs.transporte || "Bot"}</span>
                         </div>
                       </div>
                       <div>
@@ -658,7 +771,7 @@ export default function CanaisPage() {
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
                       <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Transporte</div><div className={FC.sub}>{cs.transporte || channelType(detail.kind)}</div></div>
                       {cs.host && <CodeField label="Host" value={cs.host} />}
-                      <div><div className={`text-[11px] ${FC.sub}`}>Pareamento</div><div className={`text-[12px] ${FC.sub}`}>{cs.pareamento || "—"}</div></div>
+                      {cs.pareamento && <div><div className={`text-[11px] ${FC.sub}`}>Pareamento</div><div className={`text-[12px] ${FC.sub}`}>{cs.pareamento}</div></div>}
                       {isCloud ? (
                         <>
                           <CodeField label="Phone Number ID" value={cs.phone_number_id || "—"} />
@@ -666,9 +779,9 @@ export default function CanaisPage() {
                           <div><div className={`text-[11px] ${FC.sub}`}>Token</div><div className={FC.sub}>{cs.tem_token ? "✓ configurado" : "—"}</div></div>
                           {cs.janela && <div className="col-span-2"><div className={`text-[11px] ${FC.sub}`}>Janela de mensagem</div><div className={`text-[12px] ${FC.sub}`}>{cs.janela}</div></div>}
                         </>
-                      ) : (
+                      ) : detail.kind === "whatsapp" ? (
                         <CodeField label="Instância (Engine)" value={cs.instance_id || "—"} full />
-                      )}
+                      ) : null}
                       {cs.webhook && <CodeField label="Webhook de entrada" value={cs.webhook} full />}
                     </div>
                   </div>
