@@ -112,8 +112,8 @@ function ChannelCard({
           : "hover:border-[#d8d8d8] dark:hover:border-[#33373e] hover:bg-black/[0.02] dark:hover:bg-white/[0.03] active:scale-[0.99]"
       }`}
     >
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c]`}>
-        {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#1877F2]" /> : <Icon className="w-6 h-6" />}
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+        {loading ? <Loader2 className="w-5 h-5 animate-spin text-[#1877F2]" /> : <Icon className="w-8 h-8" />}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
