@@ -341,7 +341,7 @@ async def setup_status(
     automático (default global), então não entra como passo obrigatório."""
     tid = user.tenant_id
     empty = {
-        "has_agent": False, "has_persona": False, "has_llm": False,
+        "has_agent": False, "has_persona": False, "has_llm": False, "has_embedding": False,
         "has_knowledge": False, "has_channel": False, "ready": False,
     }
     if not tid:
@@ -360,6 +360,9 @@ async def setup_status(
     has_llm = await ex(
         "SELECT EXISTS(SELECT 1 FROM ta_llm_provider WHERE tenant_id = :t AND active = true)"
     )
+    has_embedding = await ex(
+        "SELECT EXISTS(SELECT 1 FROM ta_embedding_provider WHERE tenant_id = :t AND active = true)"
+    )
     has_knowledge = await ex(
         "SELECT EXISTS(SELECT 1 FROM ta_knowledge k JOIN ta_agent a ON a.id = k.agent_id WHERE a.tenant_id = :t)"
     )
@@ -371,6 +374,7 @@ async def setup_status(
         "has_agent": has_agent,
         "has_persona": has_persona,
         "has_llm": has_llm,
+        "has_embedding": has_embedding,
         "has_knowledge": has_knowledge,
         "has_channel": has_channel,
         "ready": has_llm and has_persona,

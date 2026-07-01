@@ -4,8 +4,8 @@ Um provider de embedding por tenant (ou global), com CHAVE PRÓPRIA (separada da
 RAG (`rag_engine`) e memória (`memory_service`) chamam `embed()` — UM único ponto de
 troca: mudou o provider no config, RAG e memória obedecem juntos.
 
-Resolução: provider ativo de MENOR priority, tenant sobre global. Sem nenhum config →
-fallback pro Gemini via env `GEMINI_API_KEY` (comportamento legado, retrocompatível).
+Resolução: provider ATIVO do PRÓPRIO tenant (menor priority). SEM fallback global/env
+(jul/2026) — cada tenant configura o seu; sem provider → RAG/memória desligados.
 
 Todos os adapters devolvem vetores de `dimensions` floats (default 768, pra casar com a
 coluna pgvector `vector(768)` de `ta_knowledge_chunk`/`ta_contact_memory`).
@@ -87,9 +87,6 @@ async def _resolve_provider(db: AsyncSession | None, tenant_id: int | None) -> T
         for r in rows:
             if r.tenant_id == tenant_id:
                 return r
-    for r in rows:
-        if r.tenant_id is None:
-            return r
     return None
 
 
@@ -111,7 +108,7 @@ async def embed(
     tenant_id: int | None = None,
     task_type: str = "RETRIEVAL_DOCUMENT",
 ) -> list[list[float]]:
-    """Gera embeddings pros textos usando o provider CONFIGURADO (ou fallback env Gemini).
+    """Gera embeddings pros textos usando o provider ATIVO do tenant (sem fallback).
 
     `task_type`: RETRIEVAL_DOCUMENT (indexar) | RETRIEVAL_QUERY (buscar) — cada adapter
     traduz pro parâmetro do seu provider. Levanta RuntimeError em falha.
@@ -120,14 +117,12 @@ async def embed(
         return []
     prov = await _resolve_provider(db, tenant_id)
     if prov is None:
-        # Fallback legado: Gemini via env (mantém o comportamento atual sem config)
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "Nenhum provider de embedding configurado e GEMINI_API_KEY ausente — "
-                "cadastre um provider em Configurações › Embedding (RAG)."
-            )
-        return await _embed_gemini(texts, api_key=api_key, model="gemini-embedding-001", dims=DEFAULT_DIMS, task_type=task_type)
+        # Sem provider de embedding do PRÓPRIO tenant → RAG/memória desligados. SEM
+        # fallback global/env (jul/2026): cada tenant configura o seu (igual à LLM).
+        raise RuntimeError(
+            "Sem provider de embedding configurado pra este tenant — RAG e memória "
+            "ficam desligados até cadastrar um em Configurações › Embedding (RAG)."
+        )
     return await embed_with_provider(prov, texts, task_type=task_type)
 
 

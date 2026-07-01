@@ -1,6 +1,6 @@
 import { useEffect, useState, type ComponentType } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, Circle, ArrowRight, Sparkles, Cpu, BookOpen, Radio } from "lucide-react";
+import { CheckCircle2, Circle, ArrowRight, Sparkles, Cpu, Database, BookOpen, Radio } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, Row } from "@/components/ds/fc";
@@ -9,6 +9,7 @@ interface SetupStatus {
   has_agent: boolean;
   has_persona: boolean;
   has_llm: boolean;
+  has_embedding: boolean;
   has_knowledge: boolean;
   has_channel: boolean;
   ready: boolean;
@@ -52,6 +53,15 @@ export default function OnboardingChecklist() {
       to: "/admin/configuracoes/llm",
       icon: Cpu,
       done: status.has_llm,
+      required: true,
+    },
+    {
+      key: "embedding",
+      label: "Configure o embedding (RAG)",
+      desc: "Liga o RAG e a memória. Sem ele, o agente responde mas não consulta seu conhecimento nem lembra dos clientes.",
+      to: "/admin/configuracoes/embedding",
+      icon: Database,
+      done: status.has_embedding,
       required: true,
     },
     {
