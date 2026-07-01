@@ -2,6 +2,7 @@ interface Props {
   nome: string;
   size?: number;
   className?: string;
+  src?: string | null;
 }
 
 const PALETTE = ["#003083", "#0050D5", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
@@ -18,7 +19,17 @@ function colorFor(s: string): string {
   return PALETTE[h % PALETTE.length];
 }
 
-export default function Avatar({ nome, size = 32, className }: Props) {
+export default function Avatar({ nome, size = 32, className, src }: Props) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={nome || ""}
+        className={`rounded-full object-cover select-none flex-shrink-0 ${className || ""}`}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
   const bg = colorFor(nome || "?");
   return (
     <div

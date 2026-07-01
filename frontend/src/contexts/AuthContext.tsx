@@ -10,6 +10,7 @@ interface User {
     id: number;
     nome: string;
     nome_pessoa?: string | null;
+    avatar_url?: string | null;
     sku: string;
     status: string;
   } | null;

@@ -1,16 +1,56 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Loader2, User, Building2, Mail } from "lucide-react";
+import { Loader2, User, Building2, Mail, Upload, Image as ImageIcon, Trash2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { FC, PageFrame, PageHero, Row, Button } from "@/components/ds/fc";
+import Avatar from "@/components/Avatar";
 
 export default function PerfilPage() {
   const { user, refresh } = useAuth();
   const [nomePessoa, setNomePessoa] = useState(user?.tenant?.nome_pessoa || "");
   const [nome, setNome] = useState(user?.tenant?.nome || "");
   const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarUrl = user?.tenant?.avatar_url || null;
+  const displayNome = nomePessoa || user?.tenant?.nome || user?.email || "?";
+
+  async function onAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) {
+      toast.error("Imagem maior que 5MB");
+      return;
+    }
+    setUploadingAvatar(true);
+    const fd = new FormData();
+    fd.append("file", f);
+    try {
+      await api.post("/auth/me/avatar", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Foto atualizada");
+      await refresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao enviar a foto");
+    } finally {
+      setUploadingAvatar(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function onAvatarRemove() {
+    setUploadingAvatar(true);
+    try {
+      await api.delete("/auth/me/avatar");
+      toast.success("Foto removida");
+      await refresh();
+    } catch {
+      toast.error("Erro ao remover");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,6 +75,29 @@ export default function PerfilPage() {
 
         <Row last>
           <form onSubmit={onSubmit} className="p-6 space-y-6">
+            <Field label="Foto" icon={<ImageIcon className={`w-4 h-4 ${FC.mut}`} />} hint="Aparece no menu do topo e no rodapé da barra lateral.">
+              <div className="flex items-center gap-4">
+                <Avatar nome={displayNome} src={avatarUrl} size={56} />
+                <div className="flex items-center gap-2">
+                  <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onAvatarChange} className="hidden" />
+                  <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} disabled={uploadingAvatar}>
+                    {uploadingAvatar ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {avatarUrl ? "Trocar foto" : "Enviar foto"}
+                  </Button>
+                  {avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={onAvatarRemove}
+                      disabled={uploadingAvatar}
+                      className="inline-flex items-center gap-1 text-[13px] text-rose-600 hover:underline disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Remover
+                    </button>
+                  )}
+                </div>
+              </div>
+            </Field>
+
             <Field label="Seu nome" icon={<User className={`w-4 h-4 ${FC.mut}`} />}>
               <input type="text" value={nomePessoa} onChange={(e) => setNomePessoa(e.target.value)} required className={inputCls} />
             </Field>

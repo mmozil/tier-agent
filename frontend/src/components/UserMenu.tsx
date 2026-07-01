@@ -79,7 +79,7 @@ export default function UserMenu({ collapsed = false }: { collapsed?: boolean })
           {/* Cabeçalho com user info */}
           <div className="px-3 py-2.5 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
-              <Avatar nome={nomePessoa} size={32} />
+              <Avatar nome={nomePessoa} src={user.tenant?.avatar_url} size={32} />
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-medium text-slate-900 truncate">{nomePessoa}</div>
                 {nomeEmpresa && nomeEmpresa !== nomePessoa && (
@@ -187,7 +187,7 @@ export default function UserMenu({ collapsed = false }: { collapsed?: boolean })
           collapsed ? "w-9 justify-center" : "w-full gap-2.5"
         } ${open ? "bg-slate-100" : "hover:bg-slate-50"}`}
       >
-        <Avatar nome={nomePessoa} size={collapsed ? 28 : 32} />
+        <Avatar nome={nomePessoa} src={user.tenant?.avatar_url} size={collapsed ? 28 : 32} />
         {!collapsed && (
           <div className="flex-1 min-w-0 text-left">
             <div className="text-[12px] font-medium text-slate-900 truncate">{nomePessoa}</div>

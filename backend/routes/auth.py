@@ -3,7 +3,7 @@
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from passlib.context import CryptContext
@@ -15,6 +15,7 @@ from core.auth import create_token
 from core.config import get_settings
 from core.db import get_db
 from models import TaMember, TaTenant
+from services.storage_service import storage
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +246,7 @@ async def me(db: AsyncSession = Depends(get_db), user=Depends(__import__("core.a
             "id": tenant.id,
             "nome": tenant.nome,
             "nome_pessoa": tenant.nome_pessoa,
+            "avatar_url": tenant.avatar_url,
             "sku": tenant.sku,
             "status": tenant.status,
         } if tenant else None,
@@ -280,7 +282,49 @@ async def update_me(
         "id": tenant.id,
         "nome": tenant.nome,
         "nome_pessoa": tenant.nome_pessoa,
+        "avatar_url": tenant.avatar_url,
         "email": tenant.email,
         "sku": tenant.sku,
         "status": tenant.status,
     }
+
+
+@router.post("/me/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
+):
+    """Upload da foto de perfil → R2 → salva avatar_url no tenant."""
+    if not user.tenant_id:
+        raise HTTPException(404, "Tenant não encontrado")
+    tenant = await db.get(TaTenant, user.tenant_id)
+    if not tenant:
+        raise HTTPException(404, "Tenant não encontrado")
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Arquivo vazio")
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(413, "Imagem maior que 5MB")
+    ctype = (file.content_type or "").lower()
+    if not ctype.startswith("image/"):
+        raise HTTPException(400, "Envie uma imagem (PNG, JPG, WEBP)")
+    up = storage.upload(content, folder="avatars", filename=file.filename, content_type=ctype)
+    tenant.avatar_url = up["url"]
+    await db.commit()
+    return {"avatar_url": tenant.avatar_url}
+
+
+@router.delete("/me/avatar")
+async def delete_avatar(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
+):
+    if not user.tenant_id:
+        raise HTTPException(404, "Tenant não encontrado")
+    tenant = await db.get(TaTenant, user.tenant_id)
+    if not tenant:
+        raise HTTPException(404, "Tenant não encontrado")
+    tenant.avatar_url = None
+    await db.commit()
+    return {"avatar_url": None}

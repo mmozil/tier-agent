@@ -375,6 +375,21 @@ async def _ensure_embedding_provider_table():
         logger.exception("ensure_embedding_provider_table falhou (segue mesmo assim)")
 
 
+async def _ensure_tenant_avatar_column():
+    """Runtime DDL — coluna avatar_url em ta_tenant (foto do perfil, R2)."""
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            await db.execute(_sql_text("ALTER TABLE ta_tenant ADD COLUMN IF NOT EXISTS avatar_url TEXT"))
+            await db.commit()
+        logger.info("ensure_tenant_avatar_column ok")
+    except Exception:
+        logger.exception("ensure_tenant_avatar_column falhou (segue mesmo assim)")
+
+
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
@@ -384,6 +399,7 @@ async def startup():
     await _ensure_tool_provider_table()
     await _ensure_incident_table()
     await _ensure_embedding_provider_table()
+    await _ensure_tenant_avatar_column()
     from scheduler import init_scheduler
     init_scheduler()
 
