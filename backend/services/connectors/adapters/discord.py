@@ -23,6 +23,30 @@ from services.connectors.base import ConnectorConfig, ConnectorError, OutboundMe
 logger = logging.getLogger(__name__)
 
 API = "https://discord.com/api/v10"
+_LIMIT = 2000  # Discord rejeita content > 2000 chars (HTTP 400)
+
+
+def _split_discord(text: str, limit: int = _LIMIT) -> list[str]:
+    """Fatia o texto em blocos <= limit, preferindo quebrar em '\\n' pra não cortar no
+    meio de uma frase. Discord corta em 2000 chars — antes truncávamos e a cauda sumia
+    calada (ex: dump de status do DevSecOps = 2393 chars). Agora manda em N mensagens."""
+    text = text or ""
+    if not text:
+        return []
+    if len(text) <= limit:
+        return [text]
+    parts: list[str] = []
+    rest = text
+    while len(rest) > limit:
+        window = rest[:limit]
+        cut = window.rfind("\n")
+        if cut < int(limit * 0.5):  # sem quebra boa perto do fim → corte duro no limite
+            cut = limit
+        parts.append(rest[:cut])
+        rest = rest[cut:].lstrip("\n")
+    if rest:
+        parts.append(rest)
+    return parts
 
 
 class DiscordConnector:
@@ -36,19 +60,24 @@ class DiscordConnector:
         if not channel:
             raise ConnectorError("external_chat_id (discord channel) ausente", kind=self.kind)
 
+        chunks = _split_discord(msg.content or "")
+        if not chunks:
+            return {}  # nada a enviar (Discord rejeita content vazio)
+
         headers = {"Authorization": f"Bot {token}", "Content-Type": "application/json"}
-        # Discord corta mensagem em 2000 chars — fatia pra não dar 400.
-        text = (msg.content or "")[:2000]
+        last: dict = {}
         async with httpx.AsyncClient(timeout=30) as cli:
-            r = await cli.post(f"{API}/channels/{channel}/messages", json={"content": text}, headers=headers)
-        data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-        if r.status_code >= 400:
-            raise ConnectorError(
-                f"Discord API {r.status_code}: {data.get('message') or r.text[:200]}",
-                kind=self.kind,
-                status_code=r.status_code,
-            )
-        return data
+            for part in chunks:
+                r = await cli.post(f"{API}/channels/{channel}/messages", json={"content": part}, headers=headers)
+                data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+                if r.status_code >= 400:
+                    raise ConnectorError(
+                        f"Discord API {r.status_code}: {data.get('message') or r.text[:200]}",
+                        kind=self.kind,
+                        status_code=r.status_code,
+                    )
+                last = data
+        return last
 
     async def validate_config(self, config: ConnectorConfig) -> bool:
         token = config.data.get("bot_token")

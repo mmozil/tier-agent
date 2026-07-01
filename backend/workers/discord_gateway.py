@@ -5,9 +5,11 @@ que usam webhook. Cada tenant traz o próprio bot token (TaConnector kind='disco
 Este manager roda como task de fundo no startup do backend.
 
 Com `--workers 2`, só UM worker pode manter as conexões (senão o bot recebe cada
-mensagem 2x e responde em dobro). Resolvido por **eleição de líder via Redis**: o
-worker que segura o lock `tier-agent:discord:leader` mantém os Gateways; os outros
-ficam parados. Se o líder morre, o lock expira (TTL) e outro assume no próximo tick.
+mensagem 2x e responde em dobro). Duas travas independentes garantem isso:
+  1. **Eleição de líder** via lock Redis `tier-agent:discord:leader` (TTL 45s, renovado
+     a cada 10s por um script Lua CAS ATÔMICO — sem get-then-set, sem stomp de dono).
+  2. **Idempotência por message.id** (Redis SETNX): mesmo numa janela rara de 2 líderes,
+     cada mensagem só é processada uma vez (o Gateway não tem dedup nativo como os webhooks).
 
 Outbound das respostas NÃO passa por aqui — vai por REST via `DiscordConnector.send`,
 chamado dentro de `handle_inbound_message`. Aqui só escutamos e encaminhamos.
@@ -19,6 +21,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 import uuid
 
 from core.config import get_settings
@@ -30,10 +33,31 @@ logger = logging.getLogger("tier-agent.discord")
 settings = get_settings()
 
 _LEADER_KEY = "tier-agent:discord:leader"
-_LEADER_TTL = 30          # validade do lock (s)
+_LEADER_TTL = 45          # validade do lock (s) — margem >4x o intervalo de renovação
 _LOOP_INTERVAL = 10       # renova lock + reconcilia a cada 10s
+_SEEN_TTL = 3600          # dedup de message.id por 1h
+
+# Renovação/aquisição do lock em UM passo atômico (Redis roda Lua single-thread):
+# - sou o dono? renovo o TTL.  - lock livre? adquiro com NX.  - de outro? não sou líder.
+# Elimina o TOCTOU do get-then-set (2 workers viravam líder ao mesmo tempo).
+_RENEW_LUA = """
+local cur = redis.call('get', KEYS[1])
+if cur == ARGV[1] then
+  redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2])
+  return 1
+elseif cur == false then
+  if redis.call('set', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2]) then
+    return 1
+  else
+    return 0
+  end
+else
+  return 0
+end
+"""
 
 _manager: "DiscordGatewayManager | None" = None
+_task: "asyncio.Task | None" = None  # mantém referência forte (senão a task pode ser GC'd)
 
 
 class _BotRuntime:
@@ -49,7 +73,11 @@ class DiscordGatewayManager:
     def __init__(self):
         self._id = uuid.uuid4().hex               # identidade deste worker
         self._bots: dict[int, _BotRuntime] = {}   # conn_id -> runtime
-        self._failed: dict[int, str] = {}         # conn_id -> token que falhou permanente
+        # backoff exponencial por conector: conn_id -> (token, retry_after_monotonic).
+        # NÃO é bloqueio permanente — o bot volta a tentar quando o tempo passa (ex: o
+        # tenant ativou o Message Content Intent sem trocar o token).
+        self._backoff: dict[int, tuple[str, float]] = {}
+        self._attempts: dict[int, int] = {}
         self._is_leader = False
         self._discord = None                      # módulo discord.py (import lazy)
         self._redis_client = None
@@ -100,17 +128,30 @@ class DiscordGatewayManager:
         subindo o mesmo bot). Melhor Discord parado do que resposta duplicada."""
         try:
             r = await self._get_redis()
-            cur = await r.get(_LEADER_KEY)
-            if cur == self._id:
-                await r.set(_LEADER_KEY, self._id, ex=_LEADER_TTL)
-                return True
-            if cur is None:
-                ok = await r.set(_LEADER_KEY, self._id, nx=True, ex=_LEADER_TTL)
-                return bool(ok)
-            return False
+            res = await r.eval(_RENEW_LUA, 1, _LEADER_KEY, self._id, str(_LEADER_TTL))
+            return res == 1 or res == "1"
         except Exception:
             logger.warning("discord gateway: Redis indisponível — não assumo liderança")
             return False
+
+    async def _already_processed(self, message_id: str) -> bool:
+        """True se este message.id já foi processado (dedup). SETNX no Redis: a 1ª
+        entrega ganha, entregas repetidas (janela rara de 2 líderes) são puladas.
+        Fail-OPEN: se o Redis oscilar, processa (não perde mensagem do cliente)."""
+        try:
+            r = await self._get_redis()
+            ok = await r.set(f"tier-agent:discord:seen:{message_id}", "1", nx=True, ex=_SEEN_TTL)
+            return not bool(ok)
+        except Exception:
+            return False
+
+    # ── backoff ─────────────────────────────────────────────────────
+    def _bump_backoff(self, conn_id: int, token: str):
+        n = self._attempts.get(conn_id, 0) + 1
+        self._attempts[conn_id] = n
+        delay = min(30 * (2 ** min(n - 1, 6)), 1800)  # 30s,60,120,…,cap 30min
+        self._backoff[conn_id] = (token, time.monotonic() + delay)
+        logger.warning("discord conn=%s em backoff %.0fs (tentativa %d)", conn_id, delay, n)
 
     # ── reconciliação de bots ──────────────────────────────────────
     async def _load_connectors(self) -> dict[int, str]:
@@ -139,17 +180,20 @@ class DiscordGatewayManager:
     async def _reconcile(self):
         desired = await self._load_connectors()
 
-        # parar bots removidos ou com token trocado
+        # parar bots removidos ou com token trocado (reset do backoff — é um bot "novo")
         for conn_id in list(self._bots.keys()):
             rt = self._bots[conn_id]
             if conn_id not in desired or desired[conn_id] != rt.token:
                 await self._stop_bot(conn_id)
+                self._backoff.pop(conn_id, None)
+                self._attempts.pop(conn_id, None)
 
-        # subir bots novos / recriar os que caíram
+        # subir bots novos / recriar os que caíram (respeitando backoff)
+        now = time.monotonic()
         for conn_id, token in desired.items():
-            # falhou permanente com esse token (token inválido / intent faltando): espera trocar
-            if self._failed.get(conn_id) == token:
-                continue
+            bo = self._backoff.get(conn_id)
+            if bo and bo[0] == token and now < bo[1]:
+                continue  # em backoff com o MESMO token — espera o tempo passar
             rt = self._bots.get(conn_id)
             if rt is None:
                 await self._start_bot(conn_id, token)
@@ -162,6 +206,16 @@ class DiscordGatewayManager:
         intents = discord.Intents.default()
         intents.message_content = True  # privilegiado: cliente ativa no Developer Portal
         client = discord.Client(intents=intents)
+
+        @client.event
+        async def on_ready():
+            # conectou com sucesso → zera backoff/tentativas desse conector
+            self._backoff.pop(conn_id, None)
+            self._attempts.pop(conn_id, None)
+            logger.info(
+                "discord gateway: bot ONLINE conn=%s user=%s",
+                conn_id, getattr(client.user, "name", "?"),
+            )
 
         @client.event
         async def on_message(message):  # noqa: ANN001
@@ -179,19 +233,20 @@ class DiscordGatewayManager:
         try:
             await client.start(token)
         except discord.LoginFailure:
-            logger.error("discord conn=%s: token inválido — não re-tenta", conn_id)
-            self._failed[conn_id] = token
+            logger.error("discord conn=%s: token inválido", conn_id)
+            self._bump_backoff(conn_id, token)
         except discord.PrivilegedIntentsRequired:
-            logger.error(
-                "discord conn=%s: ative 'Message Content Intent' no Developer Portal", conn_id
-            )
-            self._failed[conn_id] = token
+            logger.error("discord conn=%s: ative 'Message Content Intent' no Developer Portal", conn_id)
+            self._bump_backoff(conn_id, token)
         except Exception:
-            logger.exception("discord client encerrou conn=%s (re-tenta no próximo tick)", conn_id)
+            logger.exception("discord client encerrou conn=%s", conn_id)
+            self._bump_backoff(conn_id, token)
 
     async def _stop_bot(self, conn_id: int):
+        # NÃO mexe em _backoff/_attempts aqui: o restart pós-backoff precisa preservar a
+        # contagem (senão a tentativa nunca cresce). Reset é feito em on_ready (sucesso),
+        # na troca/remoção do conector (_reconcile) e ao perder liderança (_stop_all).
         rt = self._bots.pop(conn_id, None)
-        self._failed.pop(conn_id, None)
         if not rt:
             return
         with contextlib.suppress(Exception):
@@ -205,6 +260,9 @@ class DiscordGatewayManager:
     async def _stop_all(self):
         for conn_id in list(self._bots.keys()):
             await self._stop_bot(conn_id)
+        # ao deixar de ser líder, esquece o backoff (se voltar a liderar, tenta do zero)
+        self._backoff.clear()
+        self._attempts.clear()
 
     # ── inbound ─────────────────────────────────────────────────────
     async def _on_message(self, conn_id: int, client, message):
@@ -214,13 +272,19 @@ class DiscordGatewayManager:
         if client.user and message.author.id == client.user.id:
             return
 
+        # dedup por message.id (globalmente único) — trava definitiva contra resposta
+        # dobrada, independente de qualquer corrida de liderança
+        if await self._already_processed(str(message.id)):
+            return
+
         content = (message.content or "").strip()
         is_dm = message.guild is None
         if not is_dm:
-            # em canal de servidor, só responde quando mencionado (evita ruído no server)
-            if not client.user or client.user not in getattr(message, "mentions", []):
+            # em canal de servidor, só responde quando @mencionado (evita ruído no server)
+            uid = client.user.id if client.user else None
+            mentioned = uid is not None and any(getattr(u, "id", None) == uid for u in getattr(message, "mentions", []))
+            if not mentioned:
                 return
-            uid = client.user.id
             content = content.replace(f"<@{uid}>", "").replace(f"<@!{uid}>", "").strip()
         if not content:
             return
@@ -245,8 +309,8 @@ class DiscordGatewayManager:
 
 def start_discord_gateway():
     """Sobe o manager como task de fundo (chamado no startup). Idempotente."""
-    global _manager
+    global _manager, _task
     if _manager is not None:
         return
     _manager = DiscordGatewayManager()
-    asyncio.create_task(_manager.run_forever())
+    _task = asyncio.create_task(_manager.run_forever())

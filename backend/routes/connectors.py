@@ -147,6 +147,10 @@ async def create_connector(
     kind = (payload.kind or "").strip().lower()
     if kind not in _TOKEN_CHANNELS:
         raise HTTPException(400, f"Canal não suportado por este fluxo. Use: {sorted(_TOKEN_CHANNELS)}")
+    # Slack: o Signing Secret é OBRIGATÓRIO — o webhook autentica cada evento com ele
+    # (sem ele qualquer um forja um POST pro connector_id e queima LLM / injeta prompt).
+    if kind == "slack" and not str((payload.config or {}).get("signing_secret") or "").strip():
+        raise HTTPException(400, "Slack exige o Signing Secret (autentica os eventos do webhook).")
 
     from services.connectors import registry
     from services.connectors.base import ConnectorConfig

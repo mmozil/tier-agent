@@ -190,6 +190,7 @@ export default function CanaisPage() {
   async function connectSlack() {
     if (!selectedAgent) { toast.error("Escolha um agente"); return; }
     if (!slackForm.bot_token.trim()) { toast.error("Cole o Bot Token (xoxb-...)"); return; }
+    if (!slackForm.signing_secret.trim()) { toast.error("Cole o Signing Secret (autentica os eventos do Slack)"); return; }
     setSlackConnecting(true);
     try {
       const { data } = await api.post<{ id: number; webhook_url?: string }>("/connectors", {
@@ -340,7 +341,7 @@ export default function CanaisPage() {
                 <input type="password" value={slackForm.bot_token} onChange={(e) => setSlackForm({ ...slackForm, bot_token: e.target.value })} placeholder="xoxb-..." className={`${inputCls} font-mono`} />
               </label>
               <label className="block">
-                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Signing Secret <span className={FC.mut}>(recomendado)</span></span>
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Signing Secret <span className="text-red-500">*</span></span>
                 <input type="password" value={slackForm.signing_secret} onChange={(e) => setSlackForm({ ...slackForm, signing_secret: e.target.value })} placeholder="signing secret do Slack App" className={`${inputCls} font-mono`} />
               </label>
               <p className={`text-[12px] leading-relaxed ${FC.sub}`}>

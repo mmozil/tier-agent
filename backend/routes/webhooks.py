@@ -650,24 +650,32 @@ async def slack_webhook(
     except Exception:
         cfg = {}
 
-    # Verifica assinatura HMAC-SHA256 (se signing_secret configurado)
+    # Verificação de assinatura HMAC-SHA256 — OBRIGATÓRIA. Sem signing_secret NÃO há
+    # como autenticar o evento: qualquer um que descubra o connector_id (int na URL
+    # pública) poderia forjar um POST e queimar LLM / injetar prompt / mandar resposta
+    # num canal à escolha. Então: sem secret = rejeita; com secret = valida sempre.
     signing = cfg.get("signing_secret")
-    if signing:
-        import hashlib
-        import hmac
-        import time as _time
+    if not signing:
+        logger.warning("slack webhook conn=%s sem signing_secret — rejeitado", connector_id)
+        raise HTTPException(401, "signing_secret ausente — reconfigure o canal Slack")
 
-        ts = request.headers.get("X-Slack-Request-Timestamp", "")
-        sig = request.headers.get("X-Slack-Signature", "")
-        try:
-            if abs(_time.time() - int(ts)) > 60 * 5:
-                return {"status": "stale"}
-        except (ValueError, TypeError):
-            return {"status": "bad_timestamp"}
-        base = f"v0:{ts}:{raw.decode('utf-8', 'ignore')}"
-        expected = "v0=" + hmac.new(signing.encode(), base.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, sig):
-            return {"status": "bad_signature"}
+    import hashlib
+    import hmac
+    import time as _time
+
+    ts = request.headers.get("X-Slack-Request-Timestamp", "")
+    sig = request.headers.get("X-Slack-Signature", "")
+    if not ts or not sig:
+        raise HTTPException(401, "assinatura ausente")
+    try:
+        if abs(_time.time() - int(ts)) > 60 * 5:
+            raise HTTPException(401, "timestamp expirado")
+    except (ValueError, TypeError):
+        raise HTTPException(401, "timestamp inválido")
+    base = f"v0:{ts}:{raw.decode('utf-8', 'ignore')}"
+    expected = "v0=" + hmac.new(signing.encode(), base.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        raise HTTPException(401, "assinatura inválida")
 
     event = data.get("event") or {}
     if event.get("type") != "message" or event.get("bot_id") or event.get("subtype"):
@@ -682,19 +690,49 @@ async def slack_webhook(
     if event_id and await _record_idempotent(db, f"slack:{connector_id}", event_id, data):
         return {"status": "duplicate"}
 
+    # Processa em BACKGROUND (sessão DB própria) e devolve 200 na hora: o Slack Events
+    # API exige 2xx em ~3s, senão reenvia e, após timeouts repetidos, DESATIVA o Request
+    # URL do app (canal fica mudo). A idempotência acima protege o retry do caso comum.
+    import asyncio as _asyncio
+
+    _asyncio.create_task(
+        _process_slack_message(
+            connector_id=connector_id,
+            channel=channel,
+            sender_name=event.get("user"),
+            text_content=text_content,
+        )
+    )
+    logger.info("webhook slack aceito conn=%s channel=%s", connector_id, channel)
+    return {"status": "accepted"}
+
+
+async def _process_slack_message(
+    *,
+    connector_id: int,
+    channel: str,
+    sender_name: str | None,
+    text_content: str,
+) -> None:
+    """Processa 1 mensagem Slack inbound em background (sessão DB própria) — não segura
+    o 200 do webhook (evita retry/URL-disable do Slack Events API)."""
+    from core.db import db_context
     from services import agent_runtime
 
-    result = await agent_runtime.handle_inbound_message(
-        db,
-        connector_kind="slack",
-        instance_id=str(connector_id),
-        external_chat_id=channel,
-        sender_name=event.get("user"),
-        text_content=text_content,
-        attachments=[],
-    )
-    logger.info("webhook slack processed conn=%s channel=%s status=%s", connector_id, channel, result.get("status"))
-    return result
+    try:
+        async with db_context() as db:
+            result = await agent_runtime.handle_inbound_message(
+                db,
+                connector_kind="slack",
+                instance_id=str(connector_id),
+                external_chat_id=channel,
+                sender_name=sender_name,
+                text_content=text_content,
+                attachments=[],
+            )
+            logger.info("slack msg processada conn=%s status=%s", connector_id, result.get("status"))
+    except Exception:
+        logger.exception("processamento slack em background falhou conn=%s", connector_id)
 
 
 # ============================================================
