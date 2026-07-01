@@ -5,6 +5,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, Row, HairCells, EmptyHint, SKEL } from "@/components/ds/fc";
+import OnboardingChecklist from "@/components/OnboardingChecklist";
 
 interface Report {
   empty?: boolean;
@@ -98,6 +99,7 @@ export default function VisaoGeralPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
+        <OnboardingChecklist />
         <Row>
           <div className="p-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>

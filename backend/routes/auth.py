@@ -8,7 +8,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select
+from sqlalchemy import select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import create_token
@@ -328,3 +328,50 @@ async def delete_avatar(
     tenant.avatar_url = None
     await db.commit()
     return {"avatar_url": None}
+
+
+@router.get("/me/setup-status")
+async def setup_status(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
+):
+    """Checklist de onboarding — o que o tenant já configurou pro agente funcionar.
+
+    `ready` = mínimo pra o agente operar (persona + LLM própria). Embedding/RAG é
+    automático (default global), então não entra como passo obrigatório."""
+    tid = user.tenant_id
+    empty = {
+        "has_agent": False, "has_persona": False, "has_llm": False,
+        "has_knowledge": False, "has_channel": False, "ready": False,
+    }
+    if not tid:
+        return empty
+
+    async def ex(q: str) -> bool:
+        try:
+            return bool((await db.execute(sql_text(q), {"t": tid})).scalar())
+        except Exception:
+            return False
+
+    has_agent = await ex("SELECT EXISTS(SELECT 1 FROM ta_agent WHERE tenant_id = :t)")
+    has_persona = await ex(
+        "SELECT EXISTS(SELECT 1 FROM ta_agent WHERE tenant_id = :t AND persona IS NOT NULL AND btrim(persona) <> '')"
+    )
+    has_llm = await ex(
+        "SELECT EXISTS(SELECT 1 FROM ta_llm_provider WHERE tenant_id = :t AND active = true)"
+    )
+    has_knowledge = await ex(
+        "SELECT EXISTS(SELECT 1 FROM ta_knowledge k JOIN ta_agent a ON a.id = k.agent_id WHERE a.tenant_id = :t)"
+    )
+    has_channel = await ex(
+        "SELECT EXISTS(SELECT 1 FROM ta_connector c JOIN ta_agent a ON a.id = c.agent_id "
+        "WHERE a.tenant_id = :t AND c.enabled = true)"
+    )
+    return {
+        "has_agent": has_agent,
+        "has_persona": has_persona,
+        "has_llm": has_llm,
+        "has_knowledge": has_knowledge,
+        "has_channel": has_channel,
+        "ready": has_llm and has_persona,
+    }
