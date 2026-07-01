@@ -29,6 +29,7 @@ DEFAULT_DIMS = 768  # casa com pgvector vector(768)
 
 # provider -> rótulo (UI). Só os que REALMENTE fazem embedding (OpenRouter não faz).
 SUPPORTED_EMBEDDING_PROVIDERS: dict[str, str] = {
+    "openrouter": "OpenRouter (gateway — 1 chave p/ OpenAI/Cohere/etc)",
     "gemini": "Google Gemini (gemini-embedding-001)",
     "openai": "OpenAI (text-embedding-3-small / -large)",
     "voyage": "Voyage AI (voyage-3.5, multilingual)",
@@ -40,6 +41,7 @@ SUPPORTED_EMBEDDING_PROVIDERS: dict[str, str] = {
 
 # Modelos sugeridos por provider (parametrizável por env EMBEDDING_PROVIDER_MODELS_JSON).
 _DEFAULT_EMBEDDING_MODELS: dict[str, list[str]] = {
+    "openrouter": ["openai/text-embedding-3-small", "openai/text-embedding-3-large", "cohere/embed-v4.0"],
     "gemini": ["gemini-embedding-001"],
     "openai": ["text-embedding-3-small", "text-embedding-3-large"],
     "voyage": ["voyage-3.5", "voyage-3-large", "voyage-multilingual-2"],
@@ -147,6 +149,9 @@ async def embed_with_provider(
         return await _embed_gemini(texts, api_key=key, model=model, dims=dims, task_type=task_type)
     if p == "openai":
         return await _embed_openai(texts, api_key=key, model=model, dims=dims, base_url=prov.base_url)
+    if p == "openrouter":
+        # Gateway OpenAI-compatible: 1 chave p/ N providers. dims=768 nos text-embedding-3-*.
+        return await _embed_openai(texts, api_key=key, model=model, dims=dims, base_url="https://openrouter.ai/api/v1")
     if p == "voyage":
         return await _embed_voyage(texts, api_key=key, model=model, dims=dims, task_type=task_type)
     if p == "cohere":
@@ -156,9 +161,10 @@ async def embed_with_provider(
     if p == "mistral":
         return await _embed_mistral(texts, api_key=key, model=model)
     if p == "local":
-        # Endpoint OpenAI-compatible (Ollama default). Sem dims (o modelo define).
+        # Endpoint OpenAI-compatible (Ollama/vLLM/LiteLLM/gateway). Passa dims — só é
+        # enviado pros modelos text-embedding-3-* (gate no _embed_openai); Ollama ignora.
         return await _embed_openai(
-            texts, api_key=key or "ollama", model=model, dims=None,
+            texts, api_key=key or "ollama", model=model, dims=dims,
             base_url=prov.base_url or "http://host.docker.internal:11434/v1",
         )
     raise RuntimeError(f"Provider de embedding não suportado: {p}")
