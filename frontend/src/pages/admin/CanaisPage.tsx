@@ -537,14 +537,14 @@ export default function CanaisPage() {
       {showPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setShowPicker(false)}>
           <div className={`w-full max-w-[640px] max-h-[88vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair}`} onClick={(e) => e.stopPropagation()}>
-            <div className={`flex items-center gap-3 border-b ${FC.hair} px-6 py-4`}>
+            <div className={`flex items-center gap-3 border-b ${FC.hair} px-7 py-5`}>
               <div className="flex-1 min-w-0">
                 <h2 className={`text-[16px] font-medium leading-tight ${FC.ink}`}>Conectar um canal</h2>
-                <p className={`text-[12px] ${FC.sub}`}>Escolha por onde o agente vai conversar</p>
+                <p className={`text-[12px] mt-0.5 ${FC.sub}`}>Escolha por onde o agente vai conversar</p>
               </div>
               <button onClick={() => setShowPicker(false)} className={iconBtn}><X className="h-4 w-4" /></button>
             </div>
-            <div className="px-6 py-5 space-y-5">
+            <div className="px-7 py-6 space-y-6">
               <label className="block">
                 <span className={`text-[12px] block mb-1.5 ${FC.sub}`}>Vincular ao agente</span>
                 <Select
@@ -557,7 +557,7 @@ export default function CanaisPage() {
 
               <div>
                 <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2.5 ${FC.mut}`}>Disponíveis</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <ConnectWhatsAppCloud
                     agentId={selectedAgent ?? 0}
                     onConnected={() => { setShowPicker(false); load(); }}
@@ -600,7 +600,7 @@ export default function CanaisPage() {
 
               <div>
                 <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2.5 ${FC.mut}`}>Em breve</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <ChannelCard icon={CHANNEL_META.telegram.Icon} name={CHANNEL_META.telegram.name} desc={CHANNEL_META.telegram.short} disabled />
                   <ChannelCard icon={CHANNEL_META.instagram.Icon} name={CHANNEL_META.instagram.name} desc={CHANNEL_META.instagram.short} disabled />
                   <ChannelCard icon={CHANNEL_META.email.Icon} name={CHANNEL_META.email.name} desc={CHANNEL_META.email.short} disabled />
