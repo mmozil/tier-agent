@@ -16,6 +16,7 @@ import AcceptInvitePage from "./pages/public/AcceptInvitePage";
 import DataDeletion from "./pages/public/DataDeletion";
 import AgentesPage from "./pages/admin/AgentesPage";
 import LlmProvidersPage from "./pages/admin/LlmProvidersPage";
+import EmbeddingProvidersPage from "./pages/admin/EmbeddingProvidersPage";
 import FontesDadosPage from "./pages/admin/FontesDadosPage";
 import McpOAuthCallback from "./pages/public/McpOAuthCallback";
 import CanaisPage from "./pages/admin/CanaisPage";
@@ -104,6 +105,7 @@ export default function App() {
         <Route path="configuracoes" element={<ConfiguracoesLayout />}>
           <Route index element={<Navigate to="/admin/configuracoes/llm" replace />} />
           <Route path="llm" element={<LlmProvidersPage />} />
+          <Route path="embedding" element={<EmbeddingProvidersPage />} />
           <Route path="integracoes" element={<FontesDadosPage />} />
           <Route path="macros" element={<MacrosPage />} />
           <Route path="parametros" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />

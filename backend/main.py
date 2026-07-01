@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import agents, attention, auth, billing, canned_responses, connectors, containers, conversations, features, health, integrations_pet, integrations_tier, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks
+from routes import agents, attention, auth, billing, canned_responses, connectors, containers, conversations, embedding_providers, features, health, integrations_pet, integrations_tier, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks
 
 settings = get_settings()
 
@@ -53,6 +53,7 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(tenants.router, prefix="/api/v1")
 app.include_router(agents.router, prefix="/api/v1")
 app.include_router(llm.router, prefix="/api/v1")
+app.include_router(embedding_providers.router, prefix="/api/v1")
 app.include_router(features.router, prefix="/api/v1")
 app.include_router(containers.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
@@ -331,6 +332,49 @@ async def _ensure_incident_table():
         logger.exception("ensure_incident_table falhou (segue mesmo assim)")
 
 
+async def _ensure_embedding_provider_table():
+    """Runtime DDL idempotente — cria ta_embedding_provider (config de embedding do RAG).
+
+    Provider de embedding por tenant (ou global), com chave PRÓPRIA Fernet, separado do
+    LLM. Mesmo padrão de ta_tool_provider (sem Alembic — o deploy não roda migrations)."""
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            await db.execute(
+                _sql_text(
+                    """
+                    CREATE TABLE IF NOT EXISTS ta_embedding_provider (
+                        id SERIAL PRIMARY KEY,
+                        tenant_id INTEGER REFERENCES ta_tenant(id) ON DELETE CASCADE,
+                        provider VARCHAR(64) NOT NULL,
+                        api_key_enc TEXT NOT NULL,
+                        default_model VARCHAR(128) NOT NULL,
+                        dimensions INTEGER NOT NULL DEFAULT 768,
+                        base_url TEXT,
+                        cost_per_1m DOUBLE PRECISION,
+                        active BOOLEAN NOT NULL DEFAULT true,
+                        priority INTEGER NOT NULL DEFAULT 100,
+                        created_at TIMESTAMP DEFAULT now(),
+                        updated_at TIMESTAMP DEFAULT now()
+                    )
+                    """
+                )
+            )
+            await db.execute(
+                _sql_text(
+                    "CREATE INDEX IF NOT EXISTS ix_ta_embedding_provider_scope "
+                    "ON ta_embedding_provider (tenant_id, active, priority)"
+                )
+            )
+            await db.commit()
+        logger.info("ensure_embedding_provider_table ok")
+    except Exception:
+        logger.exception("ensure_embedding_provider_table falhou (segue mesmo assim)")
+
+
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
@@ -339,6 +383,7 @@ async def startup():
     await _ensure_member_table()
     await _ensure_tool_provider_table()
     await _ensure_incident_table()
+    await _ensure_embedding_provider_table()
     from scheduler import init_scheduler
     init_scheduler()
 

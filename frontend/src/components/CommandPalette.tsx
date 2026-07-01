@@ -33,6 +33,7 @@ const COMMANDS: Cmd[] = [
   // Configurações
   { id: "config", label: "Configurações", group: "Configurações", icon: Settings, keywords: "settings ajustes", run: (n) => n("/admin/configuracoes") },
   { id: "llm", label: "LLM Providers", group: "Configurações", icon: Cpu, keywords: "modelo ia openai anthropic minimax", run: (n) => n("/admin/configuracoes/llm") },
+  { id: "embedding", label: "Embedding (RAG)", group: "Configurações", icon: Cpu, keywords: "rag vetor embedding gemini openai voyage cohere pgvector", run: (n) => n("/admin/configuracoes/embedding") },
   { id: "integracoes", label: "Integrações", group: "Configurações", icon: Plug, keywords: "fontes dados integrations", run: (n) => n("/admin/configuracoes/integracoes") },
   { id: "macros", label: "Macros", group: "Configurações", icon: Zap, keywords: "atalhos respostas", run: (n) => n("/admin/configuracoes/macros") },
   { id: "parametros", label: "Parâmetros", group: "Configurações", icon: SlidersHorizontal, keywords: "params ajustes", run: (n) => n("/admin/configuracoes/parametros") },

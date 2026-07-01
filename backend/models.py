@@ -121,6 +121,47 @@ class TaLlmProvider(Base):
 
 
 # ============================================================
+# 3b. Embedding Provider — provider de EMBEDDING (RAG + memória), separado do LLM
+# ============================================================
+class TaEmbeddingProvider(Base):
+    """Provider de EMBEDDING (RAG + memória) — independente do LLM.
+
+    Mesma lógica do TaLlmProvider: por tenant (ou global), com CHAVE PRÓPRIA Fernet
+    (a chave do RAG != a chave do LLM), modelo + dimensões. O motor de embeddings
+    (services/embeddings.py) pega o ativo de menor priority (tenant sobre global).
+    """
+
+    __tablename__ = "ta_embedding_provider"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ta_tenant.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    # tenant_id NULL = config global default Tier
+
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    # provider: gemini | openai | voyage | cohere | jina | mistral | local
+
+    api_key_enc: Mapped[str] = mapped_column(Text, nullable=False)  # Fernet-encrypted
+    default_model: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    dimensions: Mapped[int] = mapped_column(Integer, default=768, nullable=False)
+    # DEVE casar com pgvector vector(768) de ta_knowledge_chunk/ta_contact_memory
+
+    base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # provider local (Ollama/LM Studio/vLLM OpenAI-compatible)
+
+    cost_per_1m: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    # menor = usado primeiro (tenant antes de global)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ============================================================
 # 4. Feature Flag — toggle on/off (zero hardcode)
 # ============================================================
 class TaFeatureFlag(Base):

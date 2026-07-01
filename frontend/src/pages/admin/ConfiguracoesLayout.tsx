@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import {
   type LucideIcon,
   Cpu,
+  Database,
   CreditCard,
   Plug,
   SlidersHorizontal,
@@ -20,6 +21,7 @@ const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: L
     label: "Agente",
     items: [
       { to: "/admin/configuracoes/llm", label: "LLM Providers", icon: Cpu },
+      { to: "/admin/configuracoes/embedding", label: "Embedding (RAG)", icon: Database },
       { to: "/admin/configuracoes/integracoes", label: "Integrações", icon: Plug },
       { to: "/admin/configuracoes/macros", label: "Macros", icon: Zap },
       { to: "/admin/configuracoes/parametros", label: "Parâmetros", icon: SlidersHorizontal },

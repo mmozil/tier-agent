@@ -122,13 +122,16 @@ async def index_knowledge(db: AsyncSession, knowledge_id: int, *, full_text: str
     if not chunks:
         return {"chunks_count": 0, "error": "texto vazio"}
 
-    # Embed em batch (Gemini aceita até ~100 por request)
+    # Embed em batch usando o provider de embedding CONFIGURADO (não mais só Gemini).
+    from services import embeddings
+
+    tid = await embeddings.tenant_id_for_agent(db, knowledge.agent_id)
     BATCH = 50
     all_vecs: list[list[float]] = []
     for i in range(0, len(chunks), BATCH):
         batch = chunks[i : i + BATCH]
         try:
-            vecs = await _embed_via_gemini(batch)
+            vecs = await embeddings.embed(db, batch, tenant_id=tid, task_type="RETRIEVAL_DOCUMENT")
             all_vecs.extend(vecs)
         except Exception as e:
             logger.exception("embed batch falhou knowledge=%s i=%s", knowledge_id, i)
@@ -213,7 +216,10 @@ async def search(
         return []
 
     try:
-        q_vecs = await _embed_via_gemini([query], task_type="RETRIEVAL_QUERY")
+        from services import embeddings
+
+        tid = await embeddings.tenant_id_for_agent(db, agent_id)
+        q_vecs = await embeddings.embed(db, [query], tenant_id=tid, task_type="RETRIEVAL_QUERY")
     except Exception as e:
         logger.warning("rag search embed falhou: %s", e)
         return []

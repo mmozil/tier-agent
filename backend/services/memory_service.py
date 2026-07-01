@@ -29,8 +29,6 @@ from datetime import datetime
 from sqlalchemy import select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.rag_engine import _embed_via_gemini
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_TOP_K = 5
@@ -135,7 +133,9 @@ async def search(
         return []
 
     try:
-        q_vecs = await _embed_via_gemini([query], task_type="RETRIEVAL_QUERY")
+        from services import embeddings
+
+        q_vecs = await embeddings.embed(db, [query], tenant_id=tenant_id, task_type="RETRIEVAL_QUERY")
     except Exception as e:
         logger.warning("memory.search embed falhou: %s", e)
         return []
@@ -303,10 +303,12 @@ async def add(
     if not valid_facts:
         return 0
 
-    # Embed batch
+    # Embed batch — mesmo provider de embedding do RAG (config único)
     try:
-        vecs = await _embed_via_gemini(
-            [f["fact"] for f in valid_facts], task_type="RETRIEVAL_DOCUMENT"
+        from services import embeddings
+
+        vecs = await embeddings.embed(
+            db, [f["fact"] for f in valid_facts], tenant_id=tenant_id, task_type="RETRIEVAL_DOCUMENT"
         )
     except Exception as e:
         logger.warning("memory.add embed falhou: %s", e)
