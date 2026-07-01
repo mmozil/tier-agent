@@ -402,6 +402,14 @@ async def startup():
     await _ensure_tenant_avatar_column()
     from scheduler import init_scheduler
     init_scheduler()
+    # Discord Gateway (inbound): task de fundo, líder eleito via Redis (não duplica
+    # entre workers). Totalmente opcional — se discord.py/Redis falhar, o backend segue.
+    try:
+        from workers.discord_gateway import start_discord_gateway
+
+        start_discord_gateway()
+    except Exception:
+        logger.exception("discord gateway não iniciou (opcional, segue)")
 
 
 @app.on_event("shutdown")

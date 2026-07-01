@@ -28,6 +28,7 @@ registry = _ConnectorRegistry()
 
 def _register_defaults() -> None:
     """Auto-registra adapters disponíveis. Chamado no startup."""
+    from services.connectors.adapters.discord import DiscordConnector
     from services.connectors.adapters.email import EmailConnector
     from services.connectors.adapters.instagram import InstagramConnector
     from services.connectors.adapters.slack import SlackConnector
@@ -41,6 +42,7 @@ def _register_defaults() -> None:
     registry.register(EmailConnector())
     registry.register(InstagramConnector())
     registry.register(SlackConnector())
+    registry.register(DiscordConnector())
 
 
 _register_defaults()

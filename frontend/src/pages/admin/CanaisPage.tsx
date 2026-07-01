@@ -95,6 +95,10 @@ export default function CanaisPage() {
   const [slackForm, setSlackForm] = useState({ bot_token: "", signing_secret: "" });
   const [slackConnecting, setSlackConnecting] = useState(false);
   const [slackWebhook, setSlackWebhook] = useState<string | null>(null);
+  const [showDiscord, setShowDiscord] = useState(false);
+  const [discordToken, setDiscordToken] = useState("");
+  const [discordConnecting, setDiscordConnecting] = useState(false);
+  const [discordResult, setDiscordResult] = useState<{ invite_url?: string; bot_username?: string } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -204,6 +208,27 @@ export default function CanaisPage() {
     }
   }
 
+  async function connectDiscord() {
+    if (!selectedAgent) { toast.error("Escolha um agente"); return; }
+    if (!discordToken.trim()) { toast.error("Cole o Bot Token do Discord"); return; }
+    setDiscordConnecting(true);
+    try {
+      const { data } = await api.post<{ id: number; invite_url?: string; bot_username?: string }>("/connectors", {
+        agent_id: selectedAgent,
+        kind: "discord",
+        config: { bot_token: discordToken.trim() },
+      });
+      setDiscordResult({ invite_url: data.invite_url, bot_username: data.bot_username });
+      toast.success("Discord conectado — adicione o bot ao servidor abaixo.");
+      setDiscordToken("");
+      load();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao conectar o Discord");
+    } finally {
+      setDiscordConnecting(false);
+    }
+  }
+
   const agentName = (id: number) => agents.find((a) => a.id === id)?.nome || `Agente #${id}`;
   const inputCls = `w-full h-9 px-3 text-[14px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
 
@@ -260,6 +285,19 @@ export default function CanaisPage() {
                 }}
               >
                 <Plus className="w-4 h-4" /> Conectar Slack
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (!selectedAgent) {
+                    toast.error("Crie um agente primeiro para conectar um canal.");
+                    return;
+                  }
+                  setDiscordResult(null);
+                  setShowDiscord(true);
+                }}
+              >
+                <Plus className="w-4 h-4" /> Conectar Discord
               </Button>
             </div>
           }
@@ -324,6 +362,44 @@ export default function CanaisPage() {
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" onClick={() => setShowSlack(false)}>Cancelar</Button>
                   <Button variant="primary" onClick={connectSlack} disabled={slackConnecting}>{slackConnecting ? "Validando..." : "Conectar"}</Button>
+                </div>
+              )}
+            </div>
+          </Row>
+        )}
+
+        {showDiscord && (
+          <Row>
+            <div className="p-6 space-y-4 max-w-[620px]">
+              <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar Discord</h3>
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
+                <Select value={selectedAgent} onChange={(v) => setSelectedAgent(v)} options={agents.map((a) => ({ value: a.id, label: a.nome }))} placeholder="Escolha um agente" />
+              </label>
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Bot Token</span>
+                <input type="password" value={discordToken} onChange={(e) => setDiscordToken(e.target.value)} placeholder="token do bot" className={`${inputCls} font-mono`} />
+              </label>
+              <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
+                Em <b>discord.com/developers/applications</b> crie um app → <b>Bot</b> → ative o <b>Message Content Intent</b> (obrigatório) e copie o <b>Bot Token</b>. O agente responde a DMs e, em canais de servidor, quando for <b>@mencionado</b>.
+              </p>
+              {discordResult ? (
+                <div className={`rounded-[10px] border ${FC.hair} p-3.5 bg-[#5865F2]/[0.05]`}>
+                  <p className={`text-[13px] font-medium ${FC.ink}`}>Conectado ✓{discordResult.bot_username ? ` — ${discordResult.bot_username}` : ""}</p>
+                  <p className={`text-[12px] mt-1 ${FC.sub}`}>Último passo: adicione o bot ao seu servidor. Ele fica online em ~20s. Confirme que o <b>Message Content Intent</b> está ativado no portal.</p>
+                  <div className="mt-3 flex justify-end gap-2">
+                    {discordResult.invite_url && (
+                      <a href={discordResult.invite_url} target="_blank" rel="noreferrer">
+                        <Button variant="secondary">Adicionar bot ao servidor</Button>
+                      </a>
+                    )}
+                    <Button variant="primary" onClick={() => { setShowDiscord(false); setDiscordResult(null); }}>Concluir</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setShowDiscord(false)}>Cancelar</Button>
+                  <Button variant="primary" onClick={connectDiscord} disabled={discordConnecting}>{discordConnecting ? "Validando..." : "Conectar"}</Button>
                 </div>
               )}
             </div>

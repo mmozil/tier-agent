@@ -148,6 +148,13 @@ async def resolve_connector_by_instance(
                     return conn
             except (ValueError, TypeError):
                 pass
+        # Discord: instance_id = connector.id direto (Gateway worker usa conn.id)
+        if kind == "discord":
+            try:
+                if int(instance_id) == conn.id:
+                    return conn
+            except (ValueError, TypeError):
+                pass
         # Instagram: instance_id = ig_user_id (instagram business account id)
         if kind == "instagram":
             if str(cfg.get("ig_user_id") or "") == instance_id:

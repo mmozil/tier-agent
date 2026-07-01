@@ -67,6 +67,12 @@ def _summary(kind: str, cfg: dict) -> dict:
         return {"email": cfg.get("email") or "—", "tipo": "E-mail"}
     if kind == "slack":
         return {"tipo": "Slack", "team": cfg.get("team") or cfg.get("team_id") or "—"}
+    if kind == "discord":
+        return {
+            "tipo": "Discord",
+            "bot": cfg.get("bot_username") or "—",
+            "transporte": "Gateway (websocket)",
+        }
     return {}
 
 
@@ -116,7 +122,9 @@ async def list_connectors(
 
 
 # Canais "traga sua chave" conectáveis pelo form genérico (token → valida → cria).
-_TOKEN_CHANNELS = {"slack", "telegram"}
+_TOKEN_CHANNELS = {"slack", "telegram", "discord"}
+# Permissões do convite Discord: View Channels + Send + Read History + Embed + Attach + Reactions.
+_DISCORD_INVITE_PERMS = 117824
 
 
 class ConnectorCreateIn(BaseModel):
@@ -151,10 +159,20 @@ async def create_connector(
     if not ok:
         raise HTTPException(400, "Credenciais inválidas — confira o token.")
 
+    cfg = dict(payload.config or {})
+    # Discord: guarda a identidade do bot (id vira client_id do convite; username pro resumo).
+    if kind == "discord":
+        from services.connectors.adapters.discord import DiscordConnector
+
+        ident = await DiscordConnector().get_bot_identity(cfg.get("bot_token") or "")
+        if ident:
+            cfg["bot_id"] = ident.get("id")
+            cfg["bot_username"] = ident.get("username")
+
     conn = TaConnector(
         agent_id=agent.id,
         kind=kind,
-        config_json_enc=encrypt(json.dumps(payload.config or {})),
+        config_json_enc=encrypt(json.dumps(cfg)),
         enabled=True,
     )
     db.add(conn)
@@ -169,6 +187,16 @@ async def create_connector(
         token = (payload.config or {}).get("bot_token") or ""
         bot_id = token.split(":")[0] if ":" in token else ""
         out["webhook_url"] = f"{base}/telegram/{bot_id}" if bot_id else None
+    elif kind == "discord":
+        # Discord é Gateway (sem webhook). Devolve o convite pra adicionar o bot ao servidor.
+        bid = cfg.get("bot_id")
+        if bid:
+            out["invite_url"] = (
+                f"https://discord.com/oauth2/authorize?client_id={bid}"
+                f"&scope=bot&permissions={_DISCORD_INVITE_PERMS}"
+            )
+        out["bot_username"] = cfg.get("bot_username")
+        out["gateway"] = True
     return out
 
 

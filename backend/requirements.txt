@@ -24,6 +24,9 @@ google-auth==2.36.0
 # HTTP
 httpx==0.28.1
 
+# Channels — Discord Gateway (websocket persistente; inbound via workers/discord_gateway.py)
+discord.py==2.4.0
+
 # Container orchestration (SSH para host Docker daemon)
 docker==7.1.0
 paramiko==3.5.0
