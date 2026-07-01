@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Loader2, User, Building2, Mail, Upload, Image as ImageIcon, Trash2 } from "lucide-react";
+import { Loader2, User, Building2, Mail, Image as ImageIcon, Camera } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -77,23 +77,48 @@ export default function PerfilPage() {
           <form onSubmit={onSubmit} className="p-6 space-y-6">
             <Field label="Foto" icon={<ImageIcon className={`w-4 h-4 ${FC.mut}`} />} hint="Aparece no menu do topo e no rodapé da barra lateral.">
               <div className="flex items-center gap-4">
-                <Avatar nome={displayNome} src={avatarUrl} size={56} />
-                <div className="flex items-center gap-2">
-                  <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onAvatarChange} className="hidden" />
-                  <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} disabled={uploadingAvatar}>
-                    {uploadingAvatar ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                    {avatarUrl ? "Trocar foto" : "Enviar foto"}
-                  </Button>
-                  {avatarUrl && (
+                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onAvatarChange} className="hidden" />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploadingAvatar}
+                  title="Alterar foto"
+                  className="group relative w-16 h-16 rounded-full shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-[#003083]/60 disabled:cursor-not-allowed"
+                >
+                  <Avatar nome={displayNome} src={avatarUrl} size={64} />
+                  <span
+                    className={`absolute inset-0 flex items-center justify-center rounded-full bg-black/45 transition-opacity ${
+                      uploadingAvatar ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    }`}
+                  >
+                    {uploadingAvatar ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Camera className="w-5 h-5 text-white" />}
+                  </span>
+                </button>
+                <div className="min-w-0">
+                  <div className="text-[13px]">
                     <button
                       type="button"
-                      onClick={onAvatarRemove}
+                      onClick={() => fileRef.current?.click()}
                       disabled={uploadingAvatar}
-                      className="inline-flex items-center gap-1 text-[13px] text-rose-600 hover:underline disabled:opacity-50"
+                      className="font-medium text-[#003083] dark:text-[#5b9bff] hover:underline disabled:opacity-50"
                     >
-                      <Trash2 className="w-3.5 h-3.5" /> Remover
+                      {avatarUrl ? "Trocar foto" : "Enviar foto"}
                     </button>
-                  )}
+                    {avatarUrl && (
+                      <>
+                        <span className={`mx-2 ${FC.mut}`}>·</span>
+                        <button
+                          type="button"
+                          onClick={onAvatarRemove}
+                          disabled={uploadingAvatar}
+                          className="text-rose-600 hover:underline disabled:opacity-50"
+                        >
+                          Remover
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <p className={`text-[12px] mt-1 ${FC.mut}`}>PNG, JPG ou WEBP · até 5MB</p>
                 </div>
               </div>
             </Field>
