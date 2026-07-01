@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Loader2, Zap, CheckCircle2, XCircle, Database, Pencil, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Loader2, Zap, CheckCircle2, XCircle, Database, Pencil } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SkeletonBar, iconBtn, Select } from "@/components/ds/fc";
@@ -55,7 +55,6 @@ export default function EmbeddingProvidersPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, TestResult>>({});
-  const [reindexing, setReindexing] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
   async function load() {
@@ -101,13 +100,14 @@ export default function EmbeddingProvidersPage() {
       return;
     }
     try {
+      let reindex: string | null = null;
       if (editingId) {
         const body: Record<string, any> = { default_model: model, dimensions: form.dimensions, base_url: form.base_url || null };
         if (form.api_key.trim()) body.api_key = form.api_key.trim();
-        await api.patch(`/embedding-providers/${editingId}`, body);
-        toast.success("Salvo ✓");
+        const { data } = await api.patch<{ reindex?: string | null }>(`/embedding-providers/${editingId}`, body);
+        reindex = data?.reindex || null;
       } else {
-        await api.post("/embedding-providers", {
+        const { data } = await api.post<{ reindex?: string | null }>("/embedding-providers", {
           provider: form.provider,
           api_key: form.api_key,
           default_model: model,
@@ -115,8 +115,14 @@ export default function EmbeddingProvidersPage() {
           base_url: form.base_url || null,
           tenant_id: null,
         });
-        toast.success("Provider cadastrado");
+        reindex = data?.reindex || null;
       }
+      toast.success(
+        reindex === "started"
+          ? "Salvo — reindexando sua base com o novo provider em segundo plano ✓"
+          : "Salvo ✓",
+        { duration: 5000 },
+      );
       setShowForm(false);
       setEditingId(null);
       setForm(emptyForm);
@@ -188,19 +194,6 @@ export default function EmbeddingProvidersPage() {
     }
   }
 
-  async function reindexAll() {
-    if (!confirm("Reindexar TODO o conhecimento + memória com o provider atual? Necessário ao trocar de provider. Pode levar um tempo.")) return;
-    setReindexing(true);
-    try {
-      const { data } = await api.post<{ knowledge_chunks: number; memory_facts: number; errors: number }>("/embedding-providers/reindex-all");
-      toast.success(`Reindexado: ${data.knowledge_chunks} chunks + ${data.memory_facts} memórias${data.errors ? ` (${data.errors} erros)` : ""}`);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Erro ao reindexar");
-    } finally {
-      setReindexing(false);
-    }
-  }
-
   const inputCls = `mt-1 w-full h-8 px-3 text-[13px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
 
   function Switch({ on, onClick, title }: { on: boolean; onClick: () => void; title?: string }) {
@@ -224,8 +217,8 @@ export default function EmbeddingProvidersPage() {
           subtitle={
             <>
               Provider que gera os <b>embeddings</b> do RAG e da memória — <b>independente da LLM</b>, com{" "}
-              <b>chave própria</b>. O ativo de menor ordem é o usado. Trocar de provider exige{" "}
-              <b>reindexar</b> (embeddings de providers diferentes não são compatíveis).
+              <b>chave própria</b>. O ativo de menor ordem é o usado. Ao trocar de provider, a base é{" "}
+              <b>re-embedada automaticamente</b> em segundo plano.
             </>
           }
         />
@@ -236,7 +229,7 @@ export default function EmbeddingProvidersPage() {
             <div className="text-[13px] leading-5">
               <p className={`font-medium ${FC.ink}`}>Dimensão da base = 768</p>
               <p className={`mt-0.5 ${FC.sub}`}>
-                A base vetorial espera <b>768 dimensões</b>. Escolha um modelo que gere 768 (Gemini, OpenAI text-embedding-3, Voyage, Jina, nomic-local todos conseguem). Ao <b>trocar de provider</b>, clique em <b>Reindexar tudo</b> — senão a busca do RAG para de achar.
+                A base vetorial espera <b>768 dimensões</b>. Escolha um modelo que gere 768 (Gemini, OpenAI text-embedding-3, Voyage, Jina, nomic-local todos conseguem). Ao <b>trocar de provider</b>, a base é <b>re-embedada sozinha</b> em segundo plano — você não precisa fazer nada.
               </p>
             </div>
           </div>
@@ -336,14 +329,9 @@ export default function EmbeddingProvidersPage() {
                 O de menor ordem <b>ligado</b> é o usado no RAG + memória · teste no <b>⚡</b>.
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Button variant="ghost" onClick={reindexAll} disabled={reindexing}>
-                {reindexing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Reindexar tudo
-              </Button>
-              <Button variant="primary" onClick={openNew}>
-                <Plus className="w-3.5 h-3.5" /> Novo provider
-              </Button>
-            </div>
+            <Button variant="primary" onClick={openNew} className="shrink-0">
+              <Plus className="w-3.5 h-3.5" /> Novo provider
+            </Button>
           </div>
 
           {loading && (

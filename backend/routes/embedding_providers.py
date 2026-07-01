@@ -5,19 +5,23 @@ Chave Fernet-encrypted at-rest. O motor (services/embeddings.py) usa o ativo de 
 priority (tenant sobre global). Trocar de provider ⇒ reindexar (POST /reindex-all).
 """
 
+import logging
 import time
+from collections import defaultdict
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
-from core.db import get_db
+from core.db import db_context, get_db
 from core.encryption import decrypt, encrypt
 from models import TaEmbeddingProvider
 from services import embeddings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/embedding-providers", tags=["embedding"])
 
@@ -59,6 +63,7 @@ class EmbeddingProviderOut(BaseModel):
     api_key_suffix: str | None = None
     created_at: datetime | None = None
     in_use: bool = False
+    reindex: str | None = None  # "started" quando salvar disparou reindex em background
 
     model_config = {"from_attributes": True}
 
@@ -126,9 +131,109 @@ async def list_providers(
     return items
 
 
+async def _run_reindex(tenant_id: int | None) -> dict:
+    """Re-embeda conhecimento + memória com o provider ATUAL (resolvido por tenant).
+
+    tenant_id = None → todos (config global). Abre sessão PRÓPRIA — seguro em
+    BackgroundTasks (a sessão do request já fechou). Reusa o texto salvo (chunk_text/fact)."""
+    out = {"knowledge_chunks": 0, "memory_facts": 0, "errors": 0}
+    BATCH = 50
+    try:
+        async with db_context() as db:
+            if tenant_id is None:
+                crows = (
+                    await db.execute(
+                        sql_text(
+                            "SELECT kc.id, kc.chunk_text, a.tenant_id FROM ta_knowledge_chunk kc "
+                            "JOIN ta_agent a ON a.id = kc.agent_id WHERE kc.chunk_text IS NOT NULL"
+                        )
+                    )
+                ).all()
+                mrows = (
+                    await db.execute(
+                        sql_text("SELECT id, fact, tenant_id FROM ta_contact_memory WHERE fact IS NOT NULL")
+                    )
+                ).all()
+            else:
+                crows = (
+                    await db.execute(
+                        sql_text(
+                            "SELECT kc.id, kc.chunk_text, a.tenant_id FROM ta_knowledge_chunk kc "
+                            "JOIN ta_agent a ON a.id = kc.agent_id "
+                            "WHERE a.tenant_id = :t AND kc.chunk_text IS NOT NULL"
+                        ),
+                        {"t": tenant_id},
+                    )
+                ).all()
+                mrows = (
+                    await db.execute(
+                        sql_text(
+                            "SELECT id, fact, tenant_id FROM ta_contact_memory "
+                            "WHERE tenant_id = :t AND fact IS NOT NULL"
+                        ),
+                        {"t": tenant_id},
+                    )
+                ).all()
+
+            by_chunk: dict[int | None, list] = defaultdict(list)
+            for cid, txt, tid in crows:
+                by_chunk[tid].append((cid, txt))
+            for tid, rows in by_chunk.items():
+                for i in range(0, len(rows), BATCH):
+                    b = rows[i : i + BATCH]
+                    try:
+                        vecs = await embeddings.embed(
+                            db, [t for _, t in b], tenant_id=tid, task_type="RETRIEVAL_DOCUMENT"
+                        )
+                    except Exception:
+                        out["errors"] += len(b)
+                        continue
+                    for (cid, _), vec in zip(b, vecs):
+                        if not vec:
+                            out["errors"] += 1
+                            continue
+                        lit = "[" + ",".join(str(round(v, 6)) for v in vec) + "]"
+                        await db.execute(
+                            sql_text("UPDATE ta_knowledge_chunk SET embedding = (:v)::vector WHERE id = :id"),
+                            {"v": lit, "id": cid},
+                        )
+                        out["knowledge_chunks"] += 1
+                    await db.commit()
+
+            by_mem: dict[int | None, list] = defaultdict(list)
+            for mid, fact, tid in mrows:
+                by_mem[tid].append((mid, fact))
+            for tid, rows in by_mem.items():
+                for i in range(0, len(rows), BATCH):
+                    b = rows[i : i + BATCH]
+                    try:
+                        vecs = await embeddings.embed(
+                            db, [f for _, f in b], tenant_id=tid, task_type="RETRIEVAL_DOCUMENT"
+                        )
+                    except Exception:
+                        out["errors"] += len(b)
+                        continue
+                    for (mid, _), vec in zip(b, vecs):
+                        if not vec:
+                            out["errors"] += 1
+                            continue
+                        lit = "[" + ",".join(str(round(v, 6)) for v in vec) + "]"
+                        await db.execute(
+                            sql_text("UPDATE ta_contact_memory SET embedding = (:v)::vector WHERE id = :id"),
+                            {"v": lit, "id": mid},
+                        )
+                        out["memory_facts"] += 1
+                    await db.commit()
+        logger.info("reindex ok tenant=%s -> %s", tenant_id, out)
+    except Exception:
+        logger.exception("reindex falhou tenant=%s", tenant_id)
+    return out
+
+
 @router.post("", response_model=EmbeddingProviderOut, status_code=201)
 async def create_provider(
     payload: EmbeddingProviderIn,
+    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -157,13 +262,18 @@ async def create_provider(
     db.add(item)
     await db.commit()
     await db.refresh(item)
-    return item
+    # Novo provider → re-embeda a base com ele em background (sem o usuário apertar botão)
+    background_tasks.add_task(_run_reindex, item.tenant_id)
+    out = EmbeddingProviderOut.model_validate(item)
+    out.reindex = "started"
+    return out
 
 
 @router.patch("/{provider_id}", response_model=EmbeddingProviderOut)
 async def update_provider(
     provider_id: int,
     payload: EmbeddingProviderPatch,
+    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -182,7 +292,14 @@ async def update_provider(
         setattr(item, k, v)
     await db.commit()
     await db.refresh(item)
-    return item
+    # Mudou algo que altera o embedding gerado / o provider ativo → re-embeda em background.
+    reindex = None
+    if any(k in data for k in ("provider", "default_model", "dimensions", "active", "priority")):
+        background_tasks.add_task(_run_reindex, item.tenant_id)
+        reindex = "started"
+    out = EmbeddingProviderOut.model_validate(item)
+    out.reindex = reindex
+    return out
 
 
 @router.delete("/{provider_id}", status_code=204)
