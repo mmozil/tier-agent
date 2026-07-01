@@ -299,7 +299,7 @@ export default function LlmProvidersPage() {
   // global, tenant_id=null, então não dispara o banner).
   const isAdminView = providers.some((p) => p.tenant_id === null);
   const tenantProviders = providers.filter((p) => p.tenant_id !== null);
-  const agentSilent = !isAdminView && tenantProviders.length > 0 && !tenantProviders.some((p) => p.active);
+  const agentSilent = !loading && !isAdminView && !tenantProviders.some((p) => p.active);
 
   return (
     <div className="-mx-8 pb-10">
@@ -322,11 +322,10 @@ export default function LlmProvidersPage() {
             <div className="flex items-start gap-2.5 px-4 py-3">
               <span className="mt-[5px] w-2 h-2 rounded-full bg-amber-500 shrink-0" />
               <div className="text-[13px] leading-5">
-                <p className={`font-medium ${FC.ink}`}>Seu agente está parado</p>
+                <p className={`font-medium ${FC.ink}`}>Seu agente está sem LLM funcionando</p>
                 <p className={`mt-0.5 ${FC.sub}`}>
-                  Você tem LLM(s) configurada(s), mas todas estão <b>desligadas</b>. Ligue ao menos uma
-                  para o agente voltar a responder — enquanto as suas estiverem off, ele <b>não</b> usa o
-                  modelo padrão da plataforma.
+                  Nenhuma LLM ativa — o agente <b>não responde</b>. Cadastre e ligue uma LLM aqui pra
+                  ativá-lo. Não há modelo padrão da plataforma como fallback.
                 </p>
               </div>
             </div>

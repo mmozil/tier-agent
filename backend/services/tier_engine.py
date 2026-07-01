@@ -152,22 +152,20 @@ def register_tool(schema: dict, handler: Callable[[dict], Awaitable[str]]) -> No
 
 
 class ProvidersAllDisabled(RuntimeError):
-    """O tenant TEM LLM(s) configurada(s) mas TODAS estão desativadas.
+    """O tenant não tem NENHUMA LLM ativa (nunca configurou OU todas desligadas).
 
-    Decisão de produto (jun/2026): desligar = desligar. Quando o tenant tem provider
-    próprio e escolhe desativá-lo, o agente NÃO cai no fallback global da plataforma —
-    fica em silêncio até religar/configurar uma LLM. O fallback global só vale pra quem
-    nunca configurou nenhuma LLM (tenant sem nenhum registro).
+    Decisão de produto (jul/2026): SEM fallback global da plataforma. Sem LLM ativa do
+    próprio tenant, o agente fica em silêncio (não responde) até configurar/ligar uma —
+    o painel avisa "sem LLM funcionando". (Antes caía no MiniMax global; removido.)
     """
 
 
 async def _load_provider(db: AsyncSession, tenant_id: int) -> TaLlmProvider:
-    """Config de LLM do tenant.
+    """Config de LLM do tenant — SÓ o provider ATIVO do próprio tenant.
 
-    1. Provider ativo do tenant (mais recente quando há duplicatas).
-    2. Se o tenant TEM provider(s) mas todas off → `ProvidersAllDisabled` (respeita o
-       desligamento; NÃO cai na global).
-    3. Só cai no default global (tenant_id NULL) quando o tenant NUNCA configurou nenhuma.
+    SEM fallback global da plataforma (jul/2026). Se o tenant não tem nenhuma LLM ativa
+    (nunca configurou OU configurou e desligou), levanta `ProvidersAllDisabled` → o agente
+    fica em silêncio e o painel avisa "sem LLM funcionando".
     """
     row = (
         await db.execute(
@@ -179,28 +177,9 @@ async def _load_provider(db: AsyncSession, tenant_id: int) -> TaLlmProvider:
     ).scalars().first()
     if row is not None:
         return row
-
-    # O tenant tem ALGUMA LLM configurada (mesmo desativada)? Se sim, respeita o off.
-    has_any = (
-        await db.execute(select(TaLlmProvider.id).where(TaLlmProvider.tenant_id == tenant_id).limit(1))
-    ).scalars().first()
-    if has_any is not None:
-        raise ProvidersAllDisabled(
-            f"Tenant {tenant_id} tem LLM(s) configurada(s) mas todas desativadas — agente em silêncio"
-        )
-
-    # Tenant nunca configurou nenhuma → fallback global da plataforma.
-    row = (
-        await db.execute(
-            select(TaLlmProvider)
-            .where(TaLlmProvider.tenant_id.is_(None), TaLlmProvider.active.is_(True))
-            .order_by(TaLlmProvider.id.desc())
-            .limit(1)
-        )
-    ).scalars().first()
-    if row is None:
-        raise RuntimeError(f"Nenhum TaLlmProvider configurado pra tenant {tenant_id} (nem global)")
-    return row
+    raise ProvidersAllDisabled(
+        f"Tenant {tenant_id} sem LLM ativa — configure/ligue uma LLM pra o agente responder"
+    )
 
 
 def _base_url(p: TaLlmProvider) -> str:
