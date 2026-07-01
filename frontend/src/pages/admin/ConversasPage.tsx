@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, Search, Zap,
-  Paperclip, ExternalLink, ArrowUpRight, Copy,
+  Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -389,6 +389,8 @@ export default function ConversasPage() {
   const [navFilter, setNavFilter] = useState<NavFilter>({ type: "all" });
   const [search, setSearch] = useState("");
   const [showContact, setShowContact] = useState(true);
+  const [teach, setTeach] = useState<{ question: string; answer: string; messageId: number } | null>(null);
+  const [teaching, setTeaching] = useState(false);
 
   async function deleteConv(id: number) {
     if (!confirm("Excluir esta conversa e todo o histórico? Não dá pra desfazer.")) return;
@@ -618,6 +620,48 @@ export default function ConversasPage() {
       load();
     } catch {
       toast.error("Erro ao aplicar macro");
+    }
+  }
+
+  // Abre o modal "Ensinar" pré-preenchido: pergunta = última msg do cliente antes
+  // desta resposta da IA; resposta = a própria resposta (editável antes de salvar).
+  function openTeach(m: Message) {
+    const idx = msgs.findIndex((x) => x.id === m.id);
+    let question = "";
+    for (let i = idx - 1; i >= 0; i--) {
+      if (msgs[i].role === "user" && msgs[i].content) {
+        question = msgs[i].content || "";
+        break;
+      }
+    }
+    setTeach({ question, answer: m.content || "", messageId: m.id });
+  }
+
+  // Aprendizado supervisionado: a resposta revisada vira conhecimento indexado (RAG)
+  // que o agente passa a consultar. Reusa POST /knowledge/from-feedback.
+  async function saveTeach() {
+    if (!teach || !openConv) return;
+    const answer = teach.answer.trim();
+    if (!answer) {
+      toast.error("A resposta não pode ficar vazia");
+      return;
+    }
+    setTeaching(true);
+    try {
+      await api.post("/knowledge/from-feedback", {
+        agent_id: openConv.agent_id,
+        question: teach.question.trim() || null,
+        answer,
+        conversation_id: openConv.id,
+        source_message_id: teach.messageId,
+      });
+      toast.success("Aprendido — o agente passa a usar isso nas próximas respostas.");
+      setTeach(null);
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Falha ao ensinar");
+    } finally {
+      setTeaching(false);
     }
   }
 
@@ -1078,20 +1122,29 @@ export default function ConversasPage() {
                       {isAgent ? <><User className="w-2.5 h-2.5" /> Você</> : isUser ? null : <><Bot className="w-2.5 h-2.5" /> IA</>}
                       {fmtTime(m.created_at) && <span>{isUser ? "" : "· "}{fmtTime(m.created_at)}</span>}
                       {!isUser && !isAgent && (
-                        <button
-                          onClick={async () => {
-                            try {
-                              const { data } = await api.get(`/conversations/${openConv?.id}/debug/${m.id}`);
-                              setDebugMsg(data);
-                            } catch {
-                              toast.error("Falha ao carregar debug");
-                            }
-                          }}
-                          className="hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors"
-                          title="Ver o prompt exato enviado ao LLM"
-                        >
-                          🔍
-                        </button>
+                        <>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const { data } = await api.get(`/conversations/${openConv?.id}/debug/${m.id}`);
+                                setDebugMsg(data);
+                              } catch {
+                                toast.error("Falha ao carregar debug");
+                              }
+                            }}
+                            className="hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors"
+                            title="Ver o prompt exato enviado ao LLM"
+                          >
+                            🔍
+                          </button>
+                          <button
+                            onClick={() => openTeach(m)}
+                            className="inline-flex items-center gap-0.5 hover:text-[#0a8f5a] dark:hover:text-[#3ec17f] transition-colors"
+                            title="Ensinar o agente com esta resposta (vira conhecimento)"
+                          >
+                            <GraduationCap className="w-3 h-3" /> Ensinar
+                          </button>
+                        </>
                       )}
                     </span>
                   </div>
@@ -1121,6 +1174,51 @@ export default function ConversasPage() {
                         <pre className={`mt-1 p-2 rounded-lg bg-[#F1F3F5] dark:bg-[#16191f] text-[11px] leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto ${FC.sub}`}>{body || "(vazio / não gravado)"}</pre>
                       </details>
                     ))}
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )}
+
+            {teach && createPortal(
+              <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => !teaching && setTeach(null)}>
+                <div className={`w-full max-w-[560px] max-h-[85vh] overflow-hidden rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair} flex flex-col`} onClick={(e) => e.stopPropagation()}>
+                  <div className={`flex items-center justify-between px-4 h-12 border-b ${FC.hair} shrink-0`}>
+                    <h3 className={`text-[14px] font-medium ${FC.ink} inline-flex items-center gap-2`}>
+                      <GraduationCap className="w-4 h-4 text-[#0a8f5a]" /> Ensinar o agente
+                    </h3>
+                    <button onClick={() => !teaching && setTeach(null)} className={iconBtn}><X className="w-4 h-4" /></button>
+                  </div>
+                  <div className="overflow-y-auto sidebar-scroll p-4 space-y-3">
+                    <p className={`text-[12px] ${FC.sub}`}>
+                      Revise ou corrija a resposta. Ela vira <b className={FC.ink}>conhecimento indexado</b> que o agente passa a consultar nas próximas conversas (RAG). Dá pra editar ou remover depois em <b className={FC.ink}>Knowledge</b>.
+                    </p>
+                    <div>
+                      <label className={`block text-[12px] ${FC.sub} mb-1`}>Pergunta do cliente <span className={FC.mut}>(opcional)</span></label>
+                      <textarea
+                        value={teach.question}
+                        onChange={(e) => setTeach((p) => (p ? { ...p, question: e.target.value } : p))}
+                        rows={2}
+                        placeholder="Ex: Vocês atendem no domingo?"
+                        className={`block w-full resize-y rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] px-3 py-2 text-[13px] leading-relaxed outline-none focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] ${FC.ink}`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-[12px] ${FC.sub} mb-1`}>Resposta canônica <span className="text-[#E5484D]">*</span></label>
+                      <textarea
+                        value={teach.answer}
+                        onChange={(e) => setTeach((p) => (p ? { ...p, answer: e.target.value } : p))}
+                        rows={5}
+                        placeholder="A resposta correta que o agente deve saber…"
+                        className={`block w-full resize-y rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] px-3 py-2 text-[13px] leading-relaxed outline-none focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] ${FC.ink}`}
+                      />
+                    </div>
+                  </div>
+                  <div className={`flex items-center justify-end gap-2 px-4 py-3 border-t ${FC.hair} shrink-0`}>
+                    <Button variant="secondary" size="sm" onClick={() => setTeach(null)} disabled={teaching}>Cancelar</Button>
+                    <button onClick={saveTeach} disabled={teaching || !teach.answer.trim()} className={`${btnPrimary} disabled:opacity-40 disabled:pointer-events-none`}>
+                      <GraduationCap className="w-3.5 h-3.5" /> {teaching ? "Ensinando…" : "Ensinar agente"}
+                    </button>
                   </div>
                 </div>
               </div>,

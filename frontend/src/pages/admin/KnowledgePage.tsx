@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   Upload, FileText, FileSpreadsheet, FileType, Trash2, FolderOpen,
-  ChevronDown, RefreshCw, Eye, Bot, X, Layers,
+  ChevronDown, RefreshCw, Eye, Bot, X, Layers, GraduationCap,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -37,6 +37,7 @@ const KIND_META: Record<string, { icon: typeof FileText; color: string; label: s
   sheet: { icon: FileSpreadsheet, color: "text-[#0a8f5a]", label: "Planilha" },
   text: { icon: FileType, color: "text-[#262626]/40 dark:text-[#8b93a0]", label: "Texto" },
   manual: { icon: FileType, color: "text-[#003083] dark:text-[#5b9bff]", label: "Manual" },
+  feedback: { icon: GraduationCap, color: "text-[#0a8f5a] dark:text-[#3ec17f]", label: "Aprendido" },
   url: { icon: FileType, color: "text-[#003083] dark:text-[#5b9bff]", label: "URL" },
   unknown: { icon: FileType, color: "text-[#262626]/40 dark:text-[#8b93a0]", label: "—" },
 };

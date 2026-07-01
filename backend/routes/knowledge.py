@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -171,6 +172,97 @@ async def upload(
         "status": record.status,
         "chunks_count": record.chunks_count,
         "skill_md_path": record.skill_md_path,
+    }
+
+
+class FeedbackKnowledgeIn(BaseModel):
+    agent_id: int
+    answer: str
+    question: str | None = None
+    conversation_id: int | None = None
+    source_message_id: int | None = None
+    title: str | None = None
+
+
+@router.post("/from-feedback")
+async def create_from_feedback(
+    body: FeedbackKnowledgeIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Aprendizado supervisionado: transforma uma resposta boa/corrigida do inbox
+    em conhecimento indexado (RAG). O atendente revisa/edita antes de salvar, então
+    o humano fica no controle do que o agente "aprende". Reusa rag_engine.index_knowledge.
+    """
+    agent = await _ensure_agent_owned(db, body.agent_id, user)
+    answer = (body.answer or "").strip()
+    if not answer:
+        raise HTTPException(422, "A resposta não pode ficar vazia")
+    question = (body.question or "").strip()
+
+    # Título curto derivado da pergunta (ou da resposta)
+    base_title = question or answer
+    title = (body.title or base_title).strip().replace("\n", " ")[:120] or "Conhecimento do atendimento"
+
+    # Markdown FAQ — pergunta + resposta canônica (formato bom pra chunk/retrieve)
+    if question:
+        md = f"# {title}\n\n**Pergunta:** {question}\n\n**Resposta:** {answer}\n"
+    else:
+        md = f"# {title}\n\n{answer}\n"
+
+    # Proveniência (auditoria): de qual conversa/mensagem veio
+    source = None
+    if body.conversation_id:
+        source = f"conversa:{body.conversation_id}"
+        if body.source_message_id:
+            source += f"#msg{body.source_message_id}"
+
+    record = TaKnowledge(
+        agent_id=agent.id,
+        kind="feedback",
+        title=title,
+        status="indexing",
+        source_url=source,
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+
+    try:
+        from services import rag_engine
+
+        stats = await rag_engine.index_knowledge(db, record.id, full_text=md)
+        if stats.get("error"):
+            record.status = "failed"
+            await db.commit()
+            raise HTTPException(500, f"Falha ao indexar: {stats['error']}")
+        record.chunks_count = int(stats.get("chunks_count", 0))
+        record.status = "ready"
+        record.indexed_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(record)
+    except HTTPException:
+        raise
+    except Exception:
+        record.status = "failed"
+        await db.commit()
+        logger.exception("from-feedback index falhou knowledge=%s", record.id)
+        raise HTTPException(500, "Falha ao indexar o conhecimento")
+
+    # Invalida cache de FAQ — respostas idênticas passam a considerar o novo conhecimento
+    try:
+        from services import llm_cache
+
+        await llm_cache.invalidate(agent.tenant_id, agent.id)
+    except Exception:
+        pass
+
+    return {
+        "id": record.id,
+        "title": record.title,
+        "kind": record.kind,
+        "status": record.status,
+        "chunks_count": record.chunks_count,
     }
 
 
