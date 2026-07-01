@@ -91,6 +91,10 @@ export default function CanaisPage() {
   const [provisioning, setProvisioning] = useState(false);
   const [qrModal, setQrModal] = useState<{ connId: number; qr: string; status: string } | null>(null);
   const [detail, setDetail] = useState<Connector | null>(null);
+  const [showSlack, setShowSlack] = useState(false);
+  const [slackForm, setSlackForm] = useState({ bot_token: "", signing_secret: "" });
+  const [slackConnecting, setSlackConnecting] = useState(false);
+  const [slackWebhook, setSlackWebhook] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -179,7 +183,29 @@ export default function CanaisPage() {
     }
   }
 
+  async function connectSlack() {
+    if (!selectedAgent) { toast.error("Escolha um agente"); return; }
+    if (!slackForm.bot_token.trim()) { toast.error("Cole o Bot Token (xoxb-...)"); return; }
+    setSlackConnecting(true);
+    try {
+      const { data } = await api.post<{ id: number; webhook_url?: string }>("/connectors", {
+        agent_id: selectedAgent,
+        kind: "slack",
+        config: { bot_token: slackForm.bot_token.trim(), signing_secret: slackForm.signing_secret.trim() },
+      });
+      setSlackWebhook(data.webhook_url || null);
+      toast.success("Slack conectado — configure o webhook abaixo.");
+      setSlackForm({ bot_token: "", signing_secret: "" });
+      load();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao conectar o Slack");
+    } finally {
+      setSlackConnecting(false);
+    }
+  }
+
   const agentName = (id: number) => agents.find((a) => a.id === id)?.nome || `Agente #${id}`;
+  const inputCls = `w-full h-9 px-3 text-[14px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
 
   return (
     <div className="-mx-8 pb-10">
@@ -222,6 +248,19 @@ export default function CanaisPage() {
               >
                 <Plus className="w-4 h-4" /> Conectar WhatsApp
               </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (!selectedAgent) {
+                    toast.error("Crie um agente primeiro para conectar um canal.");
+                    return;
+                  }
+                  setSlackWebhook(null);
+                  setShowSlack(true);
+                }}
+              >
+                <Plus className="w-4 h-4" /> Conectar Slack
+              </Button>
             </div>
           }
         />
@@ -246,6 +285,47 @@ export default function CanaisPage() {
                 <Button variant="ghost" onClick={() => setShowProvision(false)}>Cancelar</Button>
                 <Button variant="primary" onClick={provisionWhatsApp} disabled={provisioning}>{provisioning ? "Criando..." : "Criar e conectar"}</Button>
               </div>
+            </div>
+          </Row>
+        )}
+
+        {showSlack && (
+          <Row>
+            <div className="p-6 space-y-4 max-w-[620px]">
+              <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar Slack</h3>
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
+                <Select value={selectedAgent} onChange={(v) => setSelectedAgent(v)} options={agents.map((a) => ({ value: a.id, label: a.nome }))} placeholder="Escolha um agente" />
+              </label>
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Bot Token</span>
+                <input type="password" value={slackForm.bot_token} onChange={(e) => setSlackForm({ ...slackForm, bot_token: e.target.value })} placeholder="xoxb-..." className={`${inputCls} font-mono`} />
+              </label>
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Signing Secret <span className={FC.mut}>(recomendado)</span></span>
+                <input type="password" value={slackForm.signing_secret} onChange={(e) => setSlackForm({ ...slackForm, signing_secret: e.target.value })} placeholder="signing secret do Slack App" className={`${inputCls} font-mono`} />
+              </label>
+              <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
+                Em <b>api.slack.com/apps</b> crie um app, adicione os <b>Bot Token Scopes</b> (chat:write, im:history, channels:history), instale no workspace e copie o <b>Bot User OAuth Token</b> (xoxb-) + o <b>Signing Secret</b>.
+              </p>
+              {slackWebhook ? (
+                <div className={`rounded-[10px] border ${FC.hair} p-3.5 bg-[#0a8f5a]/[0.04]`}>
+                  <p className={`text-[13px] font-medium ${FC.ink}`}>Conectado ✓ — último passo</p>
+                  <p className={`text-[12px] mt-1 ${FC.sub}`}>No Slack App → <b>Event Subscriptions</b> → ative, cole este <b>Request URL</b> e assine <b>message.channels</b> + <b>message.im</b>:</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <code className={`flex-1 text-[11.5px] font-mono break-all px-2 py-1.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] ${FC.ink}`}>{slackWebhook}</code>
+                    <Button variant="ghost" size="sm" onClick={() => { navigator.clipboard?.writeText(slackWebhook); toast.success("Copiado"); }}>Copiar</Button>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <Button variant="primary" onClick={() => { setShowSlack(false); setSlackWebhook(null); }}>Concluir</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setShowSlack(false)}>Cancelar</Button>
+                  <Button variant="primary" onClick={connectSlack} disabled={slackConnecting}>{slackConnecting ? "Validando..." : "Conectar"}</Button>
+                </div>
+              )}
             </div>
           </Row>
         )}

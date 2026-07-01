@@ -65,6 +65,8 @@ def _summary(kind: str, cfg: dict) -> dict:
         return {"bot_username": cfg.get("bot_username") or "—", "tipo": "Telegram"}
     if kind == "email":
         return {"email": cfg.get("email") or "—", "tipo": "E-mail"}
+    if kind == "slack":
+        return {"tipo": "Slack", "team": cfg.get("team") or cfg.get("team_id") or "—"}
     return {}
 
 
@@ -111,6 +113,63 @@ async def list_connectors(
         )
     result = await db.execute(stmt.order_by(TaConnector.id.desc()))
     return [_serialize(c) for c in result.scalars().all()]
+
+
+# Canais "traga sua chave" conectáveis pelo form genérico (token → valida → cria).
+_TOKEN_CHANNELS = {"slack", "telegram"}
+
+
+class ConnectorCreateIn(BaseModel):
+    agent_id: int
+    kind: str
+    config: dict
+
+
+@router.post("", status_code=201)
+async def create_connector(
+    payload: ConnectorCreateIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cria um conector 'traga sua chave' (Slack, Telegram) a partir de kind + config.
+
+    Valida as credenciais no adapter ANTES de salvar. Retorna o conector + a URL de
+    webhook que o usuário configura no app do canal."""
+    agent = await _ensure_agent_owned(db, payload.agent_id, user)
+    kind = (payload.kind or "").strip().lower()
+    if kind not in _TOKEN_CHANNELS:
+        raise HTTPException(400, f"Canal não suportado por este fluxo. Use: {sorted(_TOKEN_CHANNELS)}")
+
+    from services.connectors import registry
+    from services.connectors.base import ConnectorConfig
+
+    try:
+        impl = registry.get(kind)
+        ok = await impl.validate_config(ConnectorConfig(data=payload.config or {}))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Falha ao validar credenciais: {e}")
+    if not ok:
+        raise HTTPException(400, "Credenciais inválidas — confira o token.")
+
+    conn = TaConnector(
+        agent_id=agent.id,
+        kind=kind,
+        config_json_enc=encrypt(json.dumps(payload.config or {})),
+        enabled=True,
+    )
+    db.add(conn)
+    await db.commit()
+    await db.refresh(conn)
+
+    out = _serialize(conn)
+    base = "https://api-agent.tier.finance/api/v1/webhooks"
+    if kind == "slack":
+        out["webhook_url"] = f"{base}/slack/{conn.id}"
+    elif kind == "telegram":
+        token = (payload.config or {}).get("bot_token") or ""
+        bot_id = token.split(":")[0] if ":" in token else ""
+        out["webhook_url"] = f"{base}/telegram/{bot_id}" if bot_id else None
+    return out
 
 
 class WhatsAppProvisionIn(BaseModel):

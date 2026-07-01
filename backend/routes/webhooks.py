@@ -614,6 +614,88 @@ async def telegram_webhook(
 
 
 # ============================================================
+# Slack Events API webhook inbound
+# ============================================================
+@router.post("/slack/{connector_id}")
+async def slack_webhook(
+    connector_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Recebe eventos do Slack (Events API).
+
+    Cliente aponta o Request URL do Slack App (Event Subscriptions) pra
+    /webhooks/slack/{connector_id}. Responde o handshake `url_verification` e
+    processa eventos `message` (ignora bots/subtypes)."""
+    raw = await request.body()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        raise HTTPException(400, "JSON inválido")
+
+    # Handshake de verificação da URL (setup do Slack App)
+    if data.get("type") == "url_verification":
+        return {"challenge": data.get("challenge")}
+
+    from core.encryption import decrypt
+    from models import TaConnector
+
+    conn = await db.get(TaConnector, connector_id)
+    if not conn or conn.kind != "slack" or not conn.enabled:
+        return {"status": "no_connector"}
+    try:
+        cfg = json.loads(decrypt(conn.config_json_enc))
+    except Exception:
+        cfg = {}
+
+    # Verifica assinatura HMAC-SHA256 (se signing_secret configurado)
+    signing = cfg.get("signing_secret")
+    if signing:
+        import hashlib
+        import hmac
+        import time as _time
+
+        ts = request.headers.get("X-Slack-Request-Timestamp", "")
+        sig = request.headers.get("X-Slack-Signature", "")
+        try:
+            if abs(_time.time() - int(ts)) > 60 * 5:
+                return {"status": "stale"}
+        except (ValueError, TypeError):
+            return {"status": "bad_timestamp"}
+        base = f"v0:{ts}:{raw.decode('utf-8', 'ignore')}"
+        expected = "v0=" + hmac.new(signing.encode(), base.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return {"status": "bad_signature"}
+
+    event = data.get("event") or {}
+    if event.get("type") != "message" or event.get("bot_id") or event.get("subtype"):
+        return {"status": "ignored"}
+
+    channel = str(event.get("channel") or "")
+    text_content = (event.get("text") or "").strip()
+    if not channel or not text_content:
+        return {"status": "ignored", "reason": "empty"}
+
+    event_id = str(data.get("event_id") or event.get("event_ts") or "")
+    if event_id and await _record_idempotent(db, f"slack:{connector_id}", event_id, data):
+        return {"status": "duplicate"}
+
+    from services import agent_runtime
+
+    result = await agent_runtime.handle_inbound_message(
+        db,
+        connector_kind="slack",
+        instance_id=str(connector_id),
+        external_chat_id=channel,
+        sender_name=event.get("user"),
+        text_content=text_content,
+        attachments=[],
+    )
+    logger.info("webhook slack processed conn=%s channel=%s status=%s", connector_id, channel, result.get("status"))
+    return result
+
+
+# ============================================================
 # Instagram DM inbound — Meta Graph API webhook
 # ============================================================
 @router.get("/instagram/{ig_user_id}")
