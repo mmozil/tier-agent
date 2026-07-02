@@ -102,6 +102,11 @@ export default function AdminLayout() {
   // Modo embed (?embed=1): o Tier Empresas embute o inbox num iframe — esconde
   // a casca do Agent (sidebar + topbar) e mostra só o conteúdo. "Um vidro só".
   const embed = new URLSearchParams(location.search).get("embed") === "1";
+  // bg=RRGGBB (só hex): a página que embute (ex: Hovio Pet creme) manda a cor de
+  // fundo do embed. Pintamos SÓLIDO (não dá pra confiar em iframe transparente
+  // mostrar o fundo do pai — o iframe renderiza o próprio fundo). Sem param = branco.
+  const _bgParam = new URLSearchParams(location.search).get("bg");
+  const embedBg = _bgParam && /^[0-9a-fA-F]{6}$/.test(_bgParam) ? `#${_bgParam}` : "#ffffff";
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("tier-admin-collapsed") === "1");
   // Conversas é colapsável (chevron) — quando fechado, esconde a sub-nav do inbox
   // (filas/canais/etiquetas/times) que o ConversasPage injeta no slot abaixo.
@@ -112,12 +117,15 @@ export default function AdminLayout() {
   // (ex: creme do Hovio Pet / branco do Tier Empresas). Restaura ao desmontar.
   useEffect(() => {
     if (!embed) return;
-    const prev = document.body.style.background;
-    document.body.style.background = "transparent";
+    const prevBody = document.body.style.background;
+    const prevHtml = document.documentElement.style.background;
+    document.body.style.background = embedBg;
+    document.documentElement.style.background = embedBg;
     return () => {
-      document.body.style.background = prev;
+      document.body.style.background = prevBody;
+      document.documentElement.style.background = prevHtml;
     };
-  }, [embed]);
+  }, [embed, embedBg]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -193,8 +201,8 @@ export default function AdminLayout() {
   if (embed) {
     return (
       <div
-        className="min-h-screen bg-transparent px-8 pt-6 pb-8"
-        style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
+        className="min-h-screen px-8 pt-6 pb-8"
+        style={{ background: embedBg, fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         <ErrorBoundary key={location.pathname}>
           <Outlet />
