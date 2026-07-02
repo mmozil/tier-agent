@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowUpRight, BookOpen, ChevronDown, HelpCircle, PanelLeftClose, PanelLeftOpen, Search, Settings } from "lucide-react";
@@ -107,6 +107,18 @@ export default function AdminLayout() {
   // (filas/canais/etiquetas/times) que o ConversasPage injeta no slot abaixo.
   const [convNavOpen, setConvNavOpen] = useState(() => localStorage.getItem("ta-convnav") !== "0");
 
+  // No embed, o body do Agent tem bg azul (bg-tier-bg-page = #F0F4FF) que vaza nas
+  // margens do inbox. Deixa transparente pra o fundo da página que embute aparecer
+  // (ex: creme do Hovio Pet / branco do Tier Empresas). Restaura ao desmontar.
+  useEffect(() => {
+    if (!embed) return;
+    const prev = document.body.style.background;
+    document.body.style.background = "transparent";
+    return () => {
+      document.body.style.background = prev;
+    };
+  }, [embed]);
+
   function toggleCollapsed() {
     setCollapsed((prev) => {
       const next = !prev;
@@ -181,7 +193,7 @@ export default function AdminLayout() {
   if (embed) {
     return (
       <div
-        className="min-h-screen bg-[#F9F9F9] dark:bg-[#0c0e12] px-8 pt-6 pb-8"
+        className="min-h-screen bg-transparent px-8 pt-6 pb-8"
         style={{ fontFamily: SIDEBAR_FONT, WebkitFontSmoothing: "antialiased" }}
       >
         <ErrorBoundary key={location.pathname}>
