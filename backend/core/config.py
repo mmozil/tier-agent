@@ -91,6 +91,16 @@ class Settings(BaseSettings):
     # Vazio = integração desligada (endpoints respondem 503). Setar nos 2 lados (Coolify).
     tier_erp_integration_secret: str = ""
 
+    # Agent → ERP: base da API do ERP + flag de auto-qualificação de lead.
+    # "Enviar para CRM" (botão) e a auto-qualificação (Fase 2) chamam
+    # POST /api/tier-empresas/vendas/crm/oportunidades/from-conversa no ERP,
+    # autenticado pelo MESMO tier_erp_integration_secret (X-Tier-Integration-Secret).
+    tier_erp_api_url: str = "https://api.tier.finance"
+    # Fase 2 — quando um lead novo é capturado, cria a oportunidade no CRM do ERP
+    # automaticamente. DORMENTE por padrão (conservador: não floodar o CRM). Ligar
+    # por ambiente via env TIER_ERP_AUTO_CRM=1. O botão manual (Fase 1) não depende disto.
+    tier_erp_auto_crm: bool = False
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"

@@ -142,4 +142,27 @@ async def maybe_capture_lead(
     except Exception:
         logger.exception("team_alert no lead falhou tenant=%s", tenant_id)
 
+    # ── Fase 2 — auto-qualificação (DORMENTE por padrão) ──────────────────────
+    # Lead NOVO capturado (telefone/intenção) → espelha como oportunidade no CRM do
+    # ERP (Tier Empresas). Conservador: só chega aqui 1x por conversa (dedup acima)
+    # e só age se TIER_ERP_AUTO_CRM=1. Idempotente: o ERP dedup por conversa
+    # (mesma conversa_externa_id do botão manual → 1 oportunidade só). Best-effort.
+    try:
+        from core.config import get_settings
+
+        if get_settings().tier_erp_auto_crm and conversation_id is not None:
+            from services import erp_crm_client
+
+            if erp_crm_client.integracao_ativa():
+                await erp_crm_client.enviar_conversa_para_crm(
+                    agent_tenant_id=tenant_id,
+                    conversa_externa_id=str(conversation_id),
+                    contato_nome=sender_name,
+                    telefone=contato_tel,
+                    canal="whatsapp",
+                    resumo=(user_text or "")[:300],
+                )
+    except Exception:
+        logger.exception("auto-CRM (fase 2) falhou tenant=%s — ignorando", tenant_id)
+
     return True

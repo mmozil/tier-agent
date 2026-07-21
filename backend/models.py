@@ -289,6 +289,9 @@ class TaConversation(Base):
     # prioridade: none | low | medium | high | urgent (runtime DDL)
     team_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # FK lógica pra ta_team.id (Time atribuído)
+    crm_opportunity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # "Enviar para CRM": id da oportunidade criada no ERP (Tier Empresas) a partir
+    # desta conversa. Marcador "já enviado" (idempotente). Runtime DDL em main.py.
 
 
 class TaMessageLog(Base):

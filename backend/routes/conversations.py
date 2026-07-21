@@ -43,6 +43,7 @@ class ConversationOut(BaseModel):
     snoozed_until: datetime | None = None
     priority: str = "none"
     team_id: int | None = None
+    crm_opportunity_id: int | None = None  # "Enviar para CRM": op criada no ERP (marcador "já enviado")
 
     model_config = {"from_attributes": True}
 
@@ -181,6 +182,7 @@ async def list_conversations(
                 snoozed_until=c.snoozed_until,
                 priority=c.priority,
                 team_id=c.team_id,
+                crm_opportunity_id=c.crm_opportunity_id,
             )
         )
     return out
@@ -229,9 +231,74 @@ async def conversation_detail(
             snoozed_until=conv.snoozed_until,
             priority=conv.priority,
             team_id=conv.team_id,
+            crm_opportunity_id=conv.crm_opportunity_id,
         ).model_dump(),
         "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
     }
+
+
+class EnviarCrmResponse(BaseModel):
+    ok: bool
+    oportunidade_id: int | None = None
+    ja_existia: bool = False
+
+
+@router.post("/{conversation_id}/enviar-crm", response_model=EnviarCrmResponse)
+async def enviar_para_crm(
+    conversation_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cria (ou reusa) uma oportunidade no CRM do Tier Empresas a partir desta conversa.
+
+    Server-to-server: o backend do Agent chama o ERP com o shared secret de
+    federação (o token SSO do inbox é do próprio Agent e não vale no ERP).
+    Idempotente por conversa — o ERP deduplica por conversa_externa_id, então
+    clicar 2x (ou botão + auto-qualificação) resulta numa oportunidade só.
+    """
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+
+    conv = await db.get(TaConversation, conversation_id)
+    if not conv:
+        raise HTTPException(404, "Conversa não encontrada")
+    agent_ids = await _tenant_agent_ids(db, user.tenant_id)
+    if conv.agent_id not in agent_ids:
+        raise HTTPException(403, "Conversa de outro tenant")
+
+    from services import erp_crm_client
+
+    if not erp_crm_client.integracao_ativa():
+        raise HTTPException(503, "Integração com o CRM (Tier Empresas) não está configurada.")
+
+    # Resumo = última mensagem com texto (preview pro card do CRM).
+    last = (
+        await db.execute(
+            select(TaMessageLog.content)
+            .where(TaMessageLog.conversation_id == conversation_id, TaMessageLog.content.isnot(None))
+            .order_by(TaMessageLog.id.desc())
+            .limit(1)
+        )
+    ).first()
+    resumo = last[0][:300] if last and last[0] else None
+
+    try:
+        res = await erp_crm_client.enviar_conversa_para_crm(
+            agent_tenant_id=user.tenant_id,
+            conversa_externa_id=str(conv.id),
+            contato_nome=conv.contact_name,
+            telefone=conv.external_id,  # o ERP normaliza (tira @s.whatsapp.net / máscara)
+            canal=conv.connector_kind,
+            resumo=resumo,
+        )
+    except erp_crm_client.ErpCrmError as e:
+        raise HTTPException(502, str(e)) from e
+
+    op_id = res.get("oportunidade_id")
+    if op_id:
+        conv.crm_opportunity_id = op_id
+        await db.commit()
+    return EnviarCrmResponse(ok=True, oportunidade_id=op_id, ja_existia=bool(res.get("ja_existia")))
 
 
 @router.get("/{conversation_id}/debug/{message_id}", response_model=dict)

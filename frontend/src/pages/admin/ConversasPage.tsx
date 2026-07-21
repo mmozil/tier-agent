@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, Search, Zap,
-  Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap,
+  Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -139,6 +139,7 @@ interface Conversation {
   snoozed_until: string | null;
   priority: string;
   team_id: number | null;
+  crm_opportunity_id?: number | null;
 }
 
 interface Team {
@@ -513,12 +514,40 @@ export default function ConversasPage() {
     setLoadingMsgs(true);
     setMsgs([]);
     try {
-      const { data } = await api.get<{ messages: Message[] }>(`/conversations/${c.id}`);
+      const { data } = await api.get<{ conversation?: Conversation; messages: Message[] }>(
+        `/conversations/${c.id}`,
+      );
       setMsgs(data.messages || []);
+      // Reflete o marcador persistido "já enviado ao CRM" ao reabrir a conversa.
+      if (data.conversation) {
+        const opId = data.conversation.crm_opportunity_id ?? null;
+        setOpenConv((prev) => (prev && prev.id === c.id ? { ...prev, crm_opportunity_id: opId } : prev));
+      }
     } catch {
       toast.error("Falha ao abrir conversa");
     } finally {
       setLoadingMsgs(false);
+    }
+  }
+
+  const [crmSending, setCrmSending] = useState(false);
+
+  async function enviarParaCrm(c: Conversation) {
+    if (crmSending) return;
+    setCrmSending(true);
+    try {
+      const { data } = await api.post<{ ok: boolean; oportunidade_id: number | null; ja_existia: boolean }>(
+        `/conversations/${c.id}/enviar-crm`,
+      );
+      const opId = data.oportunidade_id ?? null;
+      setOpenConv((prev) => (prev && prev.id === c.id ? { ...prev, crm_opportunity_id: opId } : prev));
+      setConvs((prev) => prev.map((x) => (x.id === c.id ? { ...x, crm_opportunity_id: opId } : x)));
+      toast.success(data.ja_existia ? "Já estava no CRM ✓" : "Lead enviado ao CRM ✓");
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Não foi possível enviar ao CRM");
+    } finally {
+      setCrmSending(false);
     }
   }
 
@@ -1009,6 +1038,19 @@ export default function ConversasPage() {
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => enviarParaCrm(openConv)}
+                  disabled={crmSending || !!openConv.crm_opportunity_id}
+                  title={
+                    openConv.crm_opportunity_id
+                      ? "Lead já enviado ao CRM do Tier Empresas"
+                      : "Criar oportunidade no CRM do Tier Empresas"
+                  }
+                >
+                  <UserPlus className="w-3.5 h-3.5" /> {openConv.crm_opportunity_id ? "No CRM ✓" : "Enviar para CRM"}
+                </Button>
                 {openConv.status !== "closed" && (
                   <Button variant="secondary" size="sm" onClick={() => changeStatus(openConv.id, "resolve")}>
                     <CheckCircle2 className="w-3.5 h-3.5" /> Resolver
