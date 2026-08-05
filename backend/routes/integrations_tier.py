@@ -105,3 +105,84 @@ async def sso_mint(
         {"tenant_id": tenant.id, "email": payload.email or tenant.email, "role": "owner"},
     )
     return SsoOut(access_token=token, tenant_id=tenant.id, expires_in_hours=settings.jwt_ttl_hours)
+
+
+# ─── QA de Ligações (CRM do ERP) — reusa o motor do Agent ─────────────────────
+# O tier-finance chama estes 2 endpoints (mesmo shared secret) pra:
+#   /transcribe   → faster-whisper self-host (grátis, sem tenant — motor global)
+#   /llm-complete → LLM DO TENANT (provider por cliente) rodando 1 prompt → texto
+# Assim o QA de Ligações não sobe worker de STT novo nem paga API: reusa o que já roda.
+
+
+class TranscribeIn(BaseModel):
+    audio_url: str
+    language: str = "pt"
+
+
+class TranscribeOut(BaseModel):
+    ok: bool
+    text: str
+    duration_seconds: float | None = None
+    language: str | None = None
+    error: str | None = None
+
+
+@router.post("/transcribe", response_model=TranscribeOut)
+async def transcribe_audio(
+    payload: TranscribeIn,
+    x_tier_integration_secret: str | None = Header(default=None),
+):
+    """STT self-host (faster-whisper) pro ERP. Sem tenant — motor global grátis."""
+    _check_secret(x_tier_integration_secret)
+    from services.voice import whisper_local
+
+    res = await whisper_local.transcribe_url(payload.audio_url, language=payload.language)
+    return TranscribeOut(
+        ok=bool(res.ok),
+        text=res.text or "",
+        duration_seconds=getattr(res, "duration_seconds", None),
+        language=getattr(res, "language", None),
+        error=getattr(res, "error", None),
+    )
+
+
+class LlmCompleteIn(BaseModel):
+    tenant_id: int
+    prompt: str
+    system: str | None = None
+
+
+class LlmCompleteOut(BaseModel):
+    text: str
+    model_used: str | None = None
+
+
+@router.post("/llm-complete", response_model=LlmCompleteOut)
+async def llm_complete(
+    payload: LlmCompleteIn,
+    x_tier_integration_secret: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Roda 1 prompt no LLM DO TENANT (provider por cliente) → devolve texto.
+
+    Usado pelo QA de Ligações do ERP pra pontuar a transcrição contra o roteiro.
+    Sem cache (cada ligação é única). Se o tenant não tem LLM ativa → 502 (o ERP
+    faz fallback pro AgentOptimus).
+    """
+    _check_secret(x_tier_integration_secret)
+    tenant = await db.get(TaTenant, payload.tenant_id)
+    if not tenant or tenant.status != "active":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant não encontrado ou inativo")
+    from services import tier_engine
+
+    try:
+        reply = await tier_engine.send_message(
+            payload.tenant_id,
+            payload.prompt,
+            db,
+            system_override=payload.system,
+            use_cache=False,
+        )
+    except Exception as e:  # noqa: BLE001 — inclui ProvidersAllDisabled (tenant sem LLM)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"LLM do tenant falhou: {e}") from e
+    return LlmCompleteOut(text=reply.text or "", model_used=getattr(reply, "model_used", None))
