@@ -206,24 +206,31 @@ async def supported_providers():
 
 @router.get("", response_model=list[LlmProviderOut])
 async def list_providers(
+    todos: bool = False,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lista providers do tenant + globais (NULL tenant_id).
+    """Lista providers do tenant (+ globais só na visão cross-tenant).
 
     Ordenado por priority (menor primeiro) — a MESMA ordem que o motor usa pra
     escolher. Marca `in_use=True` no provider que o motor realmente pega em cada
     escopo (o ativo de menor priority; empate → maior id), pra acabar com a dúvida
     de "qual das duas configs idênticas está valendo".
+
+    ESCOPO (corrigido em ago/2026): o admin caía num `select` SEM filtro e recebia
+    os providers de TODOS os tenants na própria tela de configuração — mesmo bug
+    encontrado em embedding_providers. Visão cross-tenant agora é `?todos=true`,
+    explícita e só pra admin.
     """
     stmt = select(TaLlmProvider)
-    if not user.is_admin:
+    if not (user.is_admin and todos):
         # Cliente vê SÓ os modelos dele. O provider global é infra da plataforma (rede de
         # segurança pra agentes que ainda não escolheram o seu) — não aparece pro cliente,
         # pra não confundir com um toggle que ele não controla. IMPORTANTE (jun/2026):
         # o motor só cai no global quando o tenant NUNCA configurou nenhuma LLM. Se o
         # tenant tem provider(s) e desliga TODAS, o agente fica em silêncio (respeita o
         # desligamento) — ver tier_engine.ProvidersAllDisabled.
+        # Isto vale pro admin também: na tela dele, ele é um tenant como outro qualquer.
         stmt = stmt.where(TaLlmProvider.tenant_id == user.tenant_id)
     rows = list(
         (
@@ -236,8 +243,10 @@ async def list_providers(
     # o global fica SOMBREADO (não está em uso pra ele). Senão o painel mostrava 2x "Em uso"
     # (global + tenant) e dava a impressão errada de que dava pra/precisava desligar o global.
     in_use_ids: set[int] = set()
-    if user.is_admin:
-        # Admin vê todos os escopos — marca o winner ativo de cada escopo (visão de plataforma).
+    if user.is_admin and todos:
+        # Só na visão cross-tenant: marca o winner ativo de cada escopo (visão de
+        # plataforma). Na tela normal o admin cai no ramo de baixo, senão o "Em uso"
+        # marcaria o provider de cada tenant como se todos valessem pra ele.
         by_scope: dict[int | None, list[TaLlmProvider]] = {}
         for r in rows:
             by_scope.setdefault(r.tenant_id, []).append(r)

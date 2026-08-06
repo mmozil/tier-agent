@@ -83,14 +83,33 @@ async def supported_providers():
 
 @router.get("", response_model=list[EmbeddingProviderOut])
 async def list_providers(
+    todos: bool = False,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lista providers de embedding do tenant + globais (admin). Marca `in_use` no que o
-    motor realmente pega (ativo de menor priority; tenant sobre global)."""
+    """Lista providers de embedding do tenant + globais. Marca `in_use` no que o
+    motor realmente pega (ativo de menor priority; tenant sobre global).
+
+    ESCOPO (corrigido em ago/2026): antes o admin caia num `select` SEM filtro
+    nenhum e recebia os providers de TODOS os tenants — numa tela chamada "Seus
+    providers de embedding". Na pratica o dono da plataforma abria a propria
+    config e via o provider de outro cliente, com modelo e prefixo/sufixo da
+    chave dele. Isso nao e visao de admin, e vazamento entre tenants: visao
+    cross-tenant e assunto do console de admin, nao da tela de configuracao que o
+    cliente tambem usa.
+
+    Agora todo mundo — admin inclusive — ve o proprio tenant + os globais. Para a
+    visao cross-tenant existe `?todos=true`, explicito e so pra admin.
+    """
     stmt = select(TaEmbeddingProvider)
-    if not user.is_admin:
-        stmt = stmt.where(TaEmbeddingProvider.tenant_id == user.tenant_id)
+    if not (user.is_admin and todos):
+        # Globais entram para todos: o motor pode cair neles (tenant sobre
+        # global), e a logica de `in_use` abaixo ja calcula o `global_winner` —
+        # sem esta linha ela nunca encontrava a linha global pra marcar.
+        stmt = stmt.where(
+            (TaEmbeddingProvider.tenant_id == user.tenant_id)
+            | (TaEmbeddingProvider.tenant_id.is_(None))
+        )
     rows = list(
         (
             await db.execute(
@@ -100,7 +119,11 @@ async def list_providers(
     )
 
     in_use_ids: set[int] = set()
-    if user.is_admin:
+    if user.is_admin and todos:
+        # Só na visão cross-tenant explícita faz sentido marcar um vencedor por
+        # escopo. Na tela normal o admin é um tenant como outro qualquer, e cai
+        # no ramo de baixo — senão a própria linha "Em uso" mentiria, marcando o
+        # provider de cada tenant como se todos estivessem valendo pra ele.
         by_scope: dict[int | None, list[TaEmbeddingProvider]] = {}
         for r in rows:
             by_scope.setdefault(r.tenant_id, []).append(r)
