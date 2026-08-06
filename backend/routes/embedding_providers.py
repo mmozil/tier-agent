@@ -34,6 +34,7 @@ class EmbeddingProviderIn(BaseModel):
     base_url: str | None = None
     cost_per_1m: float | None = None
     tenant_id: int | None = None  # NULL = global (só admin)
+    escopo_global: bool = False  # só admin: torna o NULL acima intencional (senão vira "meu tenant")
     active: bool = True
     priority: int = 100
 
@@ -264,8 +265,9 @@ async def create_provider(
         raise HTTPException(
             400, f"Provider não suportado. Use um de: {list(embeddings.SUPPORTED_EMBEDDING_PROVIDERS)}"
         )
-    if user.is_admin:
-        tenant_id = payload.tenant_id
+    # NULL vindo do painel = "meu", não "global" — ver nota em llm.create_provider.
+    if user.is_admin and (payload.escopo_global or payload.tenant_id is not None):
+        tenant_id = payload.tenant_id  # None + escopo_global = default global da plataforma
     else:
         tenant_id = user.tenant_id
         if not tenant_id:

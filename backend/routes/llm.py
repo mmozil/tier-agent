@@ -135,6 +135,7 @@ class LlmProviderIn(BaseModel):
     cost_output_per_1m: float | None = None
     base_url: str | None = None
     tenant_id: int | None = None  # NULL = global default Tier
+    escopo_global: bool = False  # só admin: torna o NULL acima intencional (senão vira "meu tenant")
     active: bool = True
     priority: int = 100  # menor = usado primeiro
 
@@ -289,11 +290,12 @@ async def create_provider(
     if payload.provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(400, f"Provider não suportado. Use um de: {list(SUPPORTED_PROVIDERS)}")
 
-    # Admin Tier cria config GLOBAL (tenant_id NULL) ou de qualquer tenant.
-    # Não-admin: o provider é SEMPRE escopado no PRÓPRIO tenant (LLM do agente dele).
-    # Antes dava 403 ao salvar (o painel manda tenant_id NULL) — agora só escopa no user.
-    if user.is_admin:
-        tenant_id = payload.tenant_id
+    # O painel manda tenant_id NULL sempre — ele é a tela de configuração do PRÓPRIO
+    # agente, não um console de plataforma. Então NULL vindo do admin significa "meu",
+    # não "global": senão ele salva, o provider nasce global e some da lista (que hoje
+    # é escopada no tenant). Criar global/de outro tenant é ação deliberada e explícita.
+    if user.is_admin and (payload.escopo_global or payload.tenant_id is not None):
+        tenant_id = payload.tenant_id  # None + escopo_global = default global da plataforma
     else:
         tenant_id = user.tenant_id
         if not tenant_id:
