@@ -63,11 +63,19 @@ def _can_write_scope(user: CurrentUser, escopo: str, escopo_id: int | None) -> N
 
 @router.get("", response_model=list[FlagOut])
 async def list_flags(
+    todos: bool = False,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Flags globais + as do próprio tenant. Visão de plataforma = `?todos=true` (admin).
+
+    Mesmo escopo dos providers (ago/2026): ser admin não pode significar "sem filtro
+    nenhum" numa rota que a tela normal consome, senão a lista devolve quais features
+    cada cliente tem ligada. Hoje não vaza nada de fato — só existe flag global e
+    ninguém no front consome — mas a primeira flag por tenant acordaria o problema.
+    """
     stmt = select(TaFeatureFlag)
-    if not user.is_admin:
+    if not (user.is_admin and todos):
         stmt = stmt.where(
             (TaFeatureFlag.escopo == "global")
             | ((TaFeatureFlag.escopo == "tenant") & (TaFeatureFlag.escopo_id == user.tenant_id))
