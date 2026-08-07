@@ -919,6 +919,34 @@ async def handle_inbound_message(
     except Exception:
         logger.exception("lead_capture falhou agent=%s — ignorando", agent.id)
 
+    # Auto-CRM: espelha TODA conversa nova como card no CRM do ERP (captura de lead
+    # automática — não exige intenção de compra). Idempotente: dispara só enquanto a
+    # conversa ainda não tem card (conv.crm_opportunity_id), então na prática roda 1x
+    # (a 1ª mensagem cria o card e grava o id). Gated por TIER_ERP_AUTO_CRM. Best-effort.
+    try:
+        from core.config import get_settings
+
+        if get_settings().tier_erp_auto_crm and conv.crm_opportunity_id is None:
+            from services import erp_crm_client
+
+            if erp_crm_client.integracao_ativa():
+                import re as _re_crm
+
+                _res = await erp_crm_client.enviar_conversa_para_crm(
+                    agent_tenant_id=agent.tenant_id,
+                    conversa_externa_id=str(conv.id),
+                    contato_nome=sender_name,
+                    telefone=_re_crm.sub(r"\D", "", external_chat_id or ""),
+                    canal="whatsapp",
+                    resumo=(text_content or "")[:300],
+                )
+                _op_id = _res.get("oportunidade_id") if isinstance(_res, dict) else None
+                if _op_id:
+                    conv.crm_opportunity_id = _op_id
+                    await db.commit()
+    except Exception:
+        logger.exception("auto-CRM (todo lead) falhou agent=%s — ignorando", agent.id)
+
     # Loop sem resolução — bot respondeu "não sei" repetidas vezes. Alerta o time
     # (warm handoff) sem pausar o bot. Dedup evita spam (1 não-lida por conversa).
     try:
