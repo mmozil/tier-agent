@@ -73,12 +73,12 @@ WHATSAPP_CLOUD_APP_SECRET=<app secret, pra validar webhook HMAC>
 
 ---
 
-## FASE B — Produto (Embedded Signup, multi-cliente)
+## FASE B — Produto (Embedded Signup, multi-cliente) ✅ LIBERADO 07/ago/2026
 
 Construído **uma vez**, reusado por todos os clientes (igual Tier Pay com recebedores Pagar.me).
 
-1. Tier entra no **Tech Provider Program** da Meta.
-2. Implementar **Embedded Signup**: botão "Conectar WhatsApp Oficial" em `/admin/canais`.
+1. ✅ Tier entrou no **Tech Provider Program** da Meta (Independent Tech Provider). 🚨 **Este foi o passo que destravou o onboarding** — App Review aprovado + app publicado NÃO bastava. Ver `whatsapp-oficial-embedded-signup.md`.
+2. ✅ Implementado **Embedded Signup**: botão "Conectar WhatsApp Oficial" em `/admin/canais`.
 3. Cliente clica → loga na conta Meta dele → escolhe/cria número → autoriza → conecta sozinho (~3 min).
 4. Cada cliente: **próprio CNPJ, próprio número, própria marca**. Tier orquestra via API.
 
@@ -86,14 +86,18 @@ Construído **uma vez**, reusado por todos os clientes (igual Tier Pay com receb
 
 ## Custo (modelo por mensagem, desde jul/2025)
 
-| Tipo | Quando | Custo Brasil |
-|---|---|---|
-| **Service** (resposta na janela 24h) | cliente chamou primeiro | **GRÁTIS** ilimitado |
-| **Utility** na janela 24h | lembrete/status | GRÁTIS |
-| **Marketing** (disparo ativo) | template aprovado + opt-in | ~$0,0625/msg |
-| **Authentication** (OTP) | template | baixo |
+> 🚨 **MUDANÇA 1/out/2026:** o "atendimento grátis" ACABA. Service (resposta livre na janela) + Utility na janela viram **PAGOS** — vale pra TODO mundo (inclusive "third-party AI agent" = a Yanna). Migrar a Yanna pra Cloud API **antes** de out/2026 = ~2,5 meses de atendimento estável **E** grátis.
 
-**Agente de atendimento reativo = praticamente R$0.** Só paga disparo ativo de marketing.
+| Tipo | Custo Brasil ATÉ 30/set/2026 | A partir de 1/out/2026 |
+|---|---|---|
+| **Service** (resposta livre na janela 24h) | **GRÁTIS** | **PAGO** ~R$0,04–0,19/msg (taxa tipo utility/auth, **sem desconto de volume**) |
+| **Utility** na janela 24h | GRÁTIS | PAGO (mesma faixa) |
+| **Marketing** (disparo ativo, opt-in) | ~R$0,31–0,38/msg | igual |
+| **Authentication** (OTP) | ~R$0,15–0,19/msg | igual (tem desconto de volume) |
+
+- **Cada cliente paga a própria fatura** (WABA dele) → Tier sem responsabilidade financeira.
+- **1/ago/2026:** *Meta Business Agent* (a IA **da própria Meta**) vira cobrado por token (US$2/1M tokens) — só se usar o agente da Meta (não é o caso do Tier).
+- ⚠️ **NÃO confundir com "AI Provider":** a taxa de AI Provider (Brasil desde 11/mar/2026) é só pra **assistentes de propósito geral** (ChatGPT/Perplexity no WhatsApp). Negócio usando IA no atendimento (a Yanna) está **excluído** — manter os agentes **escopados ao negócio**, nunca "assistente geral".
 
 ---
 

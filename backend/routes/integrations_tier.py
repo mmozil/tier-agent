@@ -12,6 +12,7 @@ sessão do ERP. O secret vive só no backend dos 2 lados, nunca no browser.
 from __future__ import annotations
 
 import hmac
+import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
@@ -21,7 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import create_token
 from core.config import get_settings
 from core.db import get_db
-from models import TaTenant
+from core.encryption import decrypt
+from models import TaAgent, TaConnector, TaTenant
+from services.connectors import registry
+from services.connectors.base import ConnectorConfig
 
 router = APIRouter(prefix="/integrations/tier", tags=["integrations-tier"])
 settings = get_settings()
@@ -40,6 +44,81 @@ def _digits(s: str | None) -> str | None:
         return None
     d = "".join(c for c in s if c.isdigit())
     return d or None
+
+
+# ─── Disparo ativo via WhatsApp Cloud API (oficial) — chamado pelo worker de disparos do ERP ───
+async def _resolve_cloud_connector(db: AsyncSession, tenant_id: int, agent_id: int | None = None) -> TaConnector:
+    """Acha o conector whatsapp_cloud ATIVO do tenant (via agente). Base do disparo Cloud."""
+    q = (
+        select(TaConnector)
+        .join(TaAgent, TaConnector.agent_id == TaAgent.id)
+        .where(
+            TaAgent.tenant_id == tenant_id,
+            TaConnector.kind == "whatsapp_cloud",
+            TaConnector.enabled.is_(True),
+        )
+    )
+    if agent_id:
+        q = q.where(TaConnector.agent_id == agent_id)
+    conn = (await db.execute(q)).scalars().first()
+    if not conn:
+        raise HTTPException(status.HTTP_409_CONFLICT, "tenant sem canal WhatsApp Oficial (Cloud) ativo")
+    return conn
+
+
+@router.get("/whatsapp-cloud/templates")
+async def cloud_templates(
+    tenant_id: int,
+    agent_id: int | None = None,
+    x_tier_integration_secret: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista os templates APROVADOS da WABA do tenant (pro disparo ativo via Cloud API)."""
+    _check_secret(x_tier_integration_secret)
+    conn = await _resolve_cloud_connector(db, tenant_id, agent_id)
+    impl = registry.get("whatsapp_cloud")
+    cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
+    try:
+        templates = await impl.list_templates(cfg)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"falha ao listar templates: {e}")
+    return {"templates": templates, "connector_id": conn.id}
+
+
+class CloudSendTemplateIn(BaseModel):
+    tenant_id: int
+    to: str
+    template_name: str
+    lang: str = "pt_BR"
+    components: list | None = None
+    agent_id: int | None = None
+
+
+@router.post("/whatsapp-cloud/send-template")
+async def cloud_send_template(
+    body: CloudSendTemplateIn,
+    x_tier_integration_secret: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Envia 1 template aprovado pra um número (disparo ATIVO via Cloud API oficial).
+    O worker de disparos do ERP chama isto por contato."""
+    _check_secret(x_tier_integration_secret)
+    to = (body.to or "").strip()
+    if not to or not body.template_name:
+        raise HTTPException(422, "to e template_name são obrigatórios")
+    conn = await _resolve_cloud_connector(db, body.tenant_id, body.agent_id)
+    impl = registry.get("whatsapp_cloud")
+    cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
+    try:
+        res = await impl.send_template(cfg, to, body.template_name, body.lang, body.components)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"falha ao enviar template: {e}")
+    msg_id = None
+    try:
+        msg_id = (res.get("messages") or [{}])[0].get("id")
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "message_id": msg_id, "raw": res}
 
 
 class ProvisionIn(BaseModel):

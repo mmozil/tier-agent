@@ -139,6 +139,31 @@ class WhatsAppCloudConnector:
             )
         return r.json()
 
+    async def list_templates(self, config: ConnectorConfig) -> list[dict]:
+        """Lista os templates APROVADOS da WABA — usados em disparo ATIVO (fora da
+        janela 24h). Precisa do `waba_id` no config + token. Só devolve status=APPROVED
+        (é o único que a Meta deixa enviar)."""
+        _pnid, token = resolve_cloud_creds(config)
+        waba_id = config.data.get("waba_id")
+        if not token or not waba_id:
+            raise ConnectorError(
+                "Config Cloud incompleta (waba_id + token) pra listar templates",
+                kind=self.kind,
+            )
+        url = f"{GRAPH_BASE}/{waba_id}/message_templates"
+        params = {"fields": "name,status,language,category,components", "limit": "200"}
+        headers = {"Authorization": f"Bearer {token}"}
+        async with httpx.AsyncClient(timeout=30) as cli:
+            r = await cli.get(url, params=params, headers=headers)
+        if r.status_code >= 400:
+            raise ConnectorError(
+                f"Cloud API templates {r.status_code}: {r.text[:300]}",
+                kind=self.kind,
+                status_code=r.status_code,
+            )
+        data = r.json().get("data", []) or []
+        return [t for t in data if str(t.get("status", "")).upper() == "APPROVED"]
+
     async def mark_read_and_typing(self, config: ConnectorConfig, message_id: str) -> None:
         """Marca a mensagem como lida (tique azul) + mostra 'digitando…' pro cliente.
 

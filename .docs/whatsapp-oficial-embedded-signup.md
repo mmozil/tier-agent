@@ -1,7 +1,7 @@
 # WhatsApp Oficial (Cloud API) + Embedded Signup — Tier Agent
 
 > Estado canônico da integração WhatsApp oficial do Tier Agent.
-> Atualizado: 2026-05-29.
+> Atualizado: 2026-08-07 (**onboarding de cliente LIBERADO** — destravou ao **concluir a integração de Provedor de Tecnologia**, NÃO pelo App Review; ver "🚨 Por que dava 'não pode integrar clientes'" abaixo).
 
 ---
 
@@ -9,7 +9,7 @@
 
 O Tier Agent atende clientes via **WhatsApp Cloud API oficial da Meta** (sem Baileys/QR/sessão, zero ban). Dois modos:
 1. **White-glove** (hoje) — Tier configura o número do cliente manualmente.
-2. **Self-service (Embedded Signup)** — cliente clica "Conectar WhatsApp Oficial", loga no Facebook e conecta o próprio número sozinho. **Funciona tecnicamente; aguarda App Review pra liberar clientes externos.**
+2. **Self-service (Embedded Signup)** — cliente clica "Conectar WhatsApp Oficial", loga no Facebook e conecta o próprio número sozinho. **LIVE desde 07/ago/2026** (destravou ao concluir a integração de Provedor de Tecnologia — ver seção do bloqueio abaixo).
 
 ---
 
@@ -80,16 +80,38 @@ VITE_FB_APP_ID=1644748586815003
 | App produção + Tech Provider + Config ID | ✅ |
 | Domínios SDK + botão + backend + envs | ✅ |
 | Embedded Signup popup (abre, fluxo roda) | ✅ provado |
-| Onboard de cliente externo | 🔲 **bloqueado por App Review** ("Out Group não pode integrar clientes no momento") |
-| App Review (Advanced Access) | 🔲 **a submeter** (ver `app-review-submission.md`) |
+| App Review (Advanced Access) | ✅ **APROVADO** 18/jul/2026 — Advanced access a `whatsapp_business_messaging` + `whatsapp_business_management` + `public_profile` renovada |
+| App publicado (sair de "Em desenvolvimento") | ✅ **07/ago/2026** — corrigiu o erro "App não ativada" que contas externas viam |
+| **Integração de Provedor de Tecnologia concluída** | ✅ **07/ago/2026** — "Torne-se um Provedor de Tecnologia → Iniciar integração → **Independent Tech Provider**". **ESTE foi o passo que liberou o onboarding** |
+| Onboard de cliente externo | ✅ **LIBERADO 07/ago/2026** — antes dava "Out Group não pode integrar clientes"; NÃO era o App Review nem permissão, era a integração de Tech Provider inacabada |
+| Migrar Yanna (agent 6) Baileys → Cloud | 🔲 **a fazer** — ver [`migracao-yanna-baileys-para-cloud-20260720.md`](migracao-yanna-baileys-para-cloud-20260720.md) |
 
 ## Custo (modelo por mensagem, jul/2025+)
 - Atendimento reativo (resposta na janela 24h) = **grátis**.
 - Marketing/disparo ativo = pago (~$0,0625/msg BR), exige opt-in.
 - **Cada cliente paga as próprias mensagens** (WABA dele) → Tier sem responsabilidade financeira. Limite nativo Meta: 250 conversas/dia (conta nova), escala por qualidade.
 
+## 🚨 Por que dava "Out Group não pode integrar clientes" (RESOLVIDO 07/ago/2026)
+
+Eram **DUAS travas empilhadas**, e a segunda tinha mensagem **enganosa** (parece problema de permissão/aprovação, mas não é):
+
+1. **App em "Em desenvolvimento"** → conta externa via *"App não ativada. O programador da app está consciente do problema."* → **Fix: Publicar** o app (Publicar → botão azul; exige Política de Privacidade, que já temos).
+2. **Integração de Provedor de Tecnologia NÃO concluída** → *"[Parceiro] não pode integrar clientes neste momento"* (oferece só "partilhar contato"). → **Fix: `Casos de uso → Conectar-se com clientes pelo WhatsApp → Início rápido → "Torne-se um Provedor de Tecnologia" → Continuar/Iniciar integração → escolher "Independent Tech Provider" → aceitar os Termos de Provedor de Tecnologia`.**
+
+**O que enganou (não perder tempo com isso de novo):**
+- **Verificação da empresa** + **Análise do app** apareciam **verdes** → parecia completo. Mas o botão dizia "Continuar a integração" = a integração em si nunca foi finalizada.
+- A mensagem "não pode integrar clientes" **NÃO era** falta de permissão. Descartados por eliminação: `whatsapp_business_messaging`/`_management` **aprovadas** (18/jul); forma de pagamento **presente** (MasterCard na WABA Tier); template `hello_world` **Ativo**; Termos **aceitos**; `business_management` **não era necessária**. O robô "Assistente do Desenvolvedor" da Meta deu resposta genérica (ToS/pagamento/template) que **não** era o caso.
+- **Regra de ouro:** *App Review aprovado + app publicado **NÃO basta** pra onboardar clientes.* Tem que **concluir a integração de Provedor de Tecnologia** — é o interruptor que liga "pode integrar clientes".
+
+## Como onboardar um cliente (2 formas, ambas liberadas após Tech Provider)
+
+Painel: `Casos de uso → Conectar-se com clientes pelo WhatsApp → Integração de Provedor de Tecnologia`.
+1. **"Sem necessidade de integração" (zero-código):** copia a URL pronta `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=1644748586815003&...` e manda pro cliente. Ele configura e a WABA é **compartilhada direto com a Tier**. Bom pra colocar 1 cliente rápido.
+2. **Embedded Signup no nosso site (white-label):** botão "Conectar WhatsApp Oficial" em `agent.tier.finance/admin/canais` (config `876861955432555`). Mantém o cliente dentro do produto. É o caminho de produção.
+- Também aparece: **"Migrar clientes"** (migrar WABAs existentes) e **"Reivindicar conta de sandbox"** (testar sem número real).
+
 ## Gotchas
 - Variação "Cadastro incorporado do WhatsApp" só aparece via **modelo** ou Tech Provider — na criação manual da config só tem General (e General não lista o ativo WhatsApp).
 - FB.login callback não pode ser async.
 - Vite env vars precisam `is_buildtime=true` no Coolify pra entrar no bundle.
-- App em "Em desenvolvimento" + sem App Review = não onboarda cliente externo (mostra "não pode integrar clientes no momento").
+- App em "Em desenvolvimento" + sem App Review = não onboarda cliente externo (mostra "não pode integrar clientes no momento"). **MAS** publicar + App Review ainda NÃO basta — falta concluir a **integração de Tech Provider** (ver seção acima).

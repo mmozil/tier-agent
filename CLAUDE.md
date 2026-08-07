@@ -32,11 +32,16 @@ Caminho de produção. Conector `whatsapp_cloud` no backend (REST + webhook). **
 - App produção: **Tier Agent API Oficial** `1644748586815003` (Tech Provider, empresa Out Group verificada).
 - Embedded Signup Config ID: `876861955432555` (criado via **modelo** "Cadastro incorporado do WhatsApp 60 dias" — variação WhatsApp só aparece via modelo/Tech Provider).
 - Botão `ConnectWhatsAppCloud.tsx` (FB SDK) → `POST /connectors/whatsapp-cloud/onboard` (code→token→conector).
-- **Pendente:** App Review (Advanced Access) pra clientes externos. Pacote pronto em `.docs/app-review-submission.md`.
-- Atendimento reativo grátis; disparo marketing pago + opt-in (cliente paga na WABA dele → Tier sem risco financeiro).
+- ✅ **App Review APROVADO 18/jul/2026** (Advanced Access) + **Embedded Signup LIBERADO pra clientes externos 07/ago/2026**. 🚨 O que destravou o "Out Group não pode integrar clientes" **NÃO foi o App Review** — foi **concluir a integração de Provedor de Tecnologia** (`Casos de uso → Conectar-se com clientes pelo WhatsApp → Início rápido → Torne-se um Provedor de Tecnologia → Iniciar integração → Independent Tech Provider`). App Review aprovado + app publicado NÃO basta. Detalhe: `.docs/whatsapp-oficial-embedded-signup.md`.
+- **🚨 Custo por mensagem (mudou):** atendimento (service na janela 24h) grátis **só até 30/set/2026** → **1/out/2026 vira PAGO** (~R$0,04–0,19/msg BR, sem desconto de volume, vale pra "third-party AI agent" = a Yanna). Marketing pago sempre (~R$0,31–0,38). Cada cliente paga na WABA dele. **NÃO é "AI Provider"** (essa taxa é só p/ assistente de propósito geral tipo ChatGPT/Perplexity — negócio usando IA no atendimento está excluído; manter agentes escopados ao negócio). Detalhe: `.docs/whatsapp-cloud-api-setup.md`.
 
 ### 2. Baileys (Tier WhatsApp Engine) — entrada/teste, RISCO DE BAN ⚠️
-Conector `whatsapp` (fala com `whats.tier.finance`). Baileys é não-oficial: toma ban (número de teste foi restringido pela Meta). Manter só como tier de entrada. Ver memória `project-engine-baileys-instability-20260528`.
+Conector `whatsapp` (fala com `whats.tier.finance`). Baileys é não-oficial: instável (queda ~5h em 17/jul) + risco de ban. **Meta NÃO cobra Baileys** (não passa pela plataforma oficial) — por isso é "grátis" mas frágil. Manter só como tier de entrada. Ver memória `project-engine-baileys-instability-20260528`.
+
+### Mapa de canal por agente (jul/2026)
+- **agent 2 (Maria Luiza, Tier Empresas)** → **Cloud API** (`whatsapp_cloud`, número `11 92336-2467`, phone_number_id `1105955629273371`).
+- **agent 6 (Yanna, petshop)** → **Baileys** (número `19 98114-5480`, instância `b008c371`). **A migrar p/ Cloud API** — plano em `.docs/migracao-yanna-baileys-para-cloud-20260720.md`.
+- **agent 5 (DevSecOps)** → **Baileys** (número `11 94145-2082`, instância `7748dba8` — **caída** em 17/jul, precisa reconectar).
 
 ## Modelo LLM + Atendimento (atualizado 29/mai/2026)
 
@@ -86,7 +91,8 @@ Em `services/agent_runtime.py`, depois do bloco de contato (**secundário à per
 
 ## Federação MCP — Hovio Pet (agente "Nicoly") + Espelho de Conversas (11-12/jun/2026)
 
-A **Nicoly** = agente do Tier Agent conectado (via MCP/OAuth) a um petshop do **Hovio Pet** (atualmente **"Patinhas & Cia"**, `agent_id=6`, tenant 6). Atende no WhatsApp + tem suas conversas espelhadas no painel do Pet. **TUDO DEPLOYADO em prod.**
+A **Yanna** (ex-"Nicoly") = agente do Tier Agent conectado (via MCP/OAuth) a um petshop do **Hovio Pet** (`agent_id=6`, tenant 6). Atende no WhatsApp + tem suas conversas espelhadas no painel do Pet. **TUDO DEPLOYADO em prod.**
+> 🔀 **Petshop-alvo repontado 20/jul/2026:** o token dela apontava pra petshop **PetduBem/BSPC** (`cmpm3y0z4…`, petdubem@gmail.com); repontei pro **`dev@hovio-pet.com` / "Marcelo Morais"** (`cmpgcczin0000kj01aagi792g`) porque estão em período de TESTE (a demo vive no dev@). **Mecanismo:** `UPDATE ta_agent_access_token.petshopId` (no DB do **Pet**) da linha do token ativo (achar por `accessTokenHash`) — durável porque o refresh (`rotateRefreshToken`) copia o `petshopId` da linha antiga. Confirmado via MCP (`pet_info_petshop` → "Marcelo Morais"). Revert: voltar o `petshopId` na mesma linha. Detalhe: memory `project_yanna_repoint_e_migracao_cloud_20260720`.
 
 ### Webhook Engine processa em BACKGROUND (`routes/webhooks.py`)
 `whatsapp_engine_webhook` agora processa em **background**: `_process_engine_message` via `asyncio.create_task` (+ `db_context()` próprio) e o webhook devolve `{"status":"accepted"}` **na hora**. A idempotência (`_record_idempotent`) roda **inline antes** do enfileiramento.
@@ -133,7 +139,7 @@ Reescrito consultivo: fluxo de agendamento via **ferramentas**, informar **valor
 - Agente "Maria Luiza" = `agent_id 2`, tenant **Out Group** (id 3), número **+55 11 92336-2467** (Cloud API oficial, **token System User permanente** — vive no conector criptografado + fallback env `WHATSAPP_CLOUD_TOKEN` no Coolify desde 25/jun).
 - **App Review**: 1º envio 29/mai → **REPROVADO 23/jun** (motivo: screencast não cobria o fluxo completo + faltava declarar server-to-server). **REENVIADO 25/jun** com screencast novo de 3 cenas (sem Embedded Signup) + descrições em inglês declarando **"server-to-server / System User token"** (exatamente o que o revisor pediu). Permissões: `whatsapp_business_messaging` + `whatsapp_business_management`. Caminho painel novo: Casos de uso → Personalizar → **Permissões e recursos** → "Ações → Adicionar à análise do app" → **Análise do app → Avançar → Uso permitido** (descrição+upload+conformidade) + **Tratamento de dados** (revisar pré-preenchido) → Enviar.
 - **🚨 Login de teste = `morais.marcelos@gmail.com`** (tenant 3 Out Group, **a conta que TEM a Maria Luiza conectada**; senha própria não-Google), **NÃO** `reviewer@tier.finance` (tenant 5 VAZIO → reprovaria por conta vazia).
-- **Embedded Signup é bloqueado pelo App Review** (ovo-galinha): "Conectar WhatsApp Oficial" sempre dá "Conexão cancelada ou incompleta" até aprovar. O número Out Group conecta via **System User token** (não pelo popup). Pós-aprovação: **Publicar** (tirar de "Não publicado").
+- **Embedded Signup — a sequência REAL de 3 gates pra liberar cliente externo** (aprendido na dor 07/ago): (1) **App Review** das permissões WhatsApp (aprovado 18/jul); (2) **Publicar** o app — tirar de "Em desenvolvimento", senão conta externa vê "App não ativada"; (3) 🚨 **concluir a integração de Provedor de Tecnologia** (`Início rápido → Torne-se um Provedor de Tecnologia → Iniciar integração → Independent Tech Provider`) — **ESTE é o que liga "pode integrar clientes"**; sem ele, mesmo com 1+2 feitos, dá "Out Group não pode integrar clientes". O número Out Group conecta via **System User token** (não pelo popup). Enganos a evitar: não é pagamento/template/ToS/`business_management` (o robô da Meta chuta esses e erra).
 
 ## Qualidade & Observabilidade do agente (17/jun/2026 — cobertura de gaps de engenharia)
 

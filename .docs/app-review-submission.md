@@ -3,6 +3,8 @@
 > O que falta pra liberar o Embedded Signup pros clientes externos.
 > App: **Tier Agent API Oficial** (`1644748586815003`). Atualizado: 2026-05-29.
 
+> ✅ **RESOLVIDO 07/ago/2026 — e NÃO era o App Review.** O App Review (`whatsapp_business_messaging` + `whatsapp_business_management`) foi **aprovado em 18/jul/2026**, mas o onboarding **continuou bloqueado** ("Out Group não pode integrar clientes"). A causa real era a **integração de Provedor de Tecnologia inacabada** — resolvida ao concluir `Casos de uso → Conectar-se com clientes pelo WhatsApp → Início rápido → Torne-se um Provedor de Tecnologia → Iniciar integração → Independent Tech Provider`. **App Review aprovado + app publicado NÃO basta; tem que concluir o Tech Provider.** Detalhe completo em [`whatsapp-oficial-embedded-signup.md`](whatsapp-oficial-embedded-signup.md) (seção "Por que dava 'não pode integrar clientes'").
+
 ---
 
 ## O que falta (resumo)
