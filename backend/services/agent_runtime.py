@@ -932,10 +932,38 @@ async def handle_inbound_message(
             if erp_crm_client.integracao_ativa():
                 import re as _re_crm
 
+                # Foto de perfil do contato — só Baileys (kind 'whatsapp'); o Cloud API
+                # NÃO expõe foto de contato. Best-effort; o ERP re-hospeda no R2 (a URL
+                # do WhatsApp expira). Reusa a conexão do Engine do próprio conector.
+                _foto = None
+                if connector_kind == "whatsapp" and connector is not None:
+                    try:
+                        import httpx as _httpx_pic
+                        from urllib.parse import quote as _quote_pic
+
+                        _cfg = json.loads(decrypt(connector.config_json_enc))
+                        _iid = _cfg.get("instance_id")
+                        _akey = _cfg.get("api_key")
+                        _jid = external_chat_id or ""
+                        if _iid and _akey and _jid:
+                            if "@" not in _jid:
+                                _jid = _re_crm.sub(r"\D", "", _jid) + "@s.whatsapp.net"
+                            _base = get_settings().tier_whatsapp_engine_url
+                            async with _httpx_pic.AsyncClient(timeout=5.0) as _pc:
+                                _pr = await _pc.get(
+                                    f"{_base}/v1/instances/{_iid}/contacts/{_quote_pic(_jid, safe='')}/profile-pic",
+                                    headers={"X-API-Key": _akey},
+                                )
+                            if _pr.status_code < 400:
+                                _foto = (_pr.json() or {}).get("url") or None
+                    except Exception:
+                        _foto = None
+
                 _res = await erp_crm_client.enviar_conversa_para_crm(
                     agent_tenant_id=agent.tenant_id,
                     conversa_externa_id=str(conv.id),
                     contato_nome=sender_name,
+                    contato_avatar=_foto,
                     telefone=_re_crm.sub(r"\D", "", external_chat_id or ""),
                     canal="whatsapp",
                     resumo=(text_content or "")[:300],
