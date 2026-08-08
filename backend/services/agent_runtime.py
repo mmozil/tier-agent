@@ -981,6 +981,36 @@ async def handle_inbound_message(
     except Exception:
         logger.exception("auto-CRM (todo lead) falhou agent=%s — ignorando", agent.id)
 
+    # Qualificação automática: a mensagem do cliente preenche os campos do card.
+    #
+    # Roda DEPOIS do bloco acima porque depende do card já existir — na 1ª
+    # mensagem o card acabou de nascer, e a resposta da pergunta ("qual série?")
+    # chega nas mensagens seguintes, quando o auto-CRM já é só dedup.
+    #
+    # É chamada por mensagem, mas de propósito não custa modelo: o ERP casa o
+    # texto contra a lista de opções do campo. Quem sabe quais campos existem é
+    # o ERP — o agente não conhece "série" nem precisa. É isso que faz valer pra
+    # qualquer cliente sem tocar no prompt.
+    try:
+        from core.config import get_settings
+
+        if get_settings().tier_erp_auto_crm and (text_content or "").strip():
+            from services import erp_crm_client
+
+            if erp_crm_client.integracao_ativa():
+                _ext = await erp_crm_client.extrair_campos_da_conversa(
+                    agent_tenant_id=agent.tenant_id,
+                    conversa_externa_id=str(conv.id),
+                    texto=text_content,
+                )
+                if isinstance(_ext, dict) and _ext.get("gravados"):
+                    logger.info(
+                        "auto-qualificação conv=%s gravou=%s etapa=%s",
+                        conv.id, _ext.get("gravados"), _ext.get("moveu_para"),
+                    )
+    except Exception:
+        logger.exception("auto-qualificação falhou agent=%s — ignorando", agent.id)
+
     # Loop sem resolução — bot respondeu "não sei" repetidas vezes. Alerta o time
     # (warm handoff) sem pausar o bot. Dedup evita spam (1 não-lida por conversa).
     try:

@@ -34,6 +34,61 @@ def integracao_ativa() -> bool:
     return bool((get_settings().tier_erp_integration_secret or "").strip())
 
 
+async def extrair_campos_da_conversa(
+    *,
+    agent_tenant_id: int,
+    conversa_externa_id: str | int,
+    texto: str,
+) -> dict:
+    """Manda a mensagem do cliente pro ERP preencher os campos que ela responde.
+
+    Quem sabe QUAIS campos existem é o ERP, não o agente: eles são criados por
+    cada cliente na tela de Campos do CRM. Se o agente precisasse conhecê-los,
+    toda conta nova exigiria editar o prompt do agente — setup manual por
+    usuário, que não escala. Aqui vai só o texto cru.
+
+    Não há custo de modelo: o ERP casa o texto contra a lista de opções do campo
+    (literal, sem LLM). Por isso pode rodar em toda mensagem recebida.
+
+    Devolve ``{ok, oportunidade_id, gravados, estagio_id, moveu_para}``. ``ok``
+    False é o caso comum e esperado (mensagem não respondeu campo nenhum, ou a
+    conversa ainda não virou card) — não é erro.
+    """
+    settings = get_settings()
+    secret = (settings.tier_erp_integration_secret or "").strip()
+    if not secret:
+        raise ErpCrmError("Integração ERP não configurada (TIER_ERP_INTEGRATION_SECRET).")
+
+    base = (settings.tier_erp_api_url or "https://api.tier.finance").rstrip("/")
+    url = f"{base}/api/tier-empresas/vendas/crm/oportunidades/from-conversa/extrair"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as cli:
+            r = await cli.post(
+                url,
+                json={
+                    "agent_tenant_id": agent_tenant_id,
+                    "conversa_externa_id": str(conversa_externa_id),
+                    "texto": (texto or "")[:2000],
+                },
+                headers={
+                    "X-Tier-Integration-Secret": secret,
+                    "X-Sync-Source": "tier-agent",
+                    "Content-Type": "application/json",
+                },
+            )
+    except httpx.HTTPError as e:
+        raise ErpCrmError(f"Falha de rede ao extrair campos no CRM: {e}") from e
+
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("detail")
+        except Exception:  # noqa: BLE001
+            detail = (r.text or "")[:200]
+        raise ErpCrmError(str(detail or f"ERP retornou {r.status_code}"))
+
+    return r.json()
+
+
 async def enviar_conversa_para_crm(
     *,
     agent_tenant_id: int,
