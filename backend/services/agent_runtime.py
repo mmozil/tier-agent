@@ -926,17 +926,22 @@ async def handle_inbound_message(
     try:
         from core.config import get_settings
 
-        if get_settings().tier_erp_auto_crm and conv.crm_opportunity_id is None:
+        # Idempotência AO VIVO (padrão de mercado): NÃO gateia por crm_opportunity_id
+        # cacheado (fica stale se o card for apagado). Chama sempre — o ERP dedup pela
+        # coluna indexada conversa_externa_id em card ATIVO. Apagou o card + mandou msg
+        # → o ERP não acha nenhum ativo → recria. Sem sincronizar delete, sem stale.
+        if get_settings().tier_erp_auto_crm:
             from services import erp_crm_client
 
             if erp_crm_client.integracao_ativa():
                 import re as _re_crm
 
-                # Foto de perfil do contato — só Baileys (kind 'whatsapp'); o Cloud API
-                # NÃO expõe foto de contato. Best-effort; o ERP re-hospeda no R2 (a URL
-                # do WhatsApp expira). Reusa a conexão do Engine do próprio conector.
+                # Foto: busca só quando ainda NÃO temos link (1ª vez / recriação). Nas msgs
+                # seguintes o call é só o dedup barato (sem HTTP ao Engine). Se o card foi
+                # apagado e recriado, o cliente mantém a foto (delete não apaga o cliente).
+                # Só Baileys ('whatsapp'); Cloud API não expõe foto de contato.
                 _foto = None
-                if connector_kind == "whatsapp" and connector is not None:
+                if conv.crm_opportunity_id is None and connector_kind == "whatsapp" and connector is not None:
                     try:
                         import httpx as _httpx_pic
                         from urllib.parse import quote as _quote_pic
@@ -969,7 +974,8 @@ async def handle_inbound_message(
                     resumo=(text_content or "")[:300],
                 )
                 _op_id = _res.get("oportunidade_id") if isinstance(_res, dict) else None
-                if _op_id:
+                # Atualiza o link só se mudou (ex.: card recriado com id novo após delete).
+                if _op_id and _op_id != conv.crm_opportunity_id:
                     conv.crm_opportunity_id = _op_id
                     await db.commit()
     except Exception:
