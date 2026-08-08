@@ -4,6 +4,10 @@ import { MarketingNav, MarketingFooter, FinalCTA } from "../../components/landin
 
 /* Tier Agent — /precos · planos + comparativo + FAQ (Attio-grade) */
 
+// Tabela de preços em redefinição: a página mantém os planos e o comparativo,
+// mas esconde valores e CTA de assinatura. Trocar para `true` religa tudo.
+const PRECOS_DISPONIVEIS = false;
+
 const PLANS = [
   {
     name: "Lite",
@@ -76,7 +80,12 @@ const MATRIX: { group: string; rows: Row[] }[] = [
 ];
 
 const FAQ = [
-  { q: "Como começo?", a: "Você escolhe um plano, conecta o WhatsApp e coloca o agente no ar em minutos — direto pelo painel." },
+  {
+    q: "Como começo?",
+    a: PRECOS_DISPONIVEIS
+      ? "Você escolhe um plano, conecta o WhatsApp e coloca o agente no ar em minutos — direto pelo painel."
+      : "Você cria a conta, conecta o WhatsApp e coloca o agente no ar em minutos — direto pelo painel.",
+  },
   { q: "Como funciona o WhatsApp?", a: "Usamos a API Cloud oficial da Meta. Você conecta o seu próprio número via login do Facebook — sem risco de ban e sem número compartilhado." },
   { q: "Posso trocar de plano depois?", a: "Sim, a qualquer momento. O upgrade libera os recursos na hora; o downgrade vale no próximo ciclo." },
   { q: "Quem paga as mensagens de marketing?", a: "O atendimento reativo é livre. Disparos de marketing são cobrados pela Meta na sua própria conta WhatsApp — a Tier não entra nesse custo." },
@@ -100,13 +109,16 @@ export default function Precos() {
         <div className="relative max-w-[1180px] mx-auto px-6 pt-20 pb-16">
           <div className="text-center max-w-[600px] mx-auto">
             <span className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-surface-muted border border-line text-[12px] font-medium text-[#3a3f47]">
-              <span className="w-1.5 h-1.5 rounded-full bg-success" /> Preço transparente
+              <span className="w-1.5 h-1.5 rounded-full bg-success" />{" "}
+              {PRECOS_DISPONIVEIS ? "Preço transparente" : "Novos planos em breve"}
             </span>
             <h1 className="font-display text-balance mt-6 text-[clamp(36px,5.5vw,56px)] font-semibold leading-[1.04] tracking-display text-ink">
               Preço que cresce com você
             </h1>
             <p className="mt-4 text-[17px] text-[#4a5159]">
-              Escolha um plano. Suba quando o agente provar valor. Sem fidelidade.
+              {PRECOS_DISPONIVEIS
+                ? "Escolha um plano. Suba quando o agente provar valor. Sem fidelidade."
+                : "Estamos finalizando a nova tabela de planos. Enquanto isso, crie sua conta e teste o agente."}
             </p>
           </div>
 
@@ -126,9 +138,19 @@ export default function Precos() {
                 <div className="text-[15px] font-semibold text-ink">{p.name}</div>
                 <div className="text-[12px] text-[#6A7385] mt-0.5">{p.tagline}</div>
                 <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-[14px] text-[#6A7385]">R$</span>
-                  <span className="font-display text-[40px] font-semibold tracking-display text-ink leading-none">{p.price}</span>
-                  <span className="text-[13px] text-[#6A7385]">/mês</span>
+                  {PRECOS_DISPONIVEIS ? (
+                    <>
+                      <span className="text-[14px] text-[#6A7385]">R$</span>
+                      <span className="font-display text-[40px] font-semibold tracking-display text-ink leading-none">
+                        {p.price}
+                      </span>
+                      <span className="text-[13px] text-[#6A7385]">/mês</span>
+                    </>
+                  ) : (
+                    <span className="font-display text-[40px] font-semibold tracking-display text-[#9AA4B2] leading-none">
+                      Em breve
+                    </span>
+                  )}
                 </div>
                 <ul className="mt-5 space-y-2.5 flex-1">
                   {p.feats.map((f) => (
@@ -143,13 +165,15 @@ export default function Precos() {
                     p.highlight ? "bg-cta hover:bg-cta-hover text-white" : "border border-line hover:bg-surface-muted text-ink"
                   }`}
                 >
-                  {p.cta}
+                  {PRECOS_DISPONIVEIS ? p.cta : "Começar grátis"}
                 </Link>
               </div>
             ))}
           </div>
           <p className="mt-6 text-center text-[12.5px] text-[#9AA4B2]">
-            Conversas excedentes a partir de R$ 0,30. Implementação assistida e white-label sob consulta.
+            {PRECOS_DISPONIVEIS
+              ? "Conversas excedentes a partir de R$ 0,30. Implementação assistida e white-label sob consulta."
+              : "Os valores estão sendo definidos. Avisamos antes de qualquer cobrança."}
           </p>
         </div>
       </section>
@@ -222,7 +246,14 @@ export default function Precos() {
         </div>
       </section>
 
-      <FinalCTA title="Pronto pra começar?" subtitle="Escolha seu plano e coloque o agente no ar em minutos. Sem fidelidade." />
+      <FinalCTA
+        title="Pronto pra começar?"
+        subtitle={
+          PRECOS_DISPONIVEIS
+            ? "Escolha seu plano e coloque o agente no ar em minutos. Sem fidelidade."
+            : "Crie sua conta e coloque o agente no ar em minutos. Sem fidelidade."
+        }
+      />
       <MarketingFooter />
     </div>
   );

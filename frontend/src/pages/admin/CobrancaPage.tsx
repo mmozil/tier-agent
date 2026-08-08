@@ -25,6 +25,10 @@ interface Subscription {
   subscription: { status: string; tierpay_subscription_id: string | null; next_billing_at: string | null } | null;
 }
 
+// Tabela de preços em redefinição: a página mostra os planos, mas sem valor e sem checkout.
+// Pra religar, basta trocar para `true` — nada mais precisa mudar aqui.
+const PRECOS_DISPONIVEIS = false;
+
 export default function CobrancaPage() {
   const [skus, setSkus] = useState<SKU[]>([]);
   const [sub, setSub] = useState<Subscription | null>(null);
@@ -50,6 +54,7 @@ export default function CobrancaPage() {
   }, []);
 
   async function onSubscribe(sku: string) {
+    if (!PRECOS_DISPONIVEIS) return;
     setCheckout(sku);
     try {
       const { data } = await api.post("/billing/checkout", { sku });
@@ -66,7 +71,12 @@ export default function CobrancaPage() {
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
-        <PageHero title="Cobrança" subtitle="Escolha o plano que cabe no seu volume." />
+        <PageHero
+          title="Cobrança"
+          subtitle={
+            PRECOS_DISPONIVEIS ? "Escolha o plano que cabe no seu volume." : "Os planos estão em definição."
+          }
+        />
 
         {sub?.current_sku && (
           <Row>
@@ -81,7 +91,16 @@ export default function CobrancaPage() {
               )}
               {sub.current_sku === "trial" && (
                 <div className="rounded-lg border border-[#F5A300]/30 bg-[#F5A300]/[0.08] px-4 py-3 text-[13px] text-[#9a6700]">
-                  Você está no <strong>trial</strong>. Escolha um plano abaixo pra continuar usando após o período.
+                  {PRECOS_DISPONIVEIS ? (
+                    <>
+                      Você está no <strong>trial</strong>. Escolha um plano abaixo pra continuar usando após o período.
+                    </>
+                  ) : (
+                    <>
+                      Você está no <strong>trial</strong>. Os valores ainda estão sendo definidos — nada é cobrado até
+                      você escolher um plano.
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -122,17 +141,31 @@ export default function CobrancaPage() {
                     <div className={`text-[13px] mt-1 min-h-[36px] ${FC.sub}`}>{s.description}</div>
 
                     <div className="mt-4 flex items-baseline gap-1">
-                      <span className={`tabular-nums text-[26px] font-medium ${FC.ink}`}>{s.monthly_brl_display}</span>
-                      <span className={`text-[13px] ${FC.sub}`}>/mês</span>
+                      {PRECOS_DISPONIVEIS ? (
+                        <>
+                          <span className={`tabular-nums text-[26px] font-medium ${FC.ink}`}>
+                            {s.monthly_brl_display}
+                          </span>
+                          <span className={`text-[13px] ${FC.sub}`}>/mês</span>
+                        </>
+                      ) : (
+                        <span className={`text-[26px] font-medium ${FC.sub}`}>Em breve</span>
+                      )}
                     </div>
 
                     <Button
-                      variant={isPopular ? "primary" : "secondary"}
+                      variant={PRECOS_DISPONIVEIS && isPopular ? "primary" : "secondary"}
                       onClick={() => onSubscribe(s.key)}
-                      disabled={isCurrent || checkout === s.key}
+                      disabled={!PRECOS_DISPONIVEIS || isCurrent || checkout === s.key}
                       className="mt-4 w-full"
                     >
-                      {isCurrent ? "Plano atual" : checkout === s.key ? "Abrindo..." : `Assinar ${s.label}`}
+                      {!PRECOS_DISPONIVEIS
+                        ? "Em breve"
+                        : isCurrent
+                          ? "Plano atual"
+                          : checkout === s.key
+                            ? "Abrindo..."
+                            : `Assinar ${s.label}`}
                     </Button>
 
                     <ul className="mt-5 space-y-2">
@@ -152,7 +185,9 @@ export default function CobrancaPage() {
 
         <Row last>
           <p className={`px-6 py-4 text-[12px] text-center ${FC.sub}`}>
-            Pagamentos processados pelo Tier Pay (Pagar.me). Cancele quando quiser.
+            {PRECOS_DISPONIVEIS
+              ? "Pagamentos processados pelo Tier Pay (Pagar.me). Cancele quando quiser."
+              : "Os valores estão sendo definidos. Avisamos antes de qualquer cobrança."}
           </p>
         </Row>
       </PageFrame>
