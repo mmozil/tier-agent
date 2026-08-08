@@ -39,6 +39,7 @@ async def extrair_campos_da_conversa(
     agent_tenant_id: int,
     conversa_externa_id: str | int,
     texto: str,
+    pergunta_anterior: str | None = None,
 ) -> dict:
     """Manda a mensagem do cliente pro ERP preencher os campos que ela responde.
 
@@ -46,6 +47,11 @@ async def extrair_campos_da_conversa(
     cada cliente na tela de Campos do CRM. Se o agente precisasse conhecê-los,
     toda conta nova exigiria editar o prompt do agente — setup manual por
     usuário, que não escala. Aqui vai só o texto cru.
+
+    `pergunta_anterior` é o que o agente acabou de dizer, e é o que dá CONTEXTO:
+    sabendo qual campo foi perguntado, "meu filho tem 8 anos" deixa de ser um
+    número solto e vira a resposta de qual ano ele vai cursar. Sem ela o ERP
+    ainda funciona, só fica mais conservador.
 
     Não há custo de modelo: o ERP casa o texto contra a lista de opções do campo
     (literal, sem LLM). Por isso pode rodar em toda mensagem recebida.
@@ -69,6 +75,7 @@ async def extrair_campos_da_conversa(
                     "agent_tenant_id": agent_tenant_id,
                     "conversa_externa_id": str(conversa_externa_id),
                     "texto": (texto or "")[:2000],
+                    "pergunta_anterior": (pergunta_anterior or "")[:1000] or None,
                 },
                 headers={
                     "X-Tier-Integration-Secret": secret,

@@ -998,10 +998,34 @@ async def handle_inbound_message(
             from services import erp_crm_client
 
             if erp_crm_client.integracao_ativa():
+                # A ULTIMA fala do agente vai junto. E o que transforma
+                # casamento de texto em leitura de conversa: sabendo que a
+                # pergunta foi "qual ano escolar?", a resposta "meu filho tem 8
+                # anos" e a serie — sem isso e so um numero solto numa frase.
+                _pergunta = None
+                try:
+                    _res = await db.execute(
+                        select(TaMessageLog.content)
+                        .where(
+                            TaMessageLog.conversation_id == conv.id,
+                            TaMessageLog.role == "assistant",
+                        )
+                        # `offset(1)`: a resposta DESTE turno já foi gravada
+                        # lá em cima, então a mais nova é ela — a pergunta que
+                        # o cliente respondeu é a anterior.
+                        .order_by(TaMessageLog.id.desc())
+                        .offset(1)
+                        .limit(1)
+                    )
+                    _pergunta = _res.scalar_one_or_none()
+                except Exception:  # noqa: BLE001
+                    _pergunta = None
+
                 _ext = await erp_crm_client.extrair_campos_da_conversa(
                     agent_tenant_id=agent.tenant_id,
                     conversa_externa_id=str(conv.id),
                     texto=text_content,
+                    pergunta_anterior=_pergunta,
                 )
                 if isinstance(_ext, dict) and _ext.get("gravados"):
                     logger.info(
