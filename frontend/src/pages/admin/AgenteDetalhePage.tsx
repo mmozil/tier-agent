@@ -30,6 +30,7 @@ import {
   Section,
   Select,
   SkeletonBar,
+  Spacer,
   SplitPane,
   Textarea,
   iconBtn,
@@ -318,7 +319,7 @@ export default function AgenteDetalhePage() {
       <SplitPane
         storageKey="ta-agente-split"
         left={
-          <div className="pb-24">
+          <div className="pb-16">
             {/* Índice — navega por âncora, NÃO troca de tela (não é aba).
                 Vive nos mesmos rails das seções pra a coluna ter um eixo vertical
                 contínuo em vez de blocos soltos. */}
@@ -337,6 +338,10 @@ export default function AgenteDetalhePage() {
                 </div>
               </div>
             </nav>
+
+            {/* Respiro antes da 1ª seção. Spacer é a faixa vazia do DS: os rails
+                seguem correndo, então o conteúdo respira sem se soltar da coluna. */}
+            <Spacer h={28} />
 
             {/* 1 · INSTRUÇÕES */}
             <Section id="instrucoes" title="Instruções" count={`${persona.length.toLocaleString("pt-BR")} car.`}>
@@ -621,6 +626,8 @@ export default function AgenteDetalhePage() {
                 </Button>
               </div>
             </Section>
+
+            <Spacer h={40} />
           </div>
         }
         right={<ChatPanel agentId={agent.id} agentName={agent.nome} model={modeloAtual} persona={persona} />}
