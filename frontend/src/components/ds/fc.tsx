@@ -530,3 +530,202 @@ export function SegToggle<T extends string | number>({
     </div>
   );
 }
+
+/* ───────────────────────────────────────────────────────────────
+   Primitivas de formulário e layout (ago/2026)
+
+   Existiam 8 variantes locais de `inputCls` espalhadas pelas páginas admin,
+   com 2 alturas e 2 raios diferentes. Espalhadas ninguém nota; empilhadas
+   numa coluna só, viram serrote. Estas são a versão única.
+   ─────────────────────────────────────────────────────────────── */
+
+// Superfície de campo — a mesma do trigger do <Select>, pra input e select
+// terem exatamente o mesmo peso visual lado a lado.
+export const fieldSurface =
+  `w-full rounded-[10px] bg-white dark:bg-[#14171c] border border-[#EDEDED] dark:border-[#23272e] text-[#262626] dark:text-[#e6e8eb] outline-none transition-shadow placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] disabled:opacity-50 disabled:pointer-events-none`;
+
+export function Input({
+  className = "",
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={`${fieldSurface} h-8 px-3 text-[13px] ${className}`} />;
+}
+
+export function Textarea({
+  className = "",
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea {...props} className={`${fieldSurface} px-3 py-2 text-[13px] leading-5 ${className}`} />;
+}
+
+// Field — rótulo + campo + dica/contador. `right` recebe contador de caracteres,
+// estado de salvamento, etc.
+export function Field({
+  label,
+  hint,
+  right,
+  children,
+  className = "",
+}: {
+  label: ReactNode;
+  hint?: ReactNode;
+  right?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+        <label className={`text-[12px] font-medium ${FC.sub}`}>{label}</label>
+        {right && <span className={`text-[11px] font-mono tabular-nums shrink-0 ${FC.mut}`}>{right}</span>}
+      </div>
+      {children}
+      {hint && <p className={`mt-1.5 text-[11px] leading-4 ${FC.mut}`}>{hint}</p>}
+    </div>
+  );
+}
+
+// Section — bloco colapsável da coluna de configuração. Título + contador +
+// ação à direita. O estado de aberto/fechado persiste por chave, pra tela voltar
+// como a pessoa deixou. Substitui ABA: aba troca de tela e mata o que estava em
+// foco; seção convive e rola.
+export function Section({
+  id,
+  title,
+  count,
+  right,
+  defaultOpen = true,
+  children,
+}: {
+  id: string;
+  title: ReactNode;
+  count?: ReactNode;
+  right?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const key = `ta-sec-${id}`;
+  const [open, setOpen] = useState(() => {
+    const v = typeof localStorage !== "undefined" ? localStorage.getItem(key) : null;
+    return v === null ? defaultOpen : v === "1";
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, open ? "1" : "0");
+    } catch {
+      /* modo privado — só não persiste */
+    }
+  }, [key, open]);
+  return (
+    <section id={id} className={`border-b ${FC.hair} scroll-mt-2`}>
+      <div className="flex items-center gap-2 px-6 py-3.5">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className={`group flex items-center gap-2 min-w-0 flex-1 text-left ${FC.ink}`}
+        >
+          <ChevronDown
+            className={`w-4 h-4 shrink-0 ${FC.mut} transition-transform ${open ? "" : "-rotate-90"}`}
+          />
+          <span className="text-[14px] font-medium truncate">{title}</span>
+          {count !== undefined && count !== null && (
+            <span className={`shrink-0 text-[11px] font-mono tabular-nums ${FC.mut}`}>{count}</span>
+          )}
+        </button>
+        {right && <div className="shrink-0">{right}</div>}
+      </div>
+      {open && <div className="px-6 pb-5">{children}</div>}
+    </section>
+  );
+}
+
+// SplitPane — duas colunas com divisória arrastável e largura persistida.
+// A da direita é a que fica fixa (painel de teste); a da esquerda rola.
+// Duplo-clique na divisória volta ao padrão.
+export function SplitPane({
+  storageKey,
+  left,
+  right,
+  defaultRightPct = 42,
+  minLeftPx = 420,
+  minRightPx = 360,
+}: {
+  storageKey: string;
+  left: ReactNode;
+  right: ReactNode;
+  defaultRightPct?: number;
+  minLeftPx?: number;
+  minRightPx?: number;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [rightPct, setRightPct] = useState(() => {
+    const v = parseFloat(localStorage.getItem(storageKey) || "");
+    return Number.isFinite(v) ? v : defaultRightPct;
+  });
+  const [dragging, setDragging] = useState(false);
+
+  function clampPct(pct: number): number {
+    const w = wrapRef.current?.clientWidth || 1200;
+    const minRight = (minRightPx / w) * 100;
+    const maxRight = 100 - (minLeftPx / w) * 100;
+    if (maxRight < minRight) return pct; // tela estreita: não força
+    return Math.min(maxRight, Math.max(minRight, pct));
+  }
+
+  function startDrag(e: { preventDefault: () => void }) {
+    e.preventDefault();
+    setDragging(true);
+    const onMove = (ev: globalThis.MouseEvent) => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setRightPct(clampPct(((r.right - ev.clientX) / r.width) * 100));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      setDragging(false);
+      setRightPct((p) => {
+        try {
+          localStorage.setItem(storageKey, String(p));
+        } catch {
+          /* ignore */
+        }
+        return p;
+      });
+    };
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
+  return (
+    <div ref={wrapRef} className="flex min-h-0 flex-1 w-full">
+      <div className="min-w-0 flex-1 overflow-y-auto sidebar-scroll">{left}</div>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        onMouseDown={startDrag}
+        onDoubleClick={() => {
+          setRightPct(defaultRightPct);
+          try {
+            localStorage.setItem(storageKey, String(defaultRightPct));
+          } catch {
+            /* ignore */
+          }
+        }}
+        title="Arraste para redimensionar · duplo-clique para redefinir"
+        className={`relative w-px shrink-0 cursor-col-resize ${FC.hairBg} after:absolute after:inset-y-0 after:-left-2 after:-right-2 after:content-[''] ${
+          dragging ? "bg-[#003083] dark:bg-[#5b9bff]" : "hover:bg-[#003083]/40 dark:hover:bg-[#5b9bff]/40"
+        } transition-colors`}
+      />
+      <div className="shrink-0 min-w-0 flex flex-col" style={{ width: `${rightPct}%` }}>
+        {right}
+      </div>
+    </div>
+  );
+}

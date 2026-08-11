@@ -32,6 +32,7 @@ import MetricasPage from "./pages/admin/MetricasPage";
 import VisaoGeralPage from "./pages/admin/VisaoGeralPage";
 import { FC, PageFrame, PageHero, Row } from "./components/ds/fc";
 import AgentSkillsPage from "./pages/admin/AgentSkillsPage";
+import AgenteDetalhePage from "./pages/admin/AgenteDetalhePage";
 import MarketplacePage from "./pages/admin/MarketplacePage";
 import LeadsPage from "./pages/admin/LeadsPage";
 import ConversasPage from "./pages/admin/ConversasPage";
@@ -94,6 +95,7 @@ export default function App() {
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="params" element={<Navigate to="/admin/configuracoes/parametros" replace />} />
         <Route path="metricas" element={<MetricasPage />} />
+        <Route path="agentes/:id" element={<AgenteDetalhePage />} />
         <Route path="agentes/:id/skills" element={<AgentSkillsPage />} />
         <Route path="marketplace" element={<MarketplacePage />} />
         <Route path="cobranca" element={<Navigate to="/admin/configuracoes/cobranca" replace />} />
