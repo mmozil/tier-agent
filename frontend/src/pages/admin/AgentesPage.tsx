@@ -79,7 +79,7 @@ function CardGrid({ children, last = false }: { children: React.ReactNode; last?
   );
 }
 
-type AgentTab = "geral" | "conhecimento" | "modelo" | "busca";
+type AgentTab = "geral" | "testar" | "conhecimento" | "modelo" | "busca";
 
 // Espelha GET /agents/{id}/runtime-config — o que este agente usa DE FATO em execução.
 interface RuntimeConfig {
@@ -763,6 +763,7 @@ function AgentDetailsDrawer({
 
   const TABS: { key: AgentTab; label: string }[] = [
     { key: "geral", label: "Visão geral" },
+    { key: "testar", label: "Testar" },
     { key: "conhecimento", label: "Conhecimento" },
     { key: "modelo", label: "Modelo" },
     { key: "busca", label: "Busca" },
@@ -1021,6 +1022,8 @@ function AgentDetailsDrawer({
         </>
         )}
 
+        {tab === "testar" && <AgentPlayground agentId={agent.id} agentName={agent.nome} model={rt?.llm.model || null} />}
+
         {tab === "conhecimento" && (
           <div className="px-6 py-5">
             <ScopeNote
@@ -1233,6 +1236,111 @@ function AgentDetailsDrawer({
               </>
             )}
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Conversa de teste com o agente — o "fale com o bot" que faltava. Mesma persona,
+// mesmo modelo e mesmas ferramentas da produção; não grava conversa nem usa canal.
+function AgentPlayground({
+  agentId,
+  agentName,
+  model,
+}: {
+  agentId: number;
+  agentName: string;
+  model: string | null;
+}) {
+  const [msgs, setMsgs] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [msgs, sending]);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || sending) return;
+    const historico = msgs;
+    setMsgs((m) => [...m, { role: "user", content: text }]);
+    setInput("");
+    setSending(true);
+    try {
+      const { data } = await api.post<{ text: string }>(`/agents/${agentId}/playground`, {
+        message: text,
+        history: historico,
+      });
+      setMsgs((m) => [...m, { role: "assistant", content: data.text || "(sem resposta)" }]);
+    } catch (err: any) {
+      const motivo = err?.response?.data?.detail || "erro ao falar com o agente";
+      setMsgs((m) => [...m, { role: "assistant", content: `⚠ ${motivo}` }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-190px)]">
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        {msgs.length === 0 ? (
+          <div className={`text-center py-10 text-[13px] leading-6 ${FC.mut}`}>
+            Escreva como se fosse um cliente.
+            <br />
+            {agentName} responde com a persona e o conhecimento reais
+            {model ? ` — rodando em ${model}` : ""}.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {msgs.map((m, i) => (
+              <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                <div
+                  className={`max-w-[85%] px-3.5 py-2.5 text-[13px] leading-5 whitespace-pre-wrap ${
+                    m.role === "user"
+                      ? "rounded-[14px_14px_4px_14px] bg-[#003083] text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]"
+                      : `rounded-[14px_14px_14px_4px] border ${FC.hair} ${FC.base} ${FC.ink}`
+                  }`}
+                >
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {sending && (
+              <div className="flex justify-start">
+                <div className={`px-3.5 py-2.5 rounded-[14px_14px_14px_4px] border ${FC.hair} ${FC.base}`}>
+                  <Loader2 className={`w-3.5 h-3.5 animate-spin ${FC.mut}`} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
+
+      <div className={`border-t ${FC.hair} px-6 py-4 flex items-center gap-2`}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          placeholder="Fale com o agente…"
+          disabled={sending}
+          className={`flex-1 h-9 px-3 text-[13px] rounded-[10px] bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow`}
+        />
+        <Button variant="primary" onClick={send} disabled={sending || !input.trim()}>
+          Enviar
+        </Button>
+        {msgs.length > 0 && (
+          <Button variant="ghost" onClick={() => setMsgs([])} title="Limpar conversa">
+            Limpar
+          </Button>
         )}
       </div>
     </div>

@@ -397,3 +397,62 @@ async def agent_runtime_config(
             ],
         },
     }
+
+
+class PlaygroundIn(BaseModel):
+    message: str
+    history: list[dict] | None = None
+
+
+@router.post("/{agent_id}/playground")
+async def agent_playground(
+    agent_id: int,
+    payload: PlaygroundIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Conversa de teste com o agente, sem canal e sem gravar conversa.
+
+    Usa a MESMA persona, o mesmo modelo e as mesmas ferramentas que o agente usa
+    em produção — senão o teste não vale. Passa `agent_id` pro engine aplicar a
+    escolha de modelo do agente e federar as tools dele.
+
+    `use_cache=False` de propósito: em teste você quer ver o que o modelo responde
+    agora, não uma resposta guardada de uma pergunta igual.
+    """
+    from services import tier_engine
+
+    tenant_id = await _ensure_tenant(user)
+    agent = await db.get(TaAgent, agent_id)
+    if not agent or agent.tenant_id != tenant_id:
+        raise HTTPException(404, "Agente não encontrado")
+
+    msg = (payload.message or "").strip()
+    if not msg:
+        raise HTTPException(400, "Mensagem vazia")
+
+    system = agent.system_prompt or agent.persona or None
+    history = [
+        {"role": h.get("role"), "content": h.get("content")}
+        for h in (payload.history or [])
+        if h.get("role") in ("user", "assistant") and h.get("content")
+    ][-20:]
+
+    try:
+        reply = await tier_engine.send_message(
+            tenant_id,
+            msg,
+            db,
+            system_override=system,
+            agent_id=agent.id,
+            history=history or None,
+            use_cache=False,
+            session_id=f"playground-{agent.id}",
+        )
+    except Exception as e:  # noqa: BLE001 — inclui ProvidersAllDisabled
+        raise HTTPException(502, f"O agente não respondeu: {e}") from e
+
+    return {
+        "text": reply.text or "",
+        "model_used": getattr(reply, "model_used", None),
+    }
