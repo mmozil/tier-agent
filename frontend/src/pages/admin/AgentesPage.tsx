@@ -10,12 +10,15 @@ import {
   HandCoins,
   LifeBuoy,
   Loader2,
+  BookOpen,
   MoreVertical,
   PauseCircle,
   PawPrint,
   PlayCircle,
   Plus,
+  Settings,
   ShoppingBag,
+  Sparkles,
   Stethoscope,
   Store,
   Target,
@@ -25,7 +28,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, CurvyRect, Button, btnPrimary, iconBtn, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, CurvyRect, Button, btnPrimary, iconBtn, SkeletonBar, EmptyHint } from "@/components/ds/fc";
 
 // Blueprint — fundo "planta técnica" do Firecrawl: grade hairline + marcas "+" nos
 // cruzamentos, esmaecendo pra baixo. pointer-events-none, atrás do conteúdo.
@@ -75,19 +78,57 @@ function CardGrid({ children, last = false }: { children: React.ReactNode; last?
   );
 }
 
-// GhostCard — card tracejado "Agente em branco" (cria sem modelo).
+type AgentTab = "geral" | "conhecimento" | "modelo" | "recuperacao";
+
+// Espelha GET /agents/{id}/runtime-config — o que este agente usa DE FATO em execução.
+interface RuntimeConfig {
+  llm: {
+    scope: string;
+    provider: string | null;
+    model: string | null;
+    inherited: boolean;
+    tenant_default_model: string | null;
+    provider_id: number | null;
+    fallback: string[];
+    options: { id: number; provider: string; default_model: string }[];
+  };
+  embedding: {
+    scope: string;
+    locked_reason: string;
+    provider: string | null;
+    model: string | null;
+    dimensions: number;
+  };
+  knowledge: {
+    total: number;
+    ready: number;
+    failed: number;
+    chunks: number;
+    items: { id: number; title: string | null; kind: string; status: string; chunks_count: number }[];
+  };
+}
+
+// GhostCard — card "Agente em branco" (cria sem modelo). Mesma caixa dos modelos:
+// primeiro do grid e com o fundo padrão, pra não parecer opção de segunda linha.
 function GhostCard({ onClick, busy, disabled }: { onClick: () => void; busy?: boolean; disabled?: boolean }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`group flex min-h-[96px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed ${FC.hair} bg-transparent p-4 transition-all hover:border-[#003083]/60 dark:hover:border-[#5b9bff]/60 hover:bg-black/[0.015] dark:hover:bg-white/[0.02] disabled:opacity-60`}
+      className={`group relative flex min-h-[96px] flex-col rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-4 text-left transition-all duration-150 hover:border-[#003083]/70 dark:hover:border-[#5b9bff]/70 hover:shadow-[0_2px_10px_rgba(0,48,131,0.06)] disabled:opacity-60`}
     >
-      <div className="w-10 h-10 rounded-[10px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.1] flex items-center justify-center text-[#003083] dark:text-[#5b9bff] group-hover:bg-[#003083]/[0.12] dark:group-hover:bg-[#5b9bff]/[0.18] transition-colors">
-        {busy ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Plus className="w-[18px] h-[18px]" />}
+      <div className="flex items-start justify-between">
+        <div className="w-9 h-9 rounded-[10px] bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center text-[#003083] dark:text-[#5b9bff]">
+          {busy ? <Loader2 className="w-[17px] h-[17px] animate-spin" /> : <Sparkles className="w-[17px] h-[17px]" />}
+        </div>
+        <span className="inline-flex w-7 h-7 items-center justify-center rounded-[8px] text-[#262626]/30 dark:text-[#6b7280] transition-all group-hover:bg-[#003083]/[0.06] group-hover:text-[#003083] dark:group-hover:bg-[#5b9bff]/[0.12] dark:group-hover:text-[#5b9bff]">
+          <Plus className="w-4 h-4" />
+        </span>
       </div>
-      <span className={`text-[13px] font-medium ${FC.ink}`}>Agente em branco</span>
-      <span className={`text-[11px] ${FC.mut}`}>Sem modelo — você configura do zero</span>
+      <div className="mt-3">
+        <h3 className={`text-[15px] font-medium tracking-[-0.01em] mb-0.5 ${FC.ink}`}>Agente em branco</h3>
+        <p className={`text-[13px] leading-5 line-clamp-1 ${FC.sub}`}>Começa do zero — você define persona e skills</p>
+      </div>
     </button>
   );
 }
@@ -159,6 +200,11 @@ function AgentsSkeleton() {
   );
 }
 
+// Mesmo desenho do <Button variant="secondary">, mas aplicavel em <Link> (o Button
+// do ds e <button> e nao aceita href).
+const btnSecondary =
+  `inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] text-[12px] font-medium h-8 px-3 transition-all active:scale-[0.98] ${FC.ink} border ${FC.hair} ${FC.hover}`;
+
 interface Agent {
   id: number;
   tenant_id: number;
@@ -166,6 +212,8 @@ interface Agent {
   persona: string | null;
   template_kind: string | null;
   avatar_url?: string | null;
+  llm_model?: string | null;
+  llm_provider_id?: number | null;
   active: boolean;
 }
 
@@ -394,6 +442,11 @@ export default function AgentesPage() {
                     subtitle="Um clique cria o agente já com a persona e as skills do modelo — você ajusta tudo depois."
                   />
                   <CardGrid last>
+                    <GhostCard
+                      busy={creatingKey === "__blank__"}
+                      disabled={!!creatingKey}
+                      onClick={() => createAgent(null, "Novo agente")}
+                    />
                     {templates.map((t) => (
                       <TemplateCard
                         key={t.key}
@@ -403,11 +456,6 @@ export default function AgentesPage() {
                         onClick={() => createAgent(t.key, t.label)}
                       />
                     ))}
-                    <GhostCard
-                      busy={creatingKey === "__blank__"}
-                      disabled={!!creatingKey}
-                      onClick={() => createAgent(null, "Novo agente")}
-                    />
                   </CardGrid>
                 </div>
               </>
@@ -625,10 +673,27 @@ function AgentDetailsDrawer({
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<AgentTab>("geral");
+  const [rt, setRt] = useState<RuntimeConfig | null>(null);
+  const [rtLoading, setRtLoading] = useState(true);
+  const [savingModel, setSavingModel] = useState(false);
+
+  async function loadRuntime() {
+    setRtLoading(true);
+    try {
+      const { data } = await api.get<RuntimeConfig>(`/agents/${agent.id}/runtime-config`);
+      setRt(data);
+    } catch {
+      setRt(null);
+    } finally {
+      setRtLoading(false);
+    }
+  }
 
   useEffect(() => {
     setForm({ nome: agent.nome, persona: agent.persona || "", avatar_url: agent.avatar_url || "" });
     setEditing(false);
+    setTab("geral");
     (async () => {
       setStatsLoading(true);
       try {
@@ -640,7 +705,24 @@ function AgentDetailsDrawer({
         setStatsLoading(false);
       }
     })();
+    loadRuntime();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id]);
+
+  // Modelo do agente: string vazia volta a herdar o default da conta.
+  async function saveModel(next: { llm_model?: string; llm_provider_id?: number | null }) {
+    setSavingModel(true);
+    try {
+      const { data } = await api.patch<Agent>(`/agents/${agent.id}`, next);
+      onUpdated(data);
+      await loadRuntime();
+      toast.success("Modelo atualizado");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao salvar o modelo");
+    } finally {
+      setSavingModel(false);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -678,34 +760,81 @@ function AgentDetailsDrawer({
     }
   }
 
+  const TABS: { key: AgentTab; label: string }[] = [
+    { key: "geral", label: "Visão geral" },
+    { key: "conhecimento", label: "Conhecimento" },
+    { key: "modelo", label: "Modelo" },
+    { key: "recuperacao", label: "Recuperação" },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
       <div
-        className="w-[720px] max-w-[94vw] bg-white h-full overflow-y-auto shadow-2xl"
+        className={`w-[760px] max-w-[94vw] bg-white dark:bg-[#0c0e12] h-full overflow-y-auto shadow-2xl border-l ${FC.hair}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-[#EDEDED] flex items-center justify-between sticky top-0 bg-white z-10">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center shrink-0 text-[#003083] dark:text-[#5b9bff]">
-              <AgentGlyph className="w-[22px] h-[22px]" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[15px] font-semibold text-[#262626] truncate">{agent.nome}</div>
-              <div className="text-[11px] text-[#697386]">
-                #{agent.id} · {agent.active ? "Ativo" : "Pausado"}
+        {/* Header + abas (sticky: a navegação acompanha a rolagem) */}
+        <div className={`sticky top-0 z-10 bg-white dark:bg-[#0c0e12] border-b ${FC.hair}`}>
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              {agent.avatar_url ? (
+                <img src={agent.avatar_url} alt="" className="w-9 h-9 rounded-md object-cover shrink-0" />
+              ) : (
+                <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center shrink-0 text-[#003083] dark:text-[#5b9bff]">
+                  <AgentGlyph className="w-[22px] h-[22px]" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className={`text-[15px] font-semibold truncate ${FC.ink}`}>{agent.nome}</div>
+                <div className={`text-[11px] flex items-center gap-1.5 ${FC.mut}`}>
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${agent.active ? "bg-[#00A66C]" : "bg-[#B4600A]"}`}
+                  />
+                  {agent.active ? "Ativo" : "Pausado"} · #{agent.id}
+                  {rt?.llm.model && (
+                    <>
+                      <span className={FC.mut}>·</span>
+                      <span className="font-mono">{rt.llm.model}</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
+            <button onClick={onClose} className={iconBtn}>
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <button onClick={onClose} className={iconBtn}>
-            <X className="w-4 h-4" />
-          </button>
+
+          <div className="px-5 flex items-center gap-1 -mb-px">
+            {TABS.map((t) => {
+              const on = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={`relative h-9 px-3 text-[13px] transition-colors ${
+                    on ? `font-medium ${FC.ink}` : `${FC.sub} hover:${FC.ink}`
+                  }`}
+                >
+                  {t.label}
+                  {t.key === "conhecimento" && rt && rt.knowledge.failed > 0 && (
+                    <span className="ml-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-[#C0271F]/10 text-[#C0271F] text-[10px] font-semibold">
+                      {rt.knowledge.failed}
+                    </span>
+                  )}
+                  {on && <span className="absolute left-0 right-0 -bottom-px h-[2px] bg-[#003083] dark:bg-[#5b9bff]" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
+        {tab === "geral" && (
+        <>
         {/* Stats */}
-        <div className="px-5 py-4 border-b border-[#EDEDED]">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#697386] mb-3">
-            Visão geral
+        <div className={`px-5 py-4 border-b ${FC.hair}`}>
+          <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${FC.mut}`}>
+            Resumo
           </h3>
           <div className="grid grid-cols-2 gap-2">
             <StatCard
@@ -736,7 +865,7 @@ function AgentDetailsDrawer({
         </div>
 
         {/* Edit form */}
-        <div className="px-5 py-4 border-b border-[#EDEDED]">
+        <div className={`px-5 py-4 border-b ${FC.hair}`}>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#697386]">
               Configuração
@@ -751,34 +880,34 @@ function AgentDetailsDrawer({
           {editing ? (
             <div className="space-y-3">
               <div>
-                <label className="block text-[12px] font-medium text-[#697386] mb-1">Nome</label>
+                <label className={`block text-[12px] font-medium mb-1 ${FC.sub}`}>Nome</label>
                 <input
                   value={form.nome}
                   onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  className="w-full h-7 px-3 text-[13px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
+                  className={`w-full h-8 px-3 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow`}
                 />
               </div>
               <div>
-                <label className="block text-[12px] font-medium text-[#697386] mb-1">Persona</label>
+                <label className={`block text-[12px] font-medium mb-1 ${FC.sub}`}>Persona</label>
                 <textarea
                   value={form.persona}
                   onChange={(e) => setForm({ ...form, persona: e.target.value })}
                   rows={6}
-                  className="w-full px-3 py-2 text-[13px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow font-mono"
+                  className={`w-full px-3 py-2 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow font-mono`}
                 />
               </div>
               <div>
-                <label className="block text-[12px] font-medium text-[#697386] mb-1">Foto do agente (URL)</label>
+                <label className={`block text-[12px] font-medium mb-1 ${FC.sub}`}>Foto do agente (URL)</label>
                 <div className="flex items-center gap-3">
                   {form.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={form.avatar_url}
                       alt=""
-                      className="w-12 h-12 rounded-full object-cover border border-[#EDEDED] shrink-0"
+                      className={`w-12 h-12 rounded-full object-cover border ${FC.hair} shrink-0`}
                     />
                   ) : (
-                    <div className="w-12 h-12 rounded-full bg-[#003083]/[0.08] flex items-center justify-center text-[#003083] shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[#003083] dark:text-[#5b9bff] shrink-0">
                       <AgentGlyph className="w-7 h-7" />
                     </div>
                   )}
@@ -786,10 +915,10 @@ function AgentDetailsDrawer({
                     value={form.avatar_url}
                     onChange={(e) => setForm({ ...form, avatar_url: e.target.value })}
                     placeholder="https://.../foto.png"
-                    className="flex-1 h-7 px-3 text-[13px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
+                    className={`flex-1 h-8 px-3 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow`}
                   />
                 </div>
-                <p className="mt-1 text-[11px] text-[#697386]">
+                <p className={`mt-1 text-[11px] ${FC.mut}`}>
                   Aparece nas conversas (ex: no Hovio Pet). Cole a URL de uma imagem hospedada.
                 </p>
               </div>
@@ -812,13 +941,13 @@ function AgentDetailsDrawer({
           ) : (
             <div className="space-y-2 text-[13px]">
               <div>
-                <span className="text-[#697386]">Template: </span>
-                <span className="text-[#262626]">{agent.template_kind || "—"}</span>
+                <span className={FC.mut}>Template: </span>
+                <span className={FC.ink}>{agent.template_kind || "—"}</span>
               </div>
               <div>
-                <span className="text-[#697386]">Persona:</span>
-                <p className="text-[#262626] mt-1 leading-relaxed whitespace-pre-wrap">
-                  {agent.persona || <span className="italic text-[#697386]">—</span>}
+                <span className={FC.mut}>Persona:</span>
+                <p className={`mt-1 leading-relaxed whitespace-pre-wrap ${FC.ink}`}>
+                  {agent.persona || <span className={`italic ${FC.mut}`}>—</span>}
                 </p>
               </div>
             </div>
@@ -827,12 +956,12 @@ function AgentDetailsDrawer({
 
         {/* Danger zone */}
         <div className="px-5 py-4">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#697386] mb-3">
+          <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${FC.mut}`}>
             Ações
           </h3>
           <div className="space-y-2">
             <Link to={`/admin/agentes/${agent.id}/skills`} className={`${btnPrimary} w-full`}>
-              ✨ Ver skills do agente
+              <Sparkles className="w-3.5 h-3.5" /> Ver skills do agente
             </Link>
             <Button variant="secondary" onClick={toggleActive} className="w-full">
               {agent.active ? (
@@ -847,8 +976,8 @@ function AgentDetailsDrawer({
             </Button>
 
             {confirmDelete ? (
-              <div className="bg-red-50 border border-red-200 rounded-md p-3 space-y-2">
-                <p className="text-[12px] text-red-700 leading-relaxed">
+              <div className="rounded-md border border-[#C0271F]/30 bg-[#C0271F]/[0.05] p-3 space-y-2">
+                <p className="text-[12px] text-[#C0271F] leading-relaxed">
                   <strong>Excluir definitivamente {agent.nome}?</strong>
                   <br />
                   Isso remove TODOS os playbooks, conversas, knowledge e canais conectados a este
@@ -871,8 +1000,239 @@ function AgentDetailsDrawer({
             )}
           </div>
         </div>
+        </>
+        )}
+
+        {tab === "conhecimento" && (
+          <div className="px-5 py-4">
+            <ScopeNote
+              scope="agente"
+              text="O que este agente sabe. Cada documento é indexado só para ele — outros agentes da conta não enxergam."
+            />
+            {rtLoading ? (
+              <div className="space-y-2 mt-3">
+                <SkeletonBar className="h-10 w-full" />
+                <SkeletonBar className="h-10 w-full" />
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-2 mt-3">
+                  <MiniStat label="Documentos" value={String(rt?.knowledge.total ?? 0)} />
+                  <MiniStat label="Trechos indexados" value={String(rt?.knowledge.chunks ?? 0)} />
+                  <MiniStat
+                    label="Com falha"
+                    value={String(rt?.knowledge.failed ?? 0)}
+                    tone={rt && rt.knowledge.failed > 0 ? "bad" : undefined}
+                  />
+                </div>
+
+                {rt && rt.knowledge.failed > 0 && (
+                  <div className="mt-3 rounded-md border border-[#C0271F]/30 bg-[#C0271F]/[0.05] px-3 py-2.5">
+                    <p className="text-[12px] text-[#C0271F] leading-relaxed">
+                      <strong>{rt.knowledge.failed} documento(s) não entraram na busca.</strong> Enquanto
+                      estiverem assim, o agente responde como se eles não existissem. Reindexe pela tela de
+                      Conhecimento.
+                    </p>
+                  </div>
+                )}
+
+                <div className={`mt-3 rounded-lg border ${FC.hair} overflow-hidden`}>
+                  {(rt?.knowledge.items || []).length === 0 ? (
+                    <div className={`px-3 py-6 text-center text-[13px] ${FC.mut}`}>
+                      Nenhum documento ainda.
+                    </div>
+                  ) : (
+                    (rt?.knowledge.items || []).map((k, i) => (
+                      <div
+                        key={k.id}
+                        className={`flex items-center justify-between gap-3 px-3 py-2.5 ${
+                          i > 0 ? `border-t ${FC.hair}` : ""
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className={`text-[13px] truncate ${FC.ink}`}>{k.title || `#${k.id}`}</div>
+                          <div className={`text-[11px] ${FC.mut}`}>
+                            {k.kind} · {k.chunks_count} trecho(s)
+                          </div>
+                        </div>
+                        <StatusPill status={k.status} />
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <Link to="/admin/knowledge" className={`${btnSecondary} w-full mt-3`}>
+                  <BookOpen className="w-3.5 h-3.5" /> Gerenciar conhecimento
+                </Link>
+              </>
+            )}
+          </div>
+        )}
+
+        {tab === "modelo" && (
+          <div className="px-5 py-4">
+            <ScopeNote
+              scope="agente"
+              text="O modelo que este agente usa para pensar. A chave de API continua na conta — aqui você só escolhe o modelo."
+            />
+            {rtLoading ? (
+              <SkeletonBar className="h-10 w-full mt-3" />
+            ) : !rt?.llm.provider ? (
+              <div className="mt-3">
+                <EmptyHint
+                  icon={Bot}
+                  text="Nenhuma LLM ativa nesta conta — o agente não consegue responder."
+                />
+                <Link to="/admin/configuracoes/llm" className={`${btnPrimary} w-full mt-3`}>
+                  Configurar LLM
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div className={`mt-3 rounded-lg border ${FC.hair} p-3.5`}>
+                  <div className={`text-[11px] uppercase tracking-wider font-semibold ${FC.mut}`}>
+                    Em uso agora
+                  </div>
+                  <div className={`mt-1.5 text-[17px] font-medium font-mono ${FC.ink}`}>{rt.llm.model}</div>
+                  <div className={`text-[12px] mt-0.5 ${FC.sub}`}>
+                    via {rt.llm.provider}
+                    {rt.llm.inherited ? " · herdado do padrão da conta" : " · escolhido para este agente"}
+                  </div>
+                  {rt.llm.fallback.length > 0 && (
+                    <div className={`mt-2 text-[11px] ${FC.mut}`}>
+                      Se falhar, tenta: {rt.llm.fallback.join(" → ")}
+                    </div>
+                  )}
+                </div>
+
+                <label className={`block text-[12px] font-medium mt-4 mb-1 ${FC.sub}`}>
+                  Modelo deste agente
+                </label>
+                <input
+                  defaultValue={agent.llm_model || ""}
+                  placeholder={rt.llm.tenant_default_model || "modelo"}
+                  disabled={savingModel}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v !== (agent.llm_model || "")) saveModel({ llm_model: v });
+                  }}
+                  className={`w-full h-8 px-3 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow font-mono`}
+                />
+                <p className={`mt-1 text-[11px] ${FC.mut}`}>
+                  Deixe vazio para herdar o padrão da conta ({rt.llm.tenant_default_model || "—"}).
+                </p>
+
+                {rt.llm.options.length > 1 && (
+                  <>
+                    <label className={`block text-[12px] font-medium mt-4 mb-1 ${FC.sub}`}>
+                      Credencial usada
+                    </label>
+                    <select
+                      value={agent.llm_provider_id ?? ""}
+                      disabled={savingModel}
+                      onChange={(e) =>
+                        saveModel({ llm_provider_id: e.target.value ? Number(e.target.value) : null })
+                      }
+                      className={`w-full h-8 px-2 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e]`}
+                    >
+                      <option value="">Padrão da conta</option>
+                      {rt.llm.options.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.provider} · {o.default_model}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+
+                <Link to="/admin/configuracoes/llm" className={`${btnSecondary} w-full mt-4`}>
+                  <Settings className="w-3.5 h-3.5" /> Chaves e padrões da conta
+                </Link>
+              </>
+            )}
+          </div>
+        )}
+
+        {tab === "recuperacao" && (
+          <div className="px-5 py-4">
+            <ScopeNote
+              scope="conta"
+              text="Como o texto do conhecimento vira busca. Vale para todos os agentes da conta."
+            />
+            {rtLoading ? (
+              <SkeletonBar className="h-10 w-full mt-3" />
+            ) : (
+              <>
+                <div className={`mt-3 rounded-lg border ${FC.hair} p-3.5`}>
+                  <div className={`text-[11px] uppercase tracking-wider font-semibold ${FC.mut}`}>
+                    Modelo de embedding
+                  </div>
+                  <div className={`mt-1.5 text-[15px] font-medium font-mono ${FC.ink}`}>
+                    {rt?.embedding.model || "—"}
+                  </div>
+                  <div className={`text-[12px] mt-0.5 ${FC.sub}`}>
+                    via {rt?.embedding.provider || "—"} · {rt?.embedding.dimensions} dimensões
+                  </div>
+                </div>
+
+                <div className={`mt-3 rounded-md border ${FC.hair} ${FC.base} px-3 py-2.5`}>
+                  <p className={`text-[12px] leading-relaxed ${FC.sub}`}>{rt?.embedding.locked_reason}</p>
+                </div>
+
+                <Link to="/admin/configuracoes/embedding" className={`${btnSecondary} w-full mt-3`}>
+                  <Settings className="w-3.5 h-3.5" /> Configurar embedding da conta
+                </Link>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+// Etiqueta de escopo — o que é deste agente e o que é compartilhado com a conta.
+// Sem isso o usuário muda algo achando que é local e afeta todo mundo.
+function ScopeNote({ scope, text }: { scope: "agente" | "conta"; text: string }) {
+  const isAgent = scope === "agente";
+  return (
+    <div className={`flex items-start gap-2.5 rounded-md border ${FC.hair} ${FC.base} px-3 py-2.5`}>
+      <span
+        className={`shrink-0 mt-px inline-flex items-center h-[18px] px-1.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
+          isAgent
+            ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
+            : "bg-[#B4600A]/[0.10] text-[#B4600A] dark:bg-[#d69b4e]/[0.14] dark:text-[#d69b4e]"
+        }`}
+      >
+        {isAgent ? "deste agente" : "toda a conta"}
+      </span>
+      <p className={`text-[12px] leading-relaxed ${FC.sub}`}>{text}</p>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, tone }: { label: string; value: string; tone?: "bad" }) {
+  return (
+    <div className={`rounded-md border ${FC.hair} ${FC.base} px-3 py-2.5`}>
+      <div className={`text-[11px] ${FC.mut}`}>{label}</div>
+      <div className={`text-[18px] font-semibold leading-tight ${tone === "bad" ? "text-[#C0271F]" : FC.ink}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const map: Record<string, { t: string; c: string }> = {
+    ready: { t: "indexado", c: "bg-[#00A66C]/10 text-[#0B7A55] dark:text-[#5FC091]" },
+    failed: { t: "falhou", c: "bg-[#C0271F]/10 text-[#C0271F]" },
+    indexing: { t: "indexando", c: "bg-[#B4600A]/10 text-[#B4600A]" },
+  };
+  const s = map[status] || { t: status, c: `${FC.base} ${FC.mut}` };
+  return (
+    <span className={`shrink-0 inline-flex items-center h-[20px] px-2 rounded-full text-[11px] font-medium ${s.c}`}>
+      {s.t}
+    </span>
   );
 }
 
@@ -889,12 +1249,12 @@ function StatCard({
 }) {
   return (
     <div className="bg-[#F9F9F9] dark:bg-[#16191f] rounded-md p-3 border border-[#EDEDED] dark:border-[#23272e]">
-      <div className="flex items-center gap-1.5 text-[11px] text-[#697386] mb-1">
+      <div className={`flex items-center gap-1.5 text-[11px] mb-1 ${FC.mut}`}>
         <Icon className="w-3 h-3" />
         {label}
       </div>
-      <div className="text-[18px] font-semibold text-[#262626] leading-tight">{value}</div>
-      {hint && <div className="text-[10px] text-[#697386] mt-0.5">{hint}</div>}
+      <div className={`text-[18px] font-semibold leading-tight ${FC.ink}`}>{value}</div>
+      {hint && <div className={`text-[10px] mt-0.5 ${FC.mut}`}>{hint}</div>}
     </div>
   );
 }

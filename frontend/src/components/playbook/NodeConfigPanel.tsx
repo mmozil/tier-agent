@@ -10,6 +10,8 @@ interface Props {
   onClose: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** Renderizado dentro do dock direito (que já provê largura, borda e rolagem). */
+  embedded?: boolean;
 }
 
 const PANEL_FONT = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif';
@@ -21,7 +23,12 @@ export default function NodeConfigPanel({
   onClose,
   collapsed,
   onToggleCollapse,
+  embedded = false,
 }: Props) {
+  // Dentro do dock: sem largura/borda próprias (o container manda).
+  const shell = embedded
+    ? "flex flex-col"
+    : "shrink-0 bg-white border-l border-slate-200 flex flex-col h-full";
   // Modo colapsado — barra fina à direita
   if (collapsed) {
     return (
@@ -61,7 +68,7 @@ export default function NodeConfigPanel({
   if (!node) {
     return (
       <div
-        className="w-[320px] shrink-0 bg-white border-l border-slate-200 flex flex-col h-full"
+        className={embedded ? shell : `w-[320px] ${shell}`}
         style={{ fontFamily: PANEL_FONT }}
       >
         <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
@@ -72,7 +79,7 @@ export default function NodeConfigPanel({
           {onToggleCollapse && (
             <button
               onClick={onToggleCollapse}
-              className="w-6 h-6 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              className="w-8 h-8 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
               title="Recolher painel"
             >
               <ChevronRight className="w-3.5 h-3.5" />
@@ -101,7 +108,7 @@ export default function NodeConfigPanel({
 
   return (
     <div
-      className="w-[340px] shrink-0 bg-white border-l border-slate-200 flex flex-col h-full"
+      className={embedded ? shell : `w-[340px] ${shell}`}
       style={{ fontFamily: PANEL_FONT }}
     >
       {/* Header */}
@@ -118,7 +125,7 @@ export default function NodeConfigPanel({
         </div>
         <button
           onClick={onClose}
-          className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
           title="Fechar"
         >
           <X className="w-3.5 h-3.5" />
@@ -126,7 +133,7 @@ export default function NodeConfigPanel({
         {onToggleCollapse && (
           <button
             onClick={onToggleCollapse}
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
             title="Recolher painel"
           >
             <ChevronRight className="w-3.5 h-3.5" />
@@ -143,7 +150,7 @@ export default function NodeConfigPanel({
       <div className="border-t border-slate-100 p-3">
         <button
           onClick={onDelete}
-          className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+          className="w-full h-8 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
         >
           <Trash2 className="w-3 h-3" />
           Excluir nó
@@ -969,7 +976,7 @@ function SpecialistsEditor({
                 />
                 <button
                   onClick={() => remove(idx)}
-                  className="w-6 h-6 inline-flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                  className="w-8 h-8 inline-flex items-center justify-center rounded text-red-500 hover:bg-red-50"
                   title="Remover"
                 >
                   <Trash2 className="w-3 h-3" />
@@ -1002,7 +1009,7 @@ function SpecialistsEditor({
           ))}
           <button
             onClick={add}
-            className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_#003083]"
+            className="w-full h-8 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_#003083]"
           >
             <Plus className="w-3 h-3" />
             Adicionar especialista
@@ -1116,7 +1123,7 @@ function VariantsEditor({
                   )}
                   <button
                     onClick={() => remove(idx)}
-                    className="w-6 h-6 inline-flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                    className="w-8 h-8 inline-flex items-center justify-center rounded text-red-500 hover:bg-red-50"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -1133,7 +1140,7 @@ function VariantsEditor({
           )}
           <button
             onClick={add}
-            className="w-full h-7 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_#003083]"
+            className="w-full h-8 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_#003083]"
           >
             <Plus className="w-3 h-3" />
             Adicionar variant

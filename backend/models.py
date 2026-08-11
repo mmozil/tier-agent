@@ -69,6 +69,15 @@ class TaAgent(Base):
     # URL de foto/avatar do agente (mostrada nas conversas espelhadas no Pet, etc)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # template_kind: atendente_loja | sdr | suporte | cobranca | custom
+
+    # Modelo DESTE agente. NULL = herda o default do tenant (ta_llm_provider.default_model).
+    # Credencial continua no provider (por tenant); aqui fica só a escolha — mesmo desenho
+    # do Dify: chave no workspace, modelo no app.
+    llm_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    llm_provider_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ta_llm_provider.id", ondelete="SET NULL"), nullable=True
+    )
+
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

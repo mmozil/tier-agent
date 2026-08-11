@@ -4,7 +4,9 @@ import toast from "react-hot-toast";
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronRight,
   Cloud,
+  FileText,
   History,
   Loader2,
   Play,
@@ -36,6 +38,16 @@ interface Playbook {
   updated_at: string;
 }
 
+interface StepLog {
+  id: number;
+  node_id: string;
+  node_type: string;
+  status: string;
+  latency_ms: number | null;
+  output_json: Record<string, any> | null;
+  error: string | null;
+}
+
 interface TestRunResult {
   execution_id: number;
   status: string;
@@ -57,7 +69,9 @@ export default function PlaybookEditorPage() {
   const [publishing, setPublishing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  const [showTest, setShowTest] = useState(false);
+  const [rightTab, setRightTab] = useState<"config" | "test">("config");
+  const [lastRun, setLastRun] = useState<TestRunResult | null>(null);
+  const [lastSteps, setLastSteps] = useState<StepLog[]>([]);
 
   const [paletteCollapsed, setPaletteCollapsed] = useState<boolean>(() => {
     try {
@@ -109,7 +123,15 @@ export default function PlaybookEditorPage() {
     if (!pb) return;
     setSaving(true);
     try {
-      await api.put(`/playbooks/${pb.id}`, { canvas_json: canvas });
+      // `status` é pintura da última simulação — não faz parte do playbook salvo.
+      const clean = {
+        ...canvas,
+        nodes: canvas.nodes.map((n) => {
+          const { status: _drop, ...rest } = (n.data || {}) as Record<string, unknown>;
+          return { ...n, data: rest };
+        }),
+      };
+      await api.put(`/playbooks/${pb.id}`, { canvas_json: clean });
       setLastSavedAt(new Date());
       dirtyRef.current = false;
       setPb((prev) => (prev && prev.status === "published" ? { ...prev, status: "draft" } : prev));
@@ -142,6 +164,22 @@ export default function PlaybookEditorPage() {
     () => canvas.nodes.find((n) => n.id === selectedNodeId) || null,
     [canvas.nodes, selectedNodeId],
   );
+
+  // Canvas pintado com o resultado da última simulação: o nó que rodou fica verde,
+  // o que falhou fica vermelho. É o que liga "o que aconteceu" ao desenho do fluxo.
+  // `status` é só de exibição — `persistCanvas` tira antes de salvar.
+  const canvasView = useMemo(() => {
+    if (!lastSteps.length) return canvas;
+    const byNode = new Map(lastSteps.map((s) => [s.node_id, s]));
+    return {
+      ...canvas,
+      nodes: canvas.nodes.map((n) => {
+        const s = byNode.get(n.id);
+        if (!s) return n;
+        return { ...n, data: { ...(n.data || {}), status: s.status === "error" ? "error" : "completed" } };
+      }),
+    };
+  }, [canvas, lastSteps]);
 
   // Quando seleciona nó, abre o painel direito automaticamente
   useEffect(() => {
@@ -271,7 +309,7 @@ export default function PlaybookEditorPage() {
           <History className="w-3.5 h-3.5" />
           Execuções
         </Link>
-        <Button variant="ghost" onClick={() => setShowTest(true)}>
+        <Button variant="ghost" onClick={() => { setConfigCollapsed(false); setRightTab("test"); }}>
           <Play className="w-3.5 h-3.5" />
           Testar
         </Button>
@@ -310,7 +348,7 @@ export default function PlaybookEditorPage() {
         {/* CANVAS — meio (fullwidth) */}
         <div className="flex-1 bg-[#FAFBFD] relative min-w-0">
           <PlaybookCanvasWrapper
-            canvas={canvas}
+            canvas={canvasView}
             onChange={setCanvas}
             onSelectNode={setSelectedNodeId}
             selectedNodeId={selectedNodeId}
@@ -331,18 +369,80 @@ export default function PlaybookEditorPage() {
           )}
         </div>
 
-        {/* CONFIG PANEL — direita */}
-        <NodeConfigPanel
-          node={selectedNode}
-          onChange={updateNodeData}
-          onDelete={deleteSelectedNode}
-          onClose={() => setSelectedNodeId(null)}
-          collapsed={configCollapsed}
-          onToggleCollapse={() => setConfigCollapsed((v) => !v)}
-        />
-      </div>
+        {/* DOCK DIREITO — config do nó e teste dividem a mesma coluna, em abas.
+            Fixo (não é modal): dá pra ajustar o nó e rodar o teste sem trocar de tela. */}
+        {configCollapsed ? (
+          <NodeConfigPanel
+            node={selectedNode}
+            onChange={updateNodeData}
+            onDelete={deleteSelectedNode}
+            onClose={() => setSelectedNodeId(null)}
+            collapsed
+            onToggleCollapse={() => setConfigCollapsed(false)}
+          />
+        ) : (
+          <div className="w-[400px] shrink-0 border-l border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#0c0e12] flex flex-col min-h-0">
+            <div className="flex items-center gap-1 px-3 pt-2 border-b border-[#EDEDED] dark:border-[#23272e] shrink-0">
+              {(["config", "test"] as const).map((t) => {
+                const on = rightTab === t;
+                const label = t === "config" ? "Configuração" : "Teste";
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setRightTab(t)}
+                    className={`relative h-9 px-3 text-[13px] transition-colors ${
+                      on
+                        ? "font-medium text-[#262626] dark:text-[#e6e8eb]"
+                        : "text-[#262626]/[0.56] dark:text-[#8b93a0] hover:text-[#262626] dark:hover:text-[#e6e8eb]"
+                    }`}
+                  >
+                    {label}
+                    {t === "test" && lastRun && (
+                      <span
+                        className={`ml-1.5 inline-block w-1.5 h-1.5 rounded-full align-middle ${
+                          lastRun.status === "error" ? "bg-[#C0271F]" : "bg-[#00A66C]"
+                        }`}
+                      />
+                    )}
+                    {on && <span className="absolute left-0 right-0 -bottom-px h-[2px] bg-[#003083] dark:bg-[#5b9bff]" />}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setConfigCollapsed(true)}
+                className={`${iconBtn} ml-auto mb-1`}
+                title="Recolher painel"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
 
-      {showTest && pb && <TestRunDrawer playbookId={pb.id} onClose={() => setShowTest(false)} />}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {rightTab === "config" ? (
+                <NodeConfigPanel
+                  node={selectedNode}
+                  onChange={updateNodeData}
+                  onDelete={deleteSelectedNode}
+                  onClose={() => setSelectedNodeId(null)}
+                  collapsed={false}
+                  onToggleCollapse={() => setConfigCollapsed(true)}
+                  embedded
+                />
+              ) : (
+                <TestPanel
+                  playbookId={pb.id}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={setSelectedNodeId}
+                  onResult={(r, s) => {
+                    setLastRun(r);
+                    setLastSteps(s);
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -385,25 +485,42 @@ function StatusPill({ status }: { status: "draft" | "published" | "archived" }) 
   );
 }
 
-// ─── Test Run Drawer (simulação)
-function TestRunDrawer({ playbookId, onClose }: { playbookId: number; onClose: () => void }) {
+// ─── Painel de teste (fixo na coluna direita, ao lado do canvas)
+// Antes era uma gaveta modal: abria, testava, fechava, ajustava, abria de novo.
+// Fixo, dá pra mexer no nó e rodar de novo sem perder o canvas de vista.
+function TestPanel({
+  playbookId,
+  selectedNodeId,
+  onSelectNode,
+  onResult,
+}: {
+  playbookId: number;
+  selectedNodeId: string | null;
+  onSelectNode: (id: string) => void;
+  onResult: (r: TestRunResult | null, s: StepLog[]) => void;
+}) {
   const [input, setInput] = useState("oi");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<TestRunResult | null>(null);
-  const [steps, setSteps] = useState<any[]>([]);
+  const [steps, setSteps] = useState<StepLog[]>([]);
+  const [openStep, setOpenStep] = useState<number | null>(null);
 
   async function run() {
     setRunning(true);
     setResult(null);
     setSteps([]);
+    onResult(null, []);
     try {
       const { data } = await api.post<TestRunResult>(`/playbooks/${playbookId}/test-run`, {
         input_message: input,
         sender_name: "Tester",
       });
       setResult(data);
-      const { data: stepsData } = await api.get<any[]>(`/playbooks/executions/${data.execution_id}/steps`);
+      const { data: stepsData } = await api.get<StepLog[]>(
+        `/playbooks/executions/${data.execution_id}/steps`,
+      );
       setSteps(stepsData);
+      onResult(data, stepsData);
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Erro no test-run");
     } finally {
@@ -412,115 +529,140 @@ function TestRunDrawer({ playbookId, onClose }: { playbookId: number; onClose: (
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end bg-slate-900/40 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="w-[500px] bg-white h-full overflow-y-auto shadow-2xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-[#EDEDED] flex items-center justify-between sticky top-0 bg-white z-10">
-          <div>
-            <h3 className="text-[15px] font-semibold text-[#262626]">Testar playbook</h3>
-            <p className="text-[11px] text-[#697386] mt-0.5">Simulação — não envia mensagem real ao canal</p>
-          </div>
-          <button
-            onClick={onClose}
-            className={iconBtn}
-          >
-            ×
-          </button>
-        </div>
+    <div className="flex flex-col">
+      <div className="px-4 py-3.5 border-b border-[#EDEDED] dark:border-[#23272e]">
+        <label className={`block text-[12px] font-medium mb-1.5 ${FC.sub}`}>Mensagem do cliente</label>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ex: oi, quanto custa?"
+          className={`w-full h-9 px-3 text-[13px] rounded-lg bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow`}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !running) run();
+          }}
+        />
+        <button onClick={run} disabled={running} className={`w-full mt-2.5 ${btnPrimary}`}>
+          {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+          Rodar simulação
+        </button>
+        <p className={`mt-2 text-[11px] ${FC.mut}`}>Simulação — não envia mensagem real ao canal.</p>
+      </div>
 
-        <div className="px-5 py-4 space-y-3 border-b border-[#EDEDED]">
-          <div>
-            <label className="block text-[12px] font-medium text-[#262626] mb-1.5">Mensagem do cliente</label>
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ex: oi, quanto custa?"
-              className="w-full h-9 px-3 text-[14px] rounded-lg bg-white text-[#262626] outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !running) run();
-              }}
+      {result && (
+        <div className="px-4 py-3 border-b border-[#EDEDED] dark:border-[#23272e] flex items-center gap-4">
+          <span
+            className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${
+              result.status === "error" ? "text-[#C0271F]" : "text-[#0B7A55] dark:text-[#5FC091]"
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                result.status === "error" ? "bg-[#C0271F]" : "bg-[#00A66C]"
+              }`}
             />
-          </div>
-          <button
-            onClick={run}
-            disabled={running}
-            className={`w-full ${btnPrimary}`}
-          >
-            {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-            Rodar simulação
-          </button>
+            {result.status}
+          </span>
+          <span className={`text-[12px] ${FC.sub}`}>{result.steps_executed} passo(s)</span>
+          <span className={`text-[12px] ${FC.sub}`}>{result.messages_sent} mensagem(ns)</span>
         </div>
+      )}
 
-        {result && (
-          <div className="px-5 py-4 border-b border-[#EDEDED]">
-            <div className="bg-slate-50 rounded-lg p-3 text-[12px] space-y-1.5">
-              <KV label="Status" value={result.status} />
-              <KV label="Steps executados" value={String(result.steps_executed)} />
-              <KV label="Mensagens enviadas" value={String(result.messages_sent)} />
-            </div>
-          </div>
-        )}
-
-        {steps.length > 0 && (
-          <div className="px-5 py-4 flex-1">
-            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#697386] mb-3">Timeline</h4>
-            <div className="space-y-2">
-              {steps.map((s, idx) => (
+      {steps.length > 0 && (
+        <div className="px-4 py-3.5">
+          <h4 className={`text-[11px] font-semibold uppercase tracking-wider mb-2.5 ${FC.mut}`}>
+            Percurso
+          </h4>
+          <div className="space-y-1.5">
+            {steps.map((s, idx) => {
+              const err = s.status === "error";
+              const isSel = selectedNodeId === s.node_id;
+              const open = openStep === s.id;
+              const sources = Array.isArray(s.output_json?.sources) ? s.output_json!.sources : [];
+              return (
                 <div
                   key={s.id}
-                  className={`rounded-lg p-3 text-[12px] ${
-                    s.status === "error"
-                      ? "bg-red-50 ring-1 ring-red-200"
-                      : "bg-white shadow-[0_0_0_1px_rgb(226,232,240)]"
+                  className={`rounded-lg border transition-colors ${
+                    err
+                      ? "border-[#C0271F]/30 bg-[#C0271F]/[0.04]"
+                      : isSel
+                        ? "border-[#003083]/40 dark:border-[#5b9bff]/40 bg-[#003083]/[0.03] dark:bg-[#5b9bff]/[0.06]"
+                        : "border-[#EDEDED] dark:border-[#23272e]"
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 inline-flex items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
-                        {idx + 1}
-                      </span>
-                      <span className="font-mono text-[11px] text-[#003083] font-medium">{s.node_type}</span>
-                    </div>
-                    <span className="text-[10px] text-[#697386]">{s.latency_ms ?? 0}ms</span>
-                  </div>
-                  {/* Sources RAG (knowledge_lookup) */}
-                  {s.output_json?.sources && Array.isArray(s.output_json.sources) && s.output_json.sources.length > 0 && (
-                    <div className="mt-1.5 mb-1.5 flex flex-wrap gap-1">
-                      {s.output_json.sources.map((src: any, i: number) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                          title={`Score ${src.score} · trecho ${src.position}`}
-                        >
-                          📄 {src.title}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {s.output_json && Object.keys(s.output_json).length > 0 && (
-                    <pre className="text-[10px] font-mono text-[#697386] overflow-x-auto whitespace-pre-wrap mt-1 bg-slate-50 p-2 rounded">
-                      {JSON.stringify(s.output_json, null, 2)}
-                    </pre>
-                  )}
-                  {s.error && <div className="text-[11px] text-red-600 mt-1">⚠ {s.error}</div>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+                  {/* Clicar no passo seleciona o nó no canvas — é o elo que faltava
+                      entre "o que rodou" e "onde ajustar". */}
+                  <button
+                    onClick={() => {
+                      onSelectNode(s.node_id);
+                      setOpenStep(open ? null : s.id);
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 text-left"
+                  >
+                    <span
+                      className={`w-5 h-5 shrink-0 inline-flex items-center justify-center rounded-full text-[10px] font-semibold ${
+                        err
+                          ? "bg-[#C0271F]/10 text-[#C0271F]"
+                          : "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
+                      }`}
+                    >
+                      {idx + 1}
+                    </span>
+                    <span className={`font-mono text-[11px] truncate flex-1 ${FC.ink}`}>{s.node_type}</span>
+                    <span className={`text-[10px] shrink-0 ${FC.mut}`}>{s.latency_ms ?? 0}ms</span>
+                  </button>
 
-function KV({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-[#697386]">{label}</span>
-      <span className="font-medium text-[#262626]">{value}</span>
+                  {open && (
+                    <div className="px-2.5 pb-2.5">
+                      {sources.length > 0 && (
+                        <div className="mb-1.5 flex flex-wrap gap-1">
+                          {sources.map((src: any, i: number) => (
+                            <span
+                              key={i}
+                              title={`Score ${src.score} · trecho ${src.position}`}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#00A66C]/[0.10] text-[#0B7A55] dark:text-[#5FC091]"
+                            >
+                              <FileText className="w-3 h-3" />
+                              {src.title}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {s.output_json && Object.keys(s.output_json).length > 0 && (
+                        <pre
+                          className={`text-[10px] font-mono overflow-x-auto whitespace-pre-wrap p-2 rounded ${FC.mut} bg-[#F9F9F9] dark:bg-[#0c0e12]`}
+                        >
+                          {JSON.stringify(s.output_json, null, 2)}
+                        </pre>
+                      )}
+                      {s.error && <div className="text-[11px] text-[#C0271F] mt-1">{s.error}</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {result && Object.keys(result.vars || {}).length > 0 && (
+            <>
+              <h4 className={`text-[11px] font-semibold uppercase tracking-wider mt-4 mb-2 ${FC.mut}`}>
+                Variáveis ao final
+              </h4>
+              <pre
+                className={`text-[10px] font-mono overflow-x-auto whitespace-pre-wrap p-2 rounded ${FC.mut} bg-[#F9F9F9] dark:bg-[#0c0e12]`}
+              >
+                {JSON.stringify(result.vars, null, 2)}
+              </pre>
+            </>
+          )}
+        </div>
+      )}
+
+      {!result && !running && (
+        <div className={`px-4 py-8 text-center text-[12px] ${FC.mut}`}>
+          Rode uma simulação para ver o caminho que a mensagem percorre.
+        </div>
+      )}
     </div>
   );
 }

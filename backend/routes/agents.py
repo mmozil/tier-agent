@@ -27,6 +27,9 @@ class AgentOut(BaseModel):
     system_prompt: str | None
     template_kind: str | None
     avatar_url: str | None = None
+    # Escolha de modelo DESTE agente; vazio = herda o default do tenant.
+    llm_model: str | None = None
+    llm_provider_id: int | None = None
     active: bool
 
     model_config = {"from_attributes": True}
@@ -96,6 +99,9 @@ class AgentUpdate(BaseModel):
     system_prompt: str | None = None
     template_kind: str | None = None
     avatar_url: str | None = None
+    # "" limpa a escolha e volta a herdar o default do tenant.
+    llm_model: str | None = None
+    llm_provider_id: int | None = None
     active: bool | None = None
 
 
@@ -120,6 +126,26 @@ async def update_agent(
     for k in ("persona", "system_prompt", "template_kind", "active", "avatar_url"):
         if k in data:
             setattr(agent, k, data[k])
+
+    # Modelo do agente: string vazia = "voltar a herdar o default do tenant".
+    if "llm_model" in data:
+        agent.llm_model = (data["llm_model"] or "").strip() or None
+    if "llm_provider_id" in data:
+        pid = data["llm_provider_id"]
+        if pid:
+            from models import TaLlmProvider
+
+            ok = (
+                await db.execute(
+                    select(TaLlmProvider.id).where(
+                        TaLlmProvider.id == pid, TaLlmProvider.tenant_id == tenant_id
+                    )
+                )
+            ).first()
+            if not ok:
+                raise HTTPException(400, "Provider não pertence a esta conta")
+        agent.llm_provider_id = pid or None
+
     await db.commit()
     await db.refresh(agent)
     if persona_or_prompt_changed:
@@ -278,3 +304,96 @@ async def delete_agent(
         raise HTTPException(404, "Agente não encontrado")
     await db.delete(agent)
     await db.commit()
+
+
+@router.get("/{agent_id}/runtime-config")
+async def agent_runtime_config(
+    agent_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """O que ESTE agente usa de verdade em execução — pra tela do agente mostrar
+    modelo e recuperação num lugar só, sem o usuário caçar em Configurações.
+
+    Separação (mesmo desenho do Dify):
+    - credencial LLM: por conta (`scope: tenant`) — a chave nunca aparece aqui
+    - modelo: por agente (`inherited=false`) ou herdado do default da conta
+    - embedding: por conta e **travado**: a coluna pgvector é vector(768), então
+      todo provider precisa emitir 768 dims. Por isso vai como leitura.
+    """
+    from models import TaEmbeddingProvider, TaKnowledge, TaLlmProvider
+
+    tenant_id = await _ensure_tenant(user)
+    agent = await db.get(TaAgent, agent_id)
+    if not agent or agent.tenant_id != tenant_id:
+        raise HTTPException(404, "Agente não encontrado")
+
+    llms = list(
+        (
+            await db.execute(
+                select(TaLlmProvider)
+                .where(TaLlmProvider.tenant_id == tenant_id, TaLlmProvider.active.is_(True))
+                .order_by(TaLlmProvider.priority.asc(), TaLlmProvider.id.desc())
+            )
+        ).scalars().all()
+    )
+    chosen = next((p for p in llms if p.id == agent.llm_provider_id), None) or (llms[0] if llms else None)
+
+    emb = (
+        await db.execute(
+            select(TaEmbeddingProvider)
+            .where(
+                TaEmbeddingProvider.tenant_id.in_([tenant_id, None]),
+                TaEmbeddingProvider.active.is_(True),
+            )
+            .order_by(TaEmbeddingProvider.priority.asc(), TaEmbeddingProvider.id.desc())
+        )
+    ).scalars().first()
+
+    docs = list(
+        (
+            await db.execute(
+                select(TaKnowledge).where(TaKnowledge.agent_id == agent_id).order_by(TaKnowledge.id.desc())
+            )
+        ).scalars().all()
+    )
+
+    return {
+        "llm": {
+            "scope": "tenant",
+            "provider": chosen.provider if chosen else None,
+            "model": agent.llm_model or (chosen.default_model if chosen else None),
+            "inherited": not agent.llm_model,
+            "tenant_default_model": chosen.default_model if chosen else None,
+            "provider_id": chosen.id if chosen else None,
+            "fallback": [f.get("model") for f in (chosen.fallback_chain_json or []) if isinstance(f, dict)]
+            if chosen
+            else [],
+            "options": [
+                {"id": p.id, "provider": p.provider, "default_model": p.default_model} for p in llms
+            ],
+        },
+        "embedding": {
+            "scope": "tenant",
+            "locked_reason": "A coluna de vetores é fixa em 768 dimensões — trocar aqui quebraria a busca de todos os agentes.",
+            "provider": emb.provider if emb else None,
+            "model": emb.default_model if emb else None,
+            "dimensions": emb.dimensions if emb else 768,
+        },
+        "knowledge": {
+            "total": len(docs),
+            "ready": sum(1 for d in docs if d.status == "ready"),
+            "failed": sum(1 for d in docs if d.status == "failed"),
+            "chunks": sum(int(d.chunks_count or 0) for d in docs),
+            "items": [
+                {
+                    "id": d.id,
+                    "title": d.title,
+                    "kind": d.kind,
+                    "status": d.status,
+                    "chunks_count": d.chunks_count,
+                }
+                for d in docs[:50]
+            ],
+        },
+    }

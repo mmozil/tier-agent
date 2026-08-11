@@ -182,6 +182,67 @@ async def _load_provider(db: AsyncSession, tenant_id: int) -> TaLlmProvider:
     )
 
 
+async def _apply_agent_model(
+    db: AsyncSession, provider: TaLlmProvider, agent_id: int | None
+) -> TaLlmProvider:
+    """Aplica a escolha de modelo DO AGENTE por cima do default do tenant.
+
+    Desenho igual ao do Dify: a credencial vive no workspace (aqui, TaLlmProvider por
+    tenant) e a escolha de modelo vive no app (aqui, ta_agent.llm_model). Agente sem
+    escolha (NULL) continua herdando o default da conta — comportamento antigo intacto.
+
+    `llm_provider_id` permite ainda apontar pra OUTRA credencial do mesmo tenant (ex:
+    um agente no Anthropic e outro no OpenAI). Se o registro não for do tenant, ignora.
+
+    Devolve um objeto DESANEXADO quando há override, pra não sujar a linha do provider
+    na sessão (um `await db.commit()` depois gravaria o modelo do agente no tenant).
+    """
+    if agent_id is None:
+        return provider
+
+    from models import TaAgent
+
+    agent = (
+        await db.execute(
+            select(TaAgent.llm_model, TaAgent.llm_provider_id, TaAgent.tenant_id).where(
+                TaAgent.id == agent_id
+            )
+        )
+    ).first()
+    if agent is None:
+        return provider
+
+    llm_model, llm_provider_id, agent_tenant = agent
+    base = provider
+
+    if llm_provider_id and llm_provider_id != provider.id:
+        alt = (
+            await db.execute(
+                select(TaLlmProvider).where(
+                    TaLlmProvider.id == llm_provider_id,
+                    TaLlmProvider.tenant_id == agent_tenant,
+                    TaLlmProvider.active.is_(True),
+                )
+            )
+        ).scalars().first()
+        if alt is not None:
+            base = alt
+
+    if not llm_model and base is provider:
+        return provider
+
+    return TaLlmProvider(
+        provider=base.provider,
+        api_key_enc=base.api_key_enc,
+        default_model=llm_model or base.default_model,
+        base_url=base.base_url,
+        temperature=base.temperature,
+        max_tokens=base.max_tokens,
+        timeout_s=base.timeout_s,
+        fallback_chain_json=base.fallback_chain_json or [],
+    )
+
+
 def _base_url(p: TaLlmProvider) -> str:
     return (p.base_url or _DEFAULT_BASE_URL.get(p.provider, "")).rstrip("/")
 
@@ -434,6 +495,7 @@ async def send_message(
 
     # 4. Chama o LLM (com fallback) + loop de tool-use se houver ferramentas
     provider = await _load_provider(db, tenant_id)
+    provider = await _apply_agent_model(db, provider, agent_id)
 
     # Tools = registry global do Tier + federação MCP por agente (TaToolProvider).
     # Só federa no caminho persona-driven (tools=None); se o caller passa tools
