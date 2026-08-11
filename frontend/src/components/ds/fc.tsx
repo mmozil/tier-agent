@@ -626,7 +626,7 @@ export function Section({
       <div className="mx-auto" style={{ maxWidth: CONTENT_MAX }}>
         <div className={`relative border-l border-r ${FC.hair}`}>
           <CurvyRect />
-          <div className={`flex items-center gap-3 px-6 ${open ? "pt-5 pb-4" : "py-4"}`}>
+          <div className="flex items-center gap-3 px-6 pt-5 pb-4">
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
@@ -647,7 +647,20 @@ export function Section({
             </button>
             {right && <div className="shrink-0">{right}</div>}
           </div>
-          {open && <div className="px-6 pb-6">{children}</div>}
+          {/* Abre/fecha DESLIZANDO. O truque do grid (0fr -> 1fr) anima altura sem
+              precisar medir o conteudo em JS — que e o que quebra quando o texto
+              muda de tamanho. `interpolate-size` nao tem suporte largo ainda.
+              Respeita prefers-reduced-motion. */}
+          <div
+            className="grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+            style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+          >
+            <div className="overflow-hidden">
+              <div className={`px-6 pb-6 transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}`}>
+                {children}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

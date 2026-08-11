@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from models import TaAgent
-from services import templates as tpl
+from services import agent_runtime, templates as tpl
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -431,7 +431,19 @@ async def agent_playground(
     if not msg:
         raise HTTPException(400, "Mensagem vazia")
 
-    system = agent.system_prompt or agent.persona or None
+    # MESMA precedência da produção (agent_runtime: `persona or system_prompt`).
+    # Estava invertida aqui — e como todo agente de template nasce com os DOIS
+    # campos preenchidos, o prompt testado nunca era o prompt executado.
+    system = agent.persona or agent.system_prompt or None
+
+    # RAG: o teste consulta a base de conhecimento pelo MESMO caminho da produção
+    # (services.agent_runtime.build_rag_block). Sem isso o cliente subia um
+    # documento, testava, o agente não sabia, e concluía que a indexação quebrou.
+    # Memória entre conversas continua de fora: ela é por CONTATO, e o playground
+    # não tem contato — não existe o que buscar.
+    rag_bloco, rag_fontes = await agent_runtime.build_rag_block(db, agent.id, msg)
+    if rag_bloco:
+        system = f"{system}\n\n{rag_bloco}" if system else rag_bloco
     history = [
         {"role": h.get("role"), "content": h.get("content")}
         for h in (payload.history or [])
@@ -455,4 +467,7 @@ async def agent_playground(
     return {
         "text": reply.text or "",
         "model_used": getattr(reply, "model_used", None),
+        # o painel carimba embaixo da resposta o que foi de fato consultado
+        "rag_fontes": rag_fontes,
+        "rag_usado": bool(rag_bloco),
     }

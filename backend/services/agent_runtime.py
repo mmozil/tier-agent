@@ -25,6 +25,57 @@ from services.connectors.base import ConnectorConfig, OutboundMessage
 
 logger = logging.getLogger(__name__)
 
+
+async def build_rag_block(db: AsyncSession, agent_id: int, query: str) -> tuple[str, list[str]]:
+    """Monta o bloco de Base de Conhecimento pro system prompt.
+
+    Extraido pra ser o PONTO UNICO de RAG: producao (send_message, abaixo) e o
+    playground do painel usam esta mesma funcao. Antes o playground chamava o
+    motor de LLM direto, sem RAG nenhum — entao o cliente subia um documento,
+    testava, o agente nao sabia, e ele concluia que a indexacao estava quebrada.
+    Testar com um caminho diferente do de producao nao e testar.
+
+    Devolve (bloco, fontes). Nunca levanta: RAG e enriquecimento, nao requisito —
+    se a busca falhar o agente responde sem ela, como sempre respondeu.
+    """
+    if not query or not query.strip():
+        return "", []
+    try:
+        from sqlalchemy import text as _sa_text
+
+        # So embeda a query se o agente TIVER conhecimento indexado (evita
+        # chamada de embedding a toa em todo turno de agente sem base).
+        tem_base = (
+            await db.execute(
+                _sa_text("SELECT 1 FROM ta_knowledge_chunk WHERE agent_id = :aid LIMIT 1"),
+                {"aid": agent_id},
+            )
+        ).first()
+        if not tem_base:
+            return "", []
+
+        from services import rag_engine
+
+        hits = await rag_engine.search(db, agent_id=agent_id, query=query, top_k=4)
+        if not hits:
+            return "", []
+
+        cabecalho = "# Base de conhecimento (responda com base nisto; não invente além)"
+        corpo = "\n\n".join(f"- {h.text.strip()}" for h in hits)
+        bloco = f"{cabecalho}\n{corpo}"
+        fontes = []
+        for h in hits:
+            titulo = getattr(h, "title", None) or getattr(h, "source", None)
+            if titulo and titulo not in fontes:
+                fontes.append(str(titulo))
+        logger.info("rag agent=%s hits=%s", agent_id, len(hits))
+        return bloco, fontes
+    except Exception:
+        logger.exception("rag search falhou agent=%s — segue sem RAG", agent_id)
+        return "", []
+
+
+
 # Filtro de segurança: remove caracteres CJK (chinês/japonês/coreano) que o
 # MiniMax ocasionalmente vaza em respostas em português. 2ª camada sobre a regra
 # de idioma da persona — garante que o cliente nunca veja caractere oriental.
@@ -685,30 +736,8 @@ async def handle_inbound_message(
     if memory_block:
         system_prompt = f"{system_prompt}\n\n{memory_block}".strip()
 
-    # RAG: busca conhecimento relevante na Base e injeta no system. Só embeda a
-    # query se o agente tiver conhecimento indexado (evita chamada de embed à toa).
-    rag_block = ""
-    try:
-        from sqlalchemy import text as _sa_text
-
-        _has_kb = (
-            await db.execute(
-                _sa_text("SELECT 1 FROM ta_knowledge_chunk WHERE agent_id = :aid LIMIT 1"),
-                {"aid": agent.id},
-            )
-        ).first()
-        if _has_kb:
-            from services import rag_engine
-
-            hits = await rag_engine.search(db, agent_id=agent.id, query=text_content, top_k=4)
-            if hits:
-                rag_block = (
-                    "# Base de conhecimento (responda com base nisto; não invente além)\n"
-                    + "\n\n".join(f"- {h.text.strip()}" for h in hits)
-                )
-                logger.info("rag agent=%s hits=%s", agent.id, len(hits))
-    except Exception:
-        logger.exception("rag search falhou agent=%s — segue sem RAG", agent.id)
+    # RAG: busca conhecimento relevante na Base e injeta no system.
+    rag_block, _rag_fontes = await build_rag_block(db, agent.id, text_content)
     if rag_block:
         system_prompt = f"{system_prompt}\n\n{rag_block}"
 

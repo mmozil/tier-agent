@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
-  AlertTriangle,
   ArrowLeft,
   BookOpen,
   Check,
@@ -635,7 +634,13 @@ export default function AgenteDetalhePage() {
    ───────────────────────────────────────────────────────────── */
 
 type Msg =
-  | { tipo: "msg"; role: "user" | "assistant"; content: string; model?: string | null }
+  | {
+      tipo: "msg";
+      role: "user" | "assistant";
+      content: string;
+      model?: string | null;
+      fontes?: string[];
+    }
   | { tipo: "marco"; texto: string };
 
 function ChatPanel({
@@ -684,13 +689,21 @@ function ChatPanel({
     setInput("");
     setEnviando(true);
     try {
-      const { data } = await api.post<{ text: string; model_used?: string | null }>(
-        `/agents/${agentId}/playground`,
-        { message: texto, history: hist },
-      );
+      const { data } = await api.post<{
+        text: string;
+        model_used?: string | null;
+        rag_fontes?: string[];
+        rag_usado?: boolean;
+      }>(`/agents/${agentId}/playground`, { message: texto, history: hist });
       setItens((m) => [
         ...m,
-        { tipo: "msg", role: "assistant", content: data.text || "(sem resposta)", model: data.model_used ?? null },
+        {
+          tipo: "msg",
+          role: "assistant",
+          content: data.text || "(sem resposta)",
+          model: data.model_used ?? null,
+          fontes: data.rag_fontes ?? [],
+        },
       ]);
     } catch (err: any) {
       const motivo = err?.response?.data?.detail || "erro ao falar com o agente";
@@ -719,10 +732,14 @@ function ChatPanel({
             Escreva como se fosse um cliente.
             <br />
             {agentName} responde com a persona real{model ? ` — em ${model}` : ""}.
-            <div className={`mt-3 mx-auto max-w-[280px] rounded-[10px] border ${FC.hair} px-3 py-2 text-[11.5px] leading-4`}>
-              <AlertTriangle className="w-3 h-3 inline mr-1 -mt-px" />
-              Este teste <span className="font-medium">não consulta a base de conhecimento</span> nem a memória de
-              conversas anteriores — as duas só rodam em produção.
+            <div className={`mt-3 mx-auto max-w-[300px] rounded-[10px] border ${FC.hair} px-3 py-2 text-[11.5px] leading-4 text-left`}>
+              O teste usa o <span className="font-medium">mesmo caminho da produção</span>: mesma persona e{" "}
+              <span className="font-medium">consulta a base de conhecimento</span>. Cada resposta mostra o modelo e as
+              fontes que entraram.
+              <br />
+              <span className={FC.mut}>
+                Fora: memória de conversas anteriores — ela é por contato, e aqui não há contato.
+              </span>
             </div>
           </div>
         ) : (
@@ -745,8 +762,23 @@ function ChatPanel({
                   >
                     {it.content}
                   </div>
-                  {it.role === "assistant" && it.model && (
-                    <div className={`mt-1 ml-1 text-[10.5px] font-mono ${FC.mut}`}>{it.model}</div>
+                  {/* Carimbo do que a resposta usou DE FATO: modelo que respondeu
+                      (pode não ser o escolhido, se caiu no fallback) e trechos da
+                      base que entraram no prompt. Sem isso o teste é uma caixa-preta. */}
+                  {it.role === "assistant" && (it.model || (it.fontes && it.fontes.length > 0)) && (
+                    <div className="mt-1 ml-1 flex items-center gap-1.5 flex-wrap">
+                      {it.model && <span className={`text-[10.5px] font-mono ${FC.mut}`}>{it.model}</span>}
+                      {it.fontes?.map((f, k) => (
+                        <span
+                          key={k}
+                          className={`inline-flex items-center gap-1 h-[18px] px-1.5 rounded-md border ${FC.hair} text-[10px] ${FC.mut}`}
+                          title="Trecho desta fonte entrou no prompt"
+                        >
+                          <BookOpen className="w-2.5 h-2.5" />
+                          {f}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
               ),

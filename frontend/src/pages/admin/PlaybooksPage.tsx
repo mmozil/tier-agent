@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, PageHero, Row, Button, btnPrimary, SkeletonBar } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button, btnPrimary, SkeletonBar, HairCells } from "@/components/ds/fc";
 
 interface PlaybookListItem {
   id: number;
@@ -299,14 +299,16 @@ function SectionRow({ title, subtitle }: { title: string; subtitle?: string }) {
   );
 }
 
-// CardGrid — grade de 2 colunas com gap (cards arredondados individuais), no padrão
-// da página /app/workflows do Firecrawl. Fica dentro de uma Row pra manter os rails.
+// CardGrid — grade FLUSH do Firecrawl: as celulas encostam e as bordas internas se
+// CRUZAM, formando o "+". Era grid com gap e cards arredondados flutuando — o mesmo
+// visual generico de "card de IA" que a lista de Agentes ja nao usa. Duas listas
+// irmas do mesmo produto tinham dois sistemas; agora tem um.
 function CardGrid({ children, last = false }: { children: ReactNode; last?: boolean }) {
   return (
     <Row last={last}>
-      <div className="p-5">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>
-      </div>
+      <HairCells cols={3} gridLines>
+        {children}
+      </HairCells>
     </Row>
   );
 }
@@ -354,7 +356,9 @@ function WorkflowCard({
       </div>
     </>
   );
-  const cls = `group relative flex flex-col min-h-[124px] rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 transition-all duration-150 hover:border-[#003083]/70 dark:hover:border-[#5b9bff]/70 hover:shadow-[0_2px_10px_rgba(0,48,131,0.06)]`;
+  // Celula flush: quem desenha a linha e a grade (HairCells), nao o card. Sem
+  // raio, sem sombra e sem borda propria — hover so muda a superficie.
+  const cls = `group relative flex h-full min-h-[132px] w-full flex-col p-5 transition-colors ${FC.hover}`;
   if (to) return <Link to={to} className={cls}>{inner}</Link>;
   return <button onClick={onClick} disabled={busy} className={`${cls} text-left disabled:opacity-60`}>{inner}</button>;
 }
@@ -363,7 +367,7 @@ function GhostCard({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className={`group flex min-h-[124px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed ${FC.hair} bg-transparent p-5 transition-all hover:border-[#003083]/60 dark:hover:border-[#5b9bff]/60 hover:bg-black/[0.015] dark:hover:bg-white/[0.02]`}
+      className={`group flex h-full min-h-[132px] w-full flex-col items-center justify-center gap-1.5 p-5 transition-colors ${FC.hover}`}
     >
       <div className="w-10 h-10 rounded-[10px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.1] flex items-center justify-center group-hover:bg-[#003083]/[0.12] dark:group-hover:bg-[#5b9bff]/[0.18] transition-colors">
         <Plus className="w-[18px] h-[18px] text-[#003083] dark:text-[#5b9bff]" />
@@ -404,9 +408,9 @@ function templateTag(t: TemplateInfo): keyof typeof CAT_META {
 function PlaybooksSkeleton() {
   return (
     <div className="p-5">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className={`rounded-xl border ${FC.hair} bg-white dark:bg-[#14171c] p-5 min-h-[124px]`}>
+          <div key={i} className={`border-r border-b ${FC.hair} p-5 min-h-[132px]`}>
             <div className="flex items-start justify-between">
               <SkeletonBar className="w-10 h-10 rounded-[10px]" />
               <SkeletonBar className="w-4 h-4 rounded" />
