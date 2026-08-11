@@ -115,6 +115,7 @@ async def upload(
         logger.warning("storage upload falhou: %s", e)
 
     # Extrai texto + gera skill
+    index_error: str | None = None
     try:
         if kind == "pdf":
             body = skill_builder.extract_pdf_text(content)
@@ -137,21 +138,34 @@ async def upload(
             logger.warning("install_skill_in_container falhou (legado, ignorado) — segue só com RAG")
 
         record.skill_md_path = skill_path
-        record.status = "ready"
-        record.indexed_at = datetime.utcnow()
         await db.commit()
 
-        # Indexa no pgvector pra RAG real (em paralelo ao skill no container Engine)
+        # Indexa no pgvector pra RAG real (em paralelo ao skill no container Engine).
+        # O status SÓ vira "ready" se o índice realmente entrou: sem isso o registro
+        # aparece pronto na tela com 0 chunks e o agente nunca recupera nada.
         try:
             from services import rag_engine
 
             stats = await rag_engine.index_knowledge(db, record.id, full_text=body)
             record.chunks_count = int(stats.get("chunks_count", 0))
-            if stats.get("error"):
-                logger.warning("rag_engine.index falhou knowledge=%s: %s", record.id, stats["error"])
-        except Exception:
+            index_error = stats.get("error")
+        except Exception as e:
             logger.exception("rag_engine.index_knowledge falhou knowledge=%s", record.id)
-            record.chunks_count = len([p for p in body.split("\n\n") if p.strip()])
+            record.chunks_count = 0
+            index_error = str(e)
+
+        if index_error or record.chunks_count == 0:
+            record.status = "failed"
+            record.indexed_at = None
+            logger.error(
+                "RAG não indexou knowledge=%s agent=%s: %s",
+                record.id,
+                agent.id,
+                index_error or "0 chunks",
+            )
+        else:
+            record.status = "ready"
+            record.indexed_at = datetime.utcnow()
     except RuntimeError as e:
         record.status = "failed"
         logger.exception("skill build falhou")
@@ -172,6 +186,9 @@ async def upload(
         "status": record.status,
         "chunks_count": record.chunks_count,
         "skill_md_path": record.skill_md_path,
+        # Motivo da falha de indexação, quando houver — a tela precisa disso pra não
+        # mostrar "pronto" em cima de um documento que não entrou no RAG.
+        "error": index_error,
     }
 
 
@@ -232,11 +249,13 @@ async def create_from_feedback(
         from services import rag_engine
 
         stats = await rag_engine.index_knowledge(db, record.id, full_text=md)
-        if stats.get("error"):
+        record.chunks_count = int(stats.get("chunks_count", 0))
+        if stats.get("error") or record.chunks_count == 0:
             record.status = "failed"
             await db.commit()
-            raise HTTPException(500, f"Falha ao indexar: {stats['error']}")
-        record.chunks_count = int(stats.get("chunks_count", 0))
+            motivo = stats.get("error") or "0 chunks indexados"
+            logger.error("from-feedback não indexou knowledge=%s: %s", record.id, motivo)
+            raise HTTPException(500, f"Falha ao indexar: {motivo}")
         record.status = "ready"
         record.indexed_at = datetime.utcnow()
         await db.commit()
@@ -298,10 +317,17 @@ async def reindex_knowledge(
     from services import rag_engine
 
     stats = await rag_engine.index_knowledge(db, k.id, full_text=full_text)
-    if stats.get("error"):
-        raise HTTPException(500, f"reindex falhou: {stats['error']}")
-
     k.chunks_count = int(stats.get("chunks_count", 0))
+
+    # Mesma regra do upload: 0 chunks é falha, não sucesso silencioso.
+    if stats.get("error") or k.chunks_count == 0:
+        k.status = "failed"
+        k.indexed_at = None
+        await db.commit()
+        motivo = stats.get("error") or "0 chunks indexados"
+        logger.error("reindex não indexou knowledge=%s: %s", k.id, motivo)
+        raise HTTPException(500, f"reindex falhou: {motivo}")
+
     k.status = "ready"
     k.indexed_at = datetime.utcnow()
     await db.commit()
