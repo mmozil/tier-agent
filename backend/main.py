@@ -391,6 +391,49 @@ async def _ensure_tenant_avatar_column():
         logger.exception("ensure_tenant_avatar_column falhou (segue mesmo assim)")
 
 
+async def _ensure_agent_llm_columns():
+    """Runtime DDL — modelo por agente em ta_agent.
+
+    Credencial continua na conta (ta_llm_provider); aqui fica só a ESCOLHA do
+    agente. NULL = herda o default do tenant, que é o comportamento antigo.
+    Colunas pequenas em tabela pequena — seguro no startup.
+    """
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            await db.execute(
+                _sql_text("ALTER TABLE ta_agent ADD COLUMN IF NOT EXISTS llm_model VARCHAR(128)")
+            )
+            await db.execute(
+                _sql_text("ALTER TABLE ta_agent ADD COLUMN IF NOT EXISTS llm_provider_id INTEGER")
+            )
+            # FK separada: ADD CONSTRAINT não tem IF NOT EXISTS, então checa antes.
+            await db.execute(
+                _sql_text(
+                    """
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint WHERE conname = 'fk_ta_agent_llm_provider'
+                        ) THEN
+                            ALTER TABLE ta_agent
+                              ADD CONSTRAINT fk_ta_agent_llm_provider
+                              FOREIGN KEY (llm_provider_id)
+                              REFERENCES ta_llm_provider(id) ON DELETE SET NULL;
+                        END IF;
+                    END $$;
+                    """
+                )
+            )
+            await db.commit()
+        logger.info("ensure_agent_llm_columns ok")
+    except Exception:
+        logger.exception("ensure_agent_llm_columns falhou (segue mesmo assim)")
+
+
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
@@ -401,6 +444,7 @@ async def startup():
     await _ensure_incident_table()
     await _ensure_embedding_provider_table()
     await _ensure_tenant_avatar_column()
+    await _ensure_agent_llm_columns()
     from scheduler import init_scheduler
     init_scheduler()
     # Discord Gateway (inbound): task de fundo, líder eleito via Redis (não duplica
