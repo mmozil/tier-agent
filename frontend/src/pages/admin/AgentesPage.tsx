@@ -968,49 +968,53 @@ function AgentDetailsDrawer({
           )}
         </div>
 
-        {/* Danger zone */}
+        {/* Ações — botões no tamanho natural (h-8, largura do conteúdo), lado a lado.
+            Full-width empilhado inflava ação corriqueira e dava a "Excluir" o mesmo
+            peso de um CTA. Destrutivo desce pro rodapé, discreto, atrás de confirmação. */}
         <div className="px-6 py-5">
-          <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${FC.mut}`}>
-            Ações
-          </h3>
-          <div className="space-y-2">
-            <Link to={`/admin/agentes/${agent.id}/skills`} className={`${btnPrimary} w-full`}>
-              <Sparkles className="w-3.5 h-3.5" /> Ver skills do agente
+          <div className="flex items-center gap-2">
+            <Link to={`/admin/agentes/${agent.id}/skills`} className={btnPrimary}>
+              <Sparkles className="w-3.5 h-3.5" /> Ver skills
             </Link>
-            <Button variant="secondary" onClick={toggleActive} className="w-full">
+            <Button variant="secondary" onClick={toggleActive}>
               {agent.active ? (
                 <>
-                  <PauseCircle className="w-3.5 h-3.5" /> Pausar agente
+                  <PauseCircle className="w-3.5 h-3.5" /> Pausar
                 </>
               ) : (
                 <>
-                  <PlayCircle className="w-3.5 h-3.5" /> Ativar agente
+                  <PlayCircle className="w-3.5 h-3.5" /> Ativar
                 </>
               )}
             </Button>
+          </div>
 
+          <div className={`mt-5 pt-4 border-t ${FC.hair}`}>
             {confirmDelete ? (
-              <div className="rounded-md border border-[#C0271F]/30 bg-[#C0271F]/[0.05] p-3 space-y-2">
-                <p className="text-[12px] text-[#C0271F] leading-relaxed">
-                  <strong>Excluir definitivamente {agent.nome}?</strong>
-                  <br />
-                  Isso remove TODOS os playbooks, conversas, knowledge e canais conectados a este
-                  agente. <strong>Não dá pra desfazer.</strong>
+              <div className="rounded-[10px] border border-[#C0271F]/30 bg-[#C0271F]/[0.04] p-3.5">
+                <p className={`text-[13px] leading-5 ${FC.ink}`}>
+                  Excluir <strong className="font-medium">{agent.nome}</strong>?
                 </p>
-                <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => setConfirmDelete(false)} className="flex-1">
-                    Cancelar
-                  </Button>
-                  <Button variant="danger" onClick={doDelete} disabled={deleting} className="flex-1">
+                <p className={`text-[12px] leading-5 mt-1 ${FC.sub}`}>
+                  Remove playbooks, conversas, conhecimento e canais deste agente. Não dá pra desfazer.
+                </p>
+                <div className="flex items-center gap-2 mt-3">
+                  <Button variant="danger" onClick={doDelete} disabled={deleting}>
                     {deleting && <Loader2 className="w-3 h-3 animate-spin" />}
-                    Sim, excluir
+                    Excluir mesmo assim
+                  </Button>
+                  <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+                    Cancelar
                   </Button>
                 </div>
               </div>
             ) : (
-              <Button variant="danger" onClick={() => setConfirmDelete(true)} className="w-full">
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="inline-flex items-center gap-1.5 text-[12px] text-[#262626]/40 dark:text-[#6b7280] hover:text-[#c0362c] dark:hover:text-[#ff6b5e] transition-colors"
+              >
                 <Trash2 className="w-3.5 h-3.5" /> Excluir agente
-              </Button>
+              </button>
             )}
           </div>
         </div>
