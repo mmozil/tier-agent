@@ -79,7 +79,7 @@ function CardGrid({ children, last = false }: { children: React.ReactNode; last?
   );
 }
 
-type AgentTab = "geral" | "testar" | "conhecimento" | "modelo" | "busca";
+type AgentTab = "geral" | "testar" | "conhecimento" | "modelo";
 
 // Espelha GET /agents/{id}/runtime-config — o que este agente usa DE FATO em execução.
 interface RuntimeConfig {
@@ -678,6 +678,7 @@ function AgentDetailsDrawer({
   const [rt, setRt] = useState<RuntimeConfig | null>(null);
   const [rtLoading, setRtLoading] = useState(true);
   const [savingModel, setSavingModel] = useState(false);
+  const [editModel, setEditModel] = useState(false);
 
   async function loadRuntime() {
     setRtLoading(true);
@@ -766,7 +767,6 @@ function AgentDetailsDrawer({
     { key: "testar", label: "Testar" },
     { key: "conhecimento", label: "Conhecimento" },
     { key: "modelo", label: "Modelo" },
-    { key: "busca", label: "Busca" },
   ];
 
   return (
@@ -1082,9 +1082,33 @@ function AgentDetailsDrawer({
                   )}
                 </div>
 
-                <Link to="/admin/knowledge" className={`${btnSecondary} w-full mt-3`}>
-                  <BookOpen className="w-3.5 h-3.5" /> Gerenciar conhecimento
-                </Link>
+                <div className="mt-4 flex items-center gap-2">
+                  <Link to="/admin/knowledge" className={btnSecondary}>
+                    <BookOpen className="w-3.5 h-3.5" /> Gerenciar documentos
+                  </Link>
+                </div>
+
+                {/* Como o texto vira busca. É config da conta, não do agente — por isso
+                    vive aqui como nota de rodapé, e não como aba própria. */}
+                <div className={`mt-5 pt-4 border-t ${FC.hair}`}>
+                  <div className="flex items-center gap-2.5">
+                    <ProviderLogo
+                      provider={rt?.embedding.model || rt?.embedding.provider || ""}
+                      className={`w-4 h-4 shrink-0 ${FC.dim}`}
+                    />
+                    <div className={`text-[12px] leading-5 ${FC.sub}`}>
+                      Indexado com{" "}
+                      <span className={`font-mono ${FC.ink}`}>{rt?.embedding.model || "—"}</span>{" "}
+                      <span className={FC.mut}>· {rt?.embedding.dimensions} dimensões · vale para toda a conta</span>
+                    </div>
+                  </div>
+                  <Link
+                    to="/admin/configuracoes/embedding"
+                    className={`inline-flex items-center gap-1 mt-2 text-[12px] ${FC.mut} hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors`}
+                  >
+                    <Settings className="w-3 h-3" /> Configurar indexação
+                  </Link>
+                </div>
               </>
             )}
           </div>
@@ -1147,47 +1171,76 @@ function AgentDetailsDrawer({
                   )}
                 </div>
 
-                <label className={`block text-[12px] font-medium mt-4 mb-1 ${FC.sub}`}>
-                  Modelo deste agente
-                </label>
-                <input
-                  defaultValue={agent.llm_model || ""}
-                  placeholder={rt.llm.tenant_default_model || "modelo"}
-                  disabled={savingModel}
-                  onBlur={(e) => {
-                    const v = e.target.value.trim();
-                    if (v !== (agent.llm_model || "")) saveModel({ llm_model: v });
-                  }}
-                  className={`w-full h-8 px-3 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow font-mono`}
-                />
-                <p className={`mt-1 text-[11px] ${FC.mut}`}>
-                  Deixe vazio para herdar o padrão da conta ({rt.llm.tenant_default_model || "—"}).
-                </p>
+                {!editModel ? (
+                  <div className="mt-3 flex items-center gap-2">
+                    <Button variant="secondary" onClick={() => setEditModel(true)}>
+                      <Edit3 className="w-3.5 h-3.5" /> Alterar modelo
+                    </Button>
+                    {!rt.llm.inherited && (
+                      <Button variant="ghost" onClick={() => saveModel({ llm_model: "" })} disabled={savingModel}>
+                        Voltar ao padrão da conta
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className={`mt-3 rounded-[10px] border ${FC.hair} p-4`}>
+                    <div className={`text-[13px] font-medium mb-2.5 ${FC.ink}`}>Usar qual modelo?</div>
 
-                {rt.llm.options.length > 1 && (
-                  <>
-                    <label className={`block text-[12px] font-medium mt-4 mb-1 ${FC.sub}`}>
-                      Credencial usada
-                    </label>
-                    <select
-                      value={agent.llm_provider_id ?? ""}
-                      disabled={savingModel}
-                      onChange={(e) =>
-                        saveModel({ llm_provider_id: e.target.value ? Number(e.target.value) : null })
-                      }
-                      className={`w-full h-8 px-2 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e]`}
-                    >
-                      <option value="">Padrão da conta</option>
-                      {rt.llm.options.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.provider} · {o.default_model}
-                        </option>
-                      ))}
-                    </select>
-                  </>
+                    {/* Primeiro os que a conta já tem chave — 1 clique, sem digitar nada. */}
+                    <div className="space-y-1.5">
+                      {rt.llm.options.map((o) => {
+                        const on = (agent.llm_model || rt.llm.tenant_default_model) === o.default_model;
+                        return (
+                          <button
+                            key={o.id}
+                            disabled={savingModel}
+                            onClick={() => {
+                              saveModel({ llm_model: o.default_model, llm_provider_id: o.id });
+                              setEditModel(false);
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] border text-left transition-colors ${
+                              on
+                                ? "border-[#003083]/40 dark:border-[#5b9bff]/40 bg-[#003083]/[0.03] dark:bg-[#5b9bff]/[0.06]"
+                                : `${FC.hair} ${FC.hover}`
+                            }`}
+                          >
+                            <ProviderLogo provider={o.default_model || o.provider} className={`w-4 h-4 shrink-0 ${FC.ink}`} />
+                            <span className={`text-[13px] font-mono truncate flex-1 ${FC.ink}`}>{o.default_model}</span>
+                            <span className={`text-[11px] ${FC.mut}`}>{o.provider}</span>
+                            {on && <CheckCircle2 className="w-4 h-4 shrink-0 text-[#003083] dark:text-[#5b9bff]" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Escape hatch: o provider aceita qualquer id de modelo, entao quem
+                        sabe o que esta fazendo pode digitar um que nao esta na lista. */}
+                    <div className={`mt-3 pt-3 border-t ${FC.hair}`}>
+                      <label className={`block text-[12px] font-medium mb-1.5 ${FC.sub}`}>
+                        Ou digite outro id de modelo
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          defaultValue={agent.llm_model || ""}
+                          placeholder={rt.llm.tenant_default_model || "ex: gpt-4o-mini"}
+                          disabled={savingModel}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              saveModel({ llm_model: (e.target as HTMLInputElement).value.trim() });
+                              setEditModel(false);
+                            }
+                          }}
+                          className={`flex-1 h-8 px-3 text-[13px] rounded-[10px] bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow font-mono`}
+                        />
+                        <Button variant="ghost" onClick={() => setEditModel(false)}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
-                <Link to="/admin/configuracoes/llm" className={`${btnSecondary} w-full mt-4`}>
+                <Link to="/admin/configuracoes/llm" className={`${btnSecondary} mt-5`}>
                   <Settings className="w-3.5 h-3.5" /> Chaves e padrões da conta
                 </Link>
               </>
@@ -1195,49 +1248,7 @@ function AgentDetailsDrawer({
           </div>
         )}
 
-        {tab === "busca" && (
-          <div className="px-6 py-5">
-            <ScopeNote
-              scope="conta"
-              text="Como o texto do conhecimento vira busca. Vale para todos os agentes da conta."
-            />
-            {rtLoading ? (
-              <SkeletonBar className="h-10 w-full mt-3" />
-            ) : (
-              <>
-                <div className={`mt-4 rounded-[10px] border ${FC.hair} flex items-center gap-3.5 p-4`}>
-                  <div
-                    className={`w-11 h-11 shrink-0 rounded-[10px] border ${FC.hair} ${FC.base} flex items-center justify-center ${FC.ink}`}
-                  >
-                    <ProviderLogo
-                      provider={rt?.embedding.model || rt?.embedding.provider || ""}
-                      className="w-[22px] h-[22px]"
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <div className={`text-[15px] font-medium font-mono truncate ${FC.ink}`}>
-                      {rt?.embedding.model || "—"}
-                    </div>
-                    <div className={`text-[13px] leading-5 mt-0.5 ${FC.sub}`}>
-                      {rt?.embedding.provider || "—"}
-                      <span className={FC.mut}> · </span>
-                      {rt?.embedding.dimensions} dimensões
-                    </div>
-                  </div>
-                </div>
-
-                <div className={`mt-3 rounded-md border ${FC.hair} ${FC.base} px-3 py-2.5`}>
-                  <p className={`text-[12px] leading-relaxed ${FC.sub}`}>{rt?.embedding.locked_reason}</p>
-                </div>
-
-                <Link to="/admin/configuracoes/embedding" className={`${btnSecondary} w-full mt-3`}>
-                  <Settings className="w-3.5 h-3.5" /> Configurar embedding da conta
-                </Link>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+              </div>
     </div>
   );
 }
