@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   ArrowUpRight,
@@ -354,6 +354,7 @@ function AgentGlyph({ className = "" }: { className?: string }) {
 }
 
 export default function AgentesPage() {
+  const navigate = useNavigate();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
@@ -393,7 +394,9 @@ export default function AgentesPage() {
       const { data } = await api.post<Agent>("/agents", { nome, persona: "", template_kind: template_kind ?? "" });
       toast.success("Agente criado");
       await load();
-      if (data?.id) setSelectedAgentId(data.id);
+      // Recem-criado ja abre na pagina de configuracao — e onde se ajusta
+      // persona/modelo, que e o proximo passo de quem acabou de criar.
+      if (data?.id) navigate(`/admin/agentes/${data.id}`);
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Erro ao criar agente");
     } finally {
@@ -483,7 +486,7 @@ export default function AgentesPage() {
                               templateLabel={templates.find((t) => t.key === a.template_kind)?.label}
                               menuOpen={openMenuId === a.id}
                               onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
-                              onClick={() => setSelectedAgentId(a.id)}
+                              onClick={() => navigate(`/admin/agentes/${a.id}`)}
                               onToggleActive={() => toggleActive(a)}
                               onDelete={() => deleteAgent(a)}
                             />
