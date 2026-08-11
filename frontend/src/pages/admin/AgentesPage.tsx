@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { ProviderLogo } from "@/components/icons/providerLogos";
 import { FC, PageFrame, Row, HairCells, CurvyRect, Button, btnPrimary, iconBtn, SkeletonBar, EmptyHint } from "@/components/ds/fc";
 
 // Blueprint — fundo "planta técnica" do Firecrawl: grade hairline + marcas "+" nos
@@ -78,7 +79,7 @@ function CardGrid({ children, last = false }: { children: React.ReactNode; last?
   );
 }
 
-type AgentTab = "geral" | "conhecimento" | "modelo" | "recuperacao";
+type AgentTab = "geral" | "conhecimento" | "modelo" | "busca";
 
 // Espelha GET /agents/{id}/runtime-config — o que este agente usa DE FATO em execução.
 interface RuntimeConfig {
@@ -764,7 +765,7 @@ function AgentDetailsDrawer({
     { key: "geral", label: "Visão geral" },
     { key: "conhecimento", label: "Conhecimento" },
     { key: "modelo", label: "Modelo" },
-    { key: "recuperacao", label: "Recuperação" },
+    { key: "busca", label: "Busca" },
   ];
 
   return (
@@ -775,45 +776,58 @@ function AgentDetailsDrawer({
       >
         {/* Header + abas (sticky: a navegação acompanha a rolagem) */}
         <div className={`sticky top-0 z-10 bg-white dark:bg-[#0c0e12] border-b ${FC.hair}`}>
-          <div className="px-5 pt-4 pb-3 flex items-center justify-between">
-            <div className="flex items-center gap-3 min-w-0">
-              {agent.avatar_url ? (
-                <img src={agent.avatar_url} alt="" className="w-9 h-9 rounded-md object-cover shrink-0" />
-              ) : (
-                <div className="w-9 h-9 rounded-md bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center shrink-0 text-[#003083] dark:text-[#5b9bff]">
-                  <AgentGlyph className="w-[22px] h-[22px]" />
-                </div>
-              )}
-              <div className="min-w-0">
-                <div className={`text-[15px] font-semibold truncate ${FC.ink}`}>{agent.nome}</div>
-                <div className={`text-[11px] flex items-center gap-1.5 ${FC.mut}`}>
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${agent.active ? "bg-[#00A66C]" : "bg-[#B4600A]"}`}
-                  />
-                  {agent.active ? "Ativo" : "Pausado"} · #{agent.id}
-                  {rt?.llm.model && (
-                    <>
-                      <span className={FC.mut}>·</span>
-                      <span className="font-mono">{rt.llm.model}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-            <button onClick={onClose} className={iconBtn}>
+          {/* Fechar sai da linha do título: o X colado no nome empurrava a leitura.
+              Fica numa faixa própria acima, como no Firecrawl. */}
+          <div className="flex items-center justify-end px-3 pt-3">
+            <button onClick={onClose} className={iconBtn} title="Fechar">
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="px-5 flex items-center gap-1 -mb-px">
+          <div className="px-6 pb-5 flex items-start gap-3.5 min-w-0">
+            {agent.avatar_url ? (
+              <img
+                src={agent.avatar_url}
+                alt=""
+                className={`w-11 h-11 rounded-[10px] object-cover shrink-0 border ${FC.hair}`}
+              />
+            ) : (
+              <div className="w-11 h-11 rounded-[10px] bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center shrink-0 text-[#003083] dark:text-[#5b9bff]">
+                <AgentGlyph className="w-6 h-6" />
+              </div>
+            )}
+            <div className="min-w-0 pt-0.5">
+              <h2 className={`text-[20px] font-[450] leading-7 tracking-[-0.1px] truncate ${FC.ink}`}>
+                {agent.nome}
+              </h2>
+              <div className={`mt-1 flex items-center gap-2 text-[13px] leading-5 ${FC.sub}`}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${agent.active ? "bg-[#00A66C]" : "bg-[#B4600A]"}`}
+                  />
+                  {agent.active ? "Ativo" : "Pausado"}
+                </span>
+                <span className={FC.mut}>·</span>
+                <span className={FC.mut}>#{agent.id}</span>
+                {rt?.llm.model && (
+                  <>
+                    <span className={FC.mut}>·</span>
+                    <span className="font-mono text-[12px] truncate">{rt.llm.model}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="px-6 flex items-center gap-5 -mb-px">
             {TABS.map((t) => {
               const on = tab === t.key;
               return (
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
-                  className={`relative h-9 px-3 text-[13px] transition-colors ${
-                    on ? `font-medium ${FC.ink}` : `${FC.sub} hover:${FC.ink}`
+                  className={`relative h-10 text-[13px] leading-5 transition-colors ${
+                    on ? `font-medium ${FC.ink}` : `${FC.sub} hover:text-[#262626] dark:hover:text-[#e6e8eb]`
                   }`}
                 >
                   {t.label}
@@ -832,7 +846,7 @@ function AgentDetailsDrawer({
         {tab === "geral" && (
         <>
         {/* Stats */}
-        <div className={`px-5 py-4 border-b ${FC.hair}`}>
+        <div className={`px-6 py-5 border-b ${FC.hair}`}>
           <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${FC.mut}`}>
             Resumo
           </h3>
@@ -865,7 +879,7 @@ function AgentDetailsDrawer({
         </div>
 
         {/* Edit form */}
-        <div className={`px-5 py-4 border-b ${FC.hair}`}>
+        <div className={`px-6 py-5 border-b ${FC.hair}`}>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#697386]">
               Configuração
@@ -955,7 +969,7 @@ function AgentDetailsDrawer({
         </div>
 
         {/* Danger zone */}
-        <div className="px-5 py-4">
+        <div className="px-6 py-5">
           <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${FC.mut}`}>
             Ações
           </h3>
@@ -1004,7 +1018,7 @@ function AgentDetailsDrawer({
         )}
 
         {tab === "conhecimento" && (
-          <div className="px-5 py-4">
+          <div className="px-6 py-5">
             <ScopeNote
               scope="agente"
               text="O que este agente sabe. Cada documento é indexado só para ele — outros agentes da conta não enxergam."
@@ -1070,7 +1084,7 @@ function AgentDetailsDrawer({
         )}
 
         {tab === "modelo" && (
-          <div className="px-5 py-4">
+          <div className="px-6 py-5">
             <ScopeNote
               scope="agente"
               text="O modelo que este agente usa para pensar. A chave de API continua na conta — aqui você só escolhe o modelo."
@@ -1089,18 +1103,39 @@ function AgentDetailsDrawer({
               </div>
             ) : (
               <>
-                <div className={`mt-3 rounded-lg border ${FC.hair} p-3.5`}>
-                  <div className={`text-[11px] uppercase tracking-wider font-semibold ${FC.mut}`}>
-                    Em uso agora
+                <div className={`mt-4 rounded-[10px] border ${FC.hair} overflow-hidden`}>
+                  <div className="flex items-center gap-3.5 p-4">
+                    <div
+                      className={`w-11 h-11 shrink-0 rounded-[10px] border ${FC.hair} ${FC.base} flex items-center justify-center ${FC.ink}`}
+                    >
+                      <ProviderLogo provider={rt.llm.model || rt.llm.provider || ""} className="w-[22px] h-[22px]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className={`text-[15px] font-medium font-mono truncate ${FC.ink}`}>{rt.llm.model}</div>
+                      <div className={`text-[13px] leading-5 mt-0.5 ${FC.sub}`}>
+                        {rt.llm.provider}
+                        <span className={FC.mut}> · </span>
+                        {rt.llm.inherited ? "padrão da conta" : "escolhido para este agente"}
+                      </div>
+                    </div>
                   </div>
-                  <div className={`mt-1.5 text-[17px] font-medium font-mono ${FC.ink}`}>{rt.llm.model}</div>
-                  <div className={`text-[12px] mt-0.5 ${FC.sub}`}>
-                    via {rt.llm.provider}
-                    {rt.llm.inherited ? " · herdado do padrão da conta" : " · escolhido para este agente"}
-                  </div>
+
+                  {/* Cadeia de fallback: cada elo com a marca, não texto corrido —
+                      o dono precisa reconhecer de bate-pronto pra onde cai se falhar. */}
                   {rt.llm.fallback.length > 0 && (
-                    <div className={`mt-2 text-[11px] ${FC.mut}`}>
-                      Se falhar, tenta: {rt.llm.fallback.join(" → ")}
+                    <div className={`flex items-center gap-2 flex-wrap border-t ${FC.hair} ${FC.base} px-4 py-2.5`}>
+                      <span className={`text-[11px] uppercase tracking-wider font-semibold ${FC.mut}`}>
+                        Se falhar
+                      </span>
+                      {rt.llm.fallback.map((m, i) => (
+                        <span
+                          key={i}
+                          className={`inline-flex items-center gap-1.5 h-6 pl-1.5 pr-2 rounded-md border ${FC.hair} bg-white dark:bg-[#14171c] text-[11px] font-mono ${FC.dim}`}
+                        >
+                          <ProviderLogo provider={m || ""} className="w-3.5 h-3.5" />
+                          {m}
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1153,8 +1188,8 @@ function AgentDetailsDrawer({
           </div>
         )}
 
-        {tab === "recuperacao" && (
-          <div className="px-5 py-4">
+        {tab === "busca" && (
+          <div className="px-6 py-5">
             <ScopeNote
               scope="conta"
               text="Como o texto do conhecimento vira busca. Vale para todos os agentes da conta."
@@ -1163,15 +1198,24 @@ function AgentDetailsDrawer({
               <SkeletonBar className="h-10 w-full mt-3" />
             ) : (
               <>
-                <div className={`mt-3 rounded-lg border ${FC.hair} p-3.5`}>
-                  <div className={`text-[11px] uppercase tracking-wider font-semibold ${FC.mut}`}>
-                    Modelo de embedding
+                <div className={`mt-4 rounded-[10px] border ${FC.hair} flex items-center gap-3.5 p-4`}>
+                  <div
+                    className={`w-11 h-11 shrink-0 rounded-[10px] border ${FC.hair} ${FC.base} flex items-center justify-center ${FC.ink}`}
+                  >
+                    <ProviderLogo
+                      provider={rt?.embedding.model || rt?.embedding.provider || ""}
+                      className="w-[22px] h-[22px]"
+                    />
                   </div>
-                  <div className={`mt-1.5 text-[15px] font-medium font-mono ${FC.ink}`}>
-                    {rt?.embedding.model || "—"}
-                  </div>
-                  <div className={`text-[12px] mt-0.5 ${FC.sub}`}>
-                    via {rt?.embedding.provider || "—"} · {rt?.embedding.dimensions} dimensões
+                  <div className="min-w-0">
+                    <div className={`text-[15px] font-medium font-mono truncate ${FC.ink}`}>
+                      {rt?.embedding.model || "—"}
+                    </div>
+                    <div className={`text-[13px] leading-5 mt-0.5 ${FC.sub}`}>
+                      {rt?.embedding.provider || "—"}
+                      <span className={FC.mut}> · </span>
+                      {rt?.embedding.dimensions} dimensões
+                    </div>
                   </div>
                 </div>
 
