@@ -24,6 +24,7 @@ import { api } from "@/lib/api";
 import { ProviderLogo } from "@/components/icons/providerLogos";
 import {
   Button,
+  CONTENT_MAX,
   FC,
   Field,
   Input,
@@ -248,26 +249,35 @@ export default function AgenteDetalhePage() {
       style={{ left: "var(--ta-sidebar-w, 240px)" }}
     >
       {/* ── HEADER ─────────────────────────────────────────────── */}
-      <header className={`h-14 shrink-0 px-4 flex items-center gap-3 border-b ${FC.hair} bg-white dark:bg-[#0f1216]`}>
+      <header className={`h-[60px] shrink-0 px-4 flex items-center gap-3 border-b ${FC.hair} bg-white dark:bg-[#0f1216]`}>
         <Link to="/admin/agentes" className={iconBtn} title="Voltar para Agentes">
           <ArrowLeft className="w-4 h-4" />
         </Link>
 
         {agent.avatar_url ? (
-          <img src={agent.avatar_url} alt="" className={`w-7 h-7 rounded-full object-cover border ${FC.hair} shrink-0`} />
+          <img src={agent.avatar_url} alt="" className={`w-9 h-9 rounded-full object-cover border ${FC.hair} shrink-0`} />
         ) : (
-          <div className="w-7 h-7 shrink-0 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[11px] font-semibold text-[#003083] dark:text-[#5b9bff]">
+          <div className="w-9 h-9 shrink-0 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[12px] font-semibold text-[#003083] dark:text-[#5b9bff]">
             {agent.nome.slice(0, 2).toUpperCase()}
           </div>
         )}
 
-        <div className="min-w-0 flex items-center gap-2">
-          <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{agent.nome}</span>
-          <span className={`inline-flex items-center gap-1.5 text-[12px] shrink-0 ${FC.sub}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${agent.active ? "bg-[#0a8f5a]" : "bg-[#F5A300]"}`} />
-            {agent.active ? "Ativo" : "Pausado"}
-          </span>
-          <span className={`text-[12px] font-mono shrink-0 ${FC.mut}`}>#{agent.id}</span>
+        <div className="min-w-0">
+          <div className={`text-[15px] font-medium leading-5 truncate ${FC.ink}`}>{agent.nome}</div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className={`inline-flex items-center gap-1.5 text-[12px] ${FC.sub}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${agent.active ? "bg-[#0a8f5a]" : "bg-[#F5A300]"}`} />
+              {agent.active ? "Ativo" : "Pausado"}
+            </span>
+            <span className={FC.mut}>·</span>
+            <span className={`text-[12px] font-mono ${FC.mut}`}>#{agent.id}</span>
+            {agent.template_kind && (
+              <>
+                <span className={FC.mut}>·</span>
+                <span className={`text-[12px] ${FC.mut}`}>{agent.template_kind}</span>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="flex-1" />
@@ -310,19 +320,23 @@ export default function AgenteDetalhePage() {
         storageKey="ta-agente-split"
         left={
           <div className="pb-24">
-            {/* Índice — navega por âncora, NÃO troca de tela (não é aba). */}
-            <nav
-              className={`sticky top-0 z-10 flex items-center gap-1 overflow-x-auto px-6 py-2.5 border-b ${FC.hair} ${FC.base}`}
-            >
-              {SECOES.map((s) => (
-                <a
-                  key={s.id}
-                  href={`#${s.id}`}
-                  className={`shrink-0 h-7 px-2.5 inline-flex items-center rounded-[8px] text-[12px] ${FC.sub} ${FC.hover} transition-colors`}
-                >
-                  {s.label}
-                </a>
-              ))}
+            {/* Índice — navega por âncora, NÃO troca de tela (não é aba).
+                Vive nos mesmos rails das seções pra a coluna ter um eixo vertical
+                contínuo em vez de blocos soltos. */}
+            <nav className={`sticky top-0 z-20 w-full ${FC.base}`}>
+              <div className="mx-auto" style={{ maxWidth: CONTENT_MAX }}>
+                <div className={`border-l border-r ${FC.hair} flex items-center gap-0.5 overflow-x-auto px-4 py-2`}>
+                  {SECOES.map((s) => (
+                    <a
+                      key={s.id}
+                      href={`#${s.id}`}
+                      className={`shrink-0 h-7 px-2.5 inline-flex items-center rounded-[8px] text-[12.5px] ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-colors`}
+                    >
+                      {s.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
             </nav>
 
             {/* 1 · INSTRUÇÕES */}
@@ -688,9 +702,9 @@ function ChatPanel({
 
   return (
     <div className={`flex flex-col h-full min-h-0 border-l ${FC.hair} bg-white dark:bg-[#0f1216]`}>
-      <div className={`h-11 shrink-0 px-4 flex items-center gap-2 border-b ${FC.hair}`}>
-        <MessageSquare className={`w-3.5 h-3.5 ${FC.mut}`} />
-        <span className={`text-[13px] font-medium ${FC.ink}`}>Testar</span>
+      <div className={`h-[60px] shrink-0 px-5 flex items-center gap-2.5 border-b ${FC.hair}`}>
+        <MessageSquare className={`w-4 h-4 ${FC.mut}`} />
+        <span className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 fc-crisp ${FC.ink}`}>Testar</span>
         <div className="flex-1" />
         {itens.length > 0 && (
           <button onClick={() => setItens([])} className={iconBtn} title="Limpar conversa">

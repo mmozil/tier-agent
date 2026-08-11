@@ -616,26 +616,40 @@ export function Section({
       /* modo privado — só não persiste */
     }
   }, [key, open]);
+
+  // Estrutura do Firecrawl (mesma do <Row>): a LINHA horizontal atravessa a
+  // largura toda, o conteúdo vive entre RAILS (border-l/r) e os cantos ganham
+  // os brackets do CurvyRect — é o cruzamento linha×rail que desenha o "+".
+  // Sem isso a seção vira uma faixa cinza genérica de admin qualquer.
   return (
-    <section id={id} className={`border-b ${FC.hair} scroll-mt-2`}>
-      <div className="flex items-center gap-2 px-6 py-3.5">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className={`group flex items-center gap-2 min-w-0 flex-1 text-left ${FC.ink}`}
-        >
-          <ChevronDown
-            className={`w-4 h-4 shrink-0 ${FC.mut} transition-transform ${open ? "" : "-rotate-90"}`}
-          />
-          <span className="text-[14px] font-medium truncate">{title}</span>
-          {count !== undefined && count !== null && (
-            <span className={`shrink-0 text-[11px] font-mono tabular-nums ${FC.mut}`}>{count}</span>
-          )}
-        </button>
-        {right && <div className="shrink-0">{right}</div>}
+    <section id={id} className={`relative w-full border-t ${FC.hair} scroll-mt-2`}>
+      <div className="mx-auto" style={{ maxWidth: CONTENT_MAX }}>
+        <div className={`relative border-l border-r ${FC.hair}`}>
+          <CurvyRect />
+          <div className={`flex items-center gap-3 px-6 ${open ? "pt-5 pb-4" : "py-4"}`}>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              className="group flex items-baseline gap-2.5 min-w-0 flex-1 text-left"
+            >
+              <ChevronDown
+                className={`w-3.5 h-3.5 shrink-0 self-center ${FC.mut} transition-transform ${open ? "" : "-rotate-90"}`}
+              />
+              {/* label-x-large do FC: 20/450/-0.1 — é o degrau que dava falta
+                  na hierarquia (título de seção estava no mesmo peso do corpo) */}
+              <span className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 truncate fc-crisp ${FC.ink}`}>
+                {title}
+              </span>
+              {count !== undefined && count !== null && (
+                <span className={`text-[12px] font-mono tabular-nums shrink-0 ${FC.mut}`}>{count}</span>
+              )}
+            </button>
+            {right && <div className="shrink-0">{right}</div>}
+          </div>
+          {open && <div className="px-6 pb-6">{children}</div>}
+        </div>
       </div>
-      {open && <div className="px-6 pb-5">{children}</div>}
     </section>
   );
 }
