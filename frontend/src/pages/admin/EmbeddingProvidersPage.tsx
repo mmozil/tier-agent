@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Loader2, Zap, CheckCircle2, XCircle, Database, Pencil } from "lucide-react";
+import { Plus, Trash2, Loader2, Lock, Zap, CheckCircle2, XCircle, Database, Pencil } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SkeletonBar, iconBtn, Select } from "@/components/ds/fc";
@@ -287,10 +287,29 @@ export default function EmbeddingProvidersPage() {
                 </label>
               </div>
               <div className="grid grid-cols-2 gap-4">
+                {/* Dimensões é TRAVADO em 768: a coluna de vetores do banco é
+                    vector(768) fixa. Aceitar outro número aqui não "configura" nada —
+                    faz todo upload de conhecimento falhar depois, e o registro ainda
+                    fica marcado como pronto com zero trechos. Era um campo livre com
+                    um aviso ao lado; virou o próprio limite. */}
                 <label className="block">
                   <span className={`text-[12px] ${FC.sub}`}>Dimensões</span>
-                  <input type="number" min="1" value={form.dimensions} onChange={(e) => setForm({ ...form, dimensions: parseInt(e.target.value) || 768 })} className={inputCls} />
-                  <span className={`text-[11px] mt-1 block ${FC.mut}`}>Deve ser 768 pra casar com a base.</span>
+                  <div
+                    className={`${inputCls} flex items-center justify-between cursor-not-allowed opacity-90`}
+                    aria-readonly="true"
+                  >
+                    <span className="font-mono tabular-nums">{form.dimensions}</span>
+                    <Lock className={`w-3.5 h-3.5 ${FC.mut}`} />
+                  </div>
+                  {form.dimensions === 768 ? (
+                    <span className={`text-[11px] mt-1 block ${FC.mut}`}>
+                      Fixo — a base de vetores é vector(768) e vale para todos os agentes.
+                    </span>
+                  ) : (
+                    <span className="text-[11px] mt-1 block text-[#c0362c] dark:text-[#ff6b5e]">
+                      Divergente da base (768). Todo upload de conhecimento vai falhar até corrigir.
+                    </span>
+                  )}
                 </label>
                 {form.provider === "local" && (
                   <label className="block">

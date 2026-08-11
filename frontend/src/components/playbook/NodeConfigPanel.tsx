@@ -14,7 +14,6 @@ interface Props {
   embedded?: boolean;
 }
 
-const PANEL_FONT = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif';
 
 export default function NodeConfigPanel({
   node,
@@ -28,17 +27,16 @@ export default function NodeConfigPanel({
   // Dentro do dock: sem largura/borda próprias (o container manda).
   const shell = embedded
     ? "flex flex-col"
-    : "shrink-0 bg-white border-l border-slate-200 flex flex-col h-full";
+    : "shrink-0 bg-white dark:bg-[#0f1216] border-l border-[#EDEDED] dark:border-[#23272e] flex flex-col h-full";
   // Modo colapsado — barra fina à direita
   if (collapsed) {
     return (
       <div
-        className="w-[48px] shrink-0 bg-white border-l border-slate-200 flex flex-col items-center py-2 gap-1 h-full"
-        style={{ fontFamily: PANEL_FONT }}
+        className="w-[48px] shrink-0 bg-white dark:bg-[#0f1216] border-l border-[#EDEDED] dark:border-[#23272e] flex flex-col items-center py-2 gap-1 h-full"
       >
         <button
           onClick={onToggleCollapse}
-          className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          className="w-8 h-8 inline-flex items-center justify-center rounded-md text-[#262626]/40 dark:text-[#6b7280] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white dark:bg-[#14171c]/[0.04] transition-colors"
           title="Expandir configuração"
         >
           <ChevronLeft className="w-4 h-4" />
@@ -49,7 +47,7 @@ export default function NodeConfigPanel({
           const Icon = m.icon;
           return (
             <>
-              <div className="w-7 h-px bg-slate-200 my-1" />
+              <div className="w-7 h-px bg-[#EDEDED] dark:bg-[#23272e] my-1" />
               <div
                 className="w-8 h-8 rounded-md flex items-center justify-center"
                 style={{ backgroundColor: `${m.color}14`, color: m.color }}
@@ -69,17 +67,16 @@ export default function NodeConfigPanel({
     return (
       <div
         className={embedded ? shell : `w-[320px] ${shell}`}
-        style={{ fontFamily: PANEL_FONT }}
       >
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-[#EDEDED] dark:border-[#23272e] flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <Settings2 className="w-3.5 h-3.5 text-[#697386]" />
-            <h3 className="text-[13px] font-semibold text-[#1a2c44]">Configuração</h3>
+            <Settings2 className="w-3.5 h-3.5 text-[#262626]/[0.56] dark:text-[#8b93a0]" />
+            <h3 className="text-[13px] font-semibold text-[#262626] dark:text-[#e6e8eb]">Configuração</h3>
           </div>
           {onToggleCollapse && (
             <button
               onClick={onToggleCollapse}
-              className="w-8 h-8 inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              className="w-8 h-8 inline-flex items-center justify-center rounded text-[#262626]/40 dark:text-[#6b7280] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white dark:bg-[#14171c]/[0.04]"
               title="Recolher painel"
             >
               <ChevronRight className="w-3.5 h-3.5" />
@@ -88,11 +85,11 @@ export default function NodeConfigPanel({
         </div>
         <div className="flex-1 flex items-center justify-center px-6 text-center">
           <div>
-            <div className="inline-flex w-10 h-10 rounded-lg bg-slate-50 items-center justify-center mb-3">
-              <Settings2 className="w-5 h-5 text-slate-400" />
+            <div className="inline-flex w-10 h-10 rounded-lg bg-black/[0.035] dark:bg-white/[0.05] items-center justify-center mb-3">
+              <Settings2 className="w-5 h-5 text-[#262626]/40 dark:text-[#6b7280]" />
             </div>
-            <div className="text-[13px] font-medium text-[#1a2c44] mb-1">Selecione um nó</div>
-            <p className="text-[12px] text-[#697386] leading-relaxed">
+            <div className="text-[13px] font-medium text-[#262626] dark:text-[#e6e8eb] mb-1">Selecione um nó</div>
+            <p className="text-[12px] text-[#262626]/[0.56] dark:text-[#8b93a0] leading-relaxed">
               Clique num nó do canvas pra ver e editar a configuração dele aqui.
             </p>
           </div>
@@ -109,10 +106,9 @@ export default function NodeConfigPanel({
   return (
     <div
       className={embedded ? shell : `w-[340px] ${shell}`}
-      style={{ fontFamily: PANEL_FONT }}
     >
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+      <div className="px-4 py-3 border-b border-[#EDEDED] dark:border-[#23272e] flex items-center gap-2">
         <div
           className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
           style={{ backgroundColor: `${meta.color}14`, boxShadow: `0 0 0 1px ${meta.color}26` }}
@@ -120,12 +116,12 @@ export default function NodeConfigPanel({
           <Icon className="w-3.5 h-3.5" style={{ color: meta.color }} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold text-[#1a2c44] truncate leading-tight">{meta.label}</div>
-          <div className="text-[10px] text-[#697386] truncate leading-tight font-mono mt-0.5">{node.id}</div>
+          <div className="text-[13px] font-semibold text-[#262626] dark:text-[#e6e8eb] truncate leading-tight">{meta.label}</div>
+          <div className="text-[10px] text-[#262626]/[0.56] dark:text-[#8b93a0] truncate leading-tight font-mono mt-0.5">{node.id}</div>
         </div>
         <button
           onClick={onClose}
-          className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          className="w-8 h-8 inline-flex items-center justify-center rounded-md text-[#262626]/40 dark:text-[#6b7280] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white dark:bg-[#14171c]/[0.04] transition-colors"
           title="Fechar"
         >
           <X className="w-3.5 h-3.5" />
@@ -133,7 +129,7 @@ export default function NodeConfigPanel({
         {onToggleCollapse && (
           <button
             onClick={onToggleCollapse}
-            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-[#262626]/40 dark:text-[#6b7280] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white dark:bg-[#14171c]/[0.04] transition-colors"
             title="Recolher painel"
           >
             <ChevronRight className="w-3.5 h-3.5" />
@@ -147,7 +143,7 @@ export default function NodeConfigPanel({
       </div>
 
       {/* Footer — delete */}
-      <div className="border-t border-slate-100 p-3">
+      <div className="border-t border-[#EDEDED] dark:border-[#23272e] p-3">
         <button
           onClick={onDelete}
           className="w-full h-8 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
@@ -246,8 +242,8 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
               mono
             />
           </FieldGroup>
-          <div className="text-[10px] text-[#697386] bg-slate-50 px-2 py-2 rounded space-y-1">
-            <div className="font-semibold text-[#1a2c44]">Como disparar:</div>
+          <div className="text-[10px] text-[#262626]/[0.56] dark:text-[#8b93a0] bg-black/[0.035] dark:bg-white/[0.05] px-2 py-2 rounded space-y-1">
+            <div className="font-semibold text-[#262626] dark:text-[#e6e8eb]">Como disparar:</div>
             <code className="block font-mono text-[10px] break-all">
               POST https://api-agent.tier.finance/api/v1/webhooks/event/{(local.event_key as string) || "{key}"}
             </code>
@@ -705,7 +701,7 @@ function NodeForm({ node, onChange }: { node: PlaybookNode; onChange: (data: Rec
 
     default:
       return (
-        <div className="text-[12px] text-[#697386] italic">
+        <div className="text-[12px] text-[#262626]/[0.56] dark:text-[#8b93a0] italic">
           Configuração deste nó chega em breve.
         </div>
       );
@@ -748,7 +744,7 @@ function JsonInput({
         value={raw}
         onChange={(e) => handleChange(e.target.value)}
         rows={4}
-        className={`w-full px-3 py-2 text-[12px] rounded-md bg-white text-[#1a2c44] outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow resize-none font-mono ${
+        className={`w-full px-3 py-2 text-[12px] rounded-md bg-white dark:bg-[#14171c] text-[#262626] dark:text-[#e6e8eb] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] transition-shadow resize-none font-mono ${
           err ? "shadow-[0_0_0_1px_#fca5a5]" : ""
         }`}
         spellCheck={false}
@@ -781,10 +777,10 @@ function FieldGroup({
   return (
     <div className="space-y-1.5">
       {label && (
-        <label className="block text-[12px] font-medium text-[#1a2c44]">{label}</label>
+        <label className="block text-[12px] font-medium text-[#262626] dark:text-[#e6e8eb]">{label}</label>
       )}
       {children}
-      {hint && <p className="text-[10px] text-[#697386] leading-relaxed">{hint}</p>}
+      {hint && <p className="text-[10px] text-[#262626]/[0.56] dark:text-[#8b93a0] leading-relaxed">{hint}</p>}
     </div>
   );
 }
@@ -806,7 +802,7 @@ function TextInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full h-7 px-3 text-[13px] rounded-md bg-white text-[#1a2c44] outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow ${
+      className={`w-full h-7 px-3 text-[13px] rounded-md bg-white dark:bg-[#14171c] text-[#262626] dark:text-[#e6e8eb] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] transition-shadow ${
         mono ? "font-mono text-[12px]" : ""
       }`}
     />
@@ -830,7 +826,7 @@ function TextareaInput({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       rows={rows}
-      className="w-full px-3 py-2 text-[13px] rounded-md bg-white text-[#1a2c44] outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow resize-none"
+      className="w-full px-3 py-2 text-[13px] rounded-md bg-white dark:bg-[#14171c] text-[#262626] dark:text-[#e6e8eb] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] transition-shadow resize-none"
     />
   );
 }
@@ -853,7 +849,7 @@ function NumberInput({
       onChange={(e) => onChange(Number(e.target.value))}
       min={min}
       max={max}
-      className="w-full h-7 px-3 text-[13px] rounded-md bg-white text-[#1a2c44] outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow font-mono"
+      className="w-full h-7 px-3 text-[13px] rounded-md bg-white dark:bg-[#14171c] text-[#262626] dark:text-[#e6e8eb] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] transition-shadow font-mono"
     />
   );
 }
@@ -871,7 +867,7 @@ function SelectInput({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full h-7 px-3 text-[13px] rounded-md bg-white text-[#1a2c44] outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
+      className="w-full h-7 px-3 text-[13px] rounded-md bg-white dark:bg-[#14171c] text-[#262626] dark:text-[#e6e8eb] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] transition-shadow"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>
@@ -892,7 +888,7 @@ function CheckboxInput({
   label: string;
 }) {
   return (
-    <label className="flex items-center gap-2 text-[12px] text-[#1a2c44] cursor-pointer">
+    <label className="flex items-center gap-2 text-[12px] text-[#262626] dark:text-[#e6e8eb] cursor-pointer">
       <input
         type="checkbox"
         checked={checked}
@@ -964,7 +960,7 @@ function SpecialistsEditor({
           {specialists.map((s, idx) => (
             <div
               key={idx}
-              className="border border-slate-200 rounded-md p-2.5 space-y-1.5 bg-slate-50"
+              className="border border-[#EDEDED] dark:border-[#23272e] rounded-md p-2.5 space-y-1.5 bg-black/[0.035] dark:bg-white/[0.05]"
             >
               <div className="flex items-center gap-1.5">
                 <input
@@ -972,7 +968,7 @@ function SpecialistsEditor({
                   value={s.name}
                   onChange={(e) => update(idx, { name: normalizeName(e.target.value) })}
                   placeholder="vendas"
-                  className="flex-1 h-6 px-2 text-[12px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] font-mono"
+                  className="flex-1 h-6 px-2 text-[12px] rounded-md bg-white dark:bg-[#14171c] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] font-mono"
                 />
                 <button
                   onClick={() => remove(idx)}
@@ -987,16 +983,16 @@ function SpecialistsEditor({
                 value={s.description}
                 onChange={(e) => update(idx, { description: e.target.value })}
                 placeholder="Quando o cliente quer..."
-                className="w-full h-6 px-2 text-[11px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083]"
+                className="w-full h-6 px-2 text-[11px] rounded-md bg-white dark:bg-[#14171c] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083]"
               />
               <textarea
                 value={s.system_prompt}
                 onChange={(e) => update(idx, { system_prompt: e.target.value })}
                 placeholder="Persona/instrução pro motor quando este specialist responder"
                 rows={2}
-                className="w-full px-2 py-1.5 text-[11px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] resize-none font-mono"
+                className="w-full px-2 py-1.5 text-[11px] rounded-md bg-white dark:bg-[#14171c] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] resize-none font-mono"
               />
-              <label className="flex items-center gap-1.5 text-[10px] text-[#697386]">
+              <label className="flex items-center gap-1.5 text-[10px] text-[#262626]/[0.56] dark:text-[#8b93a0]">
                 <input
                   type="checkbox"
                   checked={s.auto_reply !== false}
@@ -1009,7 +1005,7 @@ function SpecialistsEditor({
           ))}
           <button
             onClick={add}
-            className="w-full h-8 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_#003083]"
+            className="w-full h-8 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white dark:bg-[#14171c] text-[#003083] shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] hover:shadow-[0_0_0_1px_#003083]"
           >
             <Plus className="w-3 h-3" />
             Adicionar especialista
@@ -1080,32 +1076,32 @@ function VariantsEditor({
   const totalWeight = variants.reduce((sum, v) => sum + (Number(v.weight) || 0), 0);
 
   return (
-    <div className="border-t border-slate-100 pt-3 mt-2">
+    <div className="border-t border-[#EDEDED] dark:border-[#23272e] pt-3 mt-2">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between text-[12px] font-semibold text-[#1a2c44] mb-2"
+        className="w-full flex items-center justify-between text-[12px] font-semibold text-[#262626] dark:text-[#e6e8eb] mb-2"
       >
         <span>🧪 A/B Testing {variants.length > 0 && `(${variants.length} variants)`}</span>
-        <span className="text-slate-400">{expanded ? "−" : "+"}</span>
+        <span className="text-[#262626]/40 dark:text-[#6b7280]">{expanded ? "−" : "+"}</span>
       </button>
 
       {expanded && (
         <div className="space-y-2">
           {variants.length === 0 ? (
-            <p className="text-[11px] text-[#697386] italic">
+            <p className="text-[11px] text-[#262626]/[0.56] dark:text-[#8b93a0] italic">
               Sem variants. Quando ativo, system_prompt principal é ignorado e engine sorteia uma variant por mensagem.
             </p>
           ) : (
             variants.map((v, idx) => (
-              <div key={idx} className="border border-slate-200 rounded-md p-2 space-y-1.5 bg-slate-50">
+              <div key={idx} className="border border-[#EDEDED] dark:border-[#23272e] rounded-md p-2 space-y-1.5 bg-black/[0.035] dark:bg-white/[0.05]">
                 <div className="flex items-center gap-1.5">
                   <input
                     type="text"
                     value={v.name}
                     onChange={(e) => update(idx, { name: e.target.value })}
                     placeholder="A"
-                    className="flex-1 h-6 px-2 text-[12px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] font-mono"
+                    className="flex-1 h-6 px-2 text-[12px] rounded-md bg-white dark:bg-[#14171c] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] font-mono"
                   />
                   <input
                     type="number"
@@ -1114,10 +1110,10 @@ function VariantsEditor({
                     min={1}
                     max={1000}
                     title="Peso (probabilidade relativa)"
-                    className="w-14 h-6 px-2 text-[12px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] font-mono"
+                    className="w-14 h-6 px-2 text-[12px] rounded-md bg-white dark:bg-[#14171c] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] font-mono"
                   />
                   {totalWeight > 0 && (
-                    <span className="text-[10px] text-[#697386] font-mono w-10">
+                    <span className="text-[10px] text-[#262626]/[0.56] dark:text-[#8b93a0] font-mono w-10">
                       {Math.round(((v.weight || 0) / totalWeight) * 100)}%
                     </span>
                   )}
@@ -1133,14 +1129,14 @@ function VariantsEditor({
                   onChange={(e) => update(idx, { system_prompt: e.target.value })}
                   placeholder="System prompt da variant..."
                   rows={2}
-                  className="w-full px-2 py-1.5 text-[11px] rounded-md bg-white outline-none shadow-[0_0_0_1px_rgb(226,232,240)] focus:shadow-[0_0_0_2px_#003083] resize-none font-mono"
+                  className="w-full px-2 py-1.5 text-[11px] rounded-md bg-white dark:bg-[#14171c] outline-none shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] resize-none font-mono"
                 />
               </div>
             ))
           )}
           <button
             onClick={add}
-            className="w-full h-8 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white text-[#003083] shadow-[0_0_0_1px_rgb(226,232,240)] hover:shadow-[0_0_0_1px_#003083]"
+            className="w-full h-8 rounded-md text-[12px] font-medium inline-flex items-center justify-center gap-1.5 bg-white dark:bg-[#14171c] text-[#003083] shadow-[0_0_0_1px_#EDEDED] dark:shadow-[0_0_0_1px_#23272e] hover:shadow-[0_0_0_1px_#003083]"
           >
             <Plus className="w-3 h-3" />
             Adicionar variant

@@ -275,11 +275,11 @@ export default function PlaybookEditorPage() {
   // Layout fullwidth — escapa do container max-w-[1400px] do AdminLayout
   return (
     <div
-      className="fixed inset-0 left-[240px] flex flex-col bg-[#FAFBFD] z-10"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif' }}
+      className="fixed inset-0 flex flex-col bg-[#FAFBFD] dark:bg-[#0c0e12] z-10"
+      style={{ left: "var(--ta-sidebar-w, 240px)" }}
     >
       {/* TOPBAR */}
-      <div className="h-12 px-4 flex items-center gap-2 bg-white border-b border-[#EDEDED] shrink-0">
+      <div className={`h-12 px-4 flex items-center gap-2 bg-white dark:bg-[#0f1216] border-b ${FC.hair} shrink-0`}>
         <Link
           to="/admin/playbooks"
           className={iconBtn}
@@ -288,19 +288,17 @@ export default function PlaybookEditorPage() {
           <ArrowLeft className="w-4 h-4" />
         </Link>
 
-        <div className="w-px h-5 bg-slate-200" />
+        <div className={`w-px h-5 ${FC.hairBg}`} />
 
         <div className="flex-1 min-w-0 px-1">
-          <div className="text-[13px] font-semibold text-[#262626] truncate leading-tight">{pb.nome}</div>
-          {pb.descricao && (
-            <div className="text-[11px] text-[#697386] truncate leading-tight">{pb.descricao}</div>
-          )}
+          <div className={`text-[13px] font-semibold truncate leading-tight ${FC.ink}`}>{pb.nome}</div>
+          {pb.descricao && <div className={`text-[11px] truncate leading-tight ${FC.sub}`}>{pb.descricao}</div>}
         </div>
 
         <SaveBadge saving={saving} lastSavedAt={lastSavedAt} />
         <StatusPill status={pb.status} />
 
-        <div className="w-px h-5 bg-slate-200 mx-1" />
+        <div className={`w-px h-5 ${FC.hairBg} mx-1`} />
 
         <Link
           to={`/admin/playbooks/${pb.id}/executions`}
@@ -346,7 +344,7 @@ export default function PlaybookEditorPage() {
         />
 
         {/* CANVAS — meio (fullwidth) */}
-        <div className="flex-1 bg-[#FAFBFD] relative min-w-0">
+        <div className="flex-1 bg-[#FAFBFD] dark:bg-[#0c0e12] relative min-w-0">
           <PlaybookCanvasWrapper
             canvas={canvasView}
             onChange={setCanvas}
@@ -357,11 +355,13 @@ export default function PlaybookEditorPage() {
           {canvas.nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="text-center max-w-sm">
-                <div className="inline-flex w-14 h-14 rounded-2xl bg-white shadow-[0_0_0_1px_rgb(226,232,240),0_8px_24px_-4px_rgb(15,23,42,0.08)] items-center justify-center mb-3">
-                  <Workflow className="w-7 h-7 text-[#003083]" />
+                <div
+                  className={`inline-flex w-14 h-14 rounded-[14px] bg-white dark:bg-[#14171c] border ${FC.hair} shadow-[0_8px_24px_-4px_rgb(15,23,42,0.08)] dark:shadow-none items-center justify-center mb-3`}
+                >
+                  <Workflow className="w-7 h-7 text-[#003083] dark:text-[#5b9bff]" />
                 </div>
-                <h3 className="text-[15px] font-semibold text-[#262626] mb-1">Comece arrastando um gatilho</h3>
-                <p className="text-[13px] text-[#697386] leading-relaxed">
+                <h3 className={`text-[15px] font-semibold mb-1 ${FC.ink}`}>Comece arrastando um gatilho</h3>
+                <p className={`text-[13px] leading-relaxed ${FC.sub}`}>
                   Arraste um nó da paleta à esquerda pra começar. Todo playbook precisa ter pelo menos um gatilho.
                 </p>
               </div>

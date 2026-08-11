@@ -153,6 +153,14 @@ export default function AdminLayout() {
   });
   const [resizing, setResizing] = useState(false);
 
+  // Publica a largura atual da sidebar como CSS var no <html>. Telas que escapam
+  // do container do layout com `position: fixed` (ex: o editor de playbook) leem
+  // daqui em vez de chutar 240px — a sidebar varia de 200 a 420 e cai pra 64
+  // quando recolhida, então o valor fixo desalinhava a tela inteira.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--ta-sidebar-w", `${collapsed ? 64 : sidebarW}px`);
+  }, [collapsed, sidebarW]);
+
   function startResize(e: { preventDefault: () => void }) {
     e.preventDefault();
     setResizing(true);

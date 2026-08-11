@@ -14,22 +14,42 @@ import {
   Calendar,
   CircleDot,
   Clock,
+  Code2,
   CreditCard,
   Database,
   FileText,
   GitBranch,
+  Globe,
+  Headset,
+  History,
   MessageSquare,
   MousePointer,
+  Route,
   Search,
   Send,
   Sparkles,
   Tag,
   Webhook,
   Workflow,
-  Users,
+  Wrench,
 } from "lucide-react";
 
 export type NodeCategory = "trigger" | "action" | "flow" | "integration";
+
+/**
+ * Cor por CATEGORIA — fonte única. Os valores espelham os tokens `node.*` do
+ * tailwind.config (trigger/action/integration/logic), então mudar a paleta é
+ * mudar um lugar só. Antes cada nó carregava o próprio hex e três deles já
+ * tinham divergido do token (`#f59e0b` em vez de `#F5A300`, `#10b981` em vez
+ * de `#00D17E`), além do route_to_specialist — que é `flow` — estar pintado
+ * com o roxo de trigger.
+ */
+export const CATEGORY_COLOR: Record<NodeCategory, string> = {
+  trigger: "#8B5CF6", // node.trigger
+  action: "#003083", // node.action (azul Tier)
+  flow: "#F5A300", // node.logic
+  integration: "#00D17E", // node.integration
+};
 
 export type PlaybookNodeKind =
   // triggers
@@ -80,7 +100,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Dispara quando a mensagem contém uma palavra ou frase.",
     icon: Search,
     category: "trigger",
-    color: "#8b5cf6",
+    color: CATEGORY_COLOR.trigger,
     isTrigger: true,
     available: true,
     defaultData: {
@@ -96,7 +116,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Classifica a intenção do cliente via LLM (ex: comprar, reclamar).",
     icon: Sparkles,
     category: "trigger",
-    color: "#8b5cf6",
+    color: CATEGORY_COLOR.trigger,
     isTrigger: true,
     available: false,
     defaultData: { intents: ["comprar"], threshold: 0.7 },
@@ -107,7 +127,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Disparo manual via botão no painel.",
     icon: MousePointer,
     category: "trigger",
-    color: "#8b5cf6",
+    color: CATEGORY_COLOR.trigger,
     isTrigger: true,
     available: true,
     defaultData: { audience: "all" },
@@ -118,7 +138,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Dispara em horário/data via cron.",
     icon: Calendar,
     category: "trigger",
-    color: "#8b5cf6",
+    color: CATEGORY_COLOR.trigger,
     isTrigger: true,
     available: false,
     defaultData: { cron_expr: "0 9 * * *", audience: "all" },
@@ -129,7 +149,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Webhook POST /webhooks/event/{key} (ex: pedido criado).",
     icon: Webhook,
     category: "trigger",
-    color: "#8b5cf6",
+    color: CATEGORY_COLOR.trigger,
     isTrigger: true,
     available: true,
     defaultData: { event_key: "pedido_criado" },
@@ -142,7 +162,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Manda mensagem pelo canal. Suporta {{contact.name}}, {{vars.X}}.",
     icon: Send,
     category: "action",
-    color: "#003083",
+    color: CATEGORY_COLOR.action,
     available: true,
     defaultData: { text: "Olá {{contact.name|default:'amigo'}}!" },
   },
@@ -152,7 +172,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Gera áudio PT-BR via ElevenLabs e envia pelo canal. Cliente ouve sua resposta.",
     icon: MessageSquare,
     category: "action",
-    color: "#003083",
+    color: CATEGORY_COLOR.action,
     available: true,
     defaultData: {
       text: "Olá {{contact.name|default:'amigo'}}, sou seu atendente.",
@@ -165,7 +185,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Pede ao agente IA pra gerar texto contextual.",
     icon: Brain,
     category: "action",
-    color: "#003083",
+    color: CATEGORY_COLOR.action,
     available: true,
     defaultData: {
       system_prompt: "Responda em pt-BR de forma amigável e objetiva.",
@@ -180,7 +200,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "RAG real (pgvector + Cohere Rerank) com citação de fonte na resposta.",
     icon: Database,
     category: "action",
-    color: "#003083",
+    color: CATEGORY_COLOR.action,
     available: true,
     defaultData: {
       query: "{{message.text}}",
@@ -199,7 +219,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "If/else. Ex: {{message.text|lower}} contains 'sim'.",
     icon: GitBranch,
     category: "flow",
-    color: "#f59e0b",
+    color: CATEGORY_COLOR.flow,
     hasMultipleOutputs: true,
     available: true,
     defaultData: { condition: "{{message.text|lower}} contains 'sim'" },
@@ -210,7 +230,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Pausa o fluxo por N segundos (ou até horário específico).",
     icon: Clock,
     category: "flow",
-    color: "#f59e0b",
+    color: CATEGORY_COLOR.flow,
     available: true,
     defaultData: { duration_seconds: 60 },
   },
@@ -220,7 +240,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Cria ou atualiza variável reusável no resto do fluxo.",
     icon: Tag,
     category: "flow",
-    color: "#f59e0b",
+    color: CATEGORY_COLOR.flow,
     available: true,
     defaultData: { key: "minha_var", value: "valor" },
   },
@@ -230,9 +250,9 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     kind: "code_step",
     label: "Código Python (CodeAct)",
     description: "Roda Python em sandbox E2B isolado. Análise, ETL, cálculo. Suporta vars.",
-    icon: Database,
+    icon: Code2,
     category: "integration",
-    color: "#10b981",
+    color: CATEGORY_COLOR.integration,
     available: true,
     defaultData: {
       code: '# Suporta {{vars}}\nimport json\nresult = {"hello": "{{contact.name|default:\'world\'}}"}\nprint(json.dumps(result))',
@@ -244,9 +264,9 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     kind: "call_api",
     label: "Chamar API",
     description: "HTTP POST/GET pra serviço externo.",
-    icon: Webhook,
+    icon: Globe,
     category: "integration",
-    color: "#10b981",
+    color: CATEGORY_COLOR.integration,
     available: true,
     defaultData: {
       method: "POST",
@@ -262,7 +282,7 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     description: "Cria link Pix/Cartão via Tier Pay.",
     icon: CreditCard,
     category: "integration",
-    color: "#10b981",
+    color: CATEGORY_COLOR.integration,
     available: true,
     defaultData: {
       valor_cents: 19900,
@@ -275,9 +295,9 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     kind: "route_to_specialist",
     label: "Roteador (especialistas)",
     description: "Multi-agent visual: classifica intent e roteia pra um especialista (sub-persona).",
-    icon: Users,
+    icon: Route,
     category: "flow",
-    color: "#8b5cf6",
+    color: CATEGORY_COLOR.flow,
     hasMultipleOutputs: true,
     available: true,
     defaultData: {
@@ -309,9 +329,9 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     kind: "memory_lookup",
     label: "Buscar memória",
     description: "Recupera fatos lembrados do contato (cross-session). Auto-injetado também em todo inbound.",
-    icon: Database,
+    icon: History,
     category: "action",
-    color: "#003083",
+    color: CATEGORY_COLOR.action,
     available: true,
     defaultData: {
       query: "{{message.text}}",
@@ -324,9 +344,9 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     kind: "mcp_tool_call",
     label: "MCP Tool",
     description: "Chama tool de qualquer MCP server externo (Notion, Slack, GitHub, 10k+).",
-    icon: Sparkles,
+    icon: Wrench,
     category: "integration",
-    color: "#10b981",
+    color: CATEGORY_COLOR.integration,
     available: true,
     defaultData: {
       server_url: "https://mcp.exemplo.com/messages",
@@ -340,9 +360,9 @@ export const NODE_CATALOG: NodeKindMeta[] = [
     kind: "handoff_human",
     label: "Passar pra humano",
     description: "Pausa o agente IA e cria notificação pra equipe atender.",
-    icon: Users,
+    icon: Headset,
     category: "integration",
-    color: "#10b981",
+    color: CATEGORY_COLOR.integration,
     available: true,
     defaultData: {
       queue: "vendas",

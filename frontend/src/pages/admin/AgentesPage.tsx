@@ -10,6 +10,7 @@ import {
   HandCoins,
   LifeBuoy,
   Loader2,
+  Lock,
   BookOpen,
   MoreVertical,
   PauseCircle,
@@ -82,6 +83,62 @@ function CardGrid({ children, last = false }: { children: React.ReactNode; last?
 type AgentTab = "geral" | "testar" | "conhecimento" | "modelo";
 
 // Espelha GET /agents/{id}/runtime-config — o que este agente usa DE FATO em execução.
+/**
+ * EmbeddingRow — o modelo de INDEXAÇÃO (RAG) do agente, mostrado junto do de
+ * raciocínio. É read-only de propósito: a coluna de vetores é fixa em 768
+ * dimensões, então trocar por aqui quebraria a busca de todos os agentes.
+ * O backend já explica o motivo em `embedding.locked_reason` — antes esse texto
+ * era enviado e nunca renderizado, e a tela só mostrava a porta de configurar.
+ */
+function EmbeddingRow({ rt }: { rt: RuntimeConfig }) {
+  const [showWhy, setShowWhy] = useState(false);
+  const emb = rt.embedding;
+  return (
+    <div className={`mt-5 pt-5 border-t ${FC.hair}`}>
+      <div className={`text-[11px] uppercase tracking-wider font-semibold mb-2 ${FC.mut}`}>Indexa com</div>
+      <div className={`rounded-[10px] border ${FC.hair} overflow-hidden`}>
+        <div className="flex items-center gap-3.5 p-4">
+          <div
+            className={`w-11 h-11 shrink-0 rounded-[10px] border ${FC.hair} ${FC.base} flex items-center justify-center ${FC.ink}`}
+          >
+            <ProviderLogo provider={emb.model || emb.provider || ""} className="w-[22px] h-[22px]" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className={`text-[15px] font-medium font-mono truncate ${FC.ink}`}>{emb.model || "—"}</div>
+            <div className={`text-[13px] leading-5 mt-0.5 ${FC.sub}`}>
+              {emb.provider || "sem provider"}
+              <span className={FC.mut}> · {emb.dimensions} dimensões · vale para toda a conta</span>
+            </div>
+          </div>
+          {emb.locked_reason && (
+            <button
+              type="button"
+              onClick={() => setShowWhy((v) => !v)}
+              aria-expanded={showWhy}
+              className={`shrink-0 inline-flex items-center gap-1 h-6 px-2 rounded-md border ${FC.hair} text-[11px] ${FC.sub} ${FC.hover} transition-colors`}
+              title="Por que não dá para trocar aqui?"
+            >
+              <Lock className="w-3 h-3" />
+              por quê?
+            </button>
+          )}
+        </div>
+        {showWhy && emb.locked_reason && (
+          <div className={`border-t ${FC.hair} ${FC.base} px-4 py-3 text-[12.5px] leading-5 ${FC.sub}`}>
+            {emb.locked_reason}
+          </div>
+        )}
+      </div>
+      <Link
+        to="/admin/configuracoes/embedding"
+        className={`inline-flex items-center gap-1 mt-2 text-[12px] ${FC.mut} hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors`}
+      >
+        <Settings className="w-3 h-3" /> Chaves e reindexação
+      </Link>
+    </div>
+  );
+}
+
 interface RuntimeConfig {
   llm: {
     scope: string;
@@ -882,9 +939,7 @@ function AgentDetailsDrawer({
         {/* Edit form */}
         <div className={`px-6 py-5 border-b ${FC.hair}`}>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#697386]">
-              Configuração
-            </h3>
+            <h3 className={`text-[11px] font-semibold uppercase tracking-wider ${FC.mut}`}>Configuração</h3>
             {!editing && (
               <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
                 <Edit3 className="w-3 h-3" /> Editar
@@ -903,12 +958,20 @@ function AgentDetailsDrawer({
                 />
               </div>
               <div>
-                <label className={`block text-[12px] font-medium mb-1 ${FC.sub}`}>Persona</label>
+                {/* A persona é o campo que mais muda o comportamento do agente, então
+                    ganha altura e contador — editar prompt às cegas é como o texto
+                    cresce sem ninguém perceber. */}
+                <div className="flex items-baseline justify-between mb-1">
+                  <label className={`block text-[12px] font-medium ${FC.sub}`}>Persona</label>
+                  <span className={`text-[11px] font-mono tabular-nums ${FC.mut}`}>
+                    {form.persona.length.toLocaleString("pt-BR")} caracteres
+                  </span>
+                </div>
                 <textarea
                   value={form.persona}
                   onChange={(e) => setForm({ ...form, persona: e.target.value })}
-                  rows={6}
-                  className={`w-full px-3 py-2 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow font-mono`}
+                  rows={10}
+                  className={`w-full px-3 py-2 text-[13px] leading-5 rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow font-mono`}
                 />
               </div>
               <div>
@@ -1088,26 +1151,12 @@ function AgentDetailsDrawer({
                   </Link>
                 </div>
 
-                {/* Como o texto vira busca. É config da conta, não do agente — por isso
-                    vive aqui como nota de rodapé, e não como aba própria. */}
-                <div className={`mt-5 pt-4 border-t ${FC.hair}`}>
-                  <div className="flex items-center gap-2.5">
-                    <ProviderLogo
-                      provider={rt?.embedding.model || rt?.embedding.provider || ""}
-                      className={`w-4 h-4 shrink-0 ${FC.dim}`}
-                    />
-                    <div className={`text-[12px] leading-5 ${FC.sub}`}>
-                      Indexado com{" "}
-                      <span className={`font-mono ${FC.ink}`}>{rt?.embedding.model || "—"}</span>{" "}
-                      <span className={FC.mut}>· {rt?.embedding.dimensions} dimensões · vale para toda a conta</span>
-                    </div>
-                  </div>
-                  <Link
-                    to="/admin/configuracoes/embedding"
-                    className={`inline-flex items-center gap-1 mt-2 text-[12px] ${FC.mut} hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors`}
-                  >
-                    <Settings className="w-3 h-3" /> Configurar indexação
-                  </Link>
+                {/* O modelo de indexação saiu daqui: agora vive na aba Modelo, ao lado
+                    do de raciocínio — os dois respondem "qual modelo este agente usa". */}
+                <div className={`mt-5 pt-4 border-t ${FC.hair} text-[12px] leading-5 ${FC.sub}`}>
+                  Indexado com{" "}
+                  <span className={`font-mono ${FC.ink}`}>{rt?.embedding.model || "—"}</span>. Trocar o modelo de
+                  indexação fica na aba <span className={FC.ink}>Modelo</span>.
                 </div>
               </>
             )}
@@ -1134,7 +1183,8 @@ function AgentDetailsDrawer({
               </div>
             ) : (
               <>
-                <div className={`mt-4 rounded-[10px] border ${FC.hair} overflow-hidden`}>
+                <div className={`mt-4 text-[11px] uppercase tracking-wider font-semibold ${FC.mut}`}>Raciocina com</div>
+                <div className={`mt-2 rounded-[10px] border ${FC.hair} overflow-hidden`}>
                   <div className="flex items-center gap-3.5 p-4">
                     <div
                       className={`w-11 h-11 shrink-0 rounded-[10px] border ${FC.hair} ${FC.base} flex items-center justify-center ${FC.ink}`}
@@ -1240,6 +1290,11 @@ function AgentDetailsDrawer({
                   </div>
                 )}
 
+                {/* Indexação (RAG) — o outro modelo do agente. Fica aqui, ao lado do
+                    de raciocínio, porque "qual modelo este agente usa" é UMA pergunta:
+                    antes o de indexação vivia numa página separada, em Configurações. */}
+                <EmbeddingRow rt={rt} />
+
                 <Link to="/admin/configuracoes/llm" className={`${btnSecondary} mt-5`}>
                   <Settings className="w-3.5 h-3.5" /> Chaves e padrões da conta
                 </Link>
@@ -1253,8 +1308,14 @@ function AgentDetailsDrawer({
   );
 }
 
-// Conversa de teste com o agente — o "fale com o bot" que faltava. Mesma persona,
-// mesmo modelo e mesmas ferramentas da produção; não grava conversa nem usa canal.
+// Conversa de teste com o agente. Não grava conversa nem usa canal.
+//
+// 🚨 ESCOPO REAL (não prometer mais do que entrega): o endpoint de playground
+// chama o motor de LLM direto, SEM a busca na base de conhecimento (RAG) e SEM
+// a memória entre conversas — as duas só existem no runtime de produção. Então
+// o teste confere tom, formato e modelo, e NÃO confere se o agente sabe o que
+// está num documento indexado. A tela diz isso ao usuário em vez de afirmar o
+// contrário, que era o que acontecia e levava o cliente a achar o RAG quebrado.
 function AgentPlayground({
   agentId,
   agentName,
@@ -1264,7 +1325,7 @@ function AgentPlayground({
   agentName: string;
   model: string | null;
 }) {
-  const [msgs, setMsgs] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [msgs, setMsgs] = useState<{ role: "user" | "assistant"; content: string; model?: string | null }[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -1281,11 +1342,17 @@ function AgentPlayground({
     setInput("");
     setSending(true);
     try {
-      const { data } = await api.post<{ text: string }>(`/agents/${agentId}/playground`, {
-        message: text,
-        history: historico,
-      });
-      setMsgs((m) => [...m, { role: "assistant", content: data.text || "(sem resposta)" }]);
+      // `model_used` já vinha do backend e era descartado. Com cadeia de fallback
+      // ativa, o modelo que respondeu pode não ser o escolhido — sem o carimbo o
+      // usuário testa um modelo achando que testou outro.
+      const { data } = await api.post<{ text: string; model_used?: string | null }>(
+        `/agents/${agentId}/playground`,
+        { message: text, history: historico.map(({ role, content }) => ({ role, content })) },
+      );
+      setMsgs((m) => [
+        ...m,
+        { role: "assistant", content: data.text || "(sem resposta)", model: data.model_used ?? null },
+      ]);
     } catch (err: any) {
       const motivo = err?.response?.data?.detail || "erro ao falar com o agente";
       setMsgs((m) => [...m, { role: "assistant", content: `⚠ ${motivo}` }]);
@@ -1301,13 +1368,18 @@ function AgentPlayground({
           <div className={`text-center py-10 text-[13px] leading-6 ${FC.mut}`}>
             Escreva como se fosse um cliente.
             <br />
-            {agentName} responde com a persona e o conhecimento reais
+            {agentName} responde com a persona real
             {model ? ` — rodando em ${model}` : ""}.
+            <br />
+            <span className="text-[12px]">
+              Este teste <span className="font-medium">não consulta a base de conhecimento</span> nem a memória de
+              conversas anteriores.
+            </span>
           </div>
         ) : (
           <div className="space-y-3">
             {msgs.map((m, i) => (
-              <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+              <div key={i} className={m.role === "user" ? "flex justify-end" : "flex flex-col items-start"}>
                 <div
                   className={`max-w-[85%] px-3.5 py-2.5 text-[13px] leading-5 whitespace-pre-wrap ${
                     m.role === "user"
@@ -1317,6 +1389,9 @@ function AgentPlayground({
                 >
                   {m.content}
                 </div>
+                {m.role === "assistant" && m.model && (
+                  <div className={`mt-1 ml-1 text-[10.5px] font-mono ${FC.mut}`}>{m.model}</div>
+                )}
               </div>
             ))}
             {sending && (

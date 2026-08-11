@@ -25,6 +25,7 @@ import {
   type PlaybookNode as PbNode,
   type PlaybookNodeKind,
 } from "@/lib/playbookSchema";
+import { useIsDark } from "@/components/ds/fc";
 import PlaybookNode from "./PlaybookNode";
 
 interface Props {
@@ -42,6 +43,12 @@ const DEFAULT_EDGE_OPTS = {
   style: { stroke: "#C0C6CF", strokeWidth: 1.5 },
 };
 
+// Mesma aresta no tema escuro — no claro o cinza sumia no fundo #0c0e12.
+const DEFAULT_EDGE_OPTS_DARK = {
+  type: "smoothstep" as const,
+  style: { stroke: "#3a4048", strokeWidth: 1.5 },
+};
+
 export default function PlaybookCanvasWrapper(props: Props) {
   return (
     <ReactFlowProvider>
@@ -53,6 +60,9 @@ export default function PlaybookCanvasWrapper(props: Props) {
 function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) {
   const flowRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
+  // Background/Controls/MiniMap do React Flow só aceitam cor por prop/estilo inline,
+  // então o tema entra por hook em vez das variantes `dark:` do Tailwind.
+  const isDark = useIsDark();
 
   // ─── State INTERNO do React Flow (gerenciado pelos hooks oficiais)
   //     Drag/move atualiza só aqui → zero latência, sem re-render no parent
@@ -237,7 +247,7 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
         fitView
         fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={DEFAULT_EDGE_OPTS}
+        defaultEdgeOptions={isDark ? DEFAULT_EDGE_OPTS_DARK : DEFAULT_EDGE_OPTS}
         nodeOrigin={[0, 0]}
         minZoom={0.2}
         maxZoom={2}
@@ -250,12 +260,16 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
         multiSelectionKeyCode={["Meta", "Control"]}
         selectionKeyCode={["Shift"]}
       >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D1D3D6" />
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color={isDark ? "#2b3038" : "#D1D3D6"} />
         <Controls
           position="bottom-right"
           showInteractive={false}
-          className="!shadow-[0_0_0_1px_rgb(226,232,240),0_4px_12px_-4px_rgba(15,23,42,0.08)] !rounded-lg !overflow-hidden"
-          style={{ background: "white" }}
+          className={`!rounded-[10px] !overflow-hidden ${
+            isDark
+              ? "!shadow-[0_0_0_1px_#23272e,0_4px_12px_-4px_rgba(0,0,0,0.5)] [&_button]:!bg-[#14171c] [&_button]:!border-[#23272e] [&_button]:!fill-[#9aa1ab] [&_button:hover]:!bg-[#1b1f26]"
+              : "!shadow-[0_0_0_1px_#EDEDED,0_4px_12px_-4px_rgba(15,23,42,0.08)]"
+          }`}
+          style={{ background: isDark ? "#14171c" : "white" }}
         />
         <MiniMap
           position="bottom-left"
@@ -271,9 +285,11 @@ function InnerCanvas({ canvas, onChange, onSelectNode, selectedNodeId }: Props) 
           }}
           nodeStrokeWidth={2}
           nodeBorderRadius={6}
-          maskColor="rgba(250, 251, 253, 0.6)"
-          className="!shadow-[0_0_0_1px_rgb(226,232,240)] !rounded-md !overflow-hidden opacity-50 hover:opacity-100 transition-opacity"
-          style={{ background: "white", width: 140, height: 90 }}
+          maskColor={isDark ? "rgba(12, 14, 18, 0.66)" : "rgba(250, 251, 253, 0.6)"}
+          className={`!rounded-[8px] !overflow-hidden opacity-50 hover:opacity-100 transition-opacity ${
+            isDark ? "!shadow-[0_0_0_1px_#23272e]" : "!shadow-[0_0_0_1px_#EDEDED]"
+          }`}
+          style={{ background: isDark ? "#14171c" : "white", width: 140, height: 90 }}
         />
       </ReactFlow>
     </div>

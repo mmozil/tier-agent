@@ -77,6 +77,24 @@ export const PRIMARY_SHADOW =
 export const btnPrimary =
   `h-8 px-3 rounded-[10px] text-[12px] font-medium inline-flex items-center justify-center gap-1.5 text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 disabled:opacity-50 disabled:pointer-events-none`;
 
+// useIsDark — o tema é a classe `dark` no <html> (ver ThemeToggle/main.tsx), então
+// componentes que precisam de cor em ESTILO INLINE (canvas, libs de terceiros que
+// não aceitam className) não conseguem usar as variantes `dark:`. Este hook observa
+// a classe e re-renderiza na troca, mantendo essas superfícies em sincronia.
+// Para tudo que aceita className, prefira os tokens FC — não use este hook.
+export function useIsDark(): boolean {
+  const [dark, setDark] = useState(
+    () => typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+  );
+  useEffect(() => {
+    const el = document.documentElement;
+    const obs = new MutationObserver(() => setDark(el.classList.contains("dark")));
+    obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return dark;
+}
+
 // CurvyRect — os 4 corner brackets do Firecrawl (classe .curvy-rect). 11×11,
 // preenchidos com border-faint (#EDEDED). Arredondam o canto do container e,
 // nas junções de seções/células, formam o "+" — É O EFEITO do Firecrawl.
