@@ -1,36 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   ArrowUpRight,
-  Bot,
-  CheckCircle2,
   DollarSign,
   Edit3,
   HandCoins,
   LifeBuoy,
   Loader2,
-  Lock,
-  BookOpen,
   MoreVertical,
   PauseCircle,
   PawPrint,
   PlayCircle,
   Plus,
-  Settings,
   ShoppingBag,
   Sparkles,
   Stethoscope,
   Store,
   Target,
   Trash2,
-  Workflow,
-  X,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { ProviderLogo } from "@/components/icons/providerLogos";
-import { FC, PageFrame, Row, HairCells, CurvyRect, Button, btnPrimary, iconBtn, SkeletonBar, EmptyHint } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, CurvyRect, Button, iconBtn, SkeletonBar } from "@/components/ds/fc";
 
 // Blueprint — fundo "planta técnica" do Firecrawl: grade hairline + marcas "+" nos
 // cruzamentos, esmaecendo pra baixo. pointer-events-none, atrás do conteúdo.
@@ -80,7 +72,6 @@ function CardGrid({ children, last = false }: { children: React.ReactNode; last?
   );
 }
 
-type AgentTab = "geral" | "testar" | "conhecimento" | "modelo";
 
 // Espelha GET /agents/{id}/runtime-config — o que este agente usa DE FATO em execução.
 /**
@@ -90,84 +81,6 @@ type AgentTab = "geral" | "testar" | "conhecimento" | "modelo";
  * O backend já explica o motivo em `embedding.locked_reason` — antes esse texto
  * era enviado e nunca renderizado, e a tela só mostrava a porta de configurar.
  */
-function EmbeddingRow({ rt }: { rt: RuntimeConfig }) {
-  const [showWhy, setShowWhy] = useState(false);
-  const emb = rt.embedding;
-  return (
-    <div className={`mt-5 pt-5 border-t ${FC.hair}`}>
-      <div className={`text-[11px] uppercase tracking-wider font-semibold mb-2 ${FC.mut}`}>Indexa com</div>
-      <div className={`rounded-[10px] border ${FC.hair} overflow-hidden`}>
-        <div className="flex items-center gap-3.5 p-4">
-          <div
-            className={`w-11 h-11 shrink-0 rounded-[10px] border ${FC.hair} ${FC.base} flex items-center justify-center ${FC.ink}`}
-          >
-            <ProviderLogo provider={emb.model || emb.provider || ""} className="w-[22px] h-[22px]" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className={`text-[15px] font-medium font-mono truncate ${FC.ink}`}>{emb.model || "—"}</div>
-            <div className={`text-[13px] leading-5 mt-0.5 ${FC.sub}`}>
-              {emb.provider || "sem provider"}
-              <span className={FC.mut}> · {emb.dimensions} dimensões · vale para toda a conta</span>
-            </div>
-          </div>
-          {emb.locked_reason && (
-            <button
-              type="button"
-              onClick={() => setShowWhy((v) => !v)}
-              aria-expanded={showWhy}
-              className={`shrink-0 inline-flex items-center gap-1 h-6 px-2 rounded-md border ${FC.hair} text-[11px] ${FC.sub} ${FC.hover} transition-colors`}
-              title="Por que não dá para trocar aqui?"
-            >
-              <Lock className="w-3 h-3" />
-              por quê?
-            </button>
-          )}
-        </div>
-        {showWhy && emb.locked_reason && (
-          <div className={`border-t ${FC.hair} ${FC.base} px-4 py-3 text-[12.5px] leading-5 ${FC.sub}`}>
-            {emb.locked_reason}
-          </div>
-        )}
-      </div>
-      <Link
-        to="/admin/configuracoes/embedding"
-        className={`inline-flex items-center gap-1 mt-2 text-[12px] ${FC.mut} hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors`}
-      >
-        <Settings className="w-3 h-3" /> Chaves e reindexação
-      </Link>
-    </div>
-  );
-}
-
-interface RuntimeConfig {
-  llm: {
-    scope: string;
-    provider: string | null;
-    model: string | null;
-    inherited: boolean;
-    tenant_default_model: string | null;
-    provider_id: number | null;
-    fallback: string[];
-    options: { id: number; provider: string; default_model: string }[];
-  };
-  embedding: {
-    scope: string;
-    locked_reason: string;
-    provider: string | null;
-    model: string | null;
-    dimensions: number;
-  };
-  knowledge: {
-    total: number;
-    ready: number;
-    failed: number;
-    chunks: number;
-    items: { id: number; title: string | null; kind: string; status: string; chunks_count: number }[];
-  };
-}
-
-// GhostCard — card "Agente em branco" (cria sem modelo). Mesma caixa dos modelos:
-// primeiro do grid e com o fundo padrão, pra não parecer opção de segunda linha.
 function GhostCard({ onClick, busy, disabled }: { onClick: () => void; busy?: boolean; disabled?: boolean }) {
   return (
     <button
@@ -260,8 +173,6 @@ function AgentsSkeleton() {
 
 // Mesmo desenho do <Button variant="secondary">, mas aplicavel em <Link> (o Button
 // do ds e <button> e nao aceita href).
-const btnSecondary =
-  `inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] text-[12px] font-medium h-8 px-3 transition-all active:scale-[0.98] ${FC.ink} border ${FC.hair} ${FC.hover}`;
 
 interface Agent {
   id: number;
@@ -282,16 +193,6 @@ interface Template {
   icon: string;
   suggested_channels: string[];
   skills_count: number;
-}
-
-interface AgentStats {
-  agent_id: number;
-  playbooks_total: number;
-  playbooks_published: number;
-  conversations_total: number;
-  conversations_active: number;
-  knowledge_total: number;
-  connectors_total: number;
 }
 
 const ICONS: Record<string, typeof ShoppingBag> = {
@@ -359,7 +260,6 @@ export default function AgentesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null);
   const [creatingKey, setCreatingKey] = useState<string | null>(null);
 
   async function load() {
@@ -383,7 +283,6 @@ export default function AgentesPage() {
     load();
   }, []);
 
-  const selectedAgent = agents.find((a) => a.id === selectedAgentId) || null;
 
   // Cria agente direto de um modelo (1 clique) ou em branco — sem modal.
   // Abre o drawer do novo agente pra renomear / ajustar a persona.
@@ -421,15 +320,11 @@ export default function AgentesPage() {
       toast.success("Agente excluído");
       setAgents((prev) => prev.filter((a) => a.id !== agent.id));
       setOpenMenuId(null);
-      if (selectedAgentId === agent.id) setSelectedAgentId(null);
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Erro ao excluir");
     }
   }
 
-  function onAgentUpdated(updated: Agent) {
-    setAgents((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-  }
 
   return (
     <div className="-mx-8 pb-10">
@@ -525,19 +420,31 @@ export default function AgentesPage() {
         </div>
       </PageFrame>
 
-      {selectedAgent && (
-        <AgentDetailsDrawer
-          agent={selectedAgent}
-          onClose={() => setSelectedAgentId(null)}
-          onUpdated={onAgentUpdated}
-          onDeleted={() => {
-            setAgents((prev) => prev.filter((a) => a.id !== selectedAgent.id));
-            setSelectedAgentId(null);
-          }}
-        />
-      )}
     </div>
   );
+}
+
+/**
+ * resumoPersona — preview da persona pro card, sem markdown cru.
+ *
+ * A persona costuma ser um prompt estruturado ("# Identidade
+
+Você é a
+ * **Nathalia**…"). Jogado direto no card, o cliente lê "# Identidade Você é a
+ * **Nathalia" — cerquilha, asterisco e tudo. Aqui os marcadores caem e sobra a
+ * primeira frase de conteúdo, que é o que o card precisa dizer.
+ */
+function resumoPersona(persona: string | null | undefined): string {
+  if (!persona) return "";
+  const limpo = persona
+    .replace(/^#{1,6}\s+.*$/gm, "") // linhas de cabeçalho inteiras
+    .replace(/\*\*(.+?)\*\*/g, "$1") // negrito
+    .replace(/\*(.+?)\*/g, "$1") // itálico
+    .replace(/`+/g, "")
+    .replace(/^[-*+]\s+/gm, "") // bullets
+    .replace(/\s+/g, " ")
+    .trim();
+  return limpo;
 }
 
 function AgentCard({
@@ -622,7 +529,7 @@ function AgentCard({
           )}
         </div>
         <p className={`text-[13px] leading-5 line-clamp-2 ${FC.sub}`}>
-          {agent.persona || "Sem persona definida."}
+          {resumoPersona(agent.persona) || "Sem persona definida."}
         </p>
       </div>
 
@@ -716,790 +623,3 @@ function AgentCard({
   );
 }
 
-function AgentDetailsDrawer({
-  agent,
-  onClose,
-  onUpdated,
-  onDeleted,
-}: {
-  agent: Agent;
-  onClose: () => void;
-  onUpdated: (a: Agent) => void;
-  onDeleted: () => void;
-}) {
-  const [stats, setStats] = useState<AgentStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ nome: agent.nome, persona: agent.persona || "", avatar_url: agent.avatar_url || "" });
-  const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [tab, setTab] = useState<AgentTab>("geral");
-  const [rt, setRt] = useState<RuntimeConfig | null>(null);
-  const [rtLoading, setRtLoading] = useState(true);
-  const [savingModel, setSavingModel] = useState(false);
-  const [editModel, setEditModel] = useState(false);
-
-  async function loadRuntime() {
-    setRtLoading(true);
-    try {
-      const { data } = await api.get<RuntimeConfig>(`/agents/${agent.id}/runtime-config`);
-      setRt(data);
-    } catch {
-      setRt(null);
-    } finally {
-      setRtLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    setForm({ nome: agent.nome, persona: agent.persona || "", avatar_url: agent.avatar_url || "" });
-    setEditing(false);
-    setTab("geral");
-    (async () => {
-      setStatsLoading(true);
-      try {
-        const { data } = await api.get<AgentStats>(`/agents/${agent.id}/stats`);
-        setStats(data);
-      } catch {
-        // ignore
-      } finally {
-        setStatsLoading(false);
-      }
-    })();
-    loadRuntime();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agent.id]);
-
-  // Modelo do agente: string vazia volta a herdar o default da conta.
-  async function saveModel(next: { llm_model?: string; llm_provider_id?: number | null }) {
-    setSavingModel(true);
-    try {
-      const { data } = await api.patch<Agent>(`/agents/${agent.id}`, next);
-      onUpdated(data);
-      await loadRuntime();
-      toast.success("Modelo atualizado");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Erro ao salvar o modelo");
-    } finally {
-      setSavingModel(false);
-    }
-  }
-
-  async function save() {
-    setSaving(true);
-    try {
-      const { data } = await api.patch<Agent>(`/agents/${agent.id}`, form);
-      onUpdated(data);
-      toast.success("Salvo");
-      setEditing(false);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Erro ao salvar");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function toggleActive() {
-    try {
-      const { data } = await api.post<Agent>(`/agents/${agent.id}/toggle-active`);
-      onUpdated(data);
-      toast.success(data.active ? "Ativado" : "Pausado");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Erro");
-    }
-  }
-
-  async function doDelete() {
-    setDeleting(true);
-    try {
-      await api.delete(`/agents/${agent.id}`);
-      toast.success("Agente excluído");
-      onDeleted();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Erro ao excluir");
-      setDeleting(false);
-    }
-  }
-
-  const TABS: { key: AgentTab; label: string }[] = [
-    { key: "geral", label: "Visão geral" },
-    { key: "testar", label: "Testar" },
-    { key: "conhecimento", label: "Conhecimento" },
-    { key: "modelo", label: "Modelo" },
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
-      <div
-        className={`w-[760px] max-w-[94vw] bg-white dark:bg-[#0c0e12] h-full overflow-y-auto shadow-2xl border-l ${FC.hair}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header + abas (sticky: a navegação acompanha a rolagem) */}
-        <div className={`sticky top-0 z-10 bg-white dark:bg-[#0c0e12] border-b ${FC.hair}`}>
-          {/* Fechar sai da linha do título: o X colado no nome empurrava a leitura.
-              Fica numa faixa própria acima, como no Firecrawl. */}
-          <div className="flex items-center justify-end px-3 pt-3">
-            <button onClick={onClose} className={iconBtn} title="Fechar">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="px-6 pb-5 flex items-start gap-3.5 min-w-0">
-            {agent.avatar_url ? (
-              <img
-                src={agent.avatar_url}
-                alt=""
-                className={`w-11 h-11 rounded-[10px] object-cover shrink-0 border ${FC.hair}`}
-              />
-            ) : (
-              <div className="w-11 h-11 rounded-[10px] bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center shrink-0 text-[#003083] dark:text-[#5b9bff]">
-                <AgentGlyph className="w-6 h-6" />
-              </div>
-            )}
-            <div className="min-w-0 pt-0.5">
-              <h2 className={`text-[20px] font-[450] leading-7 tracking-[-0.1px] truncate ${FC.ink}`}>
-                {agent.nome}
-              </h2>
-              <div className={`mt-1 flex items-center gap-2 text-[13px] leading-5 ${FC.sub}`}>
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${agent.active ? "bg-[#00A66C]" : "bg-[#B4600A]"}`}
-                  />
-                  {agent.active ? "Ativo" : "Pausado"}
-                </span>
-                <span className={FC.mut}>·</span>
-                <span className={FC.mut}>#{agent.id}</span>
-                {rt?.llm.model && (
-                  <>
-                    <span className={FC.mut}>·</span>
-                    <span className="font-mono text-[12px] truncate">{rt.llm.model}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="px-6 flex items-center gap-5 -mb-px">
-            {TABS.map((t) => {
-              const on = tab === t.key;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  className={`relative h-10 text-[13px] leading-5 transition-colors ${
-                    on ? `font-medium ${FC.ink}` : `${FC.sub} hover:text-[#262626] dark:hover:text-[#e6e8eb]`
-                  }`}
-                >
-                  {t.label}
-                  {t.key === "conhecimento" && rt && rt.knowledge.failed > 0 && (
-                    <span className="ml-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-[#C0271F]/10 text-[#C0271F] text-[10px] font-semibold">
-                      {rt.knowledge.failed}
-                    </span>
-                  )}
-                  {on && <span className="absolute left-0 right-0 -bottom-px h-[2px] bg-[#003083] dark:bg-[#5b9bff]" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {tab === "geral" && (
-        <>
-        {/* Stats */}
-        <div className={`px-6 py-5 border-b ${FC.hair}`}>
-          <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${FC.mut}`}>
-            Resumo
-          </h3>
-          <div className="grid grid-cols-2 gap-2">
-            <StatCard
-              icon={Workflow}
-              label="Playbooks"
-              value={statsLoading ? "..." : `${stats?.playbooks_published || 0} / ${stats?.playbooks_total || 0}`}
-              hint="publicados / total"
-            />
-            <StatCard
-              icon={Bot}
-              label="Conversas"
-              value={statsLoading ? "..." : `${stats?.conversations_active || 0} / ${stats?.conversations_total || 0}`}
-              hint="ativas / total"
-            />
-            <StatCard
-              icon={CheckCircle2}
-              label="Knowledge"
-              value={statsLoading ? "..." : String(stats?.knowledge_total || 0)}
-              hint="documentos"
-            />
-            <StatCard
-              icon={CheckCircle2}
-              label="Canais"
-              value={statsLoading ? "..." : String(stats?.connectors_total || 0)}
-              hint="conectados"
-            />
-          </div>
-        </div>
-
-        {/* Edit form */}
-        <div className={`px-6 py-5 border-b ${FC.hair}`}>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className={`text-[11px] font-semibold uppercase tracking-wider ${FC.mut}`}>Configuração</h3>
-            {!editing && (
-              <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-                <Edit3 className="w-3 h-3" /> Editar
-              </Button>
-            )}
-          </div>
-
-          {editing ? (
-            <div className="space-y-3">
-              <div>
-                <label className={`block text-[12px] font-medium mb-1 ${FC.sub}`}>Nome</label>
-                <input
-                  value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  className={`w-full h-8 px-3 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow`}
-                />
-              </div>
-              <div>
-                {/* A persona é o campo que mais muda o comportamento do agente, então
-                    ganha altura e contador — editar prompt às cegas é como o texto
-                    cresce sem ninguém perceber. */}
-                <div className="flex items-baseline justify-between mb-1">
-                  <label className={`block text-[12px] font-medium ${FC.sub}`}>Persona</label>
-                  <span className={`text-[11px] font-mono tabular-nums ${FC.mut}`}>
-                    {form.persona.length.toLocaleString("pt-BR")} caracteres
-                  </span>
-                </div>
-                <textarea
-                  value={form.persona}
-                  onChange={(e) => setForm({ ...form, persona: e.target.value })}
-                  rows={10}
-                  className={`w-full px-3 py-2 text-[13px] leading-5 rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow font-mono`}
-                />
-              </div>
-              <div>
-                <label className={`block text-[12px] font-medium mb-1 ${FC.sub}`}>Foto do agente (URL)</label>
-                <div className="flex items-center gap-3">
-                  {form.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={form.avatar_url}
-                      alt=""
-                      className={`w-12 h-12 rounded-full object-cover border ${FC.hair} shrink-0`}
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[#003083] dark:text-[#5b9bff] shrink-0">
-                      <AgentGlyph className="w-7 h-7" />
-                    </div>
-                  )}
-                  <input
-                    value={form.avatar_url}
-                    onChange={(e) => setForm({ ...form, avatar_url: e.target.value })}
-                    placeholder="https://.../foto.png"
-                    className={`flex-1 h-8 px-3 text-[13px] rounded-md bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow`}
-                  />
-                </div>
-                <p className={`mt-1 text-[11px] ${FC.mut}`}>
-                  Aparece nas conversas (ex: no Hovio Pet). Cole a URL de uma imagem hospedada.
-                </p>
-              </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setEditing(false);
-                    setForm({ nome: agent.nome, persona: agent.persona || "", avatar_url: agent.avatar_url || "" });
-                  }}
-                >
-                  Cancelar
-                </Button>
-                <Button variant="primary" onClick={save} disabled={saving}>
-                  {saving && <Loader2 className="w-3 h-3 animate-spin" />}
-                  Salvar
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2 text-[13px]">
-              <div>
-                <span className={FC.mut}>Template: </span>
-                <span className={FC.ink}>{agent.template_kind || "—"}</span>
-              </div>
-              <div>
-                <span className={FC.mut}>Persona:</span>
-                <p className={`mt-1 leading-relaxed whitespace-pre-wrap ${FC.ink}`}>
-                  {agent.persona || <span className={`italic ${FC.mut}`}>—</span>}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Ações — botões no tamanho natural (h-8, largura do conteúdo), lado a lado.
-            Full-width empilhado inflava ação corriqueira e dava a "Excluir" o mesmo
-            peso de um CTA. Destrutivo desce pro rodapé, discreto, atrás de confirmação. */}
-        <div className="px-6 py-5">
-          <div className="flex items-center gap-2">
-            <Link to={`/admin/agentes/${agent.id}/skills`} className={btnPrimary}>
-              <Sparkles className="w-3.5 h-3.5" /> Ver skills
-            </Link>
-            <Button variant="secondary" onClick={toggleActive}>
-              {agent.active ? (
-                <>
-                  <PauseCircle className="w-3.5 h-3.5" /> Pausar
-                </>
-              ) : (
-                <>
-                  <PlayCircle className="w-3.5 h-3.5" /> Ativar
-                </>
-              )}
-            </Button>
-          </div>
-
-          <div className={`mt-5 pt-4 border-t ${FC.hair}`}>
-            {confirmDelete ? (
-              <div className="rounded-[10px] border border-[#C0271F]/30 bg-[#C0271F]/[0.04] p-3.5">
-                <p className={`text-[13px] leading-5 ${FC.ink}`}>
-                  Excluir <strong className="font-medium">{agent.nome}</strong>?
-                </p>
-                <p className={`text-[12px] leading-5 mt-1 ${FC.sub}`}>
-                  Remove playbooks, conversas, conhecimento e canais deste agente. Não dá pra desfazer.
-                </p>
-                <div className="flex items-center gap-2 mt-3">
-                  <Button variant="danger" onClick={doDelete} disabled={deleting}>
-                    {deleting && <Loader2 className="w-3 h-3 animate-spin" />}
-                    Excluir mesmo assim
-                  </Button>
-                  <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-                    Cancelar
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="inline-flex items-center gap-1.5 text-[12px] text-[#262626]/40 dark:text-[#6b7280] hover:text-[#c0362c] dark:hover:text-[#ff6b5e] transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Excluir agente
-              </button>
-            )}
-          </div>
-        </div>
-        </>
-        )}
-
-        {tab === "testar" && <AgentPlayground agentId={agent.id} agentName={agent.nome} model={rt?.llm.model || null} />}
-
-        {tab === "conhecimento" && (
-          <div className="px-6 py-5">
-            <ScopeNote
-              scope="agente"
-              text="O que este agente sabe. Cada documento é indexado só para ele — outros agentes da conta não enxergam."
-            />
-            {rtLoading ? (
-              <div className="space-y-2 mt-3">
-                <SkeletonBar className="h-10 w-full" />
-                <SkeletonBar className="h-10 w-full" />
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-3 gap-2 mt-3">
-                  <MiniStat label="Documentos" value={String(rt?.knowledge.total ?? 0)} />
-                  <MiniStat label="Trechos indexados" value={String(rt?.knowledge.chunks ?? 0)} />
-                  <MiniStat
-                    label="Com falha"
-                    value={String(rt?.knowledge.failed ?? 0)}
-                    tone={rt && rt.knowledge.failed > 0 ? "bad" : undefined}
-                  />
-                </div>
-
-                {rt && rt.knowledge.failed > 0 && (
-                  <div className="mt-3 rounded-md border border-[#C0271F]/30 bg-[#C0271F]/[0.05] px-3 py-2.5">
-                    <p className="text-[12px] text-[#C0271F] leading-relaxed">
-                      <strong>{rt.knowledge.failed} documento(s) não entraram na busca.</strong> Enquanto
-                      estiverem assim, o agente responde como se eles não existissem. Reindexe pela tela de
-                      Conhecimento.
-                    </p>
-                  </div>
-                )}
-
-                <div className={`mt-3 rounded-lg border ${FC.hair} overflow-hidden`}>
-                  {(rt?.knowledge.items || []).length === 0 ? (
-                    <div className={`px-3 py-6 text-center text-[13px] ${FC.mut}`}>
-                      Nenhum documento ainda.
-                    </div>
-                  ) : (
-                    (rt?.knowledge.items || []).map((k, i) => (
-                      <div
-                        key={k.id}
-                        className={`flex items-center justify-between gap-3 px-3 py-2.5 ${
-                          i > 0 ? `border-t ${FC.hair}` : ""
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <div className={`text-[13px] truncate ${FC.ink}`}>{k.title || `#${k.id}`}</div>
-                          <div className={`text-[11px] ${FC.mut}`}>
-                            {k.kind} · {k.chunks_count} trecho(s)
-                          </div>
-                        </div>
-                        <StatusPill status={k.status} />
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="mt-4 flex items-center gap-2">
-                  <Link to="/admin/knowledge" className={btnSecondary}>
-                    <BookOpen className="w-3.5 h-3.5" /> Gerenciar documentos
-                  </Link>
-                </div>
-
-                {/* O modelo de indexação saiu daqui: agora vive na aba Modelo, ao lado
-                    do de raciocínio — os dois respondem "qual modelo este agente usa". */}
-                <div className={`mt-5 pt-4 border-t ${FC.hair} text-[12px] leading-5 ${FC.sub}`}>
-                  Indexado com{" "}
-                  <span className={`font-mono ${FC.ink}`}>{rt?.embedding.model || "—"}</span>. Trocar o modelo de
-                  indexação fica na aba <span className={FC.ink}>Modelo</span>.
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {tab === "modelo" && (
-          <div className="px-6 py-5">
-            <ScopeNote
-              scope="agente"
-              text="O modelo que este agente usa para pensar. A chave de API continua na conta — aqui você só escolhe o modelo."
-            />
-            {rtLoading ? (
-              <SkeletonBar className="h-10 w-full mt-3" />
-            ) : !rt?.llm.provider ? (
-              <div className="mt-3">
-                <EmptyHint
-                  icon={Bot}
-                  text="Nenhuma LLM ativa nesta conta — o agente não consegue responder."
-                />
-                <Link to="/admin/configuracoes/llm" className={`${btnPrimary} w-full mt-3`}>
-                  Configurar LLM
-                </Link>
-              </div>
-            ) : (
-              <>
-                <div className={`mt-4 text-[11px] uppercase tracking-wider font-semibold ${FC.mut}`}>Raciocina com</div>
-                <div className={`mt-2 rounded-[10px] border ${FC.hair} overflow-hidden`}>
-                  <div className="flex items-center gap-3.5 p-4">
-                    <div
-                      className={`w-11 h-11 shrink-0 rounded-[10px] border ${FC.hair} ${FC.base} flex items-center justify-center ${FC.ink}`}
-                    >
-                      <ProviderLogo provider={rt.llm.model || rt.llm.provider || ""} className="w-[22px] h-[22px]" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className={`text-[15px] font-medium font-mono truncate ${FC.ink}`}>{rt.llm.model}</div>
-                      <div className={`text-[13px] leading-5 mt-0.5 ${FC.sub}`}>
-                        {rt.llm.provider}
-                        <span className={FC.mut}> · </span>
-                        {rt.llm.inherited ? "padrão da conta" : "escolhido para este agente"}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Cadeia de fallback: cada elo com a marca, não texto corrido —
-                      o dono precisa reconhecer de bate-pronto pra onde cai se falhar. */}
-                  {rt.llm.fallback.length > 0 && (
-                    <div className={`flex items-center gap-2 flex-wrap border-t ${FC.hair} ${FC.base} px-4 py-2.5`}>
-                      <span className={`text-[11px] uppercase tracking-wider font-semibold ${FC.mut}`}>
-                        Se falhar
-                      </span>
-                      {rt.llm.fallback.map((m, i) => (
-                        <span
-                          key={i}
-                          className={`inline-flex items-center gap-1.5 h-6 pl-1.5 pr-2 rounded-md border ${FC.hair} bg-white dark:bg-[#14171c] text-[11px] font-mono ${FC.dim}`}
-                        >
-                          <ProviderLogo provider={m || ""} className="w-3.5 h-3.5" />
-                          {m}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {!editModel ? (
-                  <div className="mt-3 flex items-center gap-2">
-                    <Button variant="secondary" onClick={() => setEditModel(true)}>
-                      <Edit3 className="w-3.5 h-3.5" /> Alterar modelo
-                    </Button>
-                    {!rt.llm.inherited && (
-                      <Button variant="ghost" onClick={() => saveModel({ llm_model: "" })} disabled={savingModel}>
-                        Voltar ao padrão da conta
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <div className={`mt-3 rounded-[10px] border ${FC.hair} p-4`}>
-                    <div className={`text-[13px] font-medium mb-2.5 ${FC.ink}`}>Usar qual modelo?</div>
-
-                    {/* Primeiro os que a conta já tem chave — 1 clique, sem digitar nada. */}
-                    <div className="space-y-1.5">
-                      {rt.llm.options.map((o) => {
-                        const on = (agent.llm_model || rt.llm.tenant_default_model) === o.default_model;
-                        return (
-                          <button
-                            key={o.id}
-                            disabled={savingModel}
-                            onClick={() => {
-                              saveModel({ llm_model: o.default_model, llm_provider_id: o.id });
-                              setEditModel(false);
-                            }}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] border text-left transition-colors ${
-                              on
-                                ? "border-[#003083]/40 dark:border-[#5b9bff]/40 bg-[#003083]/[0.03] dark:bg-[#5b9bff]/[0.06]"
-                                : `${FC.hair} ${FC.hover}`
-                            }`}
-                          >
-                            <ProviderLogo provider={o.default_model || o.provider} className={`w-4 h-4 shrink-0 ${FC.ink}`} />
-                            <span className={`text-[13px] font-mono truncate flex-1 ${FC.ink}`}>{o.default_model}</span>
-                            <span className={`text-[11px] ${FC.mut}`}>{o.provider}</span>
-                            {on && <CheckCircle2 className="w-4 h-4 shrink-0 text-[#003083] dark:text-[#5b9bff]" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Escape hatch: o provider aceita qualquer id de modelo, entao quem
-                        sabe o que esta fazendo pode digitar um que nao esta na lista. */}
-                    <div className={`mt-3 pt-3 border-t ${FC.hair}`}>
-                      <label className={`block text-[12px] font-medium mb-1.5 ${FC.sub}`}>
-                        Ou digite outro id de modelo
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          defaultValue={agent.llm_model || ""}
-                          placeholder={rt.llm.tenant_default_model || "ex: gpt-4o-mini"}
-                          disabled={savingModel}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              saveModel({ llm_model: (e.target as HTMLInputElement).value.trim() });
-                              setEditModel(false);
-                            }
-                          }}
-                          className={`flex-1 h-8 px-3 text-[13px] rounded-[10px] bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow font-mono`}
-                        />
-                        <Button variant="ghost" onClick={() => setEditModel(false)}>
-                          Cancelar
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Indexação (RAG) — o outro modelo do agente. Fica aqui, ao lado do
-                    de raciocínio, porque "qual modelo este agente usa" é UMA pergunta:
-                    antes o de indexação vivia numa página separada, em Configurações. */}
-                <EmbeddingRow rt={rt} />
-
-                <Link to="/admin/configuracoes/llm" className={`${btnSecondary} mt-5`}>
-                  <Settings className="w-3.5 h-3.5" /> Chaves e padrões da conta
-                </Link>
-              </>
-            )}
-          </div>
-        )}
-
-              </div>
-    </div>
-  );
-}
-
-// Conversa de teste com o agente. Não grava conversa nem usa canal.
-//
-// 🚨 ESCOPO REAL (não prometer mais do que entrega): o endpoint de playground
-// chama o motor de LLM direto, SEM a busca na base de conhecimento (RAG) e SEM
-// a memória entre conversas — as duas só existem no runtime de produção. Então
-// o teste confere tom, formato e modelo, e NÃO confere se o agente sabe o que
-// está num documento indexado. A tela diz isso ao usuário em vez de afirmar o
-// contrário, que era o que acontecia e levava o cliente a achar o RAG quebrado.
-function AgentPlayground({
-  agentId,
-  agentName,
-  model,
-}: {
-  agentId: number;
-  agentName: string;
-  model: string | null;
-}) {
-  const [msgs, setMsgs] = useState<{ role: "user" | "assistant"; content: string; model?: string | null }[]>([]);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const endRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [msgs, sending]);
-
-  async function send() {
-    const text = input.trim();
-    if (!text || sending) return;
-    const historico = msgs;
-    setMsgs((m) => [...m, { role: "user", content: text }]);
-    setInput("");
-    setSending(true);
-    try {
-      // `model_used` já vinha do backend e era descartado. Com cadeia de fallback
-      // ativa, o modelo que respondeu pode não ser o escolhido — sem o carimbo o
-      // usuário testa um modelo achando que testou outro.
-      const { data } = await api.post<{ text: string; model_used?: string | null }>(
-        `/agents/${agentId}/playground`,
-        { message: text, history: historico.map(({ role, content }) => ({ role, content })) },
-      );
-      setMsgs((m) => [
-        ...m,
-        { role: "assistant", content: data.text || "(sem resposta)", model: data.model_used ?? null },
-      ]);
-    } catch (err: any) {
-      const motivo = err?.response?.data?.detail || "erro ao falar com o agente";
-      setMsgs((m) => [...m, { role: "assistant", content: `⚠ ${motivo}` }]);
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col h-[calc(100vh-190px)]">
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        {msgs.length === 0 ? (
-          <div className={`text-center py-10 text-[13px] leading-6 ${FC.mut}`}>
-            Escreva como se fosse um cliente.
-            <br />
-            {agentName} responde com a persona real
-            {model ? ` — rodando em ${model}` : ""}.
-            <br />
-            <span className="text-[12px]">
-              Este teste <span className="font-medium">não consulta a base de conhecimento</span> nem a memória de
-              conversas anteriores.
-            </span>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {msgs.map((m, i) => (
-              <div key={i} className={m.role === "user" ? "flex justify-end" : "flex flex-col items-start"}>
-                <div
-                  className={`max-w-[85%] px-3.5 py-2.5 text-[13px] leading-5 whitespace-pre-wrap ${
-                    m.role === "user"
-                      ? "rounded-[14px_14px_4px_14px] bg-[#003083] text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]"
-                      : `rounded-[14px_14px_14px_4px] border ${FC.hair} ${FC.base} ${FC.ink}`
-                  }`}
-                >
-                  {m.content}
-                </div>
-                {m.role === "assistant" && m.model && (
-                  <div className={`mt-1 ml-1 text-[10.5px] font-mono ${FC.mut}`}>{m.model}</div>
-                )}
-              </div>
-            ))}
-            {sending && (
-              <div className="flex justify-start">
-                <div className={`px-3.5 py-2.5 rounded-[14px_14px_14px_4px] border ${FC.hair} ${FC.base}`}>
-                  <Loader2 className={`w-3.5 h-3.5 animate-spin ${FC.mut}`} />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        <div ref={endRef} />
-      </div>
-
-      <div className={`border-t ${FC.hair} px-6 py-4 flex items-center gap-2`}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          placeholder="Fale com o agente…"
-          disabled={sending}
-          className={`flex-1 h-9 px-3 text-[13px] rounded-[10px] bg-white dark:bg-[#14171c] ${FC.ink} outline-none shadow-[0_0_0_1px_rgb(226,232,240)] dark:shadow-[0_0_0_1px_#23272e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow`}
-        />
-        <Button variant="primary" onClick={send} disabled={sending || !input.trim()}>
-          Enviar
-        </Button>
-        {msgs.length > 0 && (
-          <Button variant="ghost" onClick={() => setMsgs([])} title="Limpar conversa">
-            Limpar
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Etiqueta de escopo — o que é deste agente e o que é compartilhado com a conta.
-// Sem isso o usuário muda algo achando que é local e afeta todo mundo.
-function ScopeNote({ scope, text }: { scope: "agente" | "conta"; text: string }) {
-  const isAgent = scope === "agente";
-  return (
-    <div className={`flex items-start gap-2.5 rounded-md border ${FC.hair} ${FC.base} px-3 py-2.5`}>
-      <span
-        className={`shrink-0 mt-px inline-flex items-center h-[18px] px-1.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
-          isAgent
-            ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
-            : "bg-[#B4600A]/[0.10] text-[#B4600A] dark:bg-[#d69b4e]/[0.14] dark:text-[#d69b4e]"
-        }`}
-      >
-        {isAgent ? "deste agente" : "toda a conta"}
-      </span>
-      <p className={`text-[12px] leading-relaxed ${FC.sub}`}>{text}</p>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, tone }: { label: string; value: string; tone?: "bad" }) {
-  return (
-    <div className={`rounded-md border ${FC.hair} ${FC.base} px-3 py-2.5`}>
-      <div className={`text-[11px] ${FC.mut}`}>{label}</div>
-      <div className={`text-[18px] font-semibold leading-tight ${tone === "bad" ? "text-[#C0271F]" : FC.ink}`}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function StatusPill({ status }: { status: string }) {
-  const map: Record<string, { t: string; c: string }> = {
-    ready: { t: "indexado", c: "bg-[#00A66C]/10 text-[#0B7A55] dark:text-[#5FC091]" },
-    failed: { t: "falhou", c: "bg-[#C0271F]/10 text-[#C0271F]" },
-    indexing: { t: "indexando", c: "bg-[#B4600A]/10 text-[#B4600A]" },
-  };
-  const s = map[status] || { t: status, c: `${FC.base} ${FC.mut}` };
-  return (
-    <span className={`shrink-0 inline-flex items-center h-[20px] px-2 rounded-full text-[11px] font-medium ${s.c}`}>
-      {s.t}
-    </span>
-  );
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className="bg-[#F9F9F9] dark:bg-[#16191f] rounded-md p-3 border border-[#EDEDED] dark:border-[#23272e]">
-      <div className={`flex items-center gap-1.5 text-[11px] mb-1 ${FC.mut}`}>
-        <Icon className="w-3 h-3" />
-        {label}
-      </div>
-      <div className={`text-[18px] font-semibold leading-tight ${FC.ink}`}>{value}</div>
-      {hint && <div className={`text-[10px] mt-0.5 ${FC.mut}`}>{hint}</div>}
-    </div>
-  );
-}
