@@ -76,6 +76,88 @@ async def build_rag_block(db: AsyncSession, agent_id: int, query: str) -> tuple[
 
 
 
+def build_contact_block(
+    *, connector_kind: str, external_chat_id: str | None, sender_name: str | None
+) -> str:
+    """Bloco "Contato atual" — o agente JÁ tem nome/telefone pelo canal.
+
+    Ponto ÚNICO: produção e playground montam o mesmo texto. Evita o agente pedir
+    ao cliente dado que já temos (irrita, e cada atendente re-pergunta).
+    """
+    is_wa = connector_kind in ("whatsapp", "whatsapp_cloud")
+    jid = external_chat_id or ""
+    # LID (@lid) é um ID INTERNO do WhatsApp, NÃO o telefone real — não apresentar
+    # como telefone (senão o agente cadastra com número falso e nunca acha).
+    is_lid = "@lid" in jid
+    phone = "" if (not is_wa or is_lid) else _re.sub(r"\D", "", jid.split("@")[0])
+    out = ["# Contato atual (você JÁ tem estes dados — NÃO peça ao cliente)"]
+    out.append(f"- Nome: {sender_name or '(não informado pelo WhatsApp)'}")
+    if phone:
+        out.append(
+            f"- Telefone/WhatsApp: {phone} — este JÁ é o número do cliente. Ao buscar ou cadastrar, "
+            "use este número DIRETO. NUNCA pergunte o telefone/WhatsApp."
+        )
+    elif is_wa:
+        out.append(
+            "- Telefone/WhatsApp: não veio automaticamente nesta conversa. Se for cadastrar o "
+            "cliente e ele JÁ tiver dito o número aqui, USE o que ele disse — não peça de novo. "
+            "Cadastre com o nome do WhatsApp + o que tiver; só peça o número UMA vez se for "
+            "realmente indispensável (ex.: contato pro Taxidog) e ele nunca tiver informado."
+        )
+    out.append(
+        "Use esses dados diretamente. NUNCA peça o nome (você já tem). Pergunte só o que "
+        "realmente falta."
+    )
+    return "\n".join(out)
+
+
+def build_base_directives(agent, *, connector_kind: str, extra_block: str = "") -> str:
+    """Data/hora + diretrizes base herdadas por TODO agente.
+
+    Ponto ÚNICO, pelo mesmo motivo do bloco de contato. A persona TEM PRIORIDADE;
+    isto só preenche lacunas. Resolve "não sei a data", loop de perguntas repetidas
+    e alucinação de horário. `extra_block` entra na MESMA posição em que o runtime
+    injetava os alertas do DevSecOps (antes das regras de formatação do WhatsApp).
+    """
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _ZoneInfo
+
+    DIAS = [
+        "segunda-feira",
+        "terça-feira",
+        "quarta-feira",
+        "quinta-feira",
+        "sexta-feira",
+        "sábado",
+        "domingo",
+    ]
+    agora = _dt.now(_ZoneInfo("America/Sao_Paulo"))
+    date_block = (
+        "# Data e hora atuais (fuso de São Paulo — use SEMPRE isto como referência)\n"
+        f"- Hoje é {DIAS[agora.weekday()]}, {agora.strftime('%d/%m/%Y')}, {agora.strftime('%H:%M')}.\n"
+        "- Ao falar de 'hoje', 'amanhã', 'esta semana' ou dias da semana, calcule a partir desta data. "
+        "NUNCA diga que não sabe a data.\n\n"
+    )
+    # Diretrizes GENÉRICAS + guidelines do TEMPLATE do agente (definidas em
+    # services/templates.py — o runtime não conhece nenhum nicho).
+    base = date_block + _templates.GENERIC_GUIDELINES
+    tmpl = _templates.get_template(agent.template_kind or "")
+    if tmpl is not None and tmpl.guidelines:
+        base = f"{base}\n\n{tmpl.guidelines}"
+    if extra_block:
+        base = f"{base}\n\n{extra_block}"
+    if connector_kind in ("whatsapp", "whatsapp_cloud"):
+        base += (
+            "\n\n# Formatação no WhatsApp\n"
+            "- Use SÓ a formatação nativa do WhatsApp: *negrito* (UM asterisco), _itálico_. "
+            "NUNCA use markdown (**, ##, ###, ou '-' como marcador).\n"
+            "- Listas: uma linha por item começando com '• ' (bullet). Nada de '-' nem '*' como marcador.\n"
+            "- Emoji com parcimônia (no máximo 1 por mensagem, e nunca como marcador de lista).\n"
+            "- Mensagens curtas e escaneáveis; evite blocos longos de texto."
+        )
+    return base
+
+
 # Filtro de segurança: remove caracteres CJK (chinês/japonês/coreano) que o
 # MiniMax ocasionalmente vaza em respostas em português. 2ª camada sobre a regra
 # de idioma da persona — garante que o cliente nunca veja caractere oriental.
@@ -741,88 +823,31 @@ async def handle_inbound_message(
     if rag_block:
         system_prompt = f"{system_prompt}\n\n{rag_block}"
 
-    # Contexto do contato — o agente JÁ tem nome + telefone pelo canal (WhatsApp).
-    # Evita pedir ao cliente dados que já temos (irrita + cada atendente re-pergunta).
-    _is_wa = connector_kind in ("whatsapp", "whatsapp_cloud")
-    _jid = external_chat_id or ""
-    # LID (@lid) é um ID INTERNO do WhatsApp, NÃO o telefone real — não apresentar como
-    # telefone (senão o agente busca/cadastra com número falso e nunca acha). Telefone real
-    # só quando o JID é @s.whatsapp.net (ou whatsapp_cloud, que já chega como número).
-    _is_lid = "@lid" in _jid
-    _phone = "" if (not _is_wa or _is_lid) else _re.sub(r"\D", "", _jid.split("@")[0])
-    _contact = ["# Contato atual (você JÁ tem estes dados — NÃO peça ao cliente)"]
-    _contact.append(f"- Nome: {sender_name or '(não informado pelo WhatsApp)'}")
-    if _phone:
-        _contact.append(
-            f"- Telefone/WhatsApp: {_phone} — este JÁ é o número do cliente. Ao buscar ou cadastrar, "
-            "use este número DIRETO. NUNCA pergunte o telefone/WhatsApp."
-        )
-    elif _is_wa:
-        _contact.append(
-            "- Telefone/WhatsApp: não veio automaticamente nesta conversa. Se for cadastrar o "
-            "cliente e ele JÁ tiver dito o número aqui, USE o que ele disse — não peça de novo. "
-            "Cadastre com o nome do WhatsApp + o que tiver; só peça o número UMA vez se for "
-            "realmente indispensável (ex.: contato pro Taxidog) e ele nunca tiver informado."
-        )
-    _contact.append(
-        "Use esses dados diretamente. NUNCA peça o nome (você já tem). Pergunte só o que "
-        "realmente falta."
+    # Contexto do contato + diretrizes base: montados em PONTO ÚNICO
+    # (build_contact_block / build_base_directives), pra o playground do painel
+    # produzir exatamente o mesmo prompt. Testar com prompt diferente do de
+    # produção não é testar — foi o que fez o teste do painel divergir do WhatsApp.
+    system_prompt = f"{system_prompt}\n\n" + build_contact_block(
+        connector_kind=connector_kind,
+        external_chat_id=external_chat_id,
+        sender_name=sender_name,
     )
-    system_prompt = f"{system_prompt}\n\n" + "\n".join(_contact)
-
-    # Data/hora atual + diretrizes base de atendimento — herdadas por TODO agente.
-    # A persona acima TEM PRIORIDADE; isto só preenche lacunas (não sobrescreve tom
-    # nem regras de quem já está calibrado). Resolve "não sei a data" + loop de
-    # perguntas repetidas + alucinação de horário/preço + não-uso de ferramentas.
-    from datetime import datetime as _dt
-    from zoneinfo import ZoneInfo as _ZoneInfo
-
-    _DIAS = [
-        "segunda-feira",
-        "terça-feira",
-        "quarta-feira",
-        "quinta-feira",
-        "sexta-feira",
-        "sábado",
-        "domingo",
-    ]
-    _agora = _dt.now(_ZoneInfo("America/Sao_Paulo"))
-    _date_block = (
-        "# Data e hora atuais (fuso de São Paulo — use SEMPRE isto como referência)\n"
-        f"- Hoje é {_DIAS[_agora.weekday()]}, {_agora.strftime('%d/%m/%Y')}, {_agora.strftime('%H:%M')}.\n"
-        "- Ao falar de 'hoje', 'amanhã', 'esta semana' ou dias da semana, calcule a partir desta data. "
-        "NUNCA diga que não sabe a data.\n\n"
-    )
-    # Prompt = data/hora + diretrizes GENÉRICAS + guidelines do TEMPLATE do agente
-    # (petshop/devsecops/etc — definidas em services/templates.py, SEM hardcode aqui).
-    # Cada vertical declara as suas instruções; o runtime não conhece nenhum nicho.
-    _final_base = _date_block + _templates.GENERIC_GUIDELINES
-    _tmpl = _templates.get_template(agent.template_kind or "")
-    if _tmpl is not None and _tmpl.guidelines:
-        _final_base = f"{_final_base}\n\n{_tmpl.guidelines}"
 
     # DevOps: injeta os últimos alertas/incidentes REAIS no contexto, pra responder
     # "qual o último alerta?" direto — sem mandar o usuário rodar comando no servidor.
+    # Fica aqui (e não no builder) porque precisa de `db` e é async.
+    _extra_blk = ""
     if (agent.template_kind or "") == "devsecops":
         try:
             from services import ops_commands as _ops
 
-            _alerts_blk = await _ops.recent_alerts_block(db, agent.tenant_id, 6)
-            if _alerts_blk:
-                _final_base = f"{_final_base}\n\n{_alerts_blk}"
+            _extra_blk = await _ops.recent_alerts_block(db, agent.tenant_id, 6) or ""
         except Exception:
             logger.exception("inject alerts block falhou agent=%s", agent.id)
 
-    if _is_wa:
-        _final_base += (
-            "\n\n# Formatação no WhatsApp\n"
-            "- Use SÓ a formatação nativa do WhatsApp: *negrito* (UM asterisco), _itálico_. "
-            "NUNCA use markdown (**, ##, ###, ou '-' como marcador).\n"
-            "- Listas: uma linha por item começando com '• ' (bullet). Nada de '-' nem '*' como marcador.\n"
-            "- Emoji com parcimônia (no máximo 1 por mensagem, e nunca como marcador de lista).\n"
-            "- Mensagens curtas e escaneáveis; evite blocos longos de texto."
-        )
-    system_prompt = f"{system_prompt}\n\n{_final_base}"
+    system_prompt = f"{system_prompt}\n\n" + build_base_directives(
+        agent, connector_kind=connector_kind, extra_block=_extra_blk
+    )
 
     # Histórico da conversa → memória do modelo (senão "esquece" o cliente)
     history: list[dict] = []

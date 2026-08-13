@@ -662,6 +662,7 @@ function ChatPanel({
   persona: string;
 }) {
   const [itens, setItens] = useState<Msg[]>([]);
+  const [contato, setContato] = useState("");
   const [input, setInput] = useState("");
   const [enviando, setEnviando] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -698,19 +699,30 @@ function ChatPanel({
     try {
       const { data } = await api.post<{
         text: string;
+        bubbles?: string[];
+        canal?: string;
         model_used?: string | null;
         rag_fontes?: string[];
         rag_usado?: boolean;
-      }>(`/agents/${agentId}/playground`, { message: texto, history: hist });
+      }>(`/agents/${agentId}/playground`, {
+        message: texto,
+        history: hist,
+        contact_name: contato.trim() || undefined,
+      });
+      // O backend devolve a resposta JA quebrada em balões, do mesmo jeito que o
+      // cliente recebe no canal. Renderiza um balão por mensagem — antes vinha
+      // tudo num bloco só e o teste parecia diferente do WhatsApp.
+      const bolhas = data.bubbles?.length ? data.bubbles : [data.text || "(sem resposta)"];
       setItens((m) => [
         ...m,
-        {
-          tipo: "msg",
-          role: "assistant",
-          content: data.text || "(sem resposta)",
-          model: data.model_used ?? null,
-          fontes: data.rag_fontes ?? [],
-        },
+        ...bolhas.map((b, i) => ({
+          tipo: "msg" as const,
+          role: "assistant" as const,
+          content: b,
+          // modelo e fontes só no ÚLTIMO balão, pra não repetir o carimbo N vezes
+          model: i === bolhas.length - 1 ? data.model_used ?? null : null,
+          fontes: i === bolhas.length - 1 ? data.rag_fontes ?? [] : [],
+        })),
       ]);
     } catch (err: any) {
       const motivo = err?.response?.data?.detail || "erro ao falar com o agente";
@@ -726,6 +738,15 @@ function ChatPanel({
         <MessageSquare className={`w-4 h-4 ${FC.mut}`} />
         <span className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 fc-crisp ${FC.ink}`}>Testar</span>
         <div className="flex-1" />
+        {/* O canal entrega o nome em produção; aqui é digitado, senão o {nome}
+            da persona não resolve e o teste diverge do WhatsApp. */}
+        <Input
+          value={contato}
+          onChange={(e) => setContato(e.target.value)}
+          placeholder="Nome do contato"
+          className="w-[150px] h-7 text-[12px]"
+          title="Simula o nome que o WhatsApp entrega"
+        />
         {itens.length > 0 && (
           <button onClick={() => setItens([])} className={iconBtn} title="Limpar conversa">
             <RotateCcw className="w-3.5 h-3.5" />
@@ -740,12 +761,11 @@ function ChatPanel({
             <br />
             {agentName} responde com a persona real{model ? ` — em ${model}` : ""}.
             <div className={`mt-3 mx-auto max-w-[300px] rounded-[10px] border ${FC.hair} px-3 py-2 text-[11.5px] leading-4 text-left`}>
-              O teste usa o <span className="font-medium">mesmo caminho da produção</span>: mesma persona e{" "}
-              <span className="font-medium">consulta a base de conhecimento</span>. Cada resposta mostra o modelo e as
-              fontes que entraram.
+              Mesmo prompt do WhatsApp: persona, base de conhecimento, data de hoje e as regras de
+              formatação do canal. A resposta vem quebrada em balões, como o cliente recebe.
               <br />
               <span className={FC.mut}>
-                Fora: memória de conversas anteriores — ela é por contato, e aqui não há contato.
+                Fora: memória de conversas anteriores (é por contato) e playbooks.
               </span>
             </div>
           </div>

@@ -402,6 +402,11 @@ async def agent_runtime_config(
 class PlaygroundIn(BaseModel):
     message: str
     history: list[dict] | None = None
+    # Simulam o que o canal entrega em produção. Sem eles o agente não sabe com
+    # quem fala e o `{nome}` da persona não resolve — o teste sai diferente do
+    # WhatsApp por um motivo que não aparece na tela.
+    contact_name: str | None = None
+    contact_phone: str | None = None
 
 
 @router.post("/{agent_id}/playground")
@@ -444,6 +449,31 @@ async def agent_playground(
     rag_bloco, rag_fontes = await agent_runtime.build_rag_block(db, agent.id, msg)
     if rag_bloco:
         system = f"{system}\n\n{rag_bloco}" if system else rag_bloco
+
+    # Canal simulado: o teste vale pelo canal em que o agente atende. Se ele tem
+    # conector, usa o kind real — assim entram as regras de formatação do WhatsApp
+    # e o bloco de contato no mesmo formato da produção.
+    from models import TaConnector
+
+    kind = (
+        await db.execute(
+            select(TaConnector.kind)
+            .where(TaConnector.agent_id == agent.id, TaConnector.enabled.is_(True))
+            .limit(1)
+        )
+    ).scalar_one_or_none() or "whatsapp"
+
+    # Os blocos que a produção injeta e o playground não injetava: contato,
+    # data/hora atual, diretrizes genéricas, guidelines do template e regras de
+    # formatação do canal. Faltando isso, o agente no painel não sabia nem que dia
+    # era hoje — e o teste divergia do WhatsApp por motivo invisível.
+    system = (system or "") + "\n\n" + agent_runtime.build_contact_block(
+        connector_kind=kind,
+        external_chat_id=payload.contact_phone or None,
+        sender_name=payload.contact_name or None,
+    )
+    system += "\n\n" + agent_runtime.build_base_directives(agent, connector_kind=kind)
+
     history = [
         {"role": h.get("role"), "content": h.get("content")}
         for h in (payload.history or [])
@@ -464,9 +494,21 @@ async def agent_playground(
     except Exception as e:  # noqa: BLE001 — inclui ProvidersAllDisabled
         raise HTTPException(502, f"O agente não respondeu: {e}") from e
 
+    # Mesmo tratamento de saída da produção, na MESMA ordem: limpa CJK/bandeira
+    # vazados, converte markdown pra formatação nativa do canal e quebra em balões.
+    # Sem isto o painel mostrava `**negrito**` e um bloco único gigante, enquanto o
+    # cliente recebia texto formatado em até 4 mensagens.
+    limpo = agent_runtime._sanitize_reply(reply.text)
+    if kind in ("whatsapp", "whatsapp_cloud"):
+        limpo = agent_runtime._format_for_whatsapp(limpo)
+    bolhas = agent_runtime._split_into_bubbles(limpo)
+
     return {
-        "text": reply.text or "",
+        # `text` mantido pra compatibilidade; o painel novo lê `bubbles`.
+        "text": limpo,
+        "bubbles": bolhas,
         "model_used": getattr(reply, "model_used", None),
+        "canal": kind,
         # o painel carimba embaixo da resposta o que foi de fato consultado
         "rag_fontes": rag_fontes,
         "rag_usado": bool(rag_bloco),
