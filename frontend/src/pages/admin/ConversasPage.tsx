@@ -532,12 +532,36 @@ export default function ConversasPage() {
 
   const [crmSending, setCrmSending] = useState(false);
 
+  // Funis do CRM do ERP. Carregados uma vez: a lista muda quando alguém cria um
+  // funil lá, não durante o atendimento. Lista vazia = integração desligada ou
+  // ERP fora do ar → o seletor some e o envio cai no funil padrão, como antes.
+  type FunilCrm = { pipeline_id: number; nome: string; padrao: boolean; estagio_id: number; etapa_nome: string | null };
+  const [funis, setFunis] = useState<FunilCrm[]>([]);
+  const [funilEscolhido, setFunilEscolhido] = useState<number | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    api
+      .get<{ funis: FunilCrm[] }>("/conversations/crm/funis")
+      .then(({ data }) => {
+        if (!vivo) return;
+        const lista = data.funis ?? [];
+        setFunis(lista);
+        // Pré-seleciona o padrão da conta — assim o clique direto no botão faz
+        // exatamente o que fazia antes de existir escolha.
+        setFunilEscolhido((atual) => atual ?? (lista.find((f) => f.padrao) ?? lista[0])?.estagio_id ?? null);
+      })
+      .catch(() => { if (vivo) setFunis([]); });
+    return () => { vivo = false; };
+  }, []);
+
   async function enviarParaCrm(c: Conversation) {
     if (crmSending) return;
     setCrmSending(true);
     try {
       const { data } = await api.post<{ ok: boolean; oportunidade_id: number | null; ja_existia: boolean }>(
         `/conversations/${c.id}/enviar-crm`,
+        { estagio_id: funilEscolhido },
       );
       const opId = data.oportunidade_id ?? null;
       setOpenConv((prev) => (prev && prev.id === c.id ? { ...prev, crm_opportunity_id: opId } : prev));
@@ -1038,6 +1062,25 @@ export default function ConversasPage() {
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                {/* Destino do card. Só aparece quando há mais de um funil — com
+                    um só, escolher não é decisão, é clique a mais. Some depois
+                    de enviado: o card já tem lugar, e trocá-lo é no CRM. */}
+                {funis.length > 1 && !openConv.crm_opportunity_id && (
+                  <select
+                    value={funilEscolhido ?? ""}
+                    onChange={(e) => setFunilEscolhido(e.target.value ? Number(e.target.value) : null)}
+                    disabled={crmSending}
+                    title="Funil que vai receber o card"
+                    className="h-7 max-w-[190px] rounded-md border border-black/[0.10] dark:border-white/[0.12] bg-white dark:bg-[#1b1f24] px-2 text-[11px] text-[#262626] dark:text-[#cdd2da] outline-none focus:border-black/[0.25] dark:focus:border-white/[0.25]"
+                  >
+                    {funis.map((f) => (
+                      <option key={f.pipeline_id} value={f.estagio_id}>
+                        {f.nome}
+                        {f.etapa_nome ? ` · ${f.etapa_nome}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <Button
                   variant="secondary"
                   size="sm"

@@ -265,3 +265,68 @@ async def llm_complete(
     except Exception as e:  # noqa: BLE001 — inclui ProvidersAllDisabled (tenant sem LLM)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"LLM do tenant falhou: {e}") from e
     return LlmCompleteOut(text=reply.text or "", model_used=getattr(reply, "model_used", None))
+
+
+# ─── Histórico de conversa para a aba Conversas do card do CRM (ERP lê daqui) ───
+@router.get("/conversas/{conversa_id}/mensagens")
+async def conversa_mensagens(
+    conversa_id: int,
+    agent_tenant_id: int,
+    limite: int = 200,
+    x_tier_integration_secret: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Transcrição de uma conversa, para o card do CRM mostrar o histórico.
+
+    O ERP guarda só o ponteiro da conversa; as mensagens vivem aqui e continuam
+    chegando depois que o card nasce — por isso ele lê ao vivo em vez de receber
+    uma cópia no momento do envio.
+
+    🔒 `agent_tenant_id` não é enfeite: sem conferir que a conversa pertence ao
+    tenant que pediu, o shared secret viraria chave-mestra para ler a conversa de
+    qualquer cliente pelo id. O secret prova que é o ERP; o tenant prova de quem.
+    """
+    _check_secret(x_tier_integration_secret)
+
+    from models import TaConversation, TaMessageLog
+
+    conv = await db.get(TaConversation, conversa_id)
+    if not conv:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversa não encontrada")
+
+    agent_ids = [
+        r[0] for r in (await db.execute(select(TaAgent.id).where(TaAgent.tenant_id == agent_tenant_id))).all()
+    ]
+    if conv.agent_id not in agent_ids:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Conversa de outro tenant")
+
+    msgs = (
+        await db.execute(
+            select(TaMessageLog)
+            .where(TaMessageLog.conversation_id == conversa_id)
+            .order_by(TaMessageLog.id.asc())
+            .limit(max(1, min(limite, 500)))
+        )
+    ).scalars().all()
+
+    return {
+        "conversa": {
+            "id": conv.id,
+            "canal": conv.connector_kind,
+            "contato_nome": conv.contact_name,
+            "contato_externo": conv.external_id,
+            "status": conv.status,
+            "total_mensagens": conv.msg_count,
+            "ultima_mensagem_em": conv.last_message_at.isoformat() if conv.last_message_at else None,
+        },
+        "mensagens": [
+            {
+                "id": m.id,
+                "papel": m.role,
+                "texto": m.content,
+                "em": m.created_at.isoformat() if m.created_at else None,
+                "anexos": m.attachments_json or [],
+            }
+            for m in msgs
+        ],
+    }

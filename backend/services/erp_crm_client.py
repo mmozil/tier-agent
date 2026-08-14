@@ -107,6 +107,7 @@ async def enviar_conversa_para_crm(
     titulo: str | None = None,
     resumo: str | None = None,
     ultima_mensagem: str | None = None,
+    estagio_id: int | None = None,
 ) -> dict:
     """POST no ERP → {ok, oportunidade_id, cliente_id, titulo, estagio_id, ja_existia}.
 
@@ -131,6 +132,9 @@ async def enviar_conversa_para_crm(
         "titulo": titulo,
         "resumo": resumo,
         "ultima_mensagem": ultima_mensagem,
+        # Etapa escolhida pelo atendente. None = o ERP joga no funil padrão,
+        # que é exatamente o comportamento que existia antes do seletor.
+        "estagio_id": estagio_id,
         "origem_sistema": "tier-agent",
     }
     headers = {
@@ -154,3 +158,34 @@ async def enviar_conversa_para_crm(
         raise ErpCrmError(str(detail or f"ERP retornou {r.status_code}"))
 
     return r.json()
+
+
+async def listar_funis(*, agent_tenant_id: int) -> list[dict]:
+    """Funis do CRM do ERP para este tenant, com a primeira etapa de cada um.
+
+    Devolve `[{pipeline_id, nome, padrao, estagio_id, etapa_nome}]`. É o `estagio_id`
+    que viaja no envio — o funil sozinho não diz onde o card pousa.
+    """
+    settings = get_settings()
+    secret = (settings.tier_erp_integration_secret or "").strip()
+    if not secret:
+        raise ErpCrmError("Integração ERP não configurada (TIER_ERP_INTEGRATION_SECRET).")
+
+    base = (settings.tier_erp_api_url or "https://api.tier.finance").rstrip("/")
+    url = f"{base}/api/tier-empresas/vendas/crm/funis-para-agent"
+    headers = {"X-Tier-Integration-Secret": secret, "X-Sync-Source": "tier-agent"}
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as cli:
+            r = await cli.get(url, params={"agent_tenant_id": agent_tenant_id}, headers=headers)
+    except httpx.HTTPError as e:
+        raise ErpCrmError(f"Falha de rede ao listar funis do CRM: {e}") from e
+
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("detail")
+        except Exception:  # noqa: BLE001 — corpo não-JSON
+            detail = (r.text or "")[:200]
+        raise ErpCrmError(str(detail or f"ERP retornou {r.status_code}"))
+
+    return r.json().get("funis") or []

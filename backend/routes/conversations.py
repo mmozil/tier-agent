@@ -188,6 +188,33 @@ async def list_conversations(
     return out
 
 
+@router.get("/crm/funis")
+async def crm_funis(user: CurrentUser = Depends(get_current_user)):
+    """Funis do CRM do ERP, pro atendente escolher onde o card vai cair.
+
+    ⚠️ Declarada ANTES de `/{conversation_id}`: o FastAPI casa as rotas na ordem
+    em que foram definidas, e "crm" bateria primeiro no parâmetro int, devolvendo
+    422 em vez de cair aqui.
+
+    O secret de federação mora só no backend — por isso este proxy existe em vez
+    de o browser falar direto com o ERP.
+    """
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+
+    from services import erp_crm_client
+
+    if not erp_crm_client.integracao_ativa():
+        return {"funis": []}  # sem integração: a UI esconde o seletor
+
+    try:
+        return {"funis": await erp_crm_client.listar_funis(agent_tenant_id=user.tenant_id)}
+    except erp_crm_client.ErpCrmError:
+        # Lista indisponível não pode travar o envio: sem opções, a UI manda sem
+        # escolha e o ERP usa o funil padrão, que é o comportamento de antes.
+        return {"funis": []}
+
+
 @router.get("/{conversation_id}", response_model=dict)
 async def conversation_detail(
     conversation_id: int,
@@ -243,9 +270,16 @@ class EnviarCrmResponse(BaseModel):
     ja_existia: bool = False
 
 
+class EnviarCrmRequest(BaseModel):
+    """Destino escolhido pelo atendente. Vazio = funil padrão da conta (como era)."""
+
+    estagio_id: int | None = None
+
+
 @router.post("/{conversation_id}/enviar-crm", response_model=EnviarCrmResponse)
 async def enviar_para_crm(
     conversation_id: int,
+    body: EnviarCrmRequest | None = None,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -290,6 +324,7 @@ async def enviar_para_crm(
             telefone=conv.external_id,  # o ERP normaliza (tira @s.whatsapp.net / máscara)
             canal=conv.connector_kind,
             resumo=resumo,
+            estagio_id=(body.estagio_id if body else None),
         )
     except erp_crm_client.ErpCrmError as e:
         raise HTTPException(502, str(e)) from e
