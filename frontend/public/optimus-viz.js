@@ -1325,12 +1325,12 @@ function vPo(ctx,w,h,t,E){
   var fala=E>PO_DEADZONE?E-PO_DEADZONE:0;
   POROT+=dt*fala*.00062;
   var esp=t*.001;
-  var respiro=Math.sin(esp*.52)*.55+Math.sin(esp*.19)*.45;          /* -1..1 lento */
-  var balanco=Math.sin(esp*.26)*.016+Math.sin(esp*.15)*.009;        /* vaivem, em rad */
+  var respiro=Math.sin(esp*.78)*.55+Math.sin(esp*.29)*.45;          /* -1..1 lento */
+  var balanco=Math.sin(esp*.34)*.030+Math.sin(esp*.19)*.018;        /* vaivem, em rad */
   var yaw=PO_YAW0+POROT+balanco;
-  var pit=PO_PIT0+Math.sin(POROT*1.6)*.07+Math.sin(esp*.22)*.008;
+  var pit=PO_PIT0+Math.sin(POROT*1.6)*.07+Math.sin(esp*.28)*.016;
   /* o raio respira: e o que da o "esperando" sem precisar girar */
-  var R=M*.30*(1+E*.09+respiro*.011);
+  var R=M*.30*(1+E*.09+respiro*.028);
   var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
 
   /* frentes de onda: posicao em cosseno, pra comparar sem acos */
@@ -1353,6 +1353,7 @@ function vPo(ctx,w,h,t,E){
       var g=Math.exp(-(dd*dd)*58);
       lift+=g*WA[k2];hot+=g*WA[k2];
     }
+    rr*=1+Math.sin(esp*.8+i*1.7)*.011;
     rr+=lift;
     var px=d[0]*rr,py=d[1]*rr,pz=d[2]*rr;
     var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
@@ -1361,7 +1362,7 @@ function vPo(ctx,w,h,t,E){
     var al=P.b*(.26+dep*.60)*(.55+PO_PISO+bd*1.5)+hot*2.6;
     /* cintilancia: cada ponto pisca no seu proprio tempo. E o detalhe que faz
        ela parecer ESPERANDO em vez de congelada — o olho le como respiracao. */
-    al*=1+Math.sin(esp*.5+i*.7)*.022;
+    al*=1+Math.sin(esp*.85+i*.7)*.10;
     if(al<.05)continue;if(al>1)al=1;
     ctx.fillStyle="rgba(255,255,255,"+al+")";
     var s=P.s*sc*1.35*(1+bd*.55+hot*2.2);

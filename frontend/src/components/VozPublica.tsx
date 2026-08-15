@@ -4,8 +4,9 @@
  *
  * Duas coisas mandam no comportamento:
  *
- * 1. **A esfera fica PARADA.** O giro dela não vem do relógio, vem do nível de
- *    voz (ver `PO_DEADZONE` no `optimus-viz.js`). Em silêncio ela não deriva.
+ * 1. **Ela ESPERA — não congela e não roda.** O giro não vem do relógio, vem do
+ *    nível de voz (`PO_DEADZONE` no `optimus-viz.js`), então em silêncio ela
+ *    nunca deriva. Mas respira, balança de leve e cintila: parada não é morta.
  *
  * 2. **Chamar pelo nome é um comando.** "olá sr Carlos Drummond" acorda e ele se
  *    apresenta; "olá sr Carlos Drummond, tem período integral?" acorda E já leva
@@ -56,6 +57,31 @@ function semAcento(s: string): string {
   return (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+/**
+ * Escolhe a MELHOR voz pt-BR do aparelho em vez da primeira da lista.
+ *
+ * A primeira costuma ser a SAPI antiga do Windows ("Microsoft Daniel/Maria"),
+ * que é justamente a que soa robótica. As neurais têm nome próprio: no Edge vêm
+ * como "(Natural)"/"Online", no Chrome/Android como "Google português do
+ * Brasil", no macOS/iOS como "Luciana". Vale muito ordenar.
+ */
+function melhorVoz(): SpeechSynthesisVoice | null {
+  const todas = speechSynthesis.getVoices().filter((v) => /pt[-_]BR/i.test(v.lang));
+  if (!todas.length) return null;
+  const nota = (v: SpeechSynthesisVoice) => {
+    const n = v.name.toLowerCase();
+    let s = 0;
+    if (/natural|neural/.test(n)) s += 100; // Microsoft neural (Edge)
+    if (/online/.test(n)) s += 60; // voz de nuvem
+    if (/google/.test(n)) s += 50; // Google pt-BR
+    if (/luciana|francisca|thalita|brenda|antonio|ant[oô]nio/.test(n)) s += 30;
+    if (!v.localService) s += 20; // remota costuma ser melhor que a embarcada
+    if (/microsoft (daniel|maria)\b/.test(n)) s -= 25; // SAPI antiga
+    return s;
+  };
+  return [...todas].sort((a, b) => nota(b) - nota(a))[0] ?? null;
+}
+
 /** Como o nome do agente pode ser dito em voz alta. */
 function termosDoNome(nome: string): string[] {
   const limpo = semAcento(nome).replace(/[^a-z0-9\s]/g, " ").trim();
@@ -98,6 +124,16 @@ export default function VozPublica({
     termos.current = termosDoNome(agente);
   }, [agente]);
 
+  // A lista de vozes carrega assincrona no Chrome: a 1a chamada volta vazia e
+  // cairia na voz padrao (a robotica). Aquece aqui pra melhorVoz() ter o que ler.
+  useEffect(() => {
+    if (!("speechSynthesis" in window)) return;
+    speechSynthesis.getVoices();
+    const aquece = () => speechSynthesis.getVoices();
+    speechSynthesis.addEventListener("voiceschanged", aquece);
+    return () => speechSynthesis.removeEventListener("voiceschanged", aquece);
+  }, []);
+
   // ── a esfera ──────────────────────────────────────────────────────────
   useEffect(() => {
     let inst: { destroy?: () => void } | null = null;
@@ -107,7 +143,7 @@ export default function VozPublica({
       vizRef.current = v;
       v.simulate(false);
       inst = v.mount("#esfera-voz", "po");
-      v.setLevel(0); // parada de verdade
+      v.setLevel(0); // sem voz: quem move e o respiro do proprio visualizador
     });
     return () => {
       vivo = false;
@@ -175,8 +211,8 @@ export default function VozPublica({
       const u = new SpeechSynthesisUtterance(texto);
       u.lang = "pt-BR";
       u.rate = 1.04;
-      const vs = speechSynthesis.getVoices().filter((v) => /pt[-_]BR/i.test(v.lang));
-      if (vs.length) u.voice = vs[0];
+      const voz = melhorVoz();
+      if (voz) u.voice = voz;
 
       u.onstart = () => rodarEnvelope();
       u.onboundary = (ev: SpeechSynthesisEvent) => {
