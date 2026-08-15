@@ -111,7 +111,7 @@ export default function VozPublica({
   titulo: string;
   pensando: boolean;
   /** `id` muda a cada resposta — duas iguais seguidas precisam falar de novo. */
-  ultimaResposta: { texto: string; id: number; audioUrl?: string | null } | null;
+  ultimaResposta: { texto: string; id: number; audioUrls?: string[] } | null;
   onEnviar: (texto: string) => void;
   onVerConversa: () => void;
 }) {
@@ -235,53 +235,80 @@ export default function VozPublica({
     }
   }, []);
 
-  const tocarAudio = useCallback(
-    (url: string, aoTerminar: () => void, aoFalhar?: () => void): boolean => {
-      try {
-        const v = vizRef.current;
-        if (!v) return false;
-        let el = audioRef.current;
-        if (!el) {
-          el = new Audio();
-          // Cross-origin (api-agent) exige crossOrigin pro AnalyserNode ler a onda;
-          // o backend ja libera CORS pra este host. Em data: URI seria inofensivo.
-          el.crossOrigin = "anonymous";
-          audioRef.current = el;
-        }
-        el.src = url;
+  /**
+   * Toca as falas em sequencia, baixando cada uma inteira antes de tocar.
+   *
+   * 🚨 Nao usar <audio src="url em chunked">: o Chrome NAO inicia reproducao
+   * progressiva em cross-origin sem Content-Length — o play() e aceito, o
+   * evento `playing` nunca dispara e nao sai som. Reproduzido no navegador.
+   * Baixando por fetch (que lida com chunked) e tocando de um blob same-origin,
+   * toca sempre — e como cada fala e UMA FRASE, a primeira chega em ~1s.
+   */
+  const filaRef = useRef<{ cancelar: boolean }>({ cancelar: false });
 
-        // 🚨 So desvia o som pro grafo se o contexto estiver RODANDO. Num
-        // contexto suspenso, createMediaElementSource silencia o elemento por
-        // completo — melhor perder a onda na esfera do que perder o som.
-        const ac = ctxAudio.current;
-        if (ac && ac.state === "running" && !fonte.current) {
-          try {
-            fonte.current = ac.createMediaElementSource(el);
-            const an = ac.createAnalyser();
-            an.fftSize = 8192;
-            an.smoothingTimeConstant = 0.5;
-            fonte.current.connect(an);
-            an.connect(ac.destination);
-            v.attachAnalyser?.(an);
-          } catch {
-            fonte.current = null; // segue tocando direto
+  const tocarFalas = useCallback(
+    async (urls: string[], aoTerminar: () => void, aoFalhar: () => void) => {
+      filaRef.current.cancelar = true; // corta qualquer fala anterior
+      const meu = { cancelar: false };
+      filaRef.current = meu;
+
+      const baixar = (u: string) =>
+        fetch(u, { mode: "cors" })
+          .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+          .catch(() => null);
+
+      let proxima = baixar(urls[0]);
+      let tocouAlguma = false;
+
+      for (let i = 0; i < urls.length; i++) {
+        const blob = await proxima;
+        if (meu.cancelar) return;
+        // ja vai buscando a seguinte enquanto esta toca
+        proxima = i + 1 < urls.length ? baixar(urls[i + 1]) : Promise.resolve(null);
+        if (!blob) continue;
+
+        const ok = await new Promise<boolean>((resolve) => {
+          const src = URL.createObjectURL(blob);
+          let el = audioRef.current;
+          if (!el) {
+            el = new Audio();
+            audioRef.current = el;
           }
-        }
-        // Sem analisador, a esfera ainda se mexe: envelope pelo tempo do audio.
-        if (!fonte.current) {
-          rodarEnvelope();
-          el.ontimeupdate = () => {
-            alvo.current = 0.45 + Math.random() * 0.35;
-          };
-        }
+          el.src = src;
 
-        el.onended = aoTerminar;
-        el.onerror = () => (aoFalhar ?? aoTerminar)();
-        void el.play().catch(() => (aoFalhar ?? aoTerminar)());
-        return true;
-      } catch {
-        return false;
+          // Liga o analisador uma vez so, e SO com o contexto rodando: num
+          // contexto suspenso o createMediaElementSource silencia o elemento.
+          const ac = ctxAudio.current;
+          const v = vizRef.current;
+          if (ac && ac.state === "running" && !fonte.current && v) {
+            try {
+              fonte.current = ac.createMediaElementSource(el);
+              const an = ac.createAnalyser();
+              an.fftSize = 8192;
+              an.smoothingTimeConstant = 0.5;
+              fonte.current.connect(an);
+              an.connect(ac.destination);
+              v.attachAnalyser?.(an);
+            } catch {
+              fonte.current = null;
+            }
+          }
+          if (!fonte.current) rodarEnvelope();
+
+          const limpar = () => URL.revokeObjectURL(src);
+          el.onended = () => { limpar(); resolve(true); };
+          el.onerror = () => { limpar(); resolve(false); };
+          el.ontimeupdate = () => { if (!fonte.current) alvo.current = 0.45 + Math.random() * 0.35; };
+          void el.play().catch(() => { limpar(); resolve(false); });
+        });
+
+        if (meu.cancelar) return;
+        if (ok) tocouAlguma = true;
       }
+
+      if (meu.cancelar) return;
+      if (tocouAlguma) aoTerminar();
+      else aoFalhar();
     },
     [rodarEnvelope],
   );
@@ -329,23 +356,16 @@ export default function VozPublica({
   useEffect(() => {
     if (!respostaTexto) return;
     setLinha({ texto: respostaTexto, cls: "resposta" });
-    const url = ultimaResposta?.audioUrl;
-    if (url) {
-      // voz de verdade: a esfera passa a ler o espectro do proprio audio
+    const urls = ultimaResposta?.audioUrls ?? [];
+    if (urls.length) {
       aplicarEstado("falando");
       vizRef.current?.simulate(false);
-      // Se o áudio não tocar (autoplay bloqueado, formato recusado, rede), NÃO
-      // pode virar silêncio: cai na voz do navegador. Foi o que faltava — o
-      // visitante ficava só com o texto na tela.
-      const ok = tocarAudio(
-        url,
-        () => {
-          vizRef.current?.setLevel(0);
-          aplicarEstado("repouso");
-        },
-        () => falarTexto(respostaTexto),
+      void tocarFalas(
+        urls,
+        () => { vizRef.current?.setLevel(0); aplicarEstado("repouso"); },
+        () => falarTexto(respostaTexto), // sem audio do servidor: voz do navegador
       );
-      if (ok) return;
+      return;
     }
     falarTexto(respostaTexto);
     return () => speechSynthesis?.cancel();

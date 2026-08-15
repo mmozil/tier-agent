@@ -22,7 +22,6 @@ O `budget_guard` por tenant continua como último recurso, mas ele é o freio de
 emergência — estes aqui são o de serviço.
 """
 
-import base64
 import json
 import logging
 import os
@@ -31,8 +30,7 @@ import secrets
 from datetime import UTC, datetime
 
 import redis.asyncio as redis_async
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,7 +71,11 @@ class RespostaMensagem(BaseModel):
     encerrado: bool = False
     audio_url: str | None = Field(
         None,
-        description="MP3 da resposta quando a tela de voz pediu. Nulo = o navegador fala por conta.",
+        description="Compat: a primeira fala. Prefira audio_urls.",
+    )
+    audio_urls: list[str] = Field(
+        default_factory=list,
+        description="Uma URL por FRASE, na ordem. A 1a fica pronta em ~1s; as outras vao atras.",
     )
 
 
@@ -101,38 +103,57 @@ def _provedores_tts() -> list[str]:
     return ordem
 
 
-async def _preparar_voz(texto: str) -> str | None:
-    """Guarda a fala e devolve a URL que vai TRANSMITIR o áudio.
+def _partir_em_falas(texto: str, maximo: int = 4) -> list[str]:
+    """Quebra a resposta em frases faláveis.
 
-    Não sintetiza aqui. Sintetizar inteiro antes de responder custava ~30ms por
-    caractere — 16,8s de silêncio numa resposta de 545 chars. Agora a resposta
-    volta na hora e o áudio começa a tocar em ~5ms, gerado enquanto toca.
-
-    🚨 O texto vai pro Redis sob um token. A rota de áudio recebe o TOKEN, nunca
-    texto livre: um endpoint que sintetiza o que mandarem é um gerador de áudio
-    de graça na conta do tenant.
+    A primeira frase é curta e fica pronta em ~1s, então o visitante ouve quase
+    de imediato enquanto o resto ainda está sendo sintetizado. Frase muito curta
+    é grudada na seguinte pra não virar áudio picotado.
     """
-    texto = (texto or "").strip()
+    partes = re.split(r"(?<=[.!?])\s+", (texto or "").strip())
+    falas: list[str] = []
+    for p in partes:
+        p = p.strip()
+        if not p:
+            continue
+        if falas and (len(falas[-1]) < 40 or len(p) < 25):
+            falas[-1] = f"{falas[-1]} {p}"
+        else:
+            falas.append(p)
+    if len(falas) > maximo:
+        falas = [*falas[: maximo - 1], " ".join(falas[maximo - 1 :])]
+    return falas[:maximo]
+
+
+async def _preparar_falas(texto: str) -> list[str]:
+    """Guarda cada frase sob um token e devolve as URLs, na ordem."""
+    texto = (texto or "").strip()[:TTS_MAX_CHARS]
     if not texto or not _provedores_tts():
-        return None
-    token = secrets.token_urlsafe(16)
+        return []
+
+    base = (getattr(settings, "public_api_url", None) or "https://api-agent.tier.finance/api/v1").rstrip("/")
+    urls: list[str] = []
     try:
         r = await _redis()
         try:
-            await r.setex(f"webchat:voz:{token}", 300, texto[:TTS_MAX_CHARS])
+            for fala in _partir_em_falas(texto):
+                token = secrets.token_urlsafe(16)
+                await r.setex(f"webchat:voz:{token}", 300, fala)
+                urls.append(f"{base}/public/chat/voz/{token}")
         finally:
             await r.aclose()
     except Exception:
-        logger.exception("webchat voz: não consegui guardar a fala")
-        return None
-
-    base = (getattr(settings, "public_api_url", None) or "https://api-agent.tier.finance/api/v1").rstrip("/")
-    return f"{base}/public/chat/voz/{token}"
+        logger.exception("webchat voz: não consegui guardar as falas")
+        return []
+    return urls
 
 
-async def _audio_da_resposta(texto: str, agente_id: int) -> str | None:
-    """Gera o MP3 da resposta. Qualquer falha devolve None — a tela cai na voz
-    do navegador e a conversa segue; áudio é melhoria, não requisito."""
+async def _audio_da_frase(texto: str) -> bytes | None:
+    """Sintetiza UMA frase e devolve os bytes do MP3.
+
+    Percorre os provedores na ordem: saldo zerado num deles não pode calar o
+    agente. Falha em todos devolve None e a tela cai na voz do navegador —
+    áudio é melhoria, não requisito."""
     texto = (texto or "").strip()
     if not texto:
         return None
@@ -163,15 +184,8 @@ async def _audio_da_resposta(texto: str, agente_id: int) -> str | None:
             logger.warning("webchat voz: %s falhou — %s", nome, r.error)
             continue
 
-        # 🚨 Vai EMBUTIDO como data: URI, não como link do R2.
-        # O bucket público do R2 não manda `Access-Control-Allow-Origin`, e a tela
-        # precisa do áudio com CORS pra ligar num AnalyserNode (é o que faz a
-        # esfera seguir a onda). Sem o header, o `<audio crossOrigin>` nem carrega
-        # e o visitante fica só com o texto. Data URI é same-origin por definição,
-        # resolve o CORS e ainda economiza uma ida ao storage.
-        b64 = base64.b64encode(r.audio_bytes).decode("ascii")
         logger.info("webchat voz: %s gerou %d KB", nome, len(r.audio_bytes) // 1024)
-        return f"data:audio/mpeg;base64,{b64}"
+        return r.audio_bytes
 
     return None
 
@@ -254,12 +268,17 @@ async def transmitir_voz(token: str):
     if not texto:
         raise HTTPException(404, "Áudio não encontrado")
 
-    from services.voice import openai_compat_client
-
-    return StreamingResponse(
-        openai_compat_client.stream_synthesize(texto),
+    # 🚨 Devolve o arquivo COMPLETO, com Content-Length. StreamingResponse em
+    # chunked cross-origin sem Content-Length faz o <audio> do Chrome pendurar:
+    # o  e chamado, o evento  nunca dispara e nao sai som.
+    # Como a fala aqui e UMA FRASE, sintetizar inteiro custa ~1s.
+    audio = await _audio_da_frase(texto)
+    if not audio:
+        raise HTTPException(503, "Não consegui gerar o áudio")
+    return Response(
+        content=audio,
         media_type="audio/mpeg",
-        headers={"Cache-Control": "no-store"},
+        headers={"Cache-Control": "no-store", "Content-Length": str(len(audio))},
     )
 
 
@@ -337,16 +356,17 @@ async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request)
         # tenant suspenso, provider desligado). Não devolver silêncio pro visitante.
         baloes = [_recado_de_silencio(status)]
 
-    audio_url = None
+    audio_urls: list[str] = []
     if entrada.voz:
-        # devolve na hora: o audio e gerado enquanto toca
-        audio_url = await _preparar_voz(" ".join(baloes))
+        # uma URL por frase: a 1a toca quase de imediato
+        audio_urls = await _preparar_falas(" ".join(baloes))
 
     return RespostaMensagem(
         baloes=baloes,
         status=status,
         encerrado=status in {"tenant_suspended", "agent_inactive"},
-        audio_url=audio_url,
+        audio_url=(audio_urls[0] if audio_urls else None),
+        audio_urls=audio_urls,
     )
 
 
