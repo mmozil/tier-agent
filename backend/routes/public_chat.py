@@ -27,10 +27,12 @@ import json
 import logging
 import os
 import re
+import secrets
 from datetime import UTC, datetime
 
 import redis.asyncio as redis_async
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,6 +99,35 @@ def _provedores_tts() -> list[str]:
     if os.environ.get("ELEVENLABS_API_KEY"):
         ordem.append("elevenlabs")
     return ordem
+
+
+async def _preparar_voz(texto: str) -> str | None:
+    """Guarda a fala e devolve a URL que vai TRANSMITIR o áudio.
+
+    Não sintetiza aqui. Sintetizar inteiro antes de responder custava ~30ms por
+    caractere — 16,8s de silêncio numa resposta de 545 chars. Agora a resposta
+    volta na hora e o áudio começa a tocar em ~5ms, gerado enquanto toca.
+
+    🚨 O texto vai pro Redis sob um token. A rota de áudio recebe o TOKEN, nunca
+    texto livre: um endpoint que sintetiza o que mandarem é um gerador de áudio
+    de graça na conta do tenant.
+    """
+    texto = (texto or "").strip()
+    if not texto or not _provedores_tts():
+        return None
+    token = secrets.token_urlsafe(16)
+    try:
+        r = await _redis()
+        try:
+            await r.setex(f"webchat:voz:{token}", 300, texto[:TTS_MAX_CHARS])
+        finally:
+            await r.aclose()
+    except Exception:
+        logger.exception("webchat voz: não consegui guardar a fala")
+        return None
+
+    base = (getattr(settings, "public_api_url", None) or "https://api-agent.tier.finance/api/v1").rstrip("/")
+    return f"{base}/public/chat/voz/{token}"
 
 
 async def _audio_da_resposta(texto: str, agente_id: int) -> str | None:
@@ -200,6 +231,39 @@ async def _achar_link(db: AsyncSession, slug: str) -> tuple[TaConnector, dict, T
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
+@router.get("/voz/{token}")
+async def transmitir_voz(token: str):
+    """Transmite o áudio da fala guardada — em pedaços, conforme sai do TTS.
+
+    O `<audio>` do navegador toca MP3 progressivo nativamente, então o visitante
+    escuta a primeira sílaba quase imediatamente em vez de esperar o arquivo.
+    """
+    if not re.match(r"^[A-Za-z0-9_-]{16,64}$", token or ""):
+        raise HTTPException(404, "Áudio não encontrado")
+
+    try:
+        r = await _redis()
+        try:
+            texto = await r.get(f"webchat:voz:{token}")
+        finally:
+            await r.aclose()
+    except Exception:
+        logger.exception("webchat voz: redis fora ao buscar a fala")
+        raise HTTPException(503, "Áudio indisponível") from None
+
+    if not texto:
+        raise HTTPException(404, "Áudio não encontrado")
+
+    from services.voice import openai_compat_client
+
+    return StreamingResponse(
+        openai_compat_client.stream_synthesize(texto),
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+
 @router.get("/{slug}")
 async def abrir_link(slug: str):
     """Dados públicos pra montar a página. Não expõe nada além da aparência."""
@@ -275,7 +339,8 @@ async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request)
 
     audio_url = None
     if entrada.voz:
-        audio_url = await _audio_da_resposta(" ".join(baloes), agente.id)
+        # devolve na hora: o audio e gerado enquanto toca
+        audio_url = await _preparar_voz(" ".join(baloes))
 
     return RespostaMensagem(
         baloes=baloes,

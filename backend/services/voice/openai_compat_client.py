@@ -26,6 +26,49 @@ DEFAULT_MODEL = "kokoro"
 DEFAULT_VOICE = "pf_dora"  # feminina pt-BR do Kokoro
 
 
+async def stream_synthesize(text: str, *, voice_id: str | None = None, model_id: str | None = None):
+    """Gera o áudio em STREAM, devolvendo os pedaços conforme saem.
+
+    🚨 É isto que tira a espera. Sintetizar o arquivo inteiro antes de mandar
+    custa ~30ms por caractere — uma resposta de 545 chars leva 16,8s de silêncio.
+    Medido no Kokoro: com `stream=true` o primeiro byte sai em **5ms** e o total
+    continua o mesmo, então o ouvinte começa a escutar de imediato enquanto o
+    resto ainda está sendo gerado.
+    """
+    base = (os.environ.get("TTS_OPENAI_BASE_URL") or "").rstrip("/")
+    if not base:
+        return
+
+    text = (text or "").strip()[:5000]
+    if not text:
+        return
+
+    voz = voice_id or os.environ.get("TTS_OPENAI_VOICE") or DEFAULT_VOICE
+    modelo = model_id or os.environ.get("TTS_OPENAI_MODEL") or DEFAULT_MODEL
+    chave = os.environ.get("TTS_OPENAI_API_KEY") or "sem-chave"
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as cli:
+        async with cli.stream(
+            "POST",
+            f"{base}/v1/audio/speech",
+            headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
+            json={
+                "model": modelo,
+                "input": text,
+                "voice": voz,
+                "response_format": "mp3",
+                "stream": True,
+            },
+        ) as r:
+            if r.status_code >= 400:
+                corpo = await r.aread()
+                logger.warning("tts stream HTTP %s: %s", r.status_code, corpo[:160])
+                return
+            async for pedaco in r.aiter_bytes():
+                if pedaco:
+                    yield pedaco
+
+
 @dataclass
 class SynthesizeResult:
     ok: bool

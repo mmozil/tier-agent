@@ -223,7 +223,9 @@ export default function VozPublica({
         let el = audioRef.current;
         if (!el) {
           el = new Audio();
-          // data: URI dispensa crossOrigin; setar so atrapalharia o carregamento
+          // Cross-origin (api-agent) exige crossOrigin pro AnalyserNode ler a onda;
+          // o backend ja libera CORS pra este host. Em data: URI seria inofensivo.
+          el.crossOrigin = "anonymous";
           audioRef.current = el;
         }
         el.src = url;
