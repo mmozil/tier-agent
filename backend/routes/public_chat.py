@@ -80,41 +80,73 @@ class RespostaMensagem(BaseModel):
 TTS_MAX_CHARS = 900
 
 
+def _provedores_tts() -> list[str]:
+    """Quais provedores de voz dá pra tentar, na ordem.
+
+    `TTS_PROVIDER` força um. Sem ele, vale o que estiver configurado — o
+    self-hosted vem primeiro porque não custa por caractere.
+    """
+    forcado = (os.environ.get("TTS_PROVIDER") or "").strip().lower()
+    if forcado:
+        return [forcado]
+    ordem = []
+    if os.environ.get("TTS_OPENAI_BASE_URL"):
+        ordem.append("openai_compat")  # Kokoro self-hosted / OpenAI / DeepInfra
+    if os.environ.get("MINIMAX_API_KEY"):
+        ordem.append("minimax")
+    if os.environ.get("ELEVENLABS_API_KEY"):
+        ordem.append("elevenlabs")
+    return ordem
+
+
 async def _audio_da_resposta(texto: str, agente_id: int) -> str | None:
     """Gera o MP3 da resposta. Qualquer falha devolve None — a tela cai na voz
     do navegador e a conversa segue; áudio é melhoria, não requisito."""
-    if not settings_tem_tts():
-        return None
     texto = (texto or "").strip()
     if not texto:
         return None
     if len(texto) > TTS_MAX_CHARS:
         texto = texto[:TTS_MAX_CHARS]
 
-    try:
-        from services.voice import elevenlabs_client
+    from services.voice import elevenlabs_client, minimax_client, openai_compat_client
 
-        r = await elevenlabs_client.synthesize(texto)
+    clientes = {
+        "openai_compat": openai_compat_client,
+        "kokoro": openai_compat_client,  # apelido: Kokoro fala esse protocolo
+        "minimax": minimax_client,
+        "elevenlabs": elevenlabs_client,
+    }
+
+    for nome in _provedores_tts():
+        cliente = clientes.get(nome)
+        if not cliente:
+            logger.warning("webchat voz: provedor '%s' desconhecido", nome)
+            continue
+        try:
+            r = await cliente.synthesize(texto)
+        except Exception:
+            logger.exception("webchat voz: %s levantou exceção", nome)
+            continue
         if not r.ok or not r.audio_bytes:
-            logger.warning("webchat voz: síntese falhou — %s", r.error)
+            # Cai pro próximo: saldo zerado num provedor não pode calar o agente.
+            logger.warning("webchat voz: %s falhou — %s", nome, r.error)
+            continue
+
+        try:
+            from services.storage_service import storage
+
+            up = storage.upload(
+                r.audio_bytes,
+                folder=f"voice/agent-{agente_id}",
+                filename=f"voz-{uuid.uuid4().hex}.mp3",
+                content_type="audio/mpeg",
+            )
+            return up.get("url") if isinstance(up, dict) else str(up)
+        except Exception:
+            logger.exception("webchat voz: falha ao subir o áudio (%s)", nome)
             return None
 
-        from services.storage_service import storage
-
-        up = storage.upload(
-            r.audio_bytes,
-            folder=f"voice/agent-{agente_id}",
-            filename=f"voz-{uuid.uuid4().hex}.mp3",
-            content_type="audio/mpeg",
-        )
-        return up.get("url") if isinstance(up, dict) else str(up)
-    except Exception:
-        logger.exception("webchat voz: falha ao gerar/subir o áudio")
-        return None
-
-
-def settings_tem_tts() -> bool:
-    return bool(os.environ.get("ELEVENLABS_API_KEY"))
+    return None
 
 
 # ── Redis ───────────────────────────────────────────────────────────────
