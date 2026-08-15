@@ -29,6 +29,7 @@ type Viz = {
   setLevel: (v: number) => void;
   mount: (host: string | HTMLElement, id: string) => { destroy?: () => void };
   attachMic: () => Promise<unknown>;
+  attachAnalyser?: (a: AnalyserNode) => unknown;
   list: () => unknown[];
 };
 
@@ -110,7 +111,7 @@ export default function VozPublica({
   titulo: string;
   pensando: boolean;
   /** `id` muda a cada resposta — duas iguais seguidas precisam falar de novo. */
-  ultimaResposta: { texto: string; id: number } | null;
+  ultimaResposta: { texto: string; id: number; audioUrl?: string | null } | null;
   onEnviar: (texto: string) => void;
   onVerConversa: () => void;
 }) {
@@ -204,6 +205,58 @@ export default function VozPublica({
     [pararEnvelope],
   );
 
+  /**
+   * Toca o MP3 do ElevenLabs e liga a esfera no áudio DE VERDADE.
+   *
+   * Aqui não há aproximação: o áudio passa por um AnalyserNode e o visualizador
+   * lê o espectro real, igual faz com o microfone. É a diferença entre a esfera
+   * "acompanhar" a fala e a esfera SER a fala.
+   */
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ctxAudio = useRef<AudioContext | null>(null);
+  const fonte = useRef<MediaElementAudioSourceNode | null>(null);
+
+  const tocarAudio = useCallback(
+    (url: string, aoTerminar: () => void): boolean => {
+      try {
+        const v = vizRef.current;
+        if (!v) return false;
+        let el = audioRef.current;
+        if (!el) {
+          el = new Audio();
+          el.crossOrigin = "anonymous";
+          audioRef.current = el;
+        }
+        el.src = url;
+
+        const AC: typeof AudioContext =
+          window.AudioContext || (window as any).webkitAudioContext;
+        if (!ctxAudio.current) ctxAudio.current = new AC();
+        const ac = ctxAudio.current;
+        if (ac.state === "suspended") void ac.resume();
+
+        // createMediaElementSource só pode ser chamado UMA vez por <audio>
+        if (!fonte.current) {
+          fonte.current = ac.createMediaElementSource(el);
+          const an = ac.createAnalyser();
+          an.fftSize = 8192;
+          an.smoothingTimeConstant = 0.5;
+          fonte.current.connect(an);
+          an.connect(ac.destination);
+          (v as any).attachAnalyser?.(an);
+        }
+
+        el.onended = aoTerminar;
+        el.onerror = aoTerminar;
+        void el.play().catch(() => aoTerminar());
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [],
+  );
+
   /** Fala um texto e faz a esfera seguir palavra a palavra. */
   const falarTexto = useCallback(
     (texto: string) => {
@@ -247,6 +300,17 @@ export default function VozPublica({
   useEffect(() => {
     if (!respostaTexto) return;
     setLinha({ texto: respostaTexto, cls: "resposta" });
+    const url = ultimaResposta?.audioUrl;
+    if (url) {
+      // voz de verdade: a esfera passa a ler o espectro do proprio audio
+      aplicarEstado("falando");
+      vizRef.current?.simulate(false);
+      const ok = tocarAudio(url, () => {
+        vizRef.current?.setLevel(0);
+        aplicarEstado("repouso");
+      });
+      if (ok) return;
+    }
     falarTexto(respostaTexto);
     return () => speechSynthesis?.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps

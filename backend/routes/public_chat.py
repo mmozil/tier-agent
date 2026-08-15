@@ -24,7 +24,9 @@ emergência — estes aqui são o de serviço.
 
 import json
 import logging
+import os
 import re
+import uuid
 from datetime import UTC, datetime
 
 import redis.asyncio as redis_async
@@ -60,12 +62,59 @@ class EntradaMensagem(BaseModel):
     texto: str
     nome: str | None = None
     telefone: str | None = None
+    voz: bool = Field(False, description="tela de voz: devolve também o áudio da resposta")
 
 
 class RespostaMensagem(BaseModel):
     baloes: list[str]
     status: str
     encerrado: bool = False
+    audio_url: str | None = Field(
+        None,
+        description="MP3 da resposta quando a tela de voz pediu. Nulo = o navegador fala por conta.",
+    )
+
+
+# TTS só na resposta do próprio agente. NÃO existe endpoint de "sintetize este
+# texto": seria um gerador de áudio grátis pra qualquer um, na conta do tenant.
+TTS_MAX_CHARS = 900
+
+
+async def _audio_da_resposta(texto: str, agente_id: int) -> str | None:
+    """Gera o MP3 da resposta. Qualquer falha devolve None — a tela cai na voz
+    do navegador e a conversa segue; áudio é melhoria, não requisito."""
+    if not settings_tem_tts():
+        return None
+    texto = (texto or "").strip()
+    if not texto:
+        return None
+    if len(texto) > TTS_MAX_CHARS:
+        texto = texto[:TTS_MAX_CHARS]
+
+    try:
+        from services.voice import elevenlabs_client
+
+        r = await elevenlabs_client.synthesize(texto)
+        if not r.ok or not r.audio_bytes:
+            logger.warning("webchat voz: síntese falhou — %s", r.error)
+            return None
+
+        from services.storage_service import storage
+
+        up = storage.upload(
+            r.audio_bytes,
+            folder=f"voice/agent-{agente_id}",
+            filename=f"voz-{uuid.uuid4().hex}.mp3",
+            content_type="audio/mpeg",
+        )
+        return up.get("url") if isinstance(up, dict) else str(up)
+    except Exception:
+        logger.exception("webchat voz: falha ao gerar/subir o áudio")
+        return None
+
+
+def settings_tem_tts() -> bool:
+    return bool(os.environ.get("ELEVENLABS_API_KEY"))
 
 
 # ── Redis ───────────────────────────────────────────────────────────────
@@ -196,10 +245,15 @@ async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request)
         # tenant suspenso, provider desligado). Não devolver silêncio pro visitante.
         baloes = [_recado_de_silencio(status)]
 
+    audio_url = None
+    if entrada.voz:
+        audio_url = await _audio_da_resposta(" ".join(baloes), agente.id)
+
     return RespostaMensagem(
         baloes=baloes,
         status=status,
         encerrado=status in {"tenant_suspended", "agent_inactive"},
+        audio_url=audio_url,
     )
 
 

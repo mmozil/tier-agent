@@ -65,7 +65,7 @@ export default function ChatPublico() {
   const [modo, setModo] = useState<"voz" | "conversa">(params.get("texto") ? "conversa" : "voz");
   // Última fala do agente — é o que a tela de voz pronuncia. Leva um `id` porque
   // duas respostas iguais seguidas precisam disparar a fala de novo.
-  const [ultimaResposta, setUltimaResposta] = useState<{ texto: string; id: number } | null>(null);
+  const [ultimaResposta, setUltimaResposta] = useState<{ texto: string; id: number; audioUrl?: string | null } | null>(null);
 
   const fimRef = useRef<HTMLDivElement>(null);
   const campoRef = useRef<HTMLTextAreaElement>(null);
@@ -110,6 +110,8 @@ export default function ChatPublico() {
             texto: conteudo,
             nome: contato.nome || undefined,
             telefone: contato.telefone || undefined,
+            // só na tela de voz: gerar TTS pra quem está lendo seria desperdício
+            voz: modo === "voz",
           }),
         });
 
@@ -123,10 +125,10 @@ export default function ChatPublico() {
         }
         if (!r.ok) throw new Error(String(r.status));
 
-        const d: { baloes: string[] } = await r.json();
+        const d: { baloes: string[]; audio_url?: string | null } = await r.json();
         setBaloes((b) => [...b, ...(d.baloes || []).map((t) => ({ de: "agente" as const, texto: t }))]);
         const falado = (d.baloes || []).join(" ").trim();
-        if (falado) setUltimaResposta({ texto: falado, id: Date.now() });
+        if (falado) setUltimaResposta({ texto: falado, id: Date.now(), audioUrl: d.audio_url ?? null });
       } catch {
         setBaloes((b) => [
           ...b,
@@ -137,7 +139,7 @@ export default function ChatPublico() {
         campoRef.current?.focus();
       }
     },
-    [texto, pensando, slug, sessao, contato],
+    [texto, pensando, slug, sessao, contato, modo],
   );
 
   if (erro) {
