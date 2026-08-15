@@ -114,3 +114,14 @@
     letter-spacing: normal !important;
   }
 }
+
+/* Entrada da esfera na tela de voz do link publico: ela chega e para.
+   Sem isso a esfera aparece seca no primeiro quadro. */
+@keyframes voz-entra {
+  from { opacity: 0; transform: scale(0.88); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.voz-entra { animation: voz-entra 1100ms cubic-bezier(0.16, 1, 0.3, 1) 140ms both; }
+@media (prefers-reduced-motion: reduce) {
+  .voz-entra { animation: none; opacity: 1; transform: none; }
+}

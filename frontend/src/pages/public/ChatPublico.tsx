@@ -10,7 +10,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+
+import VozPublica from "@/components/VozPublica";
 
 type Config = {
   slug: string;
@@ -57,6 +59,13 @@ export default function ChatPublico() {
   const [pensando, setPensando] = useState(false);
   const [contato, setContato] = useState({ nome: "", telefone: "" });
   const [contatoOk, setContatoOk] = useState(false);
+  // A tela de voz é o padrão do link — `?texto=1` abre direto na conversa, e o
+  // "+" da barra alterna. A voz só faz sentido depois que o contato foi pedido.
+  const [params] = useSearchParams();
+  const [modo, setModo] = useState<"voz" | "conversa">(params.get("texto") ? "conversa" : "voz");
+  // Última fala do agente — é o que a tela de voz pronuncia. Leva um `id` porque
+  // duas respostas iguais seguidas precisam disparar a fala de novo.
+  const [ultimaResposta, setUltimaResposta] = useState<{ texto: string; id: number } | null>(null);
 
   const fimRef = useRef<HTMLDivElement>(null);
   const campoRef = useRef<HTMLTextAreaElement>(null);
@@ -116,6 +125,8 @@ export default function ChatPublico() {
 
         const d: { baloes: string[] } = await r.json();
         setBaloes((b) => [...b, ...(d.baloes || []).map((t) => ({ de: "agente" as const, texto: t }))]);
+        const falado = (d.baloes || []).join(" ").trim();
+        if (falado) setUltimaResposta({ texto: falado, id: Date.now() });
       } catch {
         setBaloes((b) => [
           ...b,
@@ -146,6 +157,21 @@ export default function ChatPublico() {
   }
 
   const cor = cfg.cor || "#003083";
+
+  // A tela de voz é o rosto do link. O pedido de contato, quando existe, vem
+  // antes — não dá pra registrar o lead pela voz.
+  if (modo === "voz" && contatoOk) {
+    return (
+      <VozPublica
+        agente={cfg.agente}
+        titulo={cfg.titulo}
+        pensando={pensando}
+        ultimaResposta={ultimaResposta}
+        onEnviar={(t) => enviar(t)}
+        onVerConversa={() => setModo("conversa")}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f6f7f9]">
