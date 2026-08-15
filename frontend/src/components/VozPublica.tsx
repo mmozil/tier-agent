@@ -11,9 +11,9 @@
  *    apresenta; "olá sr Carlos Drummond, tem período integral?" acorda E já leva
  *    a pergunta que veio depois do nome.
  *
- * O `SpeechSynthesis` não expõe o áudio pra análise, então enquanto ele fala a
- * esfera é alimentada pelo gerador de sílabas da própria biblioteca — não pela
- * saída real.
+ * O `SpeechSynthesis` não expõe o áudio pra análise. O sinal mais fiel que ele
+ * dá é o `onboundary`, que avisa a cada palavra pronunciada — é ele que move a
+ * esfera, uma palavra de cada vez, e não um gerador de sílabas solto.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -115,16 +115,86 @@ export default function VozPublica({
     };
   }, []);
 
-  const aplicarEstado = useCallback((e: Estado) => {
-    setEstado(e);
-    const v = vizRef.current;
-    if (!v) return;
-    if (e === "falando" || e === "pensando") v.simulate(true);
-    else if (e !== "ouvindo") {
-      v.simulate(false);
-      v.setLevel(0);
-    }
+  // ── a esfera acompanha a fala ─────────────────────────────────────────
+  // O `SpeechSynthesis` não entrega o áudio pra análise, então o sinal mais
+  // fiel disponível é o `onboundary`: ele avisa a CADA palavra pronunciada.
+  // Cada palavra vira um pulso, com a força puxada pelo tamanho dela — em vez
+  // do gerador de sílabas, que não tinha relação nenhuma com o que era dito.
+  const nivel = useRef(0);
+  const alvo = useRef(0);
+  const quadro = useRef(0);
+
+  const pararEnvelope = useCallback(() => {
+    cancelAnimationFrame(quadro.current);
+    quadro.current = 0;
+    nivel.current = 0;
+    alvo.current = 0;
+    vizRef.current?.setLevel(0);
   }, []);
+
+  const rodarEnvelope = useCallback(() => {
+    if (quadro.current) return;
+    const passo = () => {
+      // ataque rápido, decaimento lento: o desenho de uma sílaba
+      const sobe = alvo.current > nivel.current;
+      nivel.current += (alvo.current - nivel.current) * (sobe ? 0.5 : 0.09);
+      alvo.current *= 0.9;
+      vizRef.current?.setLevel(Math.max(0, Math.min(1, nivel.current)));
+      quadro.current = requestAnimationFrame(passo);
+    };
+    passo();
+  }, []);
+
+  const aplicarEstado = useCallback(
+    (e: Estado) => {
+      setEstado(e);
+      const v = vizRef.current;
+      if (!v) return;
+      if (e === "pensando") {
+        // pensando não é falar: um respiro fundo e lento, sem sílaba
+        v.simulate(false);
+        pararEnvelope();
+        v.setLevel(0.3);
+      } else if (e !== "falando" && e !== "ouvindo") {
+        v.simulate(false);
+        pararEnvelope();
+      }
+    },
+    [pararEnvelope],
+  );
+
+  /** Fala um texto e faz a esfera seguir palavra a palavra. */
+  const falarTexto = useCallback(
+    (texto: string) => {
+      aplicarEstado("falando");
+      vizRef.current?.simulate(false);
+      if (!("speechSynthesis" in window)) {
+        setTimeout(() => aplicarEstado("repouso"), 2600);
+        return;
+      }
+      const u = new SpeechSynthesisUtterance(texto);
+      u.lang = "pt-BR";
+      u.rate = 1.04;
+      const vs = speechSynthesis.getVoices().filter((v) => /pt[-_]BR/i.test(v.lang));
+      if (vs.length) u.voice = vs[0];
+
+      u.onstart = () => rodarEnvelope();
+      u.onboundary = (ev: SpeechSynthesisEvent) => {
+        // palavra maior = pulso mais forte, igual a sílaba tônica na fala
+        const tam = ev.charLength || 4;
+        alvo.current = Math.min(0.95, 0.42 + tam / 16);
+      };
+      const fim = () => {
+        pararEnvelope();
+        aplicarEstado("repouso");
+      };
+      u.onend = fim;
+      u.onerror = fim;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    },
+    [aplicarEstado, rodarEnvelope, pararEnvelope],
+  );
 
   useEffect(() => {
     if (pensando) aplicarEstado("pensando");
@@ -136,31 +206,19 @@ export default function VozPublica({
   useEffect(() => {
     if (!respostaTexto) return;
     setLinha({ texto: respostaTexto, cls: "resposta" });
-    aplicarEstado("falando");
-
-    if (!("speechSynthesis" in window)) {
-      const id = setTimeout(() => aplicarEstado("repouso"), 2600);
-      return () => clearTimeout(id);
-    }
-    const u = new SpeechSynthesisUtterance(respostaTexto);
-    u.lang = "pt-BR";
-    u.rate = 1.04;
-    const vs = speechSynthesis.getVoices().filter((v) => /pt[-_]BR/i.test(v.lang));
-    if (vs.length) u.voice = vs[0];
-    u.onend = () => aplicarEstado("repouso");
-    u.onerror = () => aplicarEstado("repouso");
-    speechSynthesis.cancel();
-    speechSynthesis.speak(u);
-    return () => speechSynthesis.cancel();
+    falarTexto(respostaTexto);
+    return () => speechSynthesis?.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [respostaId, aplicarEstado]);
+  }, [respostaId]);
+
+  useEffect(() => pararEnvelope, [pararEnvelope]);
 
   // ── separa a invocação da pergunta ────────────────────────────────────
   const receber = useCallback(
     (txt: string) => {
-      const alvo = semAcento(txt);
+      const alvoTxt = semAcento(txt);
       for (const termo of termos.current) {
-        const pos = alvo.indexOf(termo);
+        const pos = alvoTxt.indexOf(termo);
         if (pos < 0) continue;
         const resto = txt.slice(pos + termo.length).replace(/^[\s,.!?;:-]+/, "").trim();
         if (resto) {
@@ -168,24 +226,14 @@ export default function VozPublica({
           return;
         }
         // chamou e não perguntou nada: ele só se apresenta
-        setLinha({ texto: `Sim, sou ${agente}, atendente virtual. Em que posso ajudar?`, cls: "resposta" });
-        aplicarEstado("falando");
-        if ("speechSynthesis" in window) {
-          const u = new SpeechSynthesisUtterance(`Sim, sou ${agente}, atendente virtual. Em que posso ajudar?`);
-          u.lang = "pt-BR";
-          u.rate = 1.04;
-          u.onend = () => aplicarEstado("repouso");
-          u.onerror = () => aplicarEstado("repouso");
-          speechSynthesis.cancel();
-          speechSynthesis.speak(u);
-        } else {
-          setTimeout(() => aplicarEstado("repouso"), 2400);
-        }
+        const saudacao = `Sim, sou ${agente}, atendente virtual. Em que posso ajudar?`;
+        setLinha({ texto: saudacao, cls: "resposta" });
+        falarTexto(saudacao);
         return;
       }
       onEnviar(txt);
     },
-    [agente, onEnviar, aplicarEstado],
+    [agente, onEnviar, falarTexto],
   );
 
   // ── reconhecimento de fala ────────────────────────────────────────────

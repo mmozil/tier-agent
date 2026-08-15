@@ -1316,12 +1316,21 @@ function vPo(ctx,w,h,t,E){
 
   ctx.globalCompositeOperation="source-over";
   ctx.fillStyle="#000";ctx.fillRect(0,0,w,h);
-  var CX=w/2,CY=h/2,M=Math.min(w,h),R=M*.30*(1+E*.09);
-  /* o giro so avanca enquanto ha voz — parada, ela nao se mexe */
+  var CX=w/2,CY=h/2,M=Math.min(w,h);
+  /* GIRO: so avanca enquanto ha voz. Em silencio ele nao acumula — ela nunca
+     "roda" sozinha. ESPERA: mas parada nao e morta. Ela respira e balanca de
+     leve, num vaivem que sempre volta pro lugar (seno, nao acumulador), com
+     duas frequencias desencontradas pra nao cair em cadencia mecanica. */
   var dt=POTPREV?Math.min(t-POTPREV,64):0;POTPREV=t;
   var fala=E>PO_DEADZONE?E-PO_DEADZONE:0;
   POROT+=dt*fala*.00062;
-  var yaw=PO_YAW0+POROT,pit=PO_PIT0+Math.sin(POROT*1.6)*.07;
+  var esp=t*.001;
+  var respiro=Math.sin(esp*.52)*.55+Math.sin(esp*.19)*.45;          /* -1..1 lento */
+  var balanco=Math.sin(esp*.26)*.016+Math.sin(esp*.15)*.009;        /* vaivem, em rad */
+  var yaw=PO_YAW0+POROT+balanco;
+  var pit=PO_PIT0+Math.sin(POROT*1.6)*.07+Math.sin(esp*.22)*.008;
+  /* o raio respira: e o que da o "esperando" sem precisar girar */
+  var R=M*.30*(1+E*.09+respiro*.011);
   var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
 
   /* frentes de onda: posicao em cosseno, pra comparar sem acos */
@@ -1350,6 +1359,9 @@ function vPo(ctx,w,h,t,E){
     var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
     var sc=1/(3.05-z2*.9),dep=(z2+1)/2;
     var al=P.b*(.26+dep*.60)*(.55+PO_PISO+bd*1.5)+hot*2.6;
+    /* cintilancia: cada ponto pisca no seu proprio tempo. E o detalhe que faz
+       ela parecer ESPERANDO em vez de congelada — o olho le como respiracao. */
+    al*=1+Math.sin(esp*.5+i*.7)*.022;
     if(al<.05)continue;if(al>1)al=1;
     ctx.fillStyle="rgba(255,255,255,"+al+")";
     var s=P.s*sc*1.35*(1+bd*.55+hot*2.2);
