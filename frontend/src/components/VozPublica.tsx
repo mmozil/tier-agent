@@ -215,6 +215,26 @@ export default function VozPublica({
   const ctxAudio = useRef<AudioContext | null>(null);
   const fonte = useRef<MediaElementAudioSourceNode | null>(null);
 
+  /**
+   * Destrava o áudio DENTRO do gesto do usuário.
+   *
+   * 🚨 Um `AudioContext` criado fora de clique nasce `suspended`. E como
+   * `createMediaElementSource` desvia TODO o som do elemento pra dentro do
+   * grafo, tocar num contexto suspenso não dá som baixo — dá silêncio total.
+   * Era isso que fazia o agente "não responder": o backend devolvia 200, o
+   * áudio chegava, e ninguém ouvia nada.
+   */
+  const destravarAudio = useCallback(async () => {
+    try {
+      const AC: typeof AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return;
+      if (!ctxAudio.current) ctxAudio.current = new AC();
+      if (ctxAudio.current.state === "suspended") await ctxAudio.current.resume();
+    } catch {
+      /* sem Web Audio: o áudio toca direto, só perde a onda na esfera */
+    }
+  }, []);
+
   const tocarAudio = useCallback(
     (url: string, aoTerminar: () => void, aoFalhar?: () => void): boolean => {
       try {
@@ -230,21 +250,29 @@ export default function VozPublica({
         }
         el.src = url;
 
-        const AC: typeof AudioContext =
-          window.AudioContext || (window as any).webkitAudioContext;
-        if (!ctxAudio.current) ctxAudio.current = new AC();
+        // 🚨 So desvia o som pro grafo se o contexto estiver RODANDO. Num
+        // contexto suspenso, createMediaElementSource silencia o elemento por
+        // completo — melhor perder a onda na esfera do que perder o som.
         const ac = ctxAudio.current;
-        if (ac.state === "suspended") void ac.resume();
-
-        // createMediaElementSource só pode ser chamado UMA vez por <audio>
+        if (ac && ac.state === "running" && !fonte.current) {
+          try {
+            fonte.current = ac.createMediaElementSource(el);
+            const an = ac.createAnalyser();
+            an.fftSize = 8192;
+            an.smoothingTimeConstant = 0.5;
+            fonte.current.connect(an);
+            an.connect(ac.destination);
+            v.attachAnalyser?.(an);
+          } catch {
+            fonte.current = null; // segue tocando direto
+          }
+        }
+        // Sem analisador, a esfera ainda se mexe: envelope pelo tempo do audio.
         if (!fonte.current) {
-          fonte.current = ac.createMediaElementSource(el);
-          const an = ac.createAnalyser();
-          an.fftSize = 8192;
-          an.smoothingTimeConstant = 0.5;
-          fonte.current.connect(an);
-          an.connect(ac.destination);
-          (v as any).attachAnalyser?.(an);
+          rodarEnvelope();
+          el.ontimeupdate = () => {
+            alvo.current = 0.45 + Math.random() * 0.35;
+          };
         }
 
         el.onended = aoTerminar;
@@ -255,7 +283,7 @@ export default function VozPublica({
         return false;
       }
     },
-    [],
+    [rodarEnvelope],
   );
 
   /** Fala um texto e faz a esfera seguir palavra a palavra. */
@@ -498,6 +526,7 @@ export default function VozPublica({
     }
 
     setDicaOff(true);
+    void destravarAudio(); // precisa ser DENTRO do gesto
     const armar = () => {
       armado.current = true;
       setArmadoUI(true);
@@ -585,6 +614,7 @@ export default function VozPublica({
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && texto.trim()) {
+              void destravarAudio(); // gesto do usuario: libera o som
               const v = texto.trim();
               setTexto("");
               setDicaOff(true);
