@@ -22,11 +22,11 @@ O `budget_guard` por tenant continua como último recurso, mas ele é o freio de
 emergência — estes aqui são o de serviço.
 """
 
+import base64
 import json
 import logging
 import os
 import re
-import uuid
 from datetime import UTC, datetime
 
 import redis.asyncio as redis_async
@@ -132,19 +132,15 @@ async def _audio_da_resposta(texto: str, agente_id: int) -> str | None:
             logger.warning("webchat voz: %s falhou — %s", nome, r.error)
             continue
 
-        try:
-            from services.storage_service import storage
-
-            up = storage.upload(
-                r.audio_bytes,
-                folder=f"voice/agent-{agente_id}",
-                filename=f"voz-{uuid.uuid4().hex}.mp3",
-                content_type="audio/mpeg",
-            )
-            return up.get("url") if isinstance(up, dict) else str(up)
-        except Exception:
-            logger.exception("webchat voz: falha ao subir o áudio (%s)", nome)
-            return None
+        # 🚨 Vai EMBUTIDO como data: URI, não como link do R2.
+        # O bucket público do R2 não manda `Access-Control-Allow-Origin`, e a tela
+        # precisa do áudio com CORS pra ligar num AnalyserNode (é o que faz a
+        # esfera seguir a onda). Sem o header, o `<audio crossOrigin>` nem carrega
+        # e o visitante fica só com o texto. Data URI é same-origin por definição,
+        # resolve o CORS e ainda economiza uma ida ao storage.
+        b64 = base64.b64encode(r.audio_bytes).decode("ascii")
+        logger.info("webchat voz: %s gerou %d KB", nome, len(r.audio_bytes) // 1024)
+        return f"data:audio/mpeg;base64,{b64}"
 
     return None
 

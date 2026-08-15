@@ -118,7 +118,6 @@ export default function VozPublica({
   const [estado, setEstado] = useState<Estado>("repouso");
   const [linha, setLinha] = useState<{ texto: string; cls: string }>({ texto: "", cls: "" });
   const [texto, setTexto] = useState("");
-  const [ouvindo, setOuvindo] = useState(false);
   const [dicaOff, setDicaOff] = useState(false);
 
   const vizRef = useRef<Viz | null>(null);
@@ -217,14 +216,14 @@ export default function VozPublica({
   const fonte = useRef<MediaElementAudioSourceNode | null>(null);
 
   const tocarAudio = useCallback(
-    (url: string, aoTerminar: () => void): boolean => {
+    (url: string, aoTerminar: () => void, aoFalhar?: () => void): boolean => {
       try {
         const v = vizRef.current;
         if (!v) return false;
         let el = audioRef.current;
         if (!el) {
           el = new Audio();
-          el.crossOrigin = "anonymous";
+          // data: URI dispensa crossOrigin; setar so atrapalharia o carregamento
           audioRef.current = el;
         }
         el.src = url;
@@ -247,8 +246,8 @@ export default function VozPublica({
         }
 
         el.onended = aoTerminar;
-        el.onerror = aoTerminar;
-        void el.play().catch(() => aoTerminar());
+        el.onerror = () => (aoFalhar ?? aoTerminar)();
+        void el.play().catch(() => (aoFalhar ?? aoTerminar)());
         return true;
       } catch {
         return false;
@@ -305,10 +304,17 @@ export default function VozPublica({
       // voz de verdade: a esfera passa a ler o espectro do proprio audio
       aplicarEstado("falando");
       vizRef.current?.simulate(false);
-      const ok = tocarAudio(url, () => {
-        vizRef.current?.setLevel(0);
-        aplicarEstado("repouso");
-      });
+      // Se o áudio não tocar (autoplay bloqueado, formato recusado, rede), NÃO
+      // pode virar silêncio: cai na voz do navegador. Foi o que faltava — o
+      // visitante ficava só com o texto na tela.
+      const ok = tocarAudio(
+        url,
+        () => {
+          vizRef.current?.setLevel(0);
+          aplicarEstado("repouso");
+        },
+        () => falarTexto(respostaTexto),
+      );
       if (ok) return;
     }
     falarTexto(respostaTexto);
@@ -319,29 +325,60 @@ export default function VozPublica({
   useEffect(() => pararEnvelope, [pararEnvelope]);
 
   // ── separa a invocação da pergunta ────────────────────────────────────
+  /** Acha o nome do agente na frase e devolve o que veio depois dele. */
+  const acharInvocacao = useCallback((txt: string) => {
+    const alvoTxt = semAcento(txt);
+    for (const termo of termos.current) {
+      const pos = alvoTxt.indexOf(termo);
+      if (pos < 0) continue;
+      return {
+        chamou: true,
+        pergunta: txt.slice(pos + termo.length).replace(/^[\s,.!?;:-]+/, "").trim(),
+      };
+    }
+    return { chamou: false, pergunta: txt };
+  }, []);
+
   const receber = useCallback(
     (txt: string) => {
-      const alvoTxt = semAcento(txt);
-      for (const termo of termos.current) {
-        const pos = alvoTxt.indexOf(termo);
-        if (pos < 0) continue;
-        const resto = txt.slice(pos + termo.length).replace(/^[\s,.!?;:-]+/, "").trim();
-        if (resto) {
-          onEnviar(resto);
-          return;
-        }
+      const { chamou, pergunta } = acharInvocacao(txt);
+      if (chamou && !pergunta) {
         // chamou e não perguntou nada: ele só se apresenta
         const saudacao = `Sim, sou ${agente}, atendente virtual. Em que posso ajudar?`;
         setLinha({ texto: saudacao, cls: "resposta" });
         falarTexto(saudacao);
         return;
       }
-      onEnviar(txt);
+      onEnviar(pergunta || txt);
     },
-    [agente, onEnviar, falarTexto],
+    [agente, onEnviar, falarTexto, acharInvocacao],
   );
 
   // ── reconhecimento de fala ────────────────────────────────────────────
+  // Dois modos:
+  //   • aperta-e-fala — o padrão. Tudo o que você disser vai pro agente.
+  //   • escuta armada — hands-free. Fica ouvindo e só responde quando ouve o
+  //     NOME. Sem essa exigência, cada frase solta do ambiente viraria chamada
+  //     de LLM na conta do tenant.
+  const armado = useRef(false);
+  // Depois que ele responde, a proxima pergunta NAO precisa do nome de novo —
+  // e o follow-up de Alexa/Siri. Fora dessa janela, volta a exigir a chamada.
+  const janela = useRef(0);
+  const JANELA_MS = 15000;
+  const [armadoUI, setArmadoUI] = useState(false);
+  const reinicio = useRef<number | null>(null);
+
+  const iniciarEscuta = useCallback((continuo: boolean) => {
+    const rec = recRef.current;
+    if (!rec) return;
+    rec.continuous = continuo;
+    try {
+      rec.start();
+    } catch {
+      /* já rodando: o próprio onend rearma */
+    }
+  }, []);
+
   useEffect(() => {
     const SR = (window.SpeechRecognition || window.webkitSpeechRecognition) as any;
     if (!SR) return;
@@ -351,9 +388,8 @@ export default function VozPublica({
     rec.continuous = false;
 
     rec.onstart = () => {
-      setOuvindo(true);
       aplicarEstado("ouvindo");
-      setLinha({ texto: "", cls: "" });
+      if (!armado.current) setLinha({ texto: "", cls: "" });
     };
     rec.onresult = (ev: any) => {
       let parcial = "";
@@ -362,6 +398,17 @@ export default function VozPublica({
         if (ev.results[i].isFinal) final += ev.results[i][0].transcript;
         else parcial += ev.results[i][0].transcript;
       }
+
+      if (armado.current) {
+        // hands-free: só reage ao ser chamado pelo nome
+        if (!final) return;
+        const dentroDaJanela = Date.now() < janela.current;
+        if (!dentroDaJanela && !acharInvocacao(final).chamou) return;
+        setLinha({ texto: final, cls: "" });
+        receber(final);
+        return;
+      }
+
       if (final) {
         setLinha({ texto: final, cls: "" });
         receber(final);
@@ -370,11 +417,16 @@ export default function VozPublica({
       }
     };
     rec.onerror = (e: any) => {
-      setOuvindo(false);
-      if (e.error === "no-speech") {
-        aplicarEstado("repouso");
-        setLinha({ texto: "", cls: "" });
+      if (e.error === "no-speech" || e.error === "aborted") {
+        if (!armado.current) {
+          aplicarEstado("repouso");
+          setLinha({ texto: "", cls: "" });
+        }
         return;
+      }
+      if (e.error === "not-allowed") {
+        armado.current = false;
+        setArmadoUI(false);
       }
       aplicarEstado("erro");
       setLinha({ texto: e.error === "not-allowed" ? "microfone bloqueado" : `erro: ${e.error}`, cls: "" });
@@ -384,11 +436,17 @@ export default function VozPublica({
       }, 2600);
     };
     rec.onend = () => {
-      setOuvindo(false);
       setEstado((s) => (s === "ouvindo" ? "repouso" : s));
+      // O Chrome encerra sozinho depois de ~1 min de silêncio. Armado, rearma.
+      if (armado.current) {
+        if (reinicio.current) window.clearTimeout(reinicio.current);
+        reinicio.current = window.setTimeout(() => iniciarEscuta(true), 400);
+      }
     };
     recRef.current = rec;
     return () => {
+      armado.current = false;
+      if (reinicio.current) window.clearTimeout(reinicio.current);
       try {
         rec.abort();
       } catch {
@@ -396,38 +454,64 @@ export default function VozPublica({
       }
       recRef.current = null;
     };
-  }, [receber, aplicarEstado]);
+  }, [receber, aplicarEstado, acharInvocacao, iniciarEscuta]);
 
-  const falar = useCallback(() => {
+  // Enquanto ele fala, a escuta PARA — senão o microfone ouve o alto-falante e
+  // o agente se chama sozinho num laço. Volta quando termina.
+  useEffect(() => {
+    if (!armado.current) return;
     const rec = recRef.current;
-    if (ouvindo) {
+    if (!rec) return;
+    if (estado === "falando" || estado === "pensando") {
       try {
-        rec?.stop();
+        rec.abort();
       } catch {
         /* ignora */
       }
+    } else if (estado === "repouso") {
+      janela.current = Date.now() + JANELA_MS;
+      if (reinicio.current) window.clearTimeout(reinicio.current);
+      reinicio.current = window.setTimeout(() => iniciarEscuta(true), 500);
+    }
+  }, [estado, iniciarEscuta]);
+
+  /** Liga/desliga a escuta contínua. Armado, é só chamar pelo nome. */
+  const falar = useCallback(() => {
+    const rec = recRef.current;
+    if (!rec) return;
+
+    if (armado.current) {
+      armado.current = false;
+      setArmadoUI(false);
+      janela.current = 0;
+      if (reinicio.current) window.clearTimeout(reinicio.current);
+      try {
+        rec.abort();
+      } catch {
+        /* ignora */
+      }
+      aplicarEstado("repouso");
+      setLinha({ texto: "", cls: "" });
       return;
     }
-    if (estado === "pensando" || estado === "falando") return;
+
     setDicaOff(true);
-    if (!rec) return;
-    const seguir = () => {
-      try {
-        rec.start();
-      } catch {
-        /* ja rodando */
-      }
+    const armar = () => {
+      armado.current = true;
+      setArmadoUI(true);
+      janela.current = 0;
+      iniciarEscuta(true);
     };
     const v = vizRef.current;
     if (v && !micLigado.current) {
       v.attachMic()
         .then(() => {
           micLigado.current = true;
-          seguir();
+          armar();
         })
-        .catch(seguir);
-    } else seguir();
-  }, [ouvindo, estado]);
+        .catch(armar);
+    } else armar();
+  }, [aplicarEstado, iniciarEscuta]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -475,10 +559,10 @@ export default function VozPublica({
 
       <p
         className={`fixed left-0 right-0 bottom-[86px] text-center z-30 text-[11px] tracking-[0.14em] uppercase text-[#48484a] transition-opacity duration-500 ${
-          dicaOff || linha.texto ? "opacity-0" : "opacity-100"
+          (dicaOff && !armadoUI) || linha.texto ? "opacity-0" : "opacity-100"
         }`}
       >
-        chame por {agente} ou aperte o microfone
+        {armadoUI ? `escutando — diga "${agente}"` : `aperte o microfone e chame por ${agente}`}
       </p>
 
       <div className="fixed left-1/2 -translate-x-1/2 bottom-[18px] z-40 w-[min(92vw,760px)] h-14 rounded-[28px] bg-[#1c1c1e] flex items-center gap-1.5 pl-2.5 pr-2">
@@ -515,17 +599,17 @@ export default function VozPublica({
         <button
           type="button"
           onClick={falar}
-          title={ouvindo ? "Parar" : "Falar"}
-          aria-label={ouvindo ? "Parar" : "Falar"}
+          title={armadoUI ? "Parar de escutar" : "Escutar — depois é só chamar pelo nome"}
+          aria-label={armadoUI ? "Parar de escutar" : "Escutar"}
           className={`shrink-0 h-9 w-9 rounded-full grid place-items-center transition-colors ${
-            ouvindo ? "bg-[#f2f2f7] text-[#1c1c1e]" : "text-[#f2f2f7] hover:bg-[#2c2c2e]"
+            armadoUI ? "bg-[#f2f2f7] text-[#1c1c1e]" : "text-[#f2f2f7] hover:bg-[#2c2c2e]"
           }`}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
             <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
             <path d="M12 18v4" />
-            {!ouvindo ? <path d="M3 3l18 18" /> : null}
+            {!armadoUI ? <path d="M3 3l18 18" /> : null}
           </svg>
         </button>
 
