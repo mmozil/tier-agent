@@ -19,6 +19,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Importado como asset pra o Vite carimbar o hash do conteudo no nome. Em
+// public/ o arquivo tinha nome fixo e o nginx serve .js com `immutable`: o
+// navegador segurava a versao velha por 7 dias e purge de CDN nao resolvia.
+import urlDoViz from "@/lib/optimus-viz.js?url";
+
 type Viz = {
   simulate: (b: boolean) => void;
   setLevel: (v: number) => void;
@@ -44,7 +49,7 @@ function carregarViz(): Promise<Viz | null> {
   if (promessaViz) return promessaViz;
   promessaViz = new Promise((resolve) => {
     const s = document.createElement("script");
-    s.src = "/optimus-viz.js";
+    s.src = urlDoViz;
     s.async = true;
     s.onload = () => resolve(window.OptimusViz ?? null);
     s.onerror = () => resolve(null);
