@@ -28,7 +28,13 @@ type Config = {
 
 type Balao = { de: "visitante" | "agente"; texto: string };
 
-const API = "/api/v1/public/chat";
+// Mesma resolução do `lib/api.ts`: em produção o front (agent.tier.finance) e o
+// backend (api-agent.tier.finance) são hosts diferentes e o nginx do SPA não faz
+// proxy de /api — caminho relativo cairia no fallback do index.html.
+const BASE =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "https://api-agent.tier.finance/api/v1" : "/api/v1");
+const API = `${BASE}/public/chat`;
 
 function idDaSessao(slug: string): string {
   const chave = `tier-chat:${slug}`;
