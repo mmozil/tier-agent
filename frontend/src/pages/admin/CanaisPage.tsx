@@ -76,11 +76,51 @@ function CodeField({ label, value, full }: { label: string; value: string; full?
 
 // Rótulo amigável do tipo de canal (fallback se o backend não mandar `tipo`)
 function channelType(kind: string): string {
+  if (kind === "webchat") return "Demonstração (link público)";
   if (kind === "whatsapp") return "WhatsApp (Baileys)";
   if (kind === "whatsapp_cloud") return "WhatsApp Cloud API (oficial)";
   if (kind === "telegram") return "Telegram";
   if (kind === "email") return "E-mail";
   return kind;
+}
+
+// ── Chat por link (canal de demonstração) ───────────────────────────────
+interface WebchatForm {
+  slug: string;
+  titulo: string;
+  subtitulo: string;
+  saudacao: string;
+  cor: string;
+  logo_url: string;
+  sugestoes: string[];
+  pede_contato: boolean;
+  limite_dia: number;
+}
+
+const WEBCHAT_VAZIO: WebchatForm = {
+  slug: "",
+  titulo: "",
+  subtitulo: "",
+  saudacao: "",
+  cor: "#003083",
+  logo_url: "",
+  sugestoes: [""],
+  pede_contato: false,
+  limite_dia: 500,
+};
+
+const WEBCHAT_MAX_SUGESTOES = 6;
+
+// O slug é o caminho da URL: minúsculas, sem acento, hífen no lugar de espaço.
+// Mesmo formato que o backend valida (`^[a-z0-9][a-z0-9-]{1,60}$`).
+function slugificar(texto: string): string {
+  return (texto || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 61);
 }
 
 // ChannelCard — cartão de canal no seletor "Conectar canal" (logo + nome + descrição).
@@ -156,6 +196,11 @@ export default function CanaisPage() {
   const [discordConnecting, setDiscordConnecting] = useState(false);
   const [discordResult, setDiscordResult] = useState<{ invite_url?: string; bot_username?: string } | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [showWebchat, setShowWebchat] = useState(false);
+  const [webchatForm, setWebchatForm] = useState<WebchatForm>({ ...WEBCHAT_VAZIO });
+  const [webchatSaving, setWebchatSaving] = useState(false);
+  const [webchatUrl, setWebchatUrl] = useState<string | null>(null);
+  const [webchatJaExiste, setWebchatJaExiste] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -284,6 +329,81 @@ export default function CanaisPage() {
       toast.error(err?.response?.data?.detail || "Erro ao conectar o Discord");
     } finally {
       setDiscordConnecting(false);
+    }
+  }
+
+  // Abre o formulário do link de demonstração. Se o agente já tem um link,
+  // carrega a config pra editar; senão sugere um endereço a partir do nome.
+  async function abrirWebchat() {
+    if (!selectedAgent) {
+      toast.error("Escolha um agente");
+      return;
+    }
+    setShowPicker(false);
+    setWebchatUrl(null);
+    const nome = agents.find((a) => a.id === selectedAgent)?.nome || "";
+    try {
+      const { data } = await api.get<{ configurado: boolean; config?: Partial<WebchatForm> }>(
+        `/connectors/webchat/${selectedAgent}`,
+      );
+      if (data.configurado && data.config) {
+        const c = data.config;
+        setWebchatForm({
+          slug: c.slug || "",
+          titulo: c.titulo || "",
+          subtitulo: c.subtitulo || "",
+          saudacao: c.saudacao || "",
+          cor: c.cor || "#003083",
+          logo_url: c.logo_url || "",
+          sugestoes: c.sugestoes?.length ? c.sugestoes : [""],
+          pede_contato: !!c.pede_contato,
+          limite_dia: Number(c.limite_dia) || 500,
+        });
+        setWebchatJaExiste(true);
+      } else {
+        setWebchatForm({ ...WEBCHAT_VAZIO, slug: slugificar(nome) });
+        setWebchatJaExiste(false);
+      }
+    } catch {
+      // Sem config legível: começa do zero, o formulário resolve.
+      setWebchatForm({ ...WEBCHAT_VAZIO, slug: slugificar(nome) });
+      setWebchatJaExiste(false);
+    }
+    setShowWebchat(true);
+  }
+
+  async function salvarWebchat() {
+    if (!selectedAgent) {
+      toast.error("Escolha um agente");
+      return;
+    }
+    const slug = slugificar(webchatForm.slug);
+    if (slug.length < 2) {
+      toast.error("O endereço precisa de pelo menos 2 caracteres (ex: escola-ccda)");
+      return;
+    }
+    setWebchatSaving(true);
+    try {
+      const { data } = await api.post<{ url: string }>("/connectors/webchat", {
+        agent_id: selectedAgent,
+        slug,
+        titulo: webchatForm.titulo.trim() || null,
+        subtitulo: webchatForm.subtitulo.trim() || null,
+        saudacao: webchatForm.saudacao.trim() || null,
+        cor: webchatForm.cor,
+        logo_url: webchatForm.logo_url.trim() || null,
+        sugestoes: webchatForm.sugestoes.map((s) => s.trim()).filter(Boolean),
+        pede_contato: webchatForm.pede_contato,
+        limite_dia: webchatForm.limite_dia,
+      });
+      setWebchatUrl(data.url);
+      setWebchatJaExiste(true);
+      toast.success(webchatJaExiste ? "Link atualizado" : "Link criado");
+      load();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao salvar o link");
+    } finally {
+      setWebchatSaving(false);
     }
   }
 
@@ -425,6 +545,166 @@ export default function CanaisPage() {
           </Row>
         )}
 
+        {showWebchat && (
+          <Row>
+            <div className="p-6 space-y-4 max-w-[620px]">
+              <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>
+                {webchatJaExiste ? "Editar link de demonstração" : "Criar link de demonstração"}
+              </h3>
+              <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
+                Um endereço público onde qualquer pessoa conversa com o agente — <b>sem login, sem app e sem número</b>.
+                É o jeito mais rápido de mostrar o agente pra um cliente. As conversas caem no inbox como qualquer outro canal.
+              </p>
+
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
+                <Select value={selectedAgent} onChange={(v) => setSelectedAgent(v)} options={agents.map((a) => ({ value: a.id, label: a.nome }))} placeholder="Escolha um agente" />
+              </label>
+
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Endereço do link</span>
+                <div className={`flex items-center h-9 rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} overflow-hidden focus-within:shadow-[0_0_0_2px_#003083]`}>
+                  <span className={`pl-3 text-[13px] font-mono shrink-0 select-none ${FC.mut}`}>agent.tier.finance/c/</span>
+                  <input
+                    value={webchatForm.slug}
+                    onChange={(e) => setWebchatForm({ ...webchatForm, slug: e.target.value })}
+                    onBlur={(e) => setWebchatForm({ ...webchatForm, slug: slugificar(e.target.value) })}
+                    placeholder="escola-ccda"
+                    className={`flex-1 min-w-0 h-full bg-transparent border-0 outline-none pr-3 text-[14px] font-mono ${FC.ink}`}
+                  />
+                </div>
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className={`text-[12px] block mb-1 ${FC.sub}`}>Título</span>
+                  <input value={webchatForm.titulo} onChange={(e) => setWebchatForm({ ...webchatForm, titulo: e.target.value })} placeholder="Nome do agente" className={inputCls} />
+                </label>
+                <label className="block">
+                  <span className={`text-[12px] block mb-1 ${FC.sub}`}>Subtítulo</span>
+                  <input value={webchatForm.subtitulo} onChange={(e) => setWebchatForm({ ...webchatForm, subtitulo: e.target.value })} placeholder="Atendimento · responde na hora" className={inputCls} />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Saudação</span>
+                <textarea
+                  value={webchatForm.saudacao}
+                  onChange={(e) => setWebchatForm({ ...webchatForm, saudacao: e.target.value })}
+                  rows={2}
+                  placeholder="Olá! Como posso ajudar?"
+                  className={`w-full px-3 py-2 text-[14px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none resize-none focus:shadow-[0_0_0_2px_#003083] ${FC.ink}`}
+                />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className={`text-[12px] block mb-1 ${FC.sub}`}>Cor de destaque</span>
+                  <div className={`flex items-center gap-2 h-9 px-2 rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair}`}>
+                    <input type="color" value={webchatForm.cor} onChange={(e) => setWebchatForm({ ...webchatForm, cor: e.target.value })} className="w-7 h-7 shrink-0 p-0 bg-transparent border-0 rounded-md cursor-pointer" />
+                    <input value={webchatForm.cor} onChange={(e) => setWebchatForm({ ...webchatForm, cor: e.target.value })} className={`flex-1 min-w-0 bg-transparent border-0 outline-none text-[13px] font-mono ${FC.ink}`} />
+                  </div>
+                </label>
+                <label className="block">
+                  <span className={`text-[12px] block mb-1 ${FC.sub}`}>Limite de mensagens por dia</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={webchatForm.limite_dia}
+                    onChange={(e) => setWebchatForm({ ...webchatForm, limite_dia: Math.max(1, Number(e.target.value) || 1) })}
+                    className={inputCls}
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Logo <span className={FC.mut}>(URL da imagem, opcional)</span></span>
+                <input value={webchatForm.logo_url} onChange={(e) => setWebchatForm({ ...webchatForm, logo_url: e.target.value })} placeholder="https://..." className={inputCls} />
+              </label>
+
+              <div>
+                <span className={`text-[12px] block mb-1.5 ${FC.sub}`}>
+                  Sugestões de pergunta <span className={FC.mut}>(até {WEBCHAT_MAX_SUGESTOES}, aparecem como atalhos)</span>
+                </span>
+                <div className="space-y-2">
+                  {webchatForm.sugestoes.map((sugestao, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        value={sugestao}
+                        onChange={(e) => {
+                          const lista = [...webchatForm.sugestoes];
+                          lista[i] = e.target.value;
+                          setWebchatForm({ ...webchatForm, sugestoes: lista });
+                        }}
+                        placeholder={i === 0 ? "Quanto custa a mensalidade?" : "Outra pergunta comum"}
+                        className={inputCls}
+                      />
+                      {webchatForm.sugestoes.length > 1 && (
+                        <button
+                          type="button"
+                          title="Remover"
+                          onClick={() => setWebchatForm({ ...webchatForm, sugestoes: webchatForm.sugestoes.filter((_, j) => j !== i) })}
+                          className={iconBtn}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {webchatForm.sugestoes.length < WEBCHAT_MAX_SUGESTOES && (
+                  <button
+                    type="button"
+                    onClick={() => setWebchatForm({ ...webchatForm, sugestoes: [...webchatForm.sugestoes, ""] })}
+                    className={`mt-2 text-[12px] transition-colors ${FC.sub} hover:text-[#003083] dark:hover:text-[#5b9bff]`}
+                  >
+                    + Adicionar sugestão
+                  </button>
+                )}
+              </div>
+
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={webchatForm.pede_contato}
+                  onChange={(e) => setWebchatForm({ ...webchatForm, pede_contato: e.target.checked })}
+                  className="mt-0.5 w-4 h-4 shrink-0 accent-[#003083] cursor-pointer"
+                />
+                <span>
+                  <span className={`block text-[13px] ${FC.ink}`}>Pedir nome e telefone antes de conversar</span>
+                  <span className={`block text-[12px] ${FC.sub}`}>O visitante vira lead identificado no inbox. Sem isso, ele conversa anônimo.</span>
+                </span>
+              </label>
+
+              {webchatUrl ? (
+                <div className={`rounded-[10px] border ${FC.hair} p-3.5 bg-[#003083]/[0.04]`}>
+                  <p className={`text-[13px] font-medium ${FC.ink}`}>Link no ar ✓</p>
+                  <p className={`text-[12px] mt-1 ${FC.sub}`}>
+                    Qualquer pessoa com este endereço conversa com o agente, sem login. As conversas aparecem em <b>Conversas</b>.
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <code className={`flex-1 text-[11.5px] font-mono break-all px-2 py-1.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] ${FC.ink}`}>{webchatUrl}</code>
+                    <Button variant="ghost" size="sm" onClick={() => { navigator.clipboard?.writeText(webchatUrl); toast.success("Copiado"); }}>Copiar</Button>
+                  </div>
+                  <div className="mt-3 flex justify-end gap-2">
+                    <a href={webchatUrl} target="_blank" rel="noreferrer">
+                      <Button variant="secondary">Abrir link</Button>
+                    </a>
+                    <Button variant="primary" onClick={() => { setShowWebchat(false); setWebchatUrl(null); }}>Concluir</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setShowWebchat(false)}>Cancelar</Button>
+                  <Button variant="primary" onClick={salvarWebchat} disabled={webchatSaving}>
+                    {webchatSaving ? "Salvando..." : webchatJaExiste ? "Salvar alterações" : "Criar link"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </Row>
+        )}
+
         <Row last>
           {loading ? (
             <div className={`divide-y ${FC.hair}`}>
@@ -444,7 +724,7 @@ export default function CanaisPage() {
             agents.length === 0 ? (
               <EmptyHint icon={Bot} text="Crie um agente primeiro para conectar um canal." ctaLabel="Criar agente" ctaTo="/admin/agentes" className="py-16" />
             ) : (
-              <EmptyHint icon={Smartphone} text='Nenhum canal conectado. Clique em "Conectar canal" para escolher WhatsApp, Slack ou Discord.' className="py-16" />
+              <EmptyHint icon={Smartphone} text='Nenhum canal conectado. Clique em "Conectar canal" — o link de demonstração fica pronto na hora, sem cadastro nenhum.' className="py-16" />
             )
           ) : (
             <div className={`divide-y ${FC.hair}`}>
@@ -456,10 +736,11 @@ export default function CanaisPage() {
                 const cm = CHANNEL_META[c.kind];
                 const cs = (c.config_summary || {}) as unknown as Record<string, string | undefined>;
                 const tipoLabel = c.config_summary?.tipo || channelType(c.kind);
-                // Linha secundária: WhatsApp → telefone; demais → bot/workspace ou descrição.
+                // Linha secundária: WhatsApp → telefone; link de demonstração → a
+                // própria URL; demais → bot/workspace ou descrição.
                 const secondary = isWa
                   ? formatPhone(cs.phone)
-                  : cs.bot || cs.team || cm?.short || channelType(c.kind);
+                  : cs.url || cs.bot || cs.team || cm?.short || channelType(c.kind);
                 return (
                   <div
                     key={c.id}
@@ -558,6 +839,13 @@ export default function CanaisPage() {
               <div>
                 <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2.5 ${FC.mut}`}>Disponíveis</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <ChannelCard
+                    icon={CHANNEL_META.webchat.Icon}
+                    name={CHANNEL_META.webchat.name}
+                    desc={CHANNEL_META.webchat.short}
+                    badge="Demo"
+                    onClick={abrirWebchat}
+                  />
                   <ConnectWhatsAppCloud
                     agentId={selectedAgent ?? 0}
                     onConnected={() => { setShowPicker(false); load(); }}

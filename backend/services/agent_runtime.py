@@ -292,6 +292,10 @@ async def resolve_connector_by_instance(
         if kind == "instagram":
             if str(cfg.get("ig_user_id") or "") == instance_id:
                 return conn
+        # Webchat (link público / demonstração): instance_id = slug do link
+        if kind == "webchat":
+            if str(cfg.get("slug") or "") == instance_id:
+                return conn
         # Default fallback (compat)
         if cfg.get("instance_id") == instance_id:
             return conn
@@ -680,6 +684,10 @@ async def handle_inbound_message(
         return {"status": "handed_off_paused", "agent_id": agent.id, "conversation_id": conv.id}
 
     _phone_for_summary = _re.sub(r"\D", "", (external_chat_id or "").split("@")[0])
+    # Telefone real do contato, injetado nas tools de cadastro/busca. Só canal
+    # telefônico tem telefone no chat_id — em webchat/Slack/Discord o id é sessão
+    # ou usuário, e extrair dígitos dali inventaria um número que não existe.
+    _phone = _phone_for_summary if connector_kind in ("whatsapp", "whatsapp_cloud") else ""
 
     # ─── Handoff explícito + escalonamento por frustração ───
     # Pedido explícito de humano → handoff + PAUSA o bot + confirma ao cliente.

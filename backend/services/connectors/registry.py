@@ -33,6 +33,7 @@ def _register_defaults() -> None:
     from services.connectors.adapters.instagram import InstagramConnector
     from services.connectors.adapters.slack import SlackConnector
     from services.connectors.adapters.telegram import TelegramConnector
+    from services.connectors.adapters.webchat import WebchatConnector
     from services.connectors.adapters.whatsapp import WhatsAppConnector
     from services.connectors.adapters.whatsapp_cloud import WhatsAppCloudConnector
 
@@ -43,6 +44,7 @@ def _register_defaults() -> None:
     registry.register(InstagramConnector())
     registry.register(SlackConnector())
     registry.register(DiscordConnector())
+    registry.register(WebchatConnector())
 
 
 _register_defaults()

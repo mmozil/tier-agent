@@ -13,6 +13,7 @@ import Login from "./pages/public/Login";
 import Signup from "./pages/public/Signup";
 import Privacy from "./pages/public/Privacy";
 import AcceptInvitePage from "./pages/public/AcceptInvitePage";
+import ChatPublico from "./pages/public/ChatPublico";
 import DataDeletion from "./pages/public/DataDeletion";
 import AgentesPage from "./pages/admin/AgentesPage";
 import LlmProvidersPage from "./pages/admin/LlmProvidersPage";
@@ -73,6 +74,8 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/convite/:token" element={<AcceptInvitePage />} />
+      {/* Chat público / demonstração — sem login, de propósito */}
+      <Route path="/c/:slug" element={<ChatPublico />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/privacidade" element={<Privacy />} />
       <Route path="/data-deletion" element={<DataDeletion />} />

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re as _re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -9,12 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
+from core.config import get_settings
 from core.db import get_db
 from core.encryption import decrypt, encrypt
 from models import TaAgent, TaConnector, TaNotification
 from services import engine_client
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
@@ -60,6 +63,18 @@ def _summary(kind: str, cfg: dict) -> dict:
             "pareamento": "Login Facebook / Embedded Signup (sem QR)",
             "janela": "Janela 24h: texto livre dentro; fora, só template aprovado",
             "tem_token": bool(cfg.get("token")),
+        }
+    if kind == "webchat":
+        slug = str(cfg.get("slug") or "")
+        return {
+            "tipo": "Demonstração (link público)",
+            # Não pareia com nada: existindo o link, ele responde. Só sai do ar
+            # no /disconnect, que grava status explícito e desliga o conector.
+            "status": cfg.get("status") or "connected",
+            "slug": slug,
+            "url": _url_publica(slug) if slug else "—",
+            "transporte": "Página pública no próprio domínio",
+            "pareamento": "Nenhum — basta abrir o link",
         }
     if kind == "telegram":
         return {"bot_username": cfg.get("bot_username") or "—", "tipo": "Telegram"}
@@ -564,6 +579,137 @@ async def setup_generic_connector(
     await db.commit()
     await db.refresh(conn_out)
     return conn_out
+
+
+# ============================================================
+# Webchat — canal de DEMONSTRAÇÃO (link público, sem canal externo)
+# ============================================================
+_SLUG_RE = _re.compile(r"^[a-z0-9][a-z0-9-]{1,60}$")
+
+
+class WebchatSetupIn(BaseModel):
+    agent_id: int
+    slug: str
+    titulo: str | None = None
+    subtitulo: str | None = None
+    saudacao: str | None = None
+    cor: str | None = None
+    logo_url: str | None = None
+    rodape: str | None = None
+    sugestoes: list[str] = []
+    pede_contato: bool = False
+    limite_dia: int = 500
+    enabled: bool = True
+
+
+def _url_publica(slug: str) -> str:
+    base = (getattr(settings, "public_app_url", None) or "https://agent.tier.finance").rstrip("/")
+    return f"{base}/c/{slug}"
+
+
+@router.post("/webchat", status_code=201)
+async def setup_webchat(
+    payload: WebchatSetupIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cria/atualiza o link público de demonstração de um agente.
+
+    O slug é global (é o caminho da URL), então a checagem de duplicidade olha
+    TODOS os conectores webchat, não só os do tenant.
+    """
+    slug = (payload.slug or "").strip().lower()
+    if not _SLUG_RE.match(slug):
+        raise HTTPException(
+            400,
+            "Slug inválido. Use letras minúsculas, números e hífen (ex: escola-ccda).",
+        )
+
+    await _ensure_agent_owned(db, payload.agent_id, user)
+
+    from sqlalchemy import select as _sel
+
+    todos = (await db.execute(_sel(TaConnector).where(TaConnector.kind == "webchat"))).scalars().all()
+
+    meu = None
+    for conn in todos:
+        try:
+            cfg_existente = json.loads(decrypt(conn.config_json_enc))
+        except Exception:
+            continue
+        if conn.agent_id == payload.agent_id:
+            meu = conn
+        elif str(cfg_existente.get("slug") or "") == slug:
+            raise HTTPException(409, f"O endereço '{slug}' já está em uso por outro agente.")
+
+    cfg = {
+        "slug": slug,
+        "titulo": (payload.titulo or "").strip() or None,
+        "subtitulo": (payload.subtitulo or "").strip() or None,
+        "saudacao": (payload.saudacao or "").strip() or None,
+        "cor": (payload.cor or "").strip() or None,
+        "logo_url": (payload.logo_url or "").strip() or None,
+        "rodape": (payload.rodape or "").strip() or None,
+        "sugestoes": [s.strip() for s in (payload.sugestoes or []) if s and s.strip()][:6],
+        "pede_contato": bool(payload.pede_contato),
+        "limite_dia": max(1, int(payload.limite_dia or 500)),
+    }
+
+    cfg_enc = encrypt(json.dumps(cfg))
+    if meu:
+        meu.config_json_enc = cfg_enc
+        meu.enabled = payload.enabled
+        conn_out = meu
+    else:
+        conn_out = TaConnector(
+            agent_id=payload.agent_id,
+            kind="webchat",
+            config_json_enc=cfg_enc,
+            enabled=payload.enabled,
+        )
+        db.add(conn_out)
+    await db.commit()
+    await db.refresh(conn_out)
+
+    return {
+        "id": conn_out.id,
+        "agent_id": conn_out.agent_id,
+        "enabled": conn_out.enabled,
+        "config": cfg,
+        "url": _url_publica(slug),
+    }
+
+
+@router.get("/webchat/{agent_id}")
+async def get_webchat(
+    agent_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Config atual do link de demonstração do agente (ou `configurado: false`)."""
+    await _ensure_agent_owned(db, agent_id, user)
+
+    from sqlalchemy import select as _sel
+
+    conn = (
+        await db.execute(_sel(TaConnector).where(TaConnector.agent_id == agent_id, TaConnector.kind == "webchat"))
+    ).scalar_one_or_none()
+
+    if not conn:
+        return {"configurado": False}
+
+    try:
+        cfg = json.loads(decrypt(conn.config_json_enc))
+    except Exception:
+        cfg = {}
+
+    return {
+        "configurado": True,
+        "id": conn.id,
+        "enabled": conn.enabled,
+        "config": cfg,
+        "url": _url_publica(str(cfg.get("slug") or "")),
+    }
 
 
 @router.delete("/{connector_id}", status_code=204)

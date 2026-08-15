@@ -57,6 +57,20 @@ export function InstagramIcon({ className }: { className?: string }) {
   );
 }
 
+// Chat por link — canal de demonstração. Não é marca de terceiro, então usa o
+// azul da Tier: janela de navegador com um balão dentro (= conversa por link).
+export function WebchatIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <rect x="1.7" y="3.3" width="20.6" height="17.4" rx="3" fill="none" stroke="#003083" strokeWidth="1.7" />
+      <path d="M1.7 7.8h20.6" stroke="#003083" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="4.7" cy="5.55" r="0.78" fill="#003083" />
+      <rect x="6.4" y="10.9" width="11.2" height="5.6" rx="1.7" fill="#003083" />
+      <path d="M9.5 16.1v3l3.1-3z" fill="#003083" />
+    </svg>
+  );
+}
+
 // E-mail — envelope neutro (usa currentColor pra herdar o tom do contexto).
 export function MailIcon({ className }: { className?: string }) {
   return (
@@ -73,6 +87,7 @@ export const CHANNEL_META: Record<
   string,
   { name: string; short: string; Icon: ComponentType<{ className?: string }>; brand: string }
 > = {
+  webchat: { name: "Chat por link", short: "Link público de demonstração — sem app nem número", Icon: WebchatIcon, brand: "#003083" },
   whatsapp_cloud: { name: "WhatsApp Oficial", short: "API oficial Meta — sem QR, sem risco de ban", Icon: WhatsAppIcon, brand: "#25D366" },
   whatsapp: { name: "WhatsApp", short: "Baileys (QR) — pareia como um aparelho", Icon: WhatsAppIcon, brand: "#25D366" },
   slack: { name: "Slack", short: "Bot no seu workspace", Icon: SlackIcon, brand: "#611f69" },
