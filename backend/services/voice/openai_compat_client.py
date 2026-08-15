@@ -64,9 +64,17 @@ async def stream_synthesize(text: str, *, voice_id: str | None = None, model_id:
                 corpo = await r.aread()
                 logger.warning("tts stream HTTP %s: %s", r.status_code, corpo[:160])
                 return
-            async for pedaco in r.aiter_bytes():
-                if pedaco:
-                    yield pedaco
+            # 🚨 O Kokoro fecha o stream SEM o terminador do chunked, e o httpx
+            # levanta RemoteProtocolError no fim de toda síntese. Os bytes que
+            # já vieram são MP3 válido — deixar a exceção subir quebrava a
+            # resposta inteira (Cloudflare devolvia 520 e o visitante não ouvia
+            # nada). Aqui isso é fim de stream, não falha.
+            try:
+                async for pedaco in r.aiter_bytes():
+                    if pedaco:
+                        yield pedaco
+            except httpx.RemoteProtocolError:
+                logger.debug("tts stream: encerrou sem terminador (esperado no Kokoro)")
 
 
 @dataclass
