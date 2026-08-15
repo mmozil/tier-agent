@@ -162,7 +162,7 @@ export default function Signup() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full h-[50px] bg-[#003083] hover:bg-[#002266] active:scale-[0.98] text-white font-semibold rounded-lg text-[15px] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-[#003083]/20"
+              className="w-full h-8 bg-[#003083] hover:bg-[#002266] active:scale-[0.98] text-white font-semibold rounded-lg text-[15px] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-[#003083]/20"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Criar conta + agente"}
             </button>
@@ -177,7 +177,7 @@ export default function Signup() {
               type="button"
               onClick={() => signupWithGoogle()}
               disabled={loading}
-              className="w-full h-[50px] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[#0A1628] font-semibold rounded-lg text-[14px] flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50"
+              className="w-full h-8 bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[#0A1628] font-semibold rounded-lg text-[14px] flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50"
             >
               <GoogleIcon />
               Continuar com Google

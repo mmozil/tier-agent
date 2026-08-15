@@ -85,7 +85,7 @@ export default function AcceptInvitePage() {
               <button
                 onClick={accept}
                 disabled={saving}
-                className="w-full h-10 rounded-lg bg-[#003083] text-white text-[14px] font-semibold hover:bg-[#002266] disabled:opacity-50"
+                className="w-full h-8 rounded-lg bg-[#003083] text-white text-[14px] font-semibold hover:bg-[#002266] disabled:opacity-50"
               >
                 {saving ? "Ativando…" : "Ativar conta e entrar"}
               </button>

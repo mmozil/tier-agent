@@ -211,6 +211,40 @@ Agente INTERNO que monitora a infra do Tier via WhatsApp: telemetria real do sta
 - `TIER_INFRA_PROM_URL` (opcional, vazio = `/infra` usa SSH).
 - ⚠️ O SSH do `/infra` reutiliza as JÁ existentes `TIER_AGENT_SSH_HOST` / `TIER_AGENT_SSH_PRIVKEY_B64` — **não há var nova de SSH**.
 
+## Seção do Agente — página, DS e paridade do teste (15/ago/2026)
+
+### `/admin/agentes/:id` — o detalhe do agente é PÁGINA, não gaveta
+Era um `AgentDetailsDrawer` (`fixed inset-0 justify-end`) com ~770 linhas de config espremidas e **4 abas**. As abas eram sintoma da gaveta, não escolha: numa lateral nada cabe lado a lado, e trocar de aba **destruía a conversa de teste** (estado local do componente).
+
+- `pages/admin/AgenteDetalhePage.tsx` — coluna esquerda com **7 seções colapsáveis** (Instruções · Modelos · Conhecimento · Ferramentas · Canais · Playbooks · Zona de risco) + **painel de teste FIXO** à direita, divisória arrastável. Autosave debounced 900ms. Marco "instruções alteradas" na timeline do teste.
+- Clicar no card do agente **navega** (`/admin/agentes/:id`); criar agente também cai na página. O drawer e os auxiliares que só ele usava foram removidos — `AgentesPage.tsx` foi de **1.505 → 603 linhas**.
+- **`system_prompt` exposto** como campo avançado. A coluna existia, `AgentOut` retornava e `AgentUpdate` aceitava — o front nunca mostrou.
+- Preview da persona no card passa por `resumoPersona()` (derruba `#`, `**`, bullets): persona costuma ser prompt estruturado e o card exibia markdown cru.
+
+### 🚨 Paridade do playground com o WhatsApp — o teste monta o MESMO prompt
+O teste divergia do canal real por motivo invisível: **a produção injeta 8 blocos no system prompt e o playground injetava 3**. Faltava inclusive a **data de hoje** — no painel o agente não sabia que dia era.
+
+Ordem canônica de montagem (produção e playground usam os MESMOS montadores):
+1. `persona` **or** `system_prompt` — 🚨 nessa ordem; estava invertida no playground
+2. memória do contato (`memory_service`) — **só produção**, é por contato
+3. **`build_rag_block(db, agent_id, query)`** — base de conhecimento
+4. **`build_contact_block(connector_kind, external_chat_id, sender_name)`** — nome/telefone do canal
+5. **`build_base_directives(agent, connector_kind, extra_block)`** — data/hora (fuso SP) + `GENERIC_GUIDELINES` + guidelines do template + regras de formatação do WhatsApp. O bloco de alertas do DevSecOps entra pelo `extra_block` (fica no runtime porque precisa de `db` e é async).
+
+Saída, na mesma ordem nos dois caminhos: `_sanitize_reply` → `_format_for_whatsapp` → `_split_into_bubbles` (até 4 balões). O painel renderiza **um balão por mensagem** e tem campo "Nome do contato" (simula o que o canal entrega, senão `{nome}` da persona não resolve).
+
+**Continuam fora do playground, de propósito:** memória entre conversas (é por contato) e **playbook** (`playbook_router`/`playbook_executor` só rodam no canal real). A tela diz isso ao usuário.
+
+> ⚠️ **Ao mexer em qualquer bloco do prompt, mexer no MONTADOR** (`build_*` em `agent_runtime`), nunca inline num caller. Foi a divergência inline que fez o teste mentir por meses. Para provar que não mudou a produção: script que compara a montagem antiga (copiada verbatim) com a nova em casos-limite (JID `@lid`, sem template, canal não-WhatsApp, devsecops com bloco extra) — os 6 casos saíram byte-idênticos.
+
+### Editor de fluxo e DS
+O subsistema de playbook **não importava `ds/fc`**: usava `bg-white`/`slate-*`, tokens do **Tier Empresas** (`#1a2c44`/`#697386`) e forçava **Inter** inline num admin cujo padrão é **Geist**. Era a única área do produto sem tema escuro.
+- Dark mode nos 4 arquivos do playbook; **`useIsDark()`** novo em `ds/fc` para Background/Controls/MiniMap do React Flow, que só aceitam cor em estilo inline.
+- **`CATEGORY_COLOR`** = fonte única de cor por categoria. Três cores tinham divergido do token e `route_to_specialist` (que é `flow`) estava com o roxo de trigger. Ícone único por tipo (Database aparecia em 3 nós).
+- **`--ta-sidebar-w`** publicada pelo `AdminLayout` — o editor tinha `left-[240px]` fixo e a sidebar varia 200-420 (64 recolhida).
+- Primitivas novas em `ds/fc.tsx` (existiam **8 variantes locais de `inputCls`**): `fieldSurface`, `Input`, `Textarea`, `Field`, `Section` (colapsável, desliza via grid `0fr→1fr`, estado persistido), `SplitPane`, e `Section` já nasce com **rails + `CurvyRect`** — a assinatura do DS, que estava com uso zero.
+- `PlaybooksPage` passou de cards flutuantes com sombra para **`HairCells`** (grade flush, bordas se cruzando no "+"), igual à lista de Agentes.
+
 ## Arquitetura backend
 
 - `routes/` — connectors, agents, webhooks, playbooks, billing, containers, etc.
@@ -228,11 +262,17 @@ Agente INTERNO que monitora a infra do Tier via WhatsApp: telemetria real do sta
 - **Cloud API**: variação Embedded Signup só via modelo; app precisa ser Tech Provider; Vite vars build-time.
 - **Modelo é config por tenant (sem rebuild)**: vem de `TaLlmProvider` via `tier_engine` — trocável ao vivo, SEM rebuild de imagem (o Hermes/`run_agent` que forçava opus foi removido). Ex.: tenant 3 (DevOps) = `openrouter/deepseek-v4-flash`@0.3; tenant 6 (Yanna) = `gpt-4o-mini`@0.2. `tier_engine` já faz `_strip_thinking` (remove `<think>`) + filtro CJK. Ver `project_tier_agent_model_agnostic_robustness_20260626` (selo tested/recommended + guardrail de temperatura por porte de modelo).
 - **Editar persona é live (sem deploy)** — `TaAgent.persona` no DB; sempre `llm_cache.invalidate(tenant_id, agent_id)` depois.
+- 🚨 **Agente de template nasce com `persona` E `system_prompt` preenchidos** (`routes/agents.py:70-73`), com textos DIFERENTES: a persona é um parágrafo em prosa, o `system_prompt` é a instrução estruturada (`# Identidade / # Comportamento / # Tom`). Como a produção resolve `persona or system_prompt`, **o `system_prompt` do template nunca é usado** — o trabalho estruturado morre no cadastro. Decidir por agente: migrar o conteúdo pra persona, inverter a precedência, ou tratar como legado. Não inverter isoladamente no playground: isso só faz teste e produção divergirem de novo.
+- **Transcrição de áudio recebido funciona** (`agent_runtime` ~351): áudio sem texto vai pro **Whisper local** (`faster-whisper`, `WHISPER_MODEL=small`, CPU/int8, `language="pt"`). O primeiro áudio após um deploy paga o carregamento do modelo. **Não há TTS no caminho normal** — gerar áudio só existe como nó de playbook (ElevenLabs).
+- **`placeholder:${TOKEN}` não funciona** quando o token tem 2 classes: `placeholder:text-X dark:text-Y` prefixa só a primeira e o `dark:` vaza pro texto inteiro do input. Escrever por extenso.
+- **`overflow-hidden` no card do nó corta o selo de status** (fica em `top` negativo). Rótulos de saída (sim/não) têm que ficar `left-full`, fora do card.
 
 ## Convenções
 - Comentários/docs em pt-BR. Python: Ruff line-length 120, double quotes. TS: strict, zero-warning. `npm run build` antes de commit no frontend.
 - Memória canônica: `project_tier_agent_whatsapp_oficial.md` (mais completa — modelo, atendimento, RAG, App Review), `project_tier_agent.md` (+ Q1/Q2/Q3, playbook builder).
 - Obsidian: `projetos/Tier/Tier Agent/`.
+
+_15/ago/2026 — **Seção do Agente reconstruída**: `/admin/agentes/:id` vira PÁGINA (o drawer saiu; `AgentesPage` 1.505→603 linhas), 7 seções colapsáveis + painel de teste FIXO, autosave, `system_prompt` exposto. **Paridade do teste com o WhatsApp**: a produção injetava 8 blocos no prompt e o playground 3 — extraídos `build_contact_block`/`build_base_directives`/`build_rag_block` como ponto único, e a saída passou a ter sanitize→formata→balões. Produção verificada byte-idêntica em 6 casos-limite. Editor de fluxo migrado pro `ds/fc` (era a única área sem dark mode), `CATEGORY_COLOR` como fonte única, `--ta-sidebar-w`, e o DS ganhou `Section`(rails+CurvyRect)/`SplitPane`/`Field`/`Input`/`Textarea`. Commits `7affed0` `53f1497` `541ffc7` `b09c2da` `61b1e25` `631ebf4` `cf14d0b` `4b58090`. Fonte canônica: memória `project_tier_agent_uiux_agente_20260811`._
 
 _26/jun/2026 — Agente DevOps/SRE "DevSecOps" (`agent 5`): comandos de ops determinísticos de observabilidade (`ops_commands`: status/metrics/alertas/incidentes/infra/**calibragem**) + `devops_guard` anti-injeção + inbox dos comandos, `/infra` via SSH (quanto tem + % usado, CPU% real de `/proc/stat`, reusa `tier_agent_ssh_*`), **`/calibragem`** espelha a tela do painel Tier (ALERT_TYPES + throttle live de `alert.conf`), `ta_incident` + webhook `POST /secops/alert` (script `tier-secops-alert.py` do Hetzner → agente responde "último alerta" com dado real), runbook na KB (18 chunks), gotcha do template (runtime usa persona+guidelines; `template.system_prompt` é só seed), Knowledge UI reorg + `GET /knowledge/{id}/chunks`, calibragem SecOps SSH brute-force `critico`→`info` (crítico 52→19). **Fixes da continuação 26/jun**: (1) `/ajuda` "fica só pensando" = `_log_deterministic_turn` dava `db.rollback()` que expirava agent+connector da AsyncSession → `MissingGreenlet` → caía no LLM; fix = sessão isolada (`d1f8356`); (2) WhatsApp re-pareado p/ instância **`7748dba8`** (multi-device 440; `6120f33d`/`54e813c7` descartadas); (3) instância de alerta `b71e04fd` sumiu → `WA_INSTANCE_ID` da `alert.conf` reapontado pra `7748dba8` (mesma do agente), `WA_TO=5511994964296`. Env novas: `TIER_SECOPS_WEBHOOK_SECRET`, `TIER_SECOPS_ALERT_AGENT_ID=5`, `TIER_INFRA_PROM_URL` (opcional). Fonte canônica: memória `project_tier_agent_devops_observability_20260626`._
 _Também nesta sessão: Fase A/B/C robustez model-agnostic (prompt modular por template, evals de persona, guardrail de temperatura modelo-compacto→0.3, selo tested/recommended na UI de providers) — ver `project_tier_agent_model_agnostic_robustness_20260626`._

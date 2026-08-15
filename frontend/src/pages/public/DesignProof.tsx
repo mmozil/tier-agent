@@ -150,7 +150,7 @@ export default function DesignProof() {
   const sub = "text-[#262626]/[0.56] dark:text-[#8b93a0]";
   const mut = "text-[#262626]/40 dark:text-[#6b7280]";
   const fieldBtn =
-    "h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border border-[#E4E7EC] dark:border-[#2a2f37] text-[12.5px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-[#F2F4F7] dark:hover:bg-[#16191f]";
+    "h-8 px-3 inline-flex items-center gap-1.5 rounded-lg border border-[#E4E7EC] dark:border-[#2a2f37] text-[12.5px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-[#F2F4F7] dark:hover:bg-[#16191f]";
 
   return (
     <div className={dark ? "dark" : ""}>
@@ -195,19 +195,19 @@ export default function DesignProof() {
         <div className="flex-1 min-w-0">
           {/* topbar */}
           <header className={`h-14 px-6 flex items-center gap-3 border-b ${hair}`}>
-            <button className={`flex items-center gap-2 h-9 px-2.5 rounded-lg border ${hair} hover:bg-black/[0.03] dark:hover:bg-[#16191f]`}>
+            <button className={`flex items-center gap-2 h-8 px-2.5 rounded-lg border ${hair} hover:bg-black/[0.03] dark:hover:bg-[#16191f]`}>
               <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-semibold text-white" style={{ backgroundColor: A }}>T</span>
               <span className="text-[13px] font-medium">Tier Finance Team</span>
               <ChevronDown className="w-3.5 h-3.5 text-[#9AA4B2]" />
             </button>
             <div className="ml-auto flex items-center gap-1.5">
-              <button className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-[#6A7385] dark:text-[#9aa1ab] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"><Bell className="w-[18px] h-[18px]" /></button>
-              <button onClick={() => setDark((d) => !d)} className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-[#6A7385] dark:text-[#9aa1ab] hover:bg-black/[0.03] dark:hover:bg-[#16191f]" aria-label="Alternar tema">
+              <button className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-[#6A7385] dark:text-[#9aa1ab] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"><Bell className="w-[18px] h-[18px]" /></button>
+              <button onClick={() => setDark((d) => !d)} className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-[#6A7385] dark:text-[#9aa1ab] hover:bg-black/[0.03] dark:hover:bg-[#16191f]" aria-label="Alternar tema">
                 {dark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
               </button>
-              <button className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"><HelpCircle className="w-4 h-4" /> Ajuda</button>
-              <button className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"><FileText className="w-4 h-4" /> Docs</button>
-              <button className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg text-white text-[13px] font-semibold hover:opacity-90" style={{ backgroundColor: A }}><ArrowUpRight className="w-4 h-4" /> Upgrade</button>
+              <button className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"><HelpCircle className="w-4 h-4" /> Ajuda</button>
+              <button className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg text-[13px] font-medium text-[#3f4651] dark:text-[#c5cad1] hover:bg-black/[0.03] dark:hover:bg-[#16191f]"><FileText className="w-4 h-4" /> Docs</button>
+              <button className="h-8 px-3.5 inline-flex items-center gap-1.5 rounded-lg text-white text-[13px] font-semibold hover:opacity-90" style={{ backgroundColor: A }}><ArrowUpRight className="w-4 h-4" /> Upgrade</button>
             </div>
           </header>
 
@@ -413,7 +413,7 @@ export default function DesignProof() {
                     <div className={`text-[12.5px] ${sub} mt-0.5`}>Atualize o nome de exibição da equipe.</div>
                     <div className="mt-3 flex items-center gap-2">
                       <input defaultValue="Tier Finance" className={`flex-1 h-10 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${hair} outline-none focus:border-transparent`} style={{ boxShadow: `inset 0 0 0 0 ${A}` }} />
-                      <button className="h-10 px-4 rounded-lg text-white text-[13px] font-semibold" style={{ backgroundColor: A }}>Salvar</button>
+                      <button className="h-8 px-4 rounded-lg text-white text-[13px] font-semibold" style={{ backgroundColor: A }}>Salvar</button>
                     </div>
                   </div>
                   <div className="px-8 py-6 max-w-[640px]">
@@ -421,8 +421,8 @@ export default function DesignProof() {
                     <div className={`text-[12.5px] ${sub} mt-0.5`}>Adicione novos membros à sua equipe.</div>
                     <div className="mt-3 flex items-center gap-2">
                       <input placeholder="email@empresa.com" className={`flex-1 h-10 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${hair} outline-none placeholder:text-[#B4BBC6]`} />
-                      <button className={fieldBtn + " h-10"}>Membro <ChevronDown className="w-3.5 h-3.5 opacity-60" /></button>
-                      <button className="h-10 px-4 rounded-lg text-white text-[13px] font-semibold inline-flex items-center gap-1.5" style={{ backgroundColor: A }}><Mail className="w-4 h-4" /> Enviar convite</button>
+                      <button className={fieldBtn}>Membro <ChevronDown className="w-3.5 h-3.5 opacity-60" /></button>
+                      <button className="h-8 px-4 rounded-lg text-white text-[13px] font-semibold inline-flex items-center gap-1.5" style={{ backgroundColor: A }}><Mail className="w-4 h-4" /> Enviar convite</button>
                     </div>
                     <p className={`mt-2 text-[12px] ${sub}`}>Membros convidados recebem um e-mail com instruções pra entrar.</p>
                   </div>

@@ -73,7 +73,7 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Respostas prontas"
-        className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
+        className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
       >
         <Zap className="w-4 h-4" />
       </button>
@@ -82,7 +82,7 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
         <div className="absolute bottom-11 right-0 w-[320px] bg-white rounded-xl shadow-lg ring-1 ring-black/5 z-50 overflow-hidden">
           <div className="px-3 py-2.5 border-b border-slate-100 flex items-center justify-between">
             <span className="text-[13px] font-semibold text-slate-800">Respostas prontas</span>
-            <button onClick={() => setOpen(false)} className="p-1 rounded text-slate-400 hover:bg-slate-100">
+            <button onClick={() => setOpen(false)} className="h-8 px-1 rounded text-slate-400 hover:bg-slate-100">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -107,7 +107,7 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
                 </button>
                 <button
                   onClick={() => remove(it.id)}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50"
+                  className="opacity-0 group-hover:opacity-100 h-8 px-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50"
                   title="Excluir"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -134,13 +134,13 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
               <div className="flex gap-2">
                 <button
                   onClick={create}
-                  className="h-7 px-3 text-[12px] rounded-md bg-[#003083] text-white hover:bg-[#002266]"
+                  className="h-8 px-3 text-[12px] rounded-md bg-[#003083] text-white hover:bg-[#002266]"
                 >
                   Salvar
                 </button>
                 <button
                   onClick={() => setCreating(false)}
-                  className="h-7 px-3 text-[12px] rounded-md text-slate-500 hover:bg-slate-100"
+                  className="h-8 px-3 text-[12px] rounded-md text-slate-500 hover:bg-slate-100"
                 >
                   Cancelar
                 </button>
@@ -149,7 +149,7 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
           ) : (
             <button
               onClick={() => setCreating(true)}
-              className="w-full px-3 py-2.5 text-[12px] text-[#003083] font-medium hover:bg-slate-50 inline-flex items-center justify-center gap-1 border-t border-slate-100"
+              className="w-full h-8 px-3 text-[12px] text-[#003083] font-medium hover:bg-slate-50 inline-flex items-center justify-center gap-1 border-t border-slate-100"
             >
               <Plus className="w-3.5 h-3.5" /> Nova resposta
             </button>

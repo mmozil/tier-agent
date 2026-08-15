@@ -3,11 +3,7 @@ import {
   Zap,
   Bot,
   GitBranch,
-  Home,
-  MessageSquare,
-  UserSquare,
   Workflow,
-  BarChart3,
   Search,
   ChevronDown,
   Check,
@@ -15,6 +11,14 @@ import {
   CircleDot,
   Loader2,
 } from "lucide-react";
+import {
+  AgentsMenuIcon,
+  ConversationsMenuIcon,
+  LeadsMenuIcon,
+  MetricsMenuIcon,
+  OverviewMenuIcon,
+  PlaybooksMenuIcon,
+} from "../icons/menuIcons";
 
 /* ─────────────────────────────────────────────────────────────
    Tier Agent — Tela do builder "Workflows" (estilo Attio).
@@ -42,12 +46,12 @@ const NODES: NodeDef[] = [
 const CONDITIONS = ["Comprar", "Negociar", "Suporte"];
 
 const NAV = [
-  { icon: Home, label: "Início" },
-  { icon: MessageSquare, label: "Conversas" },
-  { icon: UserSquare, label: "Leads" },
-  { icon: Workflow, label: "Playbooks", active: true },
-  { icon: Bot, label: "Agentes" },
-  { icon: BarChart3, label: "Métricas" },
+  { icon: OverviewMenuIcon, label: "Início" },
+  { icon: ConversationsMenuIcon, label: "Conversas" },
+  { icon: LeadsMenuIcon, label: "Leads" },
+  { icon: PlaybooksMenuIcon, label: "Playbooks", active: true },
+  { icon: AgentsMenuIcon, label: "Agentes" },
+  { icon: MetricsMenuIcon, label: "Métricas" },
 ];
 
 const RUNS = [
@@ -257,7 +261,7 @@ export default function PlaybookDemo() {
           {/* sidebar */}
           <aside className="hidden md:flex flex-col w-[196px] shrink-0 bg-surface-subtle border-r border-hairline py-3">
             <div className="px-3">
-              <button className="w-full flex items-center gap-2 h-9 px-2 rounded-lg bg-white border border-line shadow-sm">
+              <button className="w-full flex items-center gap-2 h-8 px-2 rounded-lg bg-white border border-line shadow-sm">
                 <span className="w-5 h-5 rounded-md bg-cta flex items-center justify-center">
                   <span className="w-2 h-2 rounded-[2px] bg-white" />
                 </span>

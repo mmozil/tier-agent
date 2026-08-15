@@ -31,7 +31,7 @@ export default function ProductSwitcher({ current = "agent", alignLeft = false }
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-700"
+        className="h-8 px-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-700"
         title="Mudar de produto"
       >
         <Grid3x3 className="w-4 h-4" />

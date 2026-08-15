@@ -182,7 +182,7 @@ export default function NotificationBell() {
               setOpen(false);
               navigate("/admin/leads");
             }}
-            className="w-full px-4 py-2.5 text-[13px] text-[#003083] font-medium hover:bg-slate-50 inline-flex items-center justify-center gap-1 border-t border-slate-100"
+            className="w-full px-4 h-8 text-[13px] text-[#003083] font-medium hover:bg-slate-50 inline-flex items-center justify-center gap-1 border-t border-slate-100"
           >
             Ver tudo <ArrowRight className="w-3.5 h-3.5" />
           </button>

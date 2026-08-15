@@ -96,19 +96,19 @@ export default function UserMenu({ collapsed = false }: { collapsed?: boolean })
             </p>
             <button
               onClick={() => go("/admin/perfil")}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 rounded-md"
+              className="w-full flex items-center gap-2 h-8 px-3 text-[13px] text-slate-700 hover:bg-slate-50 rounded-md"
             >
               <UserIcon className="w-3.5 h-3.5" /> Meu perfil
             </button>
             <button
               onClick={() => go("/admin/configuracoes")}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 rounded-md"
+              className="w-full flex items-center gap-2 h-8 px-3 text-[13px] text-slate-700 hover:bg-slate-50 rounded-md"
             >
               <Settings className="w-3.5 h-3.5" /> Configurações
             </button>
             <button
               onClick={() => go("/admin/suporte")}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 rounded-md"
+              className="w-full flex items-center gap-2 h-8 px-3 text-[13px] text-slate-700 hover:bg-slate-50 rounded-md"
             >
               <HelpCircle className="w-3.5 h-3.5" /> Suporte
             </button>
@@ -172,7 +172,7 @@ export default function UserMenu({ collapsed = false }: { collapsed?: boolean })
           {/* Sair */}
           <button
             onClick={logout}
-            className="w-full flex items-center gap-2 px-4 py-2 text-[13px] text-rose-600 hover:bg-rose-50"
+            className="w-full flex items-center gap-2 h-8 px-4 text-[13px] text-rose-600 hover:bg-rose-50"
           >
             <LogOut className="w-3.5 h-3.5" /> Sair
           </button>
