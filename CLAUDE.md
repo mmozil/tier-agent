@@ -245,6 +245,66 @@ O subsistema de playbook **não importava `ds/fc`**: usava `bg-white`/`slate-*`,
 - Primitivas novas em `ds/fc.tsx` (existiam **8 variantes locais de `inputCls`**): `fieldSurface`, `Input`, `Textarea`, `Field`, `Section` (colapsável, desliza via grid `0fr→1fr`, estado persistido), `SplitPane`, e `Section` já nasce com **rails + `CurvyRect`** — a assinatura do DS, que estava com uso zero.
 - `PlaybooksPage` passou de cards flutuantes com sombra para **`HairCells`** (grade flush, bordas se cruzando no "+"), igual à lista de Agentes.
 
+## Chat público por link + Tela de Voz (ago/2026)
+
+`agent.tier.finance/c/<slug>` — link público onde qualquer pessoa conversa com um
+agente **sem login e sem conectar canal**. Criado em `/admin/canais` → "Chat por link".
+A conversa entra pelo mesmo `handle_inbound_message` do WhatsApp, então RAG, memória,
+freios, handoff e inbox funcionam sem nada a mais.
+
+- **Backend**: `routes/public_chat.py` (rota pública, 3 freios: sessão / IP / teto-dia) +
+  `services/connectors/adapters/webchat.py` (responde por fila no Redis, não por API externa).
+  CRUD do link em `routes/connectors.py` (`POST /connectors/webchat`).
+- **Frontend**: `pages/public/ChatPublico.tsx` (default = **tela de voz**; `?texto=1` abre a
+  conversa) + `components/VozPublica.tsx` (a tela de voz) + `lib/optimus-viz.js` (a esfera).
+- **Link vivo de demonstração**: `/c/demo-tier-empresas` (agente 2).
+
+### TTS — Kokoro self-hosted
+Container `kokoro-tts` no servidor: **interno** (sem porta publicada), `--memory=5g --cpus=6`,
+`--restart unless-stopped`, rede `coolify`. Voz **`pf_dora`** (única feminina pt-BR dele).
+Env no backend: `TTS_PROVIDER=openai_compat`, `TTS_OPENAI_BASE_URL=http://kokoro-tts:8880`,
+`TTS_OPENAI_VOICE=pf_dora`. Três clientes plugáveis com a mesma assinatura em
+`services/voice/` (`openai_compat_client` / `minimax_client` / `elevenlabs_client`) e cascata
+de falha — saldo zerado num provedor não pode calar o agente.
+- **Player pra escolher voz**: `https://vozes.tier.finance/web/` (Basic Auth `tier` / ver Cofre).
+- Kokoro **mistura vozes com peso**: `pf_dora(3)+af_heart(1)`.
+
+### 🚨 Gotchas que custaram caro (todas reproduzidas, não teóricas)
+
+1. **`<audio>` do Chrome NÃO toca chunked cross-origin sem `Content-Length`.** O `play()` é
+   aceito, o evento `playing` **nunca dispara** e não sai som. Por isso a fala é quebrada em
+   frases (`_partir_em_falas`), cada uma servida COMPLETA com `Content-Length`. Streaming com
+   ttfb de 5ms era lindo no papel e **inaudível** na prática.
+2. **`AudioContext` suspenso + `createMediaElementSource` = SILÊNCIO TOTAL** (não som baixo).
+   Tem que dar `resume()` **dentro de gesto do usuário** e só conectar o analisador se
+   `state === "running"`. Preferir perder a onda na esfera a perder o áudio.
+3. **O bucket público do R2 não manda `Access-Control-Allow-Origin`** — áudio de lá não pode
+   ser analisado com `crossOrigin`. Servir pelo próprio backend (que tem CORS) resolve.
+4. **Asset de nome fixo em `public/` + nginx `immutable` = navegador preso 7 dias.** Purge de
+   CDN não alcança cache local. Importar via `?url` pra o Vite carimbar hash no nome.
+5. **Flag de estado tem que refletir o NAVEGADOR, não suposição.** `rec.start()` lança
+   "already started" **quando está rodando** — marcar `rodando=false` no catch fazia a flag
+   mentir e a escuta morria pra sempre. Hoje só `onstart`/`onend` escrevem nela, e um único
+   `sincronizar()` liga/desliga.
+6. **Container capado morre por OOM quando você paraleliza.** Quebrar a resposta em 4 frases
+   fez o navegador pedir 4 sínteses quase juntas → Kokoro (2 GB) levou `ExitCode=137` e
+   ficou parado no limite de 3 restarts. Hoje 5 GB.
+7. **Diff bruto de pixel NÃO mede movimento percebido.** Media 35/255 e a esfera parecia
+   parada: 96% era cintilância ponto-a-ponto que o olho integra pra zero. Filtrar em bloco
+   de 16px (limiar ~2/255) ou medir o **raio da forma** — que é o que a visão segue.
+8. **Degradê silencioso é indistinguível de bug.** Duas vezes: o portão de palavra-chave
+   descartava a pergunta sem avisar, e o Kokoro caído caía na voz do navegador sem avisar.
+   Nos dois casos o dono relatou "não funciona nada". **Se for ignorar ou degradar, mostre.**
+
+### Latência (medida em produção)
+`modo_voz=True` (só a tela de voz manda) injeta no system prompt a regra de responder em
+**até 2 frases**. O tempo de geração cresce com o token gerado, então isso é o maior ganho
+isolado: pior pergunta caiu de **22,6s → 5,4s** (545 → 107 chars). WhatsApp não passa por aí.
+- Repartição hoje: ~3,5s backend + ~1,9s síntese da 1ª frase.
+- **Próximo corte**: falar a 1ª frase enquanto o modelo escreve a 2ª (~2s). Exige streaming
+  no `tier_engine`; fazer isolado no caminho de voz.
+- A IA que responde: `deepseek/deepseek-v4-flash` via OpenRouter (tenant 3), temp 0.3.
+
 ## Arquitetura backend
 
 - `routes/` — connectors, agents, webhooks, playbooks, billing, containers, etc.
