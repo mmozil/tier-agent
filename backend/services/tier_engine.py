@@ -415,7 +415,16 @@ async def _complete_with_fallback(p: TaLlmProvider, messages: list[dict], tools:
                 eff = TaLlmProvider(provider=prov, api_key_enc=p.api_key_enc, default_model=model,
                                     base_url=None, temperature=p.temperature, max_tokens=p.max_tokens,
                                     timeout_s=p.timeout_s, fallback_chain_json=[])
-            return await _complete(eff, model, messages, tools)
+            _t0 = time.perf_counter()
+            data = await _complete(eff, model, messages, tools)
+            # Carimbo por CHAMADA (um turno pode ter várias: tool-use, freios).
+            # É o que separa "o modelo é lento" de "o turno faz muitas rodadas".
+            _chars = sum(len(str(m.get("content") or "")) for m in messages)
+            logger.info(
+                "timing llm-call %s/%s %.2fs msgs=%d prompt_chars=%d tools=%d",
+                prov, model, time.perf_counter() - _t0, len(messages), _chars, len(tools or []),
+            )
+            return data
         except Exception as e:  # noqa: BLE001
             last_err = e
             logger.warning("tier_engine: modelo %s/%s falhou (%s) — tentando fallback", prov, model, e)
@@ -506,9 +515,16 @@ async def send_message(
         try:
             from services import tool_provider_service
 
+            _t_disc = time.perf_counter()
             remote_schemas, remote_handlers = await tool_provider_service.discover_agent_tools(
                 db, agent_id, customer_phone=customer_phone
             )
+            _d_disc = time.perf_counter() - _t_disc
+            if _d_disc >= 0.05:
+                logger.info(
+                    "timing mcp-discovery agent=%s %.2fs tools=%d",
+                    agent_id, _d_disc, len(remote_schemas or []),
+                )
             if remote_schemas:
                 base_tools = base_tools + remote_schemas
         except Exception:
