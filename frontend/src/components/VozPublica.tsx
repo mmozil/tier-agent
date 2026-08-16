@@ -450,10 +450,12 @@ export default function VozPublica({
       }
 
       if (armado.current) {
-        // hands-free: só reage ao ser chamado pelo nome
+        // 🚨 NAO exigir o nome. Apertar o microfone JA e a intencao de falar —
+        // exigir a palavra-chave depois disso fazia o agente descartar a
+        // pergunta em silencio, e do lado de fora parecia que ele nao respondia.
+        // (O nome continua servindo pra ele se apresentar, em `receber`.)
+        if (parcial) setLinha({ texto: parcial, cls: "parcial" });
         if (!final) return;
-        const dentroDaJanela = Date.now() < janela.current;
-        if (!dentroDaJanela && !acharInvocacao(final).chamou) return;
         setLinha({ texto: final, cls: "" });
         receber(final);
         return;
@@ -613,7 +615,7 @@ export default function VozPublica({
           (dicaOff && !armadoUI) || linha.texto ? "opacity-0" : "opacity-100"
         }`}
       >
-        {armadoUI ? `escutando — diga "${agente}"` : `aperte o microfone e chame por ${agente}`}
+        {armadoUI ? "escutando — pode falar" : "aperte o microfone e fale"}
       </p>
 
       <div className="fixed left-1/2 -translate-x-1/2 bottom-[18px] z-40 w-[min(92vw,760px)] h-14 rounded-[28px] bg-[#1c1c1e] flex items-center gap-1.5 pl-2.5 pr-2">
