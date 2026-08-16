@@ -256,8 +256,19 @@ freios, handoff e inbox funcionam sem nada a mais.
   `services/connectors/adapters/webchat.py` (responde por fila no Redis, não por API externa).
   CRUD do link em `routes/connectors.py` (`POST /connectors/webchat`).
 - **Frontend**: `pages/public/ChatPublico.tsx` (default = **tela de voz**; `?texto=1` abre a
-  conversa) + `components/VozPublica.tsx` (a tela de voz) + `lib/optimus-viz.js` (a esfera).
+  conversa) + `components/VozPublica.tsx` (a tela de voz) + `lib/optimus-viz.js` (a esfera)
+  + `lib/voz-fala.ts` (wake word/VAD — lógica PURA com 23 testes de transcript simulado).
 - **Link vivo de demonstração**: `/c/demo-tier-empresas` (agente 2).
+- **Turn-taking (17/ago, estilo ChatGPT Voice)**: a página nasce em **SENTINELA** (mic aberto
+  só esperando **"oi tier"** — wake word estrita: nome no início/frase curta; detectou → vira
+  CONVERSA). Em conversa o fim de fala é **automático** (silêncio de 1,3s fecha o turno;
+  acumula finais+interim, não corta respiração, ruído não vira LLM; mic desliga enquanto a
+  Dora fala = sem eco). Botão do mic = desliga-tudo. No chat `?texto=1` o composer é pill
+  dark com **ditado** (escreve ao vivo no campo) + círculo branco/waveform que abre a voz.
+- **Esfera**: pulso global foi morto de propósito (raio ±2,2%, brilho ±4%) — o movimento é
+  POR PARTÍCULA (2 senos com seed própria + twinkle individual), rotação idle 1 volta/~107s,
+  voz modula o ruído local; **ponteiro/dedo mexe a poeira** (repulsão+redemoinho, assenta ~1s).
+  Validar mudança visual SEMPRE pela FORMA (raio da silhueta), não diff de pixel.
 
 ### TTS — Kokoro self-hosted
 Container `kokoro-tts` no servidor: **interno** (sem porta publicada), `--memory=5g --cpus=6`,
