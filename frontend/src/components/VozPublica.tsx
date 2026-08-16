@@ -122,7 +122,6 @@ export default function VozPublica({
 
   const vizRef = useRef<Viz | null>(null);
   const recRef = useRef<any>(null);
-  const micLigado = useRef(false);
   const termos = useRef<string[]>(termosDoNome(agente));
 
   useEffect(() => {
@@ -418,14 +417,20 @@ export default function VozPublica({
   const [armadoUI, setArmadoUI] = useState(false);
   const reinicio = useRef<number | null>(null);
 
+  // 🚨 UM dono so pro reinicio. Antes o `onend` e o efeito de estado agendavam
+  // restart os dois, brigando num laco a cada ~500ms — a tela travava e o
+  // indicador de microfone piscava sem parar.
+  const rodando = useRef(false);
+
   const iniciarEscuta = useCallback((continuo: boolean) => {
     const rec = recRef.current;
-    if (!rec) return;
+    if (!rec || rodando.current) return;
     rec.continuous = continuo;
     try {
       rec.start();
+      rodando.current = true;
     } catch {
-      /* já rodando: o próprio onend rearma */
+      rodando.current = false; // ja estava rodando; o onend rearma
     }
   }, []);
 
@@ -488,11 +493,13 @@ export default function VozPublica({
       }, 2600);
     };
     rec.onend = () => {
+      rodando.current = false;
       setEstado((s) => (s === "ouvindo" ? "repouso" : s));
-      // O Chrome encerra sozinho depois de ~1 min de silêncio. Armado, rearma.
-      if (armado.current) {
+      // O Chrome encerra sozinho depois de ~1min de silencio. Armado, rearma —
+      // e SO aqui, pra nao existir um segundo agendador.
+      if (armado.current && !falandoRef.current) {
         if (reinicio.current) window.clearTimeout(reinicio.current);
-        reinicio.current = window.setTimeout(() => iniciarEscuta(true), 400);
+        reinicio.current = window.setTimeout(() => iniciarEscuta(true), 350);
       }
     };
     recRef.current = rec;
@@ -508,22 +515,26 @@ export default function VozPublica({
     };
   }, [receber, aplicarEstado, acharInvocacao, iniciarEscuta]);
 
-  // Enquanto ele fala, a escuta PARA — senão o microfone ouve o alto-falante e
-  // o agente se chama sozinho num laço. Volta quando termina.
+  // Enquanto ele fala, a escuta PARA — senao o microfone ouve o alto-falante e
+  // o agente se chama sozinho. Quem RETOMA e o `onend`, nunca este efeito:
+  // dois agendadores viravam laco de restart.
+  const falandoRef = useRef(false);
   useEffect(() => {
+    const ocupado = estado === "falando" || estado === "pensando";
+    falandoRef.current = ocupado;
     if (!armado.current) return;
     const rec = recRef.current;
     if (!rec) return;
-    if (estado === "falando" || estado === "pensando") {
+    if (ocupado && rodando.current) {
       try {
         rec.abort();
       } catch {
         /* ignora */
       }
-    } else if (estado === "repouso") {
+    } else if (estado === "repouso" && !rodando.current) {
       janela.current = Date.now() + JANELA_MS;
       if (reinicio.current) window.clearTimeout(reinicio.current);
-      reinicio.current = window.setTimeout(() => iniciarEscuta(true), 500);
+      reinicio.current = window.setTimeout(() => iniciarEscuta(true), 350);
     }
   }, [estado, iniciarEscuta]);
 
@@ -536,6 +547,7 @@ export default function VozPublica({
       armado.current = false;
       setArmadoUI(false);
       janela.current = 0;
+      rodando.current = false;
       if (reinicio.current) window.clearTimeout(reinicio.current);
       try {
         rec.abort();
@@ -555,15 +567,9 @@ export default function VozPublica({
       janela.current = 0;
       iniciarEscuta(true);
     };
-    const v = vizRef.current;
-    if (v && !micLigado.current) {
-      v.attachMic()
-        .then(() => {
-          micLigado.current = true;
-          armar();
-        })
-        .catch(armar);
-    } else armar();
+    // Sem attachMic: o reconhecimento ja abre o microfone. Dois capturas
+    // simultaneas travavam a interface no Windows. A esfera usa o envelope.
+    armar();
   }, [aplicarEstado, iniciarEscuta]);
 
   useEffect(() => {
