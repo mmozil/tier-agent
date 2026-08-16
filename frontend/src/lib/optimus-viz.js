@@ -1296,11 +1296,38 @@ function buildPo(){
                suspensao em vez de a esfera inteira pulsar em fase unica. */
             f1:.45+Math.random()*.75,n1:Math.random()*6.283,
             f2:1.2+Math.random()*1.1,n2:Math.random()*6.283,
-            tf:.5+Math.random()*1.1,tw:Math.random()*6.283});
+            tf:.5+Math.random()*1.1,tw:Math.random()*6.283,
+            /* estado do po mexido pelo ponteiro (deslocamento + velocidade em
+               px de tela; zero = particula assentada, fisica nem roda) */
+            ox:0,oy:0,wx:0,wy:0});
   }
   return a;
 }
 var POW=[],POPREV=0,POLAST=-9999;
+/* Ponteiro sobre a esfera: mouse no desktop, dedo no celular. So marca posicao
+   e velocidade — a fisica acontece por particula, dentro do vPo. */
+var POPTR={on:false,x:0,y:0,sp:0,t:-9999};
+function poPtrAttach(cv){
+  if(cv._poPtr)return;cv._poPtr=1;
+  /* touch-action SO no canvas: a tela de voz nao rola, e sem isso o browser
+     rouba o pointermove do dedo pra tentar scroll */
+  cv.style.touchAction="none";
+  var last=null;
+  var mv=function(e){
+    var r=cv.getBoundingClientRect();if(!r.width)return;
+    var x=(e.clientX-r.left)*(cv.width/r.width),y=(e.clientY-r.top)*(cv.height/r.height);
+    var n=performance.now();
+    if(last){var dd=Math.hypot(x-last.x,y-last.y),dtm=Math.max(1,n-last.t);
+      POPTR.sp=POPTR.sp*.6+Math.min(1,(dd/dtm)*.9)*.4;}
+    last={x:x,y:y,t:n};
+    POPTR.x=x;POPTR.y=y;POPTR.on=true;POPTR.t=n;
+  };
+  var off=function(){POPTR.on=false;last=null;};
+  cv.addEventListener("pointermove",mv);
+  cv.addEventListener("pointerdown",mv);
+  cv.addEventListener("pointerleave",off);
+  cv.addEventListener("pointercancel",off);
+}
 /* Em repouso a esfera fica PARADA. O giro nao vem do relogio: ele acumula
    proporcional a voz, com uma zona morta pra respiro/ruido de fundo nao
    fazer a esfera derivar sozinha. Silencio = imovel. */
@@ -1310,6 +1337,9 @@ var PO_PISO=1.25;      /* brilho minimo parada: sem banda de voz ela precisa se 
 var PO_YAW0=-.42,PO_PIT0=.16;  /* pose de repouso: leve 3/4, nao de frente */
 function vPo(ctx,w,h,t,E){
   if(!POP)POP=buildPo();
+  poPtrAttach(ctx.canvas);
+  /* ponteiro parado ha >160ms = saiu/parou: sem forca nova, o po so assenta */
+  if(POPTR.on&&performance.now()-POPTR.t>160)POPTR.on=false;
 
   /* ataque de silaba dispara uma onda que atravessa a esfera */
   var dE=E-POPREV;POPREV=E;
@@ -1343,6 +1373,7 @@ function vPo(ctx,w,h,t,E){
      SUPERFICIE (ondas de silaba + ruido modulado), nao infla a esfera. */
   var R=M*.30*(1+E*.02+respiro*.022);
   var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
+  var PRAD=M*.13,PRAD2=PRAD*PRAD;  /* alcance do dedo/mouse: ~13% do diametro */
 
   /* frentes de onda: posicao em cosseno, pra comparar sem acos */
   var NW=POW.length,WF=[],WA=[],WX=[];
@@ -1382,10 +1413,33 @@ function vPo(ctx,w,h,t,E){
        do respiro caiu de ±16% pra ±4%: era ele, somado ao raio ±10%, que dava
        a cara de "pulsando por CSS". */
     al*=(1+Math.sin(esp*P.tf+P.tw)*.13)*(1+respiro*.04);
+    var gx=CX+x1*R*2.6*sc,gy=CY+y1*R*2.6*sc;
+    /* PO MEXIDO PELO PONTEIRO: particulas perto do cursor/dedo levam um
+       empurrao suave (repulsao + leve redemoinho tangencial) e ganham um
+       tiquinho de brilho — poeirinha levantada — assentando de volta em ~1s
+       (atrito .85 na velocidade, mola .94 no deslocamento). Nada de explosao.
+       Custo: early-out por distancia² quando o ponteiro esta ativo, e a
+       fisica NEM RODA pra particula assentada (estado zerado). */
+    if(POPTR.on){
+      var qx=gx-POPTR.x,qy=gy-POPTR.y,q2=qx*qx+qy*qy;
+      if(q2<PRAD2){
+        var qd=Math.sqrt(q2)||1,fall=1-qd/PRAD;
+        var f=fall*fall*(.12+POPTR.sp*.4);
+        P.wx+=(qx/qd)*f-(qy/qd)*f*.38;
+        P.wy+=(qy/qd)*f+(qx/qd)*f*.38;
+      }
+    }
+    if(P.wx||P.wy||P.ox||P.oy){
+      P.ox=(P.ox+P.wx)*.94;P.oy=(P.oy+P.wy)*.94;
+      P.wx*=.85;P.wy*=.85;
+      var o2=P.ox*P.ox+P.oy*P.oy;
+      if(o2<.03&&P.wx*P.wx+P.wy*P.wy<.01){P.ox=P.oy=P.wx=P.wy=0;}
+      else{gx+=P.ox;gy+=P.oy;if(o2>3)al+=Math.min(.45,o2*.012);}
+    }
     if(al<.05)continue;if(al>1)al=1;
     ctx.fillStyle="rgba(255,255,255,"+al+")";
     var s=P.s*sc*1.35*(1+bd*.55+hot*2.2);
-    ctx.fillRect(CX+x1*R*2.6*sc,CY+y1*R*2.6*sc,s,s);
+    ctx.fillRect(gx,gy,s,s);
   }
 }
 
