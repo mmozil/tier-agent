@@ -1289,7 +1289,14 @@ function buildPo(){
             r:1+(Math.random()-.5)*.055,       /* casca com espessura minima: borda felpuda */
             b:.35+Math.pow(Math.random(),1.6)*.65,
             s:Math.random()<.14?1.8:1.15,
-            bd:(i*7)%24});
+            bd:(i*7)%24,
+            /* seeds do movimento ORGANICO: cada particula tem seu proprio par de
+               frequencias/fases (ruido barato: 2 senos dessincronizados) + fase de
+               cintilacao. E o que faz a superficie FERVILHAR como poeira em
+               suspensao em vez de a esfera inteira pulsar em fase unica. */
+            f1:.45+Math.random()*.75,n1:Math.random()*6.283,
+            f2:1.2+Math.random()*1.1,n2:Math.random()*6.283,
+            tf:.5+Math.random()*1.1,tw:Math.random()*6.283});
   }
   return a;
 }
@@ -1317,21 +1324,24 @@ function vPo(ctx,w,h,t,E){
   ctx.globalCompositeOperation="source-over";
   ctx.fillStyle="#000";ctx.fillRect(0,0,w,h);
   var CX=w/2,CY=h/2,M=Math.min(w,h);
-  /* GIRO: so avanca enquanto ha voz. Em silencio ele nao acumula — ela nunca
-     "roda" sozinha. ESPERA: mas parada nao e morta. Ela respira e balanca de
-     leve, num vaivem que sempre volta pro lugar (seno, nao acumulador), com
-     duas frequencias desencontradas pra nao cair em cadencia mecanica. */
+  /* GIRO: o rapido so avanca enquanto ha voz (PO_DEADZONE); por baixo existe
+     uma deriva LENTISSIMA de repouso (uma volta em ~107s) pra nunca parecer
+     um frame congelado — no silencio o olho ve materia em suspensao, nao
+     rotacao. O vaivem do balanco continua senoidal (volta pro lugar). */
   var dt=POTPREV?Math.min(t-POTPREV,64):0;POTPREV=t;
   var fala=E>PO_DEADZONE?E-PO_DEADZONE:0;
-  POROT+=dt*fala*.00062;
+  POROT+=dt*(fala*.00062+.0000585);
   var esp=t*.001;
   var respiro=Math.sin(esp*1.55)*.55+Math.sin(esp*.62)*.45;  /* ~4s e ~10s */          /* -1..1 lento */
   var balanco=Math.sin(esp*.34)*.030+Math.sin(esp*.19)*.018;        /* vaivem, em rad */
   var yaw=PO_YAW0+POROT+balanco;
   var pit=PO_PIT0+Math.sin(POROT*1.6)*.07+Math.sin(esp*.28)*.016;
-  /* o raio respira: e o que da o "esperando" sem precisar girar */
-  var R=M*.30*(1+E*.09+respiro*.10);  /* 2,8% era invisivel: rendia 6,75px de
-     excursao em 12s (0,56 px/s), abaixo do limiar do olho. 10% leva a ~24px. */
+  /* O raio quase NAO respira mais (±2,2%): escala uniforme da esfera inteira
+     le como pulso artificial de CSS, nao como materia viva. O movimento que
+     "prova vida" desceu pra dentro das particulas (ruido por ponto, abaixo).
+     O audio tambem quase nao escala o conjunto (E*.02) — falar deforma a
+     SUPERFICIE (ondas de silaba + ruido modulado), nao infla a esfera. */
+  var R=M*.30*(1+E*.02+respiro*.022);
   var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
 
   /* frentes de onda: posicao em cosseno, pra comparar sem acos */
@@ -1354,17 +1364,24 @@ function vPo(ctx,w,h,t,E){
       var g=Math.exp(-(dd*dd)*58);
       lift+=g*WA[k2];hot+=g*WA[k2];
     }
-    rr*=1+Math.sin(esp*.8+i*1.7)*.011;
+    /* ruido POR PARTICULA (2 senos com seed propria — barato, sem noise 2D):
+       a superficie fervilha dessincronizada, como poeira em suspensao. A voz
+       MODULA a amplitude do ruido (deformacao local), em vez de escalar o
+       conjunto: falar faz a casca ferver mais, nao a esfera inchar. */
+    var nz=Math.sin(esp*P.f1+P.n1)*.62+Math.sin(esp*P.f2+P.n2)*.38;
+    rr*=1+nz*(.028+E*.075);
     rr+=lift;
     var px=d[0]*rr,py=d[1]*rr,pz=d[2]*rr;
     var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
     var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
     var sc=1/(3.05-z2*.9),dep=(z2+1)/2;
     var al=P.b*(.26+dep*.60)*(.55+PO_PISO+bd*1.5)+hot*2.6;
-    /* cintilancia: cada ponto pisca no seu proprio tempo. E o detalhe que faz
-       ela parecer ESPERANDO em vez de congelada — o olho le como respiracao. */
-    al*=(1+Math.sin(esp*.85+i*.7)*.05)*(1+respiro*.16);  /* fase por ponto se
-       cancela no agregado; o segundo termo pulsa a esfera INTEIRA junto */
+    /* cintilancia INDIVIDUAL (twinkle): cada ponto pisca no seu proprio ritmo
+       e fase (seed propria). A fase por ponto se cancela no agregado — brilho
+       total estavel, superficie viva. O pulso GLOBAL de brilho que vinha junto
+       do respiro caiu de ±16% pra ±4%: era ele, somado ao raio ±10%, que dava
+       a cara de "pulsando por CSS". */
+    al*=(1+Math.sin(esp*P.tf+P.tw)*.13)*(1+respiro*.04);
     if(al<.05)continue;if(al>1)al=1;
     ctx.fillStyle="rgba(255,255,255,"+al+")";
     var s=P.s*sc*1.35*(1+bd*.55+hot*2.2);

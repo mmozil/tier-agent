@@ -71,6 +71,65 @@ export default function ChatPublico() {
   const campoRef = useRef<HTMLTextAreaElement>(null);
   const sessao = useMemo(() => idDaSessao(slug), [slug]);
 
+  // ── Ditado por voz DENTRO da caixa (estilo ChatGPT) ─────────────────────
+  // Fala e o texto vai sendo ESCRITO ao vivo no campo (interimResults) — é
+  // ditado, não envio: a pessoa revisa e manda quando quiser. Independente da
+  // tela de voz (as duas não coexistem).
+  const recDitado = useRef<any>(null);
+  const [ditando, setDitando] = useState(false);
+  const baseDitado = useRef(""); // o que já estava digitado antes do ditado
+  const finaisDitado = useRef("");
+
+  const toggleDitado = useCallback(() => {
+    if (ditando) {
+      // stop (não abort): entrega o trecho pendente antes de encerrar
+      try {
+        recDitado.current?.stop();
+      } catch {
+        /* ignora */
+      }
+      return;
+    }
+    const SR = ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) as any;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = "pt-BR";
+    rec.interimResults = true;
+    rec.continuous = true;
+    baseDitado.current = texto.trim() ? `${texto.trim()} ` : "";
+    finaisDitado.current = "";
+    rec.onresult = (ev: any) => {
+      let parcial = "";
+      let final = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        if (ev.results[i].isFinal) final += ev.results[i][0].transcript;
+        else parcial += ev.results[i][0].transcript;
+      }
+      if (final) finaisDitado.current = `${finaisDitado.current}${final} `;
+      setTexto(`${baseDitado.current}${finaisDitado.current}${parcial}`.replace(/\s+/g, " ").trimStart());
+    };
+    rec.onend = () => setDitando(false);
+    rec.onerror = () => setDitando(false);
+    recDitado.current = rec;
+    try {
+      rec.start();
+      setDitando(true);
+    } catch {
+      setDitando(false);
+    }
+  }, [ditando, texto]);
+
+  useEffect(
+    () => () => {
+      try {
+        recDitado.current?.abort();
+      } catch {
+        /* ignora */
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     let vivo = true;
     fetch(`${API}/${encodeURIComponent(slug)}`)
@@ -282,39 +341,70 @@ export default function ChatPublico() {
           </div>
         </div>
       ) : (
-        /* Compositor */
-        <div className="shrink-0 border-t border-black/[0.07] bg-white px-4 py-3">
-          <div className="mx-auto max-w-[680px] flex items-end gap-2">
-            <textarea
-              ref={campoRef}
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  enviar();
-                }
-              }}
-              rows={1}
-              placeholder="Escreva sua mensagem…"
-              className="flex-1 resize-none max-h-32 px-3.5 py-2.5 rounded-xl ring-1 ring-black/[0.12] text-[15px] leading-[1.45] outline-none focus:ring-2"
-              style={{ ["--tw-ring-color" as string]: cor }}
-            />
-            <button
-              onClick={() => enviar()}
-              disabled={!texto.trim() || pensando}
-              aria-label="Enviar"
-              className="h-10 w-10 shrink-0 rounded-full grid place-items-center text-white disabled:opacity-35 transition"
-              style={{ background: cor }}
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M4 12h15M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+        /* Compositor — caixa dark estilo ChatGPT: ditado por voz + modo de voz.
+           Dois affordances DISTINTOS lado a lado: o mic escreve no campo ao
+           vivo; o círculo branco entra na conversa por voz (esfera). Com texto
+           digitado, o círculo vira o enviar (seta), como no ChatGPT. */
+        <div className="shrink-0 px-4 py-3 bg-[#f6f7f9]">
+          <div className="mx-auto max-w-[680px]">
+            <div className="flex items-end gap-1.5 rounded-[26px] bg-[#1c1c1e] pl-4 pr-1.5 py-1.5 shadow-[0_4px_18px_rgba(0,0,0,0.18)]">
+              <textarea
+                ref={campoRef}
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    enviar();
+                  }
+                }}
+                rows={1}
+                placeholder={ditando ? "Pode falar — estou escrevendo…" : "Escreva sua mensagem…"}
+                className="flex-1 resize-none max-h-32 bg-transparent border-0 py-2 text-[15px] leading-[1.45] text-[#f2f2f7] placeholder:text-[#8e8e93] outline-none"
+              />
+              <button
+                type="button"
+                onClick={toggleDitado}
+                title={ditando ? "Parar o ditado" : "Ditar por voz (escreve no campo)"}
+                aria-label={ditando ? "Parar o ditado" : "Ditar por voz"}
+                className={`h-9 w-9 shrink-0 rounded-full grid place-items-center transition-colors ${
+                  ditando ? "text-[#ff453a] bg-[#2c2c2e] animate-pulse" : "text-[#f2f2f7] hover:bg-[#2c2c2e]"
+                }`}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+                  <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+                  <path d="M12 18v4" />
+                </svg>
+              </button>
+              {texto.trim() ? (
+                <button
+                  onClick={() => enviar()}
+                  disabled={pensando}
+                  aria-label="Enviar"
+                  title="Enviar"
+                  className="h-9 w-9 shrink-0 rounded-full grid place-items-center bg-white text-black disabled:opacity-40 transition"
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 19V5M6 11l6-6 6 6" />
+                  </svg>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setModo("voz")}
+                  aria-label="Conversar por voz"
+                  title="Conversar por voz"
+                  className="h-9 w-9 shrink-0 rounded-full grid place-items-center bg-white text-black transition hover:bg-[#e8e8ed]"
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M4 9v6M8 6v12M12 3v18M16 6v12M20 9v6" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            {cfg.rodape ? <p className="pt-2 text-[12px] text-[#9aa1ab]">{cfg.rodape}</p> : null}
           </div>
-          {cfg.rodape ? (
-            <p className="mx-auto max-w-[680px] pt-2 text-[12px] text-[#9aa1ab]">{cfg.rodape}</p>
-          ) : null}
         </div>
       )}
     </div>
