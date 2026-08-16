@@ -12,6 +12,7 @@ Fluxo:
 import json
 import logging
 import os
+import time
 from datetime import datetime
 
 from sqlalchemy import select
@@ -24,6 +25,30 @@ from services.connectors import registry
 from services.connectors.base import ConnectorConfig, OutboundMessage
 
 logger = logging.getLogger(__name__)
+
+
+class _Cronometro:
+    """Carimbos de tempo por etapa do turno — sem isso, latência é adivinhação.
+
+    Uso: `cron.marca("rag")` depois de cada etapa; `cron.resumo()` devolve uma
+    linha legível (`total=3.42s guardas=0.61s rag=0.48s llm=1.95s ...`) que vai
+    pro log no fim do turno. Etapas abaixo de 10ms são omitidas do resumo pra
+    linha não virar ruído."""
+
+    def __init__(self) -> None:
+        self.t0 = time.monotonic()
+        self._ultimo = self.t0
+        self.etapas: list[tuple[str, float]] = []
+
+    def marca(self, nome: str) -> None:
+        agora = time.monotonic()
+        self.etapas.append((nome, agora - self._ultimo))
+        self._ultimo = agora
+
+    def resumo(self) -> str:
+        total = time.monotonic() - self.t0
+        partes = " ".join(f"{n}={d:.2f}s" for n, d in self.etapas if d >= 0.01)
+        return f"total={total:.2f}s {partes}".strip()
 
 
 async def build_rag_block(db: AsyncSession, agent_id: int, query: str) -> tuple[str, list[str]]:
@@ -483,6 +508,7 @@ async def handle_inbound_message(
     tempo cresce com o número de tokens) e ninguém quer ouvir um parágrafo.
     WhatsApp e demais canais não passam por aqui — o default é desligado.
     """
+    _cron = _Cronometro()
     connector = await resolve_connector_by_instance(db, connector_kind, instance_id)
     if not connector:
         return {"status": "no_connector", "instance_id": instance_id}
@@ -490,6 +516,7 @@ async def handle_inbound_message(
     agent = await db.get(TaAgent, connector.agent_id)
     if not agent or not agent.active:
         return {"status": "agent_inactive", "agent_id": connector.agent_id}
+    _cron.marca("resolver")
 
     # ─── Transcrição de áudio (STT local, grátis) — vale pra TODOS os canais ───
     # Se chegou áudio sem texto real (ou só placeholder "[audio]"), transcreve
@@ -516,6 +543,7 @@ async def handle_inbound_message(
                 text_content = "[áudio não compreendido]"
     except Exception:
         logger.exception("ASR exception agent=%s — segue sem transcrição", agent.id)
+    _cron.marca("stt")
 
     # ─── Comandos de ops (DevSecOps) — resposta determinística, sem LLM ───
     # Agente marcado como template_kind="devsecops" responde status/health/ping
@@ -602,6 +630,7 @@ async def handle_inbound_message(
             return {"status": "csat_captured", "agent_id": agent.id}
     except Exception:
         logger.exception("csat capture falhou agent=%s — segue fluxo normal", agent.id)
+    _cron.marca("csat")
 
     # Q2.4 Budget guard — bloqueia tenant suspenso
     try:
@@ -616,6 +645,7 @@ async def handle_inbound_message(
             return {"status": "tenant_suspended", "agent_id": agent.id, **budget_state}
     except Exception:
         logger.exception("budget_guard falhou — continua processando")
+    _cron.marca("budget")
 
     # Q3.1 Guardrails Lakera — bloqueia prompt injection / jailbreak
     # Q2.6 Azure Content Safety — bloqueia hate/violence/sexual/self-harm
@@ -625,17 +655,49 @@ async def handle_inbound_message(
         blocked_by: list[str] = []
         blocked_categories: list[str] = []
 
-        if await guardrails.is_enabled_for_tenant(db, agent.tenant_id):
-            gr = await guardrails.check_lakera(text_content)
-            if not gr.ok:
-                blocked_by.append("lakera")
-                blocked_categories.extend(gr.blocked_categories)
+        lakera_on = await guardrails.is_enabled_for_tenant(db, agent.tenant_id)
+        azure_on = await content_moderation.is_enabled_for_tenant(db, agent.tenant_id)
 
-        if not blocked_by and await content_moderation.is_enabled_for_tenant(db, agent.tenant_id):
-            mr = await content_moderation.check_text(text_content)
-            if not mr.ok:
-                blocked_by.append("azure_content_safety")
-                blocked_categories.extend(mr.blocked_categories)
+        if modo_voz and (lakera_on or azure_on):
+            # 🚨 VOZ: as duas guardas rodavam em SÉRIE com timeout 10s+8s antes
+            # do primeiro token — 18s de teto pra quem está esperando OUVIR.
+            # Aqui rodam JUNTAS com teto curto e fail-open: guarda que não
+            # respondeu em 1,5s não segura a resposta (as duas já são fail-open
+            # em erro; isto só encurta o pior caso). WhatsApp/demais canais
+            # seguem no caminho de baixo, intocado.
+            import asyncio as _aio_guard
+
+            async def _com_teto(coro, nome: str):
+                try:
+                    return await _aio_guard.wait_for(coro, timeout=1.5)
+                except Exception:
+                    logger.warning("guarda %s estourou 1.5s no modo voz — fail-open", nome)
+                    return None
+
+            checagens: list[tuple[str, object]] = []
+            if lakera_on:
+                checagens.append(("lakera", guardrails.check_lakera(text_content)))
+            if azure_on:
+                checagens.append(("azure_content_safety", content_moderation.check_text(text_content)))
+            resultados = await _aio_guard.gather(
+                *(_com_teto(coro, nome) for nome, coro in checagens)
+            )
+            for (nome, _), res in zip(checagens, resultados, strict=False):
+                if res is not None and not res.ok:
+                    blocked_by.append(nome)
+                    blocked_categories.extend(res.blocked_categories)
+        else:
+            if lakera_on:
+                gr = await guardrails.check_lakera(text_content)
+                if not gr.ok:
+                    blocked_by.append("lakera")
+                    blocked_categories.extend(gr.blocked_categories)
+
+            if not blocked_by and azure_on:
+                mr = await content_moderation.check_text(text_content)
+                if not mr.ok:
+                    blocked_by.append("azure_content_safety")
+                    blocked_categories.extend(mr.blocked_categories)
 
         if blocked_by:
             logger.warning(
@@ -654,6 +716,11 @@ async def handle_inbound_message(
                 )
             except Exception:
                 logger.exception("envio safe_reply moderation falhou")
+            _cron.marca("guardas")
+            logger.info(
+                "timing turno agent=%s canal=%s voz=%s bloqueado=%s %s",
+                agent.id, connector_kind, modo_voz, blocked_by, _cron.resumo(),
+            )
             return {
                 "status": "blocked_moderation",
                 "agent_id": agent.id,
@@ -662,6 +729,7 @@ async def handle_inbound_message(
             }
     except Exception:
         logger.exception("moderation check falhou — continua processando")
+    _cron.marca("guardas")
 
     conv = await ensure_conversation(
         db,
@@ -681,6 +749,7 @@ async def handle_inbound_message(
         db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", tokens_in=0,
         content=text_content, attachments_json=_att or None,
     )
+    _cron.marca("conversa")
 
     # ─── Conversa já assumida por humano? Bot fica em silêncio ───
     # Quando alguém da equipe assumiu (status handed_off), o bot NÃO responde mais
@@ -767,6 +836,7 @@ async def handle_inbound_message(
             )
     except Exception:
         logger.exception("handoff/escalation check falhou agent=%s — segue fluxo normal", agent.id)
+    _cron.marca("handoff")
 
     # ─── Playbook router (Sprint 1) ───
     # Intercepta antes do Engine. Se nenhuma trigger matchou, cai pro fluxo padrão.
@@ -777,6 +847,7 @@ async def handle_inbound_message(
     except Exception:
         logger.exception("playbook_router falhou agent=%s — fallback pro Engine", agent.id)
         match = None
+    _cron.marca("playbook")
 
     if match:
         logger.info(
@@ -828,6 +899,7 @@ async def handle_inbound_message(
             memory_block = memory_service.format_for_prompt(mem_hits)
     except Exception:
         logger.exception("memory.search falhou agent=%s — segue sem memory", agent.id)
+    _cron.marca("memoria")
 
     system_prompt = agent.persona or agent.system_prompt or ""
     if memory_block:
@@ -837,6 +909,7 @@ async def handle_inbound_message(
     rag_block, _rag_fontes = await build_rag_block(db, agent.id, text_content)
     if rag_block:
         system_prompt = f"{system_prompt}\n\n{rag_block}"
+    _cron.marca("rag")
 
     # Contexto do contato + diretrizes base: montados em PONTO ÚNICO
     # (build_contact_block / build_base_directives), pra o playground do painel
@@ -882,6 +955,7 @@ async def handle_inbound_message(
         history = await load_history(db, conv.id)
     except Exception:
         logger.exception("load_history falhou agent=%s — segue sem histórico", agent.id)
+    _cron.marca("historico")
 
     # Engine responde (com vision se attachment image presente)
     try:
@@ -908,6 +982,7 @@ async def handle_inbound_message(
     except Exception as e:
         logger.exception("Engine falhou tenant=%s agent=%s", agent.tenant_id, agent.id)
         return {"status": "engine_error", "error": str(e)}
+    _cron.marca("llm")
 
     # Calcula custo real via TaLlmProvider lookup
     from services import cost_calculator
@@ -944,6 +1019,7 @@ async def handle_inbound_message(
         memory_block=(memory_block if _LOG_PROMPTS else None),
         rag_block=(rag_block if _LOG_PROMPTS else None),
     )
+    _cron.marca("registro")
 
     # Envia resposta de volta no canal
     try:
@@ -955,7 +1031,11 @@ async def handle_inbound_message(
         _bubbles = _split_into_bubbles(_clean)
         # Sem delay aditivo aqui: o timing humano (pausa de leitura + '…digitando'
         # enquanto o LLM gera) é feito no handler do webhook, antes desta etapa.
-        if len(_bubbles) <= 1:
+        if connector_kind == "webchat" or len(_bubbles) <= 1:
+            # Webchat: a fila do Redis é drenada numa resposta HTTP só — split
+            # com pausa aqui não simula digitação, só ATRASA a resposta (até
+            # 3,6s a mais) e abre corrida com o drain antecipado da rota. Vai
+            # inteiro, de uma vez.
             await connector_impl.send(
                 cfg, OutboundMessage(external_chat_id=external_chat_id, content=_clean)
             )
@@ -971,6 +1051,7 @@ async def handle_inbound_message(
     except Exception as e:
         logger.exception("Falha enviando resposta agent=%s channel=%s", agent.id, connector_kind)
         return {"status": "send_error", "agent_id": agent.id, "error": str(e)}
+    _cron.marca("envio")
 
     # Espelho em TEMPO REAL pro Hovio Pet (se o agente estiver conectado a um petshop).
     # Fire-and-forget — não bloqueia. O job periódico (60s) fica só como backstop.
@@ -1207,6 +1288,16 @@ async def handle_inbound_message(
         )
     except Exception:
         pass
+    _cron.marca("hooks")
+
+    # A linha que tira a latência da adivinhação: uma por turno, com o tempo de
+    # cada etapa. `hooks` é tudo que roda DEPOIS de a resposta já ter saído
+    # (auto-CRM, qualificação, lead, loop) — no webchat a rota drena a fila
+    # antes disso terminar, então `hooks` alto NÃO segura mais o visitante.
+    logger.info(
+        "timing turno agent=%s canal=%s voz=%s %s",
+        agent.id, connector_kind, modo_voz, _cron.resumo(),
+    )
 
     return {
         "status": "ok",

@@ -48,6 +48,10 @@ declare global {
 
 type Estado = "repouso" | "ouvindo" | "pensando" | "falando" | "erro";
 
+// Quanto de silêncio o agente aguenta antes de avisar "só um momento".
+// Abaixo disso a resposta vem direto — pra "oi" o aviso era pior que a espera.
+const PACIENCIA_MS = 2500;
+
 // Carrega a biblioteca uma vez só, mesmo com StrictMode remontando.
 let promessaViz: Promise<Viz | null> | null = null;
 function carregarViz(): Promise<Viz | null> {
@@ -378,14 +382,16 @@ export default function VozPublica({
     [aplicarEstado, rodarEnvelope, pararEnvelope],
   );
 
-  // 🚨 Enquanto o modelo escreve, o agente NAO pode ficar mudo. Avisa na hora
-  // com uma fala curta ja gravada (toca do disco, latencia zero) — e o que
-  // transforma "travou" em "ele me ouviu e esta indo buscar".
-  // Espera 400ms: se a resposta vier antes, ninguem fala por cima.
+  // 🚨 O "Só um momento" é PARAQUEDAS, não protocolo. Tocando a 400ms ele
+  // disparava pra TODA pergunta — um "oi" ganhava "só um momento, já te
+  // respondo" e a conversa inteira parecia lenta. Agora só toca se a resposta
+  // ainda não chegou depois de PACIENCIA_MS: resposta rápida vem direto, e a
+  // esfera em "pensando" já mostra que ele ouviu. Se o filler começou e a
+  // resposta chega no meio, `pararCurta()` (no efeito da resposta) corta limpo.
   useEffect(() => {
     if (!pensando) return;
     aplicarEstado("pensando");
-    const id = setTimeout(() => tocarCurta(somAguarde), 400);
+    const id = setTimeout(() => tocarCurta(somAguarde), PACIENCIA_MS);
     return () => clearTimeout(id);
   }, [pensando, aplicarEstado, tocarCurta]);
 

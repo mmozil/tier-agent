@@ -22,11 +22,14 @@ O `budget_guard` por tenant continua como último recurso, mas ele é o freio de
 emergência — estes aqui são o de serviço.
 """
 
+import asyncio
+import base64
 import json
 import logging
 import os
 import re
 import secrets
+import time
 from datetime import UTC, datetime
 
 import redis.asyncio as redis_async
@@ -83,6 +86,23 @@ class RespostaMensagem(BaseModel):
 # texto": seria um gerador de áudio grátis pra qualquer um, na conta do tenant.
 TTS_MAX_CHARS = 900
 
+# Tarefas de fundo (runtime que continua após a resposta + aquecimento de TTS).
+# Referência forte obrigatória: task sem dono é coletada pelo GC no meio.
+_tarefas_fundo: set[asyncio.Task] = set()
+
+
+def _agendar(coro) -> asyncio.Task:
+    t = asyncio.create_task(coro)
+    _tarefas_fundo.add(t)
+    t.add_done_callback(_descartar_tarefa)
+    return t
+
+
+def _descartar_tarefa(t: asyncio.Task) -> None:
+    _tarefas_fundo.discard(t)
+    if not t.cancelled() and t.exception():
+        logger.error("webchat: tarefa de fundo falhou", exc_info=t.exception())
+
 
 def _provedores_tts() -> list[str]:
     """Quais provedores de voz dá pra tentar, na ordem.
@@ -126,26 +146,66 @@ def _partir_em_falas(texto: str, maximo: int = 4) -> list[str]:
 
 
 async def _preparar_falas(texto: str) -> list[str]:
-    """Guarda cada frase sob um token e devolve as URLs, na ordem."""
+    """Guarda cada frase sob um token e devolve as URLs, na ordem.
+
+    A 1ª frase já sai pro TTS AQUI, em fundo (`_aquecer_fala`): a síntese começa
+    no instante em que a resposta existe, e roda em paralelo com a volta do HTTP
+    + o fetch do navegador. Quando o GET chega, o MP3 costuma estar pronto.
+    Só a 1ª: aquecer todas em paralelo já derrubou o Kokoro por OOM.
+    """
     texto = (texto or "").strip()[:TTS_MAX_CHARS]
     if not texto or not _provedores_tts():
         return []
 
     base = (getattr(settings, "public_api_url", None) or "https://api-agent.tier.finance/api/v1").rstrip("/")
-    urls: list[str] = []
+    tokens: list[str] = []
     try:
         r = await _redis()
         try:
             for fala in _partir_em_falas(texto):
                 token = secrets.token_urlsafe(16)
                 await r.setex(f"webchat:voz:{token}", 300, fala)
-                urls.append(f"{base}/public/chat/voz/{token}")
+                tokens.append(token)
+            if tokens:
+                # Marcador "síntese em andamento": o GET espera o aquecimento
+                # em vez de sintetizar a MESMA frase em dobro no Kokoro.
+                await r.setex(f"webchat:voz:pre:{tokens[0]}", 30, "1")
         finally:
             await r.aclose()
     except Exception:
         logger.exception("webchat voz: não consegui guardar as falas")
         return []
-    return urls
+
+    _agendar(_aquecer_fala(tokens[0]))
+    return [f"{base}/public/chat/voz/{t}" for t in tokens]
+
+
+async def _aquecer_fala(token: str) -> None:
+    """Sintetiza a fala em FUNDO e deixa o MP3 pronto no Redis (base64, TTL 5min)."""
+    t0 = time.monotonic()
+    try:
+        r = await _redis()
+    except Exception:
+        logger.exception("webchat voz: aquecimento sem redis")
+        return
+    try:
+        texto = await r.get(f"webchat:voz:{token}")
+        if texto:
+            audio = await _audio_da_frase(texto)  # já é fail-safe (None em erro)
+            if audio:
+                await r.setex(f"webchat:voz:mp3:{token}", 300, base64.b64encode(audio).decode())
+                logger.info(
+                    "webchat voz timing: 1a fala aquecida em %.2fs (%d KB)",
+                    time.monotonic() - t0, len(audio) // 1024,
+                )
+    except Exception:
+        logger.exception("webchat voz: aquecimento da 1a fala falhou")
+    finally:
+        # Aquecido OU falhou: o GET não pode ficar esperando um MP3 que não vem.
+        try:
+            await r.delete(f"webchat:voz:pre:{token}")
+        finally:
+            await r.aclose()
 
 
 async def _audio_da_frase(texto: str) -> bytes | None:
@@ -255,10 +315,24 @@ async def transmitir_voz(token: str):
     if not re.match(r"^[A-Za-z0-9_-]{16,64}$", token or ""):
         raise HTTPException(404, "Áudio não encontrado")
 
+    t0 = time.monotonic()
+    b64: str | None = None
     try:
         r = await _redis()
         try:
             texto = await r.get(f"webchat:voz:{token}")
+            if texto:
+                # Aquecimento: a 1ª fala é sintetizada em fundo assim que a
+                # resposta existe. Se o MP3 já está pronto, sai na hora; se a
+                # síntese está EM ANDAMENTO, esperar é mais rápido (e mais leve
+                # pro Kokoro) do que sintetizar a mesma frase em dobro.
+                b64 = await r.get(f"webchat:voz:mp3:{token}")
+                if not b64 and await r.exists(f"webchat:voz:pre:{token}"):
+                    for _ in range(40):  # até ~4s
+                        await asyncio.sleep(0.1)
+                        b64 = await r.get(f"webchat:voz:mp3:{token}")
+                        if b64 or not await r.exists(f"webchat:voz:pre:{token}"):
+                            break
         finally:
             await r.aclose()
     except Exception:
@@ -268,6 +342,21 @@ async def transmitir_voz(token: str):
     if not texto:
         raise HTTPException(404, "Áudio não encontrado")
 
+    if b64:
+        try:
+            audio = base64.b64decode(b64)
+            logger.info(
+                "webchat voz timing: GET servido do cache aquecido em %.2fs (%d KB)",
+                time.monotonic() - t0, len(audio) // 1024,
+            )
+            return Response(
+                content=audio,
+                media_type="audio/mpeg",
+                headers={"Cache-Control": "no-store", "Content-Length": str(len(audio))},
+            )
+        except Exception:
+            logger.exception("webchat voz: cache aquecido corrompido — sintetizo na hora")
+
     # 🚨 Devolve o arquivo COMPLETO, com Content-Length. StreamingResponse em
     # chunked cross-origin sem Content-Length faz o <audio> do Chrome pendurar:
     # o  e chamado, o evento  nunca dispara e nao sai som.
@@ -275,6 +364,10 @@ async def transmitir_voz(token: str):
     audio = await _audio_da_frase(texto)
     if not audio:
         raise HTTPException(503, "Não consegui gerar o áudio")
+    logger.info(
+        "webchat voz timing: GET sintetizado na hora em %.2fs (%d KB)",
+        time.monotonic() - t0, len(audio) // 1024,
+    )
     return Response(
         content=audio,
         media_type="audio/mpeg",
@@ -306,7 +399,15 @@ async def abrir_link(slug: str):
 
 @router.post("/{slug}/mensagem", response_model=RespostaMensagem)
 async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request):
-    """Manda uma mensagem pro agente e devolve o que ele respondeu."""
+    """Manda uma mensagem pro agente e devolve o que ele respondeu.
+
+    O runtime roda como TAREFA e a rota drena a fila do Redis assim que a
+    resposta aparece nela. O que vem depois do envio no `handle_inbound_message`
+    (auto-CRM no ERP, auto-qualificação, lead, detecção de loop, Langfuse) é
+    burocracia de registro — segurava o visitante esperando um texto que já
+    estava pronto. Agora ela termina em fundo.
+    """
+    t0 = time.monotonic()
     texto = (entrada.texto or "").strip()
     if not texto:
         raise HTTPException(400, "Mensagem vazia")
@@ -337,19 +438,49 @@ async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request)
 
     # Prefixo `web:` deixa a origem óbvia no inbox e evita colidir com telefone.
     chat_id = f"web:{entrada.session_id}"
+    t_pronto = time.monotonic()
 
-    async with db_context() as db:
-        resultado = await agent_runtime.handle_inbound_message(
-            db,
-            connector_kind="webchat",
-            instance_id=slug,
-            external_chat_id=chat_id,
-            sender_name=(entrada.nome or "").strip() or "Visitante",
-            text_content=texto,
-            modo_voz=entrada.voz,  # tela de voz: resposta curta, gera mais rapido
-        )
+    async def _rodar_runtime() -> dict:
+        # Sessão própria: a tarefa pode sobreviver à requisição HTTP.
+        async with db_context() as db:
+            return await agent_runtime.handle_inbound_message(
+                db,
+                connector_kind="webchat",
+                instance_id=slug,
+                external_chat_id=chat_id,
+                sender_name=(entrada.nome or "").strip() or "Visitante",
+                text_content=texto,
+                modo_voz=entrada.voz,  # tela de voz: resposta curta, gera mais rapido
+            )
 
-    baloes = await drenar(chat_id)
+    tarefa = _agendar(_rodar_runtime())
+
+    # Espera o PRIMEIRO dos dois: a resposta na fila ou o runtime terminar.
+    # (O adapter webchat envia a resposta INTEIRA num push só — sem corrida de
+    # balão atrasado chegando depois do drain.)
+    baloes: list[str] = []
+    resultado: dict = {}
+    while True:
+        baloes = await drenar(chat_id)
+        if baloes:
+            break
+        if tarefa.done():
+            # o push pode ter acontecido entre o drain e o done — confere de novo
+            baloes = await drenar(chat_id)
+            break
+        if time.monotonic() - t_pronto > 90:
+            logger.error("webchat: runtime passou de 90s slug=%s — respondo sem ele", slug)
+            break
+        await asyncio.wait({tarefa}, timeout=0.15)
+
+    if tarefa.done() and not tarefa.cancelled():
+        try:
+            resultado = tarefa.result()
+        except Exception:
+            logger.exception("webchat: runtime falhou slug=%s", slug)
+            resultado = {"status": "engine_error"}
+    t_resposta = time.monotonic()
+
     status = str(resultado.get("status") or "ok")
 
     if not baloes:
@@ -359,8 +490,15 @@ async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request)
 
     audio_urls: list[str] = []
     if entrada.voz:
-        # uma URL por frase: a 1a toca quase de imediato
+        # uma URL por frase: a 1a toca quase de imediato (e já sai aquecendo)
         audio_urls = await _preparar_falas(" ".join(baloes))
+
+    logger.info(
+        "webchat timing slug=%s voz=%s total=%.2fs — preparo=%.2fs resposta=%.2fs falas=%.2fs fundo=%s",
+        slug, entrada.voz, time.monotonic() - t0,
+        t_pronto - t0, t_resposta - t_pronto, time.monotonic() - t_resposta,
+        "rodando" if not tarefa.done() else "concluido",
+    )
 
     return RespostaMensagem(
         baloes=baloes,
