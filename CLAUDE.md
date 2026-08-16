@@ -296,14 +296,36 @@ de falha — saldo zerado num provedor não pode calar o agente.
    descartava a pergunta sem avisar, e o Kokoro caído caía na voz do navegador sem avisar.
    Nos dois casos o dono relatou "não funciona nada". **Se for ignorar ou degradar, mostre.**
 
-### Latência (medida em produção)
+### Latência (medida em produção — instrumentada em 16/ago)
 `modo_voz=True` (só a tela de voz manda) injeta no system prompt a regra de responder em
 **até 2 frases**. O tempo de geração cresce com o token gerado, então isso é o maior ganho
 isolado: pior pergunta caiu de **22,6s → 5,4s** (545 → 107 chars). WhatsApp não passa por aí.
-- Repartição hoje: ~3,5s backend + ~1,9s síntese da 1ª frase.
+
+**Carimbos por etapa (16/ago)** — `_Cronometro` no `agent_runtime` loga 1 linha por turno
+(`timing turno ... guardas=X memoria=X rag=X llm=X hooks=X`), a rota loga
+`webchat timing ...` e cada chamada LLM loga `timing llm-call <modelo> <s> prompt_chars=N`.
+Medido no `/c/demo-tier-empresas`: **llm=2,5–4,4s domina** (1 chamada, prompt ~18k chars,
+`tools=0`), memoria+rag≈0,6s, guardas=0,01s (flags OFF no tenant 3). O resto foi cortado:
+- **Drain antecipado** (`public_chat.enviar_mensagem`): o runtime roda como tarefa e a rota
+  devolve assim que a resposta aparece na fila — auto-CRM/qualificação/lead/Langfuse
+  (~0,3–0,7s, e às vezes chamadas LLM de fundo de 13s+) terminam em fundo.
+- **1ª frase pré-aquecida**: `_preparar_falas` dispara a síntese em fundo na hora em que a
+  resposta existe (`webchat:voz:mp3:{token}` b64 no Redis + marcador `pre:`); o GET espera o
+  aquecimento em vez de sintetizar em dobro. GET da 1ª frase: **1,4–2,9s → 0,0–0,6s**.
+- **Filler "Só um momento" virou paraquedas** (`VozPublica.PACIENCIA_MS=2500`): só toca se a
+  resposta não chegou em 2,5s; "oi" não ganha mais aviso de espera; se tocar, `pararCurta()`
+  corta limpo quando a resposta chega.
+- **Guardas em paralelo no modo voz** (Lakera+Azure juntas, teto 1,5s fail-open — era série
+  com timeout 10s+8s). Demais canais seguem em série, intocados.
+- **Webchat manda a resposta num push só** (split+pausa de 1,2s entre balões era atraso puro
+  numa fila drenada de uma vez; WhatsApp mantém o split).
 - **Próximo corte**: falar a 1ª frase enquanto o modelo escreve a 2ª (~2s). Exige streaming
-  no `tier_engine`; fazer isolado no caminho de voz.
+  no `tier_engine`; fazer isolado no caminho de voz. Depois disso o piso vira o tempo da
+  1ª frase do modelo (~1,5–2s).
 - A IA que responde: `deepseek/deepseek-v4-flash` via OpenRouter (tenant 3), temp 0.3.
+  🚨 As chamadas pequenas de fundo (extração de memória ~1,5k chars + style adapter ~244
+  chars) às vezes levam 13–14s no OpenRouter — não seguram o visitante (rodam em fundo),
+  mas aparecem no log; não confundir com o turno.
 
 ## Arquitetura backend
 
