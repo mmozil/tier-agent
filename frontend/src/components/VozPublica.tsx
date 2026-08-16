@@ -23,6 +23,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // public/ o arquivo tinha nome fixo e o nginx serve .js com `immutable`: o
 // navegador segurava a versao velha por 7 dias e purge de CDN nao resolvia.
 import urlDoViz from "@/lib/optimus-viz.js?url";
+// Falas curtas ja sintetizadas na voz da Dora. Tocam do disco, sem ida ao
+// servidor — e o que faz o agente responder NA HORA em vez de ficar mudo
+// enquanto o modelo escreve.
+import somAguarde from "@/assets/voz/aguarde.mp3";
+import somPoisNao from "@/assets/voz/pois-nao.mp3";
 
 type Viz = {
   simulate: (b: boolean) => void;
@@ -93,7 +98,11 @@ function termosDoNome(nome: string): string[] {
   const limpo = semAcento(nome).replace(/[^a-z0-9\s]/g, " ").trim();
   const partes = limpo.split(/\s+/).filter((p) => p.length > 1);
   const t = [limpo];
-  if (partes.length) t.push(partes[partes.length - 1]); // "drummond"
+  // 🚨 A PRIMEIRA palavra e como as pessoas chamam de verdade: "oi tier",
+  // nao "oi tier empresas atendimento". Faltava ela, entao "oi tier" nao
+  // acordava ninguem. A ultima entra tambem ("drummond").
+  if (partes.length) t.push(partes[0]);
+  if (partes.length > 1) t.push(partes[partes.length - 1]);
   // "M7" sai da transcrição como "eme sete" / "m sete" com frequência
   if (/^m\s?7$/.test(limpo)) t.push("eme sete", "m sete", "m7");
   return Array.from(new Set(t.filter(Boolean)));
@@ -312,6 +321,30 @@ export default function VozPublica({
     [rodarEnvelope],
   );
 
+  /** Toca uma fala curta pre-gravada. Instantaneo: vem do disco. */
+  const curtaRef = useRef<HTMLAudioElement | null>(null);
+  const tocarCurta = useCallback((src: string) => {
+    try {
+      if (!curtaRef.current) curtaRef.current = new Audio();
+      const el = curtaRef.current;
+      el.src = src;
+      el.currentTime = 0;
+      rodarEnvelope();
+      el.ontimeupdate = () => { alvo.current = 0.45 + Math.random() * 0.3; };
+      void el.play().catch(() => {});
+    } catch {
+      /* sem audio curto: so nao ha aviso sonoro */
+    }
+  }, [rodarEnvelope]);
+
+  const pararCurta = useCallback(() => {
+    try {
+      curtaRef.current?.pause();
+    } catch {
+      /* ignora */
+    }
+  }, []);
+
   /** Fala um texto e faz a esfera seguir palavra a palavra. */
   const falarTexto = useCallback(
     (texto: string) => {
@@ -345,9 +378,16 @@ export default function VozPublica({
     [aplicarEstado, rodarEnvelope, pararEnvelope],
   );
 
+  // 🚨 Enquanto o modelo escreve, o agente NAO pode ficar mudo. Avisa na hora
+  // com uma fala curta ja gravada (toca do disco, latencia zero) — e o que
+  // transforma "travou" em "ele me ouviu e esta indo buscar".
+  // Espera 400ms: se a resposta vier antes, ninguem fala por cima.
   useEffect(() => {
-    if (pensando) aplicarEstado("pensando");
-  }, [pensando, aplicarEstado]);
+    if (!pensando) return;
+    aplicarEstado("pensando");
+    const id = setTimeout(() => tocarCurta(somAguarde), 400);
+    return () => clearTimeout(id);
+  }, [pensando, aplicarEstado, tocarCurta]);
 
   // ── o agente fala a resposta que chegou ───────────────────────────────
   const respostaTexto = ultimaResposta?.texto ?? "";
@@ -355,6 +395,7 @@ export default function VozPublica({
   useEffect(() => {
     if (!respostaTexto) return;
     setLinha({ texto: respostaTexto, cls: "resposta" });
+    pararCurta(); // a resposta chegou: cala o "um momento"
     const urls = ultimaResposta?.audioUrls ?? [];
     if (urls.length) {
       aplicarEstado("falando");
@@ -392,15 +433,18 @@ export default function VozPublica({
     (txt: string) => {
       const { chamou, pergunta } = acharInvocacao(txt);
       if (chamou && !pergunta) {
-        // chamou e não perguntou nada: ele só se apresenta
-        const saudacao = `Sim, sou ${agente}, atendente virtual. Em que posso ajudar?`;
-        setLinha({ texto: saudacao, cls: "resposta" });
-        falarTexto(saudacao);
+        // Chamou pelo nome e nao perguntou: responde CURTO e fica pronto pra
+        // ouvir. Uma apresentacao longa aqui atrapalha — a pessoa chamou pra
+        // perguntar, nao pra ouvir credencial.
+        setLinha({ texto: "Pois não?", cls: "resposta" });
+        tocarCurta(somPoisNao);
+        janela.current = Date.now() + JANELA_MS; // a pergunta vem em seguida
+        setTimeout(() => aplicarEstado("repouso"), 1200);
         return;
       }
       onEnviar(pergunta || txt);
     },
-    [agente, onEnviar, falarTexto, acharInvocacao],
+    [onEnviar, acharInvocacao, tocarCurta, aplicarEstado],
   );
 
   // ── reconhecimento de fala ────────────────────────────────────────────
