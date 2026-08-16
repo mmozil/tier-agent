@@ -346,6 +346,7 @@ async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request)
             external_chat_id=chat_id,
             sender_name=(entrada.nome or "").strip() or "Visitante",
             text_content=texto,
+            modo_voz=entrada.voz,  # tela de voz: resposta curta, gera mais rapido
         )
 
     baloes = await drenar(chat_id)

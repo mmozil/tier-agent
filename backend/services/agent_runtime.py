@@ -474,8 +474,15 @@ async def handle_inbound_message(
     sender_name: str | None,
     text_content: str,
     attachments: list | None = None,
+    modo_voz: bool = False,
 ) -> dict:
-    """Pipeline completo: webhook → Engine → resposta no canal."""
+    """Pipeline completo: webhook → Engine → resposta no canal.
+
+    `modo_voz=True` só vem da tela de voz do link público. Encurta a resposta,
+    porque em voz o texto comprido é ruim duas vezes: demora mais pra gerar (o
+    tempo cresce com o número de tokens) e ninguém quer ouvir um parágrafo.
+    WhatsApp e demais canais não passam por aqui — o default é desligado.
+    """
     connector = await resolve_connector_by_instance(db, connector_kind, instance_id)
     if not connector:
         return {"status": "no_connector", "instance_id": instance_id}
@@ -856,6 +863,18 @@ async def handle_inbound_message(
     system_prompt = f"{system_prompt}\n\n" + build_base_directives(
         agent, connector_kind=connector_kind, extra_block=_extra_blk
     )
+
+    if modo_voz:
+        # 🚨 O que mais custa latência é a QUANTIDADE de token gerado — o tempo
+        # cresce junto. Cortar a resposta pela metade corta a espera pela metade,
+        # e em voz isso melhora a experiência em vez de piorar.
+        system_prompt += (
+            "\n\n## Você está falando por VOZ\n"
+            "A pessoa está OUVINDO, não lendo. Responda em NO MÁXIMO 2 frases curtas.\n"
+            "Direto ao ponto: sem listar, sem enumerar, sem markdown, sem emoji.\n"
+            "Se o assunto for longo, dê o essencial e ofereça detalhar em seguida.\n"
+            "Fale como quem conversa, não como quem escreve documento."
+        )
 
     # Histórico da conversa → memória do modelo (senão "esquece" o cliente)
     history: list[dict] = []
