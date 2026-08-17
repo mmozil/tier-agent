@@ -447,6 +447,9 @@ async def followup_inactivity_job() -> None:
     nova). DESLIGADO por padrão (enabled != 'true') → seguro.
     """
     DEFAULT_MSG = "Oi! Vi que nossa conversa parou — posso te ajudar com mais alguma coisa? 😊"
+    import json as _json
+    from zoneinfo import ZoneInfo as _ZoneInfo
+
     try:
         async with db_context() as db:
             now = _now_utc_naive()
@@ -466,12 +469,13 @@ async def followup_inactivity_job() -> None:
                     select(TaRuntimeParam.escopo_id, TaRuntimeParam.key, TaRuntimeParam.value).where(
                         TaRuntimeParam.escopo == "tenant",
                         TaRuntimeParam.escopo_id.in_(enabled),
-                        TaRuntimeParam.key.in_(["followup_hours", "followup_message"]),
+                        TaRuntimeParam.key.in_(["followup_hours", "followup_message", "followup_cadence"]),
                     )
                 )
             ).all()
             hours_by: dict[int, int] = {}
             msg_by: dict[int, str] = {}
+            cadence_by: dict[int, list] = {}
             for tid, key, val in cfg_rows:
                 if key == "followup_hours":
                     try:
@@ -480,9 +484,75 @@ async def followup_inactivity_job() -> None:
                         pass
                 elif key == "followup_message":
                     msg_by[tid] = val
+                elif key == "followup_cadence":
+                    # Cadência multi-etapa: JSON [{"h": horas desde a última msg da
+                    # família (cumulativo), "msg": texto}, ...]. Presente e válida,
+                    # substitui o nudge único do tenant (D+1/D+3/D+7/D+10 etc).
+                    try:
+                        parsed = [
+                            {"h": float(s["h"]), "msg": str(s["msg"]).strip()}
+                            for s in _json.loads(val or "[]")
+                            if str(s.get("msg", "")).strip() and float(s.get("h", 0)) > 0
+                        ]
+                        if parsed:
+                            cadence_by[tid] = sorted(parsed, key=lambda s: s["h"])
+                    except (TypeError, ValueError, KeyError):
+                        logger.warning("followup_cadence inválida tenant=%s", tid)
+
+            # Cadência só roda em dia útil / horário comercial (America/Sao_Paulo) —
+            # follow-up de madrugada queima o contato. O nudge único legado mantém
+            # o comportamento de sempre.
+            agora_sp = datetime.now(_ZoneInfo("America/Sao_Paulo"))
+            dia_util_comercial = agora_sp.isoweekday() <= 5 and 8 <= agora_sp.hour < 18
 
             sent_total = 0
             for tid in enabled:
+                cadence = cadence_by.get(tid)
+                if cadence:
+                    if not dia_util_comercial:
+                        continue
+                    threshold = now - timedelta(hours=cadence[0]["h"])
+                    convs = (
+                        await db.execute(
+                            select(TaConversation)
+                            .where(
+                                TaConversation.agent_id.in_(
+                                    select(TaAgent.id).where(TaAgent.tenant_id == tid)
+                                ),
+                                TaConversation.status == "active",
+                                TaConversation.last_message_at < threshold,
+                            )
+                            .limit(100)  # cap defensivo por tick
+                        )
+                    ).scalars().all()
+                    houve = False
+                    for conv in convs:
+                        step = conv.followup_step or 0
+                        if conv.last_followup_at and conv.last_message_at > conv.last_followup_at:
+                            step = 0  # a família respondeu depois do último nudge — recomeça
+                        if step >= len(cadence):
+                            continue  # cadência esgotada (encerramento já foi)
+                        if now < conv.last_message_at + timedelta(hours=cadence[step]["h"]):
+                            continue  # etapa ainda não venceu
+                        if step > 0 and conv.last_followup_at and now < conv.last_followup_at + timedelta(hours=20):
+                            continue  # espaçamento mínimo: conversa velha não leva a cadência inteira de uma vez
+                        msg = cadence[step]["msg"]
+                        nome = (conv.contact_name or "").strip().split(" ")[0]
+                        if nome:
+                            msg = msg.replace("{nome}", nome)
+                        else:
+                            msg = msg.replace(", {nome}", "").replace("{nome}", "").replace("  ", " ")
+                        if await _send_proactive(db, conv, msg):
+                            conv.followup_step = step + 1
+                            conv.last_followup_at = now
+                            db.add(TaMessageLog(conversation_id=conv.id, role="assistant", content=msg))
+                            sent_total += 1
+                            houve = True
+                    if houve:
+                        await db.commit()
+                    continue
+
+                # ── modo legado: 1 nudge único por período de silêncio ──
                 threshold = now - timedelta(hours=hours_by.get(tid, 24))
                 message = (msg_by.get(tid) or DEFAULT_MSG).strip() or DEFAULT_MSG
                 convs = (

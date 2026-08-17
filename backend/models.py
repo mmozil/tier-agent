@@ -280,6 +280,8 @@ class TaConversation(Base):
     # Follow-up por inatividade (Fase 4 gap): quando o último nudge foi enviado.
     # NULL ou < last_message_at = pode enviar (reseta a cada msg nova). Runtime DDL.
     last_followup_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    followup_step: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # etapa da cadência de follow-up já enviada (0 = nenhuma; reseta quando a família responde)
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
     # lista de etiquetas (ex: ["orçamento", "vip"]) — adicionada via ensure runtime DDL
     assigned_to: Mapped[str | None] = mapped_column(String(120), nullable=True)

@@ -110,6 +110,7 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS team_id INTEGER",
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS crm_opportunity_id INTEGER",
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS last_followup_at TIMESTAMP",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS followup_step INTEGER DEFAULT 0",
                 "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS attachments_json JSONB",
                 "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS system_prompt_sent TEXT",
                 "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS memory_block TEXT",
