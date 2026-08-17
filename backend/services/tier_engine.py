@@ -529,6 +529,19 @@ async def send_message(
                 base_tools = base_tools + remote_schemas
         except Exception:
             logger.exception("tier_engine: descoberta de tool-providers MCP falhou agent=%s", agent_id)
+        # Tools BUILTIN de agenda (calendário público do CRM) — gate por agente via
+        # runtime param `agenda_slug`. Mesmo merge das remotas; falha degrada sem tools.
+        try:
+            from services import agenda_tools
+
+            agenda_schemas, agenda_handlers = await agenda_tools.discover_agenda_tools(
+                db, agent_id, customer_phone=customer_phone
+            )
+            if agenda_schemas:
+                base_tools = base_tools + agenda_schemas
+                remote_handlers = {**remote_handlers, **agenda_handlers}
+        except Exception:
+            logger.exception("tier_engine: descoberta de agenda tools falhou agent=%s", agent_id)
     active_tools = base_tools or None
 
     started = time.perf_counter()
@@ -738,6 +751,13 @@ async def send_message(
         or "opcoes_por_termo" in _tool_results
     )
 
+    # Quais famílias de ferramenta estão ativas NESTE turno — decide o texto dos freios
+    # que citam ferramenta pelo nome. Agente com tools do Pet mantém tudo como era; agente
+    # de AGENDA (visita) ganha a variante própria; freios com instrução 100% pet ficam
+    # gateados na presença das tools pet (antes disparavam pra qualquer agente com tools).
+    _has_agenda_tools = "agendar_visita" in remote_handlers
+    _has_pet_tools = any("pet_" in n for n in remote_handlers)
+
     _discipline_msg = None
     _brake = None
     if active_tools and text and _SVC_FAIL and not _BOOKING_OK:
@@ -780,13 +800,22 @@ async def send_message(
         # Cliente confirmou e o modelo NÃO agendou (re-perguntando/re-listando). PRIORIDADE alta:
         # vem antes de offers_slot/denies_slots — a intenção de FECHAR domina "ofereceu horário".
         _brake = "confirm_no_book"
-        _discipline_msg = (
-            "(sistema) O cliente CONFIRMOU o agendamento. AGENDE AGORA: chame pet_criar_agendamento com "
-            "confirmado:true, passando em servico_ids o(s) serviço(s) escolhido(s) pelo NOME EXATO (inclua o "
-            "Taxidog no MESMO servico_ids se ele pediu — é um atendimento só) e o horário que ele escolheu "
-            "(YYYY-MM-DDTHH:MM:SS, São Paulo). NÃO re-pergunte nem re-liste horário. Depois de criar, confirme "
-            "ao cliente com o resumo (serviços, data/hora, valor total)."
-        )
+        if _has_agenda_tools:
+            _discipline_msg = (
+                "(sistema) O cliente CONFIRMOU o agendamento. AGENDE AGORA: chame agendar_visita com o "
+                "horário que ele escolheu (campo 'inicio' EXATO do slot retornado por "
+                "consultar_horarios_visita) e os dados já coletados na conversa. Se ainda faltar algum "
+                "dado OBRIGATÓRIO, pergunte SÓ o que falta — não re-liste horários. Depois de agendar, "
+                "confirme ao cliente com o resumo (dia, horário e local)."
+            )
+        else:
+            _discipline_msg = (
+                "(sistema) O cliente CONFIRMOU o agendamento. AGENDE AGORA: chame pet_criar_agendamento com "
+                "confirmado:true, passando em servico_ids o(s) serviço(s) escolhido(s) pelo NOME EXATO (inclua o "
+                "Taxidog no MESMO servico_ids se ele pediu — é um atendimento só) e o horário que ele escolheu "
+                "(YYYY-MM-DDTHH:MM:SS, São Paulo). NÃO re-pergunte nem re-liste horário. Depois de criar, confirme "
+                "ao cliente com o resumo (serviços, data/hora, valor total)."
+            )
     elif active_tools and text and _HORARIOS_OK and _DENIES_SLOTS.search(text):
         # A ferramenta de horários RETORNOU disponibilidade, mas o agente respondeu "não tem".
         # Força ele a relatar os horários REAIS que a ferramenta devolveu (a equipe toda).
@@ -809,7 +838,7 @@ async def send_message(
             "horários disponíveis para a data pedida e ofereça SOMENTE horários reais que ainda não "
             "passaram (considere a data e a hora atuais). Nunca invente horários nem ofereça horário passado."
         )
-    elif active_tools and text and _ASKS_PET.search(text) and not _called("tutor", "cliente", "historico"):
+    elif active_tools and text and _has_pet_tools and _ASKS_PET.search(text) and not _called("tutor", "cliente", "historico"):
         _brake = "asks_pet_data"
         _discipline_msg = (
             "(sistema) Você perguntou um dado do pet (porte/raça/nome) que provavelmente já está no "
@@ -869,7 +898,7 @@ async def send_message(
             "nunca diga só que 'fechou tudo'."
         )
     elif (
-        active_tools and text and _QUOTES_PRICE.search(text) and _PRICE_CTX.search(text)
+        active_tools and text and _has_pet_tools and _QUOTES_PRICE.search(text) and _PRICE_CTX.search(text)
         and not _called("listar_servic", "criar_agendamento", "alterar_agendamento", "taxidog", "historico")
     ):
         _brake = "price_no_check"
