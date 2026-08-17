@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     pet_status_internal_key: str = ""
     pet_status_agent_id: int = 0
 
+    # A2 — endpoint interno de envio proativo de WhatsApp (/internal/proactive-whatsapp),
+    # consumido por outra frente (ERP/CRM) com header X-Internal-Key.
+    # Vazio = endpoint responde 503 (dormente, seguro por padrão).
+    agent_internal_key: str = ""
+
     tier_pay_api_url: str = "https://api.tier.finance"
     tier_pay_internal_key: str = ""
     tier_agent_sku_starter_plan_id: str = ""

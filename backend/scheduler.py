@@ -409,33 +409,16 @@ async def mirror_pet_conversations_job() -> None:
 
 
 async def _send_proactive(db, conv: TaConversation, text_content: str) -> bool:
-    """Envia uma mensagem proativa (follow-up) pro contato da conversa, via connector."""
-    import json
+    """Envia uma mensagem proativa (follow-up) pro contato da conversa, via connector.
 
-    from core.encryption import decrypt
-    from models import TaConnector
-    from services.connectors.base import ConnectorConfig, OutboundMessage
-    from services.connectors.registry import registry as connectors_registry
+    Mecânica extraída pra `services.proactive` (reusada pelo endpoint interno
+    /internal/proactive-whatsapp) — comportamento idêntico ao original."""
+    from services import proactive
 
-    conn = (
-        await db.execute(
-            select(TaConnector).where(
-                TaConnector.agent_id == conv.agent_id,
-                TaConnector.kind == conv.connector_kind,
-                TaConnector.enabled.is_(True),
-            )
-        )
-    ).scalar_one_or_none()
+    conn = await proactive.find_agent_connector(db, conv.agent_id, conv.connector_kind)
     if not conn:
         return False
-    try:
-        impl = connectors_registry.get(conv.connector_kind)
-        cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
-        await impl.send(cfg, OutboundMessage(external_chat_id=conv.external_id, content=text_content))
-    except Exception:
-        logger.exception("followup: envio falhou conv=%s", conv.id)
-        return False
-    return True
+    return await proactive.send_text_via_connector(conn, conv.external_id, text_content)
 
 
 async def followup_inactivity_job() -> None:
