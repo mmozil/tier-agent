@@ -2,24 +2,29 @@
  * Tela de voz do link público — a esfera de pó ocupando a tela, uma barra
  * embaixo e nada mais.
  *
- * Três coisas mandam no comportamento:
+ * O ciclo copia um agente de voz que funciona (ChatGPT Voice / CallOverlay):
  *
- * 1. **Ela ESPERA — não congela e não pulsa.** O giro rápido vem do nível de voz
- *    (`PO_DEADZONE` no `optimus-viz.js`); em repouso só há uma rotação lentíssima
- *    e a superfície fervilha por PARTÍCULA (ruído dessincronizado), nunca a
- *    esfera inteira em fase única — pulso uniforme lê como CSS, não como matéria.
+ *   DESLIGADA (mic 100% off — a página NASCE assim; 1 toque na esfera arma)
+ *     → SENTINELA (só wake word "oi tier") → ESCUTANDO (VAD: 1,3s envia)
+ *     → PENSANDO (mic OFF; filler só se >2,5s) → FALANDO (áudio INTOCÁVEL)
+ *     → fim do áudio → ESCUTANDO de novo (follow-up ~20s, SEM wake word)
+ *     → 20s sem fala → SENTINELA (segue ARMADA — o toque foi o consentimento).
  *
- * 2. **"oi tier" ATIVA a conversa.** A página nasce em SENTINELA (mic aberto só
- *    esperando a chamada — wake word estrita, testada em `lib/voz-fala.ts`).
- *    Detectou, vira CONVERSA: tudo que você fala vai pro agente.
+ * 🚨 Decisão do dono: entrar com o microfone ligado é gambiarra. O gesto de
+ * armar é UM toque — e é ele que também destrava o autoplay do Chrome.
  *
- * 3. **Fim de fala automático (VAD).** Falou e parou ~1,3s → o turno fecha e
- *    envia sozinho, sem apertar nada. Enquanto a Dora fala, o mic desliga
- *    (senão o eco fecharia turno com a fala dela).
+ * Três regras duras, aprendidas a ferro:
  *
- * O `SpeechSynthesis` não expõe o áudio pra análise. O sinal mais fiel que ele
- * dá é o `onboundary`, que avisa a cada palavra pronunciada — é ele que move a
- * esfera, uma palavra de cada vez, e não um gerador de sílabas solto.
+ * 1. **NENHUMA transição de estado aborta o áudio da resposta.** Só "Sair" ou
+ *    uma nova pergunta explícita do usuário cortam a Dora no meio.
+ *
+ * 2. **O efeito do reconhecimento monta UMA vez.** Callbacks entram por ref
+ *    (padrão latest-ref) — na versão anterior o `onEnviar` inline do pai
+ *    remontava o efeito a cada resposta, o cleanup derrubava a escuta e a
+ *    tela caía pra sentinela no meio da conversa (follow-up morto).
+ *
+ * 3. **Estado do mic SEMPRE visível.** Falha de permissão/start não pode ser
+ *    silenciosa: vira o CTA "toque para ativar o microfone" na tela.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,8 +34,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // navegador segurava a versao velha por 7 dias e purge de CDN nao resolvia.
 import urlDoViz from "@/lib/optimus-viz.js?url";
 // Falas curtas ja sintetizadas na voz da Dora. Tocam do disco, sem ida ao
-// servidor — e o que faz o agente responder NA HORA em vez de ficar mudo
-// enquanto o modelo escreve.
+// servidor.
 import somAguarde from "@/assets/voz/aguarde.mp3";
 import somPoisNao from "@/assets/voz/pois-nao.mp3";
 // Wake word, invocação e validação de turno: lógica PURA, testada com
@@ -43,6 +47,7 @@ type Viz = {
   mount: (host: string | HTMLElement, id: string) => { destroy?: () => void };
   attachMic: () => Promise<unknown>;
   attachAnalyser?: (a: AnalyserNode) => unknown;
+  setMood?: (m: string) => void;
   list: () => unknown[];
 };
 
@@ -54,13 +59,15 @@ declare global {
   }
 }
 
-type Estado = "repouso" | "ouvindo" | "pensando" | "falando" | "erro";
-
-// A escuta tem três marchas:
-//   desligada — mic fechado; só clique religa (desligou é desligou — privacidade)
-//   sentinela — mic aberto esperando a CHAMADA ("oi tier"); todo o resto é descartado
-//   conversa  — tudo que você fala vai pro agente, com fim de fala automático (VAD)
-type Escuta = "desligada" | "sentinela" | "conversa";
+/**
+ * A fase é UMA só (não estado×escuta — o par independente criava corridas):
+ *   desligada — mic fechado; o status vira CTA clicável
+ *   sentinela — mic aberto esperando "oi {nome}" (wake word estrita)
+ *   escutando — tudo que você fala vai pro agente (VAD fecha o turno)
+ *   pensando  — turno enviado; mic OFF (sem eco)
+ *   falando   — resposta tocando; mic OFF; áudio intocável
+ */
+type Fase = "desligada" | "sentinela" | "escutando" | "pensando" | "falando";
 
 // Quanto de silêncio o agente aguenta antes de avisar "só um momento".
 // Abaixo disso a resposta vem direto — pra "oi" o aviso era pior que a espera.
@@ -68,9 +75,12 @@ const PACIENCIA_MS = 2500;
 
 // Fim de fala automático: este silêncio depois da última palavra fecha o turno
 // e envia — SEM apertar nada. Curto demais corta pausa de respiração; longo
-// demais vira "ele demora pra entender que terminei". 1,3s é o meio-termo
-// (ChatGPT Voice opera nessa faixa).
+// demais vira "ele demora pra entender que terminei".
 const VAD_SILENCIO_MS = 1300;
+
+// Depois da resposta, a escuta REABRE sozinha por esta janela (follow-up sem
+// wake word — é o turn-taking do ChatGPT Voice). Sem fala, volta pra sentinela.
+const FOLLOWUP_MS = 20000;
 
 // Carrega a biblioteca uma vez só, mesmo com StrictMode remontando.
 let promessaViz: Promise<Viz | null> | null = null;
@@ -90,11 +100,7 @@ function carregarViz(): Promise<Viz | null> {
 
 /**
  * Escolhe a MELHOR voz pt-BR do aparelho em vez da primeira da lista.
- *
- * A primeira costuma ser a SAPI antiga do Windows ("Microsoft Daniel/Maria"),
- * que é justamente a que soa robótica. As neurais têm nome próprio: no Edge vêm
- * como "(Natural)"/"Online", no Chrome/Android como "Google português do
- * Brasil", no macOS/iOS como "Luciana". Vale muito ordenar.
+ * A primeira costuma ser a SAPI antiga do Windows, que soa robótica.
  */
 function melhorVoz(): SpeechSynthesisVoice | null {
   const todas = speechSynthesis.getVoices().filter((v) => /pt[-_]BR/i.test(v.lang));
@@ -102,12 +108,12 @@ function melhorVoz(): SpeechSynthesisVoice | null {
   const nota = (v: SpeechSynthesisVoice) => {
     const n = v.name.toLowerCase();
     let s = 0;
-    if (/natural|neural/.test(n)) s += 100; // Microsoft neural (Edge)
-    if (/online/.test(n)) s += 60; // voz de nuvem
-    if (/google/.test(n)) s += 50; // Google pt-BR
+    if (/natural|neural/.test(n)) s += 100;
+    if (/online/.test(n)) s += 60;
+    if (/google/.test(n)) s += 50;
     if (/luciana|francisca|thalita|brenda|antonio|ant[oô]nio/.test(n)) s += 30;
-    if (!v.localService) s += 20; // remota costuma ser melhor que a embarcada
-    if (/microsoft (daniel|maria)\b/.test(n)) s -= 25; // SAPI antiga
+    if (!v.localService) s += 20;
+    if (/microsoft (daniel|maria)\b/.test(n)) s -= 25;
     return s;
   };
   return [...todas].sort((a, b) => nota(b) - nota(a))[0] ?? null;
@@ -129,18 +135,32 @@ export default function VozPublica({
   onEnviar: (texto: string) => void;
   onVerConversa: () => void;
 }) {
-  const [estado, setEstado] = useState<Estado>("repouso");
+  const [fase, setFase] = useState<Fase>("desligada");
+  const faseRef = useRef<Fase>("desligada");
   const [linha, setLinha] = useState<{ texto: string; cls: string }>({ texto: "", cls: "" });
   const [texto, setTexto] = useState("");
+  const [micBloqueado, setMicBloqueado] = useState(false);
+  const [precisaToque, setPrecisaToque] = useState(false);
 
   const vizRef = useRef<Viz | null>(null);
   const recRef = useRef<any>(null);
+  const houveGesto = useRef(false);
 
   // Como as pessoas chamam de verdade: a PRIMEIRA palavra do nome ("oi tier").
   const nomeCurto = (agente.split(/\s+/)[0] || agente).toLowerCase();
 
-  // A lista de vozes carrega assincrona no Chrome: a 1a chamada volta vazia e
-  // cairia na voz padrao (a robotica). Aquece aqui pra melhorVoz() ter o que ler.
+  // ── latest-refs: o efeito do reconhecimento monta UMA vez e lê daqui ────
+  const onEnviarRef = useRef(onEnviar);
+  useEffect(() => {
+    onEnviarRef.current = onEnviar;
+  });
+  const agenteRef = useRef(agente);
+  useEffect(() => {
+    agenteRef.current = agente;
+  });
+
+  // A lista de vozes carrega assincrona no Chrome: aquece pra melhorVoz() ter o
+  // que ler quando o fallback do navegador for necessário.
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
     speechSynthesis.getVoices();
@@ -158,7 +178,7 @@ export default function VozPublica({
       vizRef.current = v;
       v.simulate(false);
       inst = v.mount("#esfera-voz", "po");
-      v.setLevel(0); // sem voz: quem move e o respiro do proprio visualizador
+      v.setLevel(0);
     });
     return () => {
       vivo = false;
@@ -166,11 +186,7 @@ export default function VozPublica({
     };
   }, []);
 
-  // ── a esfera acompanha a fala ─────────────────────────────────────────
-  // O `SpeechSynthesis` não entrega o áudio pra análise, então o sinal mais
-  // fiel disponível é o `onboundary`: ele avisa a CADA palavra pronunciada.
-  // Cada palavra vira um pulso, com a força puxada pelo tamanho dela — em vez
-  // do gerador de sílabas, que não tinha relação nenhuma com o que era dito.
+  // ── envelope da esfera (fallback quando não há analyser) ──────────────
   const nivel = useRef(0);
   const alvo = useRef(0);
   const quadro = useRef(0);
@@ -186,7 +202,6 @@ export default function VozPublica({
   const rodarEnvelope = useCallback(() => {
     if (quadro.current) return;
     const passo = () => {
-      // ataque rápido, decaimento lento: o desenho de uma sílaba
       const sobe = alvo.current > nivel.current;
       nivel.current += (alvo.current - nivel.current) * (sobe ? 0.5 : 0.09);
       alvo.current *= 0.9;
@@ -196,43 +211,45 @@ export default function VozPublica({
     passo();
   }, []);
 
-  const aplicarEstado = useCallback(
-    (e: Estado) => {
-      setEstado(e);
+  /** Muda a fase e ajusta a esfera. NUNCA toca no áudio em curso. */
+  const ligarMicAnalyserRef = useRef<(() => Promise<void>) | null>(null);
+  const mudarFase = useCallback(
+    (f: Fase) => {
+      faseRef.current = f;
+      setFase(f);
       const v = vizRef.current;
       if (!v) return;
-      if (e === "pensando") {
-        // pensando não é falar: um respiro fundo e lento, sem sílaba
+      // assinatura visual por estado (deriva/cintilação/contração/redemoinho)
+      v.setMood?.(f === "desligada" ? "calma" : f);
+      if (f === "pensando") {
         v.simulate(false);
         pararEnvelope();
-        v.setLevel(0.3);
-      } else if (e !== "falando" && e !== "ouvindo") {
+        v.setLevel(0.3); // energia interna leve; contração+redemoinho vêm do humor
+      } else if (f === "sentinela" || f === "escutando") {
         v.simulate(false);
         pararEnvelope();
+        v.setLevel(0);
+        // a superfície segue a VOZ DO USUÁRIO em tempo real (analyser do mic)
+        void ligarMicAnalyserRef.current?.();
+      } else if (f !== "falando") {
+        v.simulate(false);
+        pararEnvelope();
+        v.setLevel(0);
       }
     },
     [pararEnvelope],
   );
 
-  /**
-   * Toca o MP3 do ElevenLabs e liga a esfera no áudio DE VERDADE.
-   *
-   * Aqui não há aproximação: o áudio passa por um AnalyserNode e o visualizador
-   * lê o espectro real, igual faz com o microfone. É a diferença entre a esfera
-   * "acompanhar" a fala e a esfera SER a fala.
-   */
+  // ── áudio da resposta (Dora) ──────────────────────────────────────────
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ctxAudio = useRef<AudioContext | null>(null);
   const fonte = useRef<MediaElementAudioSourceNode | null>(null);
+  const anDora = useRef<AnalyserNode | null>(null);
 
   /**
-   * Destrava o áudio DENTRO do gesto do usuário.
-   *
-   * 🚨 Um `AudioContext` criado fora de clique nasce `suspended`. E como
-   * `createMediaElementSource` desvia TODO o som do elemento pra dentro do
-   * grafo, tocar num contexto suspenso não dá som baixo — dá silêncio total.
-   * Era isso que fazia o agente "não responder": o backend devolvia 200, o
-   * áudio chegava, e ninguém ouvia nada.
+   * Destrava o áudio DENTRO de gesto do usuário. Um AudioContext criado fora
+   * de clique nasce `suspended` — e com createMediaElementSource isso é
+   * SILÊNCIO TOTAL, não som baixo.
    */
   const destravarAudio = useCallback(async () => {
     try {
@@ -245,20 +262,86 @@ export default function VozPublica({
     }
   }, []);
 
+  // ── análise REAL da voz do usuário (mic → AnalyserNode) ───────────────
+  // ⚠️ Gotcha conhecido: SpeechRecognition + getUserMedia = duas capturas
+  // simultâneas já travaram a interface no Windows uma vez (viz.attachMic).
+  // Por isso: UMA stream só, aberta uma vez, no MESMO AudioContext do
+  // playback, e falha vira fallback silencioso — a escuta nunca depende disto.
+  const micStream = useRef<MediaStream | null>(null);
+  const micAnalyser = useRef<AnalyserNode | null>(null);
+  const ligarMicAnalyser = useCallback(async () => {
+    try {
+      await destravarAudio();
+      const ac = ctxAudio.current;
+      if (!ac || ac.state !== "running") return;
+      if (!micAnalyser.current) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // a fase pode ter mudado enquanto o prompt de permissão estava aberto
+        if (faseRef.current !== "sentinela" && faseRef.current !== "escutando") {
+          stream.getTracks().forEach((tr) => tr.stop());
+          return;
+        }
+        micStream.current = stream;
+        const src = ac.createMediaStreamSource(stream);
+        const an = ac.createAnalyser();
+        an.fftSize = 1024;
+        an.smoothingTimeConstant = 0.6;
+        src.connect(an); // NÃO liga no destination — sem eco no alto-falante
+        micAnalyser.current = an;
+      }
+      vizRef.current?.attachAnalyser?.(micAnalyser.current);
+    } catch {
+      /* sem análise do mic: a esfera segue no envelope */
+    }
+  }, [destravarAudio]);
+  useEffect(() => {
+    ligarMicAnalyserRef.current = ligarMicAnalyser;
+  });
+
+  /** Solta o microfone de verdade (indicador do navegador apaga). */
+  const soltarMic = useCallback(() => {
+    try {
+      micStream.current?.getTracks().forEach((tr) => tr.stop());
+    } catch {
+      /* ignora */
+    }
+    micStream.current = null;
+    micAnalyser.current = null;
+  }, []);
+  useEffect(() => soltarMic, [soltarMic]);
+
+  // Primeiro gesto em QUALQUER lugar da página destrava o áudio — é o que
+  // salva o fluxo zero-clique quando o Chrome segura autoplay.
+  useEffect(() => {
+    const unlock = () => {
+      houveGesto.current = true;
+      void destravarAudio();
+    };
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [destravarAudio]);
+
   /**
-   * Toca as falas em sequencia, baixando cada uma inteira antes de tocar.
-   *
-   * 🚨 Nao usar <audio src="url em chunked">: o Chrome NAO inicia reproducao
-   * progressiva em cross-origin sem Content-Length — o play() e aceito, o
-   * evento `playing` nunca dispara e nao sai som. Reproduzido no navegador.
-   * Baixando por fetch (que lida com chunked) e tocando de um blob same-origin,
-   * toca sempre — e como cada fala e UMA FRASE, a primeira chega em ~1s.
+   * Toca as falas em sequência, baixando cada uma inteira antes de tocar.
+   * 🚨 Não usar <audio src> em chunked cross-origin sem Content-Length: o
+   * play() é aceito e não sai som. Fetch → blob same-origin toca sempre.
+   * Se o autoplay for BLOQUEADO (zero-clique real), não perde a resposta:
+   * `aoPrecisarGesto` vira o CTA "toque para ouvir".
    */
   const filaRef = useRef<{ cancelar: boolean }>({ cancelar: false });
 
   const tocarFalas = useCallback(
-    async (urls: string[], aoTerminar: () => void, aoFalhar: () => void) => {
-      filaRef.current.cancelar = true; // corta qualquer fala anterior
+    async (
+      urls: string[],
+      aoTerminar: () => void,
+      aoFalhar: () => void,
+      aoPrecisarGesto?: (urls: string[]) => void,
+    ) => {
+      filaRef.current.cancelar = true; // corta SÓ uma fala anterior (nova pergunta explícita)
       const meu = { cancelar: false };
       filaRef.current = meu;
 
@@ -269,11 +352,11 @@ export default function VozPublica({
 
       let proxima = baixar(urls[0]);
       let tocouAlguma = false;
+      let autoplayNegado = false;
 
       for (let i = 0; i < urls.length; i++) {
         const blob = await proxima;
         if (meu.cancelar) return;
-        // ja vai buscando a seguinte enquanto esta toca
         proxima = i + 1 < urls.length ? baixar(urls[i + 1]) : Promise.resolve(null);
         if (!blob) continue;
 
@@ -286,30 +369,46 @@ export default function VozPublica({
           }
           el.src = src;
 
-          // Liga o analisador uma vez so, e SO com o contexto rodando: num
-          // contexto suspenso o createMediaElementSource silencia o elemento.
           const ac = ctxAudio.current;
           const v = vizRef.current;
-          if (ac && ac.state === "running" && !fonte.current && v) {
-            try {
-              fonte.current = ac.createMediaElementSource(el);
-              const an = ac.createAnalyser();
-              an.fftSize = 8192;
-              an.smoothingTimeConstant = 0.5;
-              fonte.current.connect(an);
-              an.connect(ac.destination);
-              v.attachAnalyser?.(an);
-            } catch {
-              fonte.current = null;
+          if (ac && ac.state === "running" && v) {
+            if (!fonte.current) {
+              try {
+                fonte.current = ac.createMediaElementSource(el);
+                const an = ac.createAnalyser();
+                an.fftSize = 8192;
+                an.smoothingTimeConstant = 0.5;
+                fonte.current.connect(an);
+                an.connect(ac.destination);
+                anDora.current = an;
+              } catch {
+                fonte.current = null;
+              }
             }
+            // Re-liga SEMPRE: o setLevel das outras fases desconecta o
+            // analyser do viz — sem isto a esfera ficava surda à voz da Dora
+            // da 2ª resposta em diante.
+            if (anDora.current) v.attachAnalyser?.(anDora.current);
           }
           if (!fonte.current) rodarEnvelope();
 
           const limpar = () => URL.revokeObjectURL(src);
-          el.onended = () => { limpar(); resolve(true); };
-          el.onerror = () => { limpar(); resolve(false); };
-          el.ontimeupdate = () => { if (!fonte.current) alvo.current = 0.45 + Math.random() * 0.35; };
-          void el.play().catch(() => { limpar(); resolve(false); });
+          el.onended = () => {
+            limpar();
+            resolve(true);
+          };
+          el.onerror = () => {
+            limpar();
+            resolve(false);
+          };
+          el.ontimeupdate = () => {
+            if (!fonte.current) alvo.current = 0.45 + Math.random() * 0.35;
+          };
+          el.play().catch((e) => {
+            if (e?.name === "NotAllowedError") autoplayNegado = true;
+            limpar();
+            resolve(false);
+          });
         });
 
         if (meu.cancelar) return;
@@ -318,26 +417,32 @@ export default function VozPublica({
 
       if (meu.cancelar) return;
       if (tocouAlguma) aoTerminar();
+      else if (autoplayNegado && aoPrecisarGesto) aoPrecisarGesto(urls);
       else aoFalhar();
     },
     [rodarEnvelope],
   );
 
-  /** Toca uma fala curta pre-gravada. Instantaneo: vem do disco. */
+  /** Toca uma fala curta pré-gravada (filler / pois não). Só ELA é cortável. */
   const curtaRef = useRef<HTMLAudioElement | null>(null);
-  const tocarCurta = useCallback((src: string) => {
-    try {
-      if (!curtaRef.current) curtaRef.current = new Audio();
-      const el = curtaRef.current;
-      el.src = src;
-      el.currentTime = 0;
-      rodarEnvelope();
-      el.ontimeupdate = () => { alvo.current = 0.45 + Math.random() * 0.3; };
-      void el.play().catch(() => {});
-    } catch {
-      /* sem audio curto: so nao ha aviso sonoro */
-    }
-  }, [rodarEnvelope]);
+  const tocarCurta = useCallback(
+    (src: string) => {
+      try {
+        if (!curtaRef.current) curtaRef.current = new Audio();
+        const el = curtaRef.current;
+        el.src = src;
+        el.currentTime = 0;
+        rodarEnvelope();
+        el.ontimeupdate = () => {
+          alvo.current = 0.45 + Math.random() * 0.3;
+        };
+        void el.play().catch(() => {});
+      } catch {
+        /* sem audio curto: so nao ha aviso sonoro */
+      }
+    },
+    [rodarEnvelope],
+  );
 
   const pararCurta = useCallback(() => {
     try {
@@ -347,138 +452,41 @@ export default function VozPublica({
     }
   }, []);
 
-  /** Fala um texto e faz a esfera seguir palavra a palavra. */
+  /** Fala pelo navegador (fallback quando o servidor não deu áudio). */
   const falarTexto = useCallback(
-    (texto: string) => {
-      aplicarEstado("falando");
+    (txt: string, aoFim: () => void) => {
       vizRef.current?.simulate(false);
       if (!("speechSynthesis" in window)) {
-        setTimeout(() => aplicarEstado("repouso"), 2600);
+        setTimeout(aoFim, 2600);
         return;
       }
-      const u = new SpeechSynthesisUtterance(texto);
+      const u = new SpeechSynthesisUtterance(txt);
       u.lang = "pt-BR";
       u.rate = 1.04;
       const voz = melhorVoz();
       if (voz) u.voice = voz;
-
       u.onstart = () => rodarEnvelope();
       u.onboundary = (ev: SpeechSynthesisEvent) => {
-        // palavra maior = pulso mais forte, igual a sílaba tônica na fala
         const tam = ev.charLength || 4;
         alvo.current = Math.min(0.95, 0.42 + tam / 16);
       };
       const fim = () => {
         pararEnvelope();
-        aplicarEstado("repouso");
+        aoFim();
       };
       u.onend = fim;
       u.onerror = fim;
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
     },
-    [aplicarEstado, rodarEnvelope, pararEnvelope],
+    [rodarEnvelope, pararEnvelope],
   );
 
-  // 🚨 O "Só um momento" é PARAQUEDAS, não protocolo. Tocando a 400ms ele
-  // disparava pra TODA pergunta — um "oi" ganhava "só um momento, já te
-  // respondo" e a conversa inteira parecia lenta. Agora só toca se a resposta
-  // ainda não chegou depois de PACIENCIA_MS: resposta rápida vem direto, e a
-  // esfera em "pensando" já mostra que ele ouviu. Se o filler começou e a
-  // resposta chega no meio, `pararCurta()` (no efeito da resposta) corta limpo.
-  useEffect(() => {
-    if (!pensando) return;
-    aplicarEstado("pensando");
-    const id = setTimeout(() => tocarCurta(somAguarde), PACIENCIA_MS);
-    return () => clearTimeout(id);
-  }, [pensando, aplicarEstado, tocarCurta]);
-
-  // ── o agente fala a resposta que chegou ───────────────────────────────
-  const respostaTexto = ultimaResposta?.texto ?? "";
-  const respostaId = ultimaResposta?.id ?? 0;
-  useEffect(() => {
-    if (!respostaTexto) return;
-    setLinha({ texto: respostaTexto, cls: "resposta" });
-    pararCurta(); // a resposta chegou: cala o "um momento"
-    const urls = ultimaResposta?.audioUrls ?? [];
-    if (urls.length) {
-      aplicarEstado("falando");
-      vizRef.current?.simulate(false);
-      void tocarFalas(
-        urls,
-        () => { vizRef.current?.setLevel(0); aplicarEstado("repouso"); },
-        () => falarTexto(respostaTexto), // sem audio do servidor: voz do navegador
-      );
-      return;
-    }
-    falarTexto(respostaTexto);
-    return () => speechSynthesis?.cancel();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [respostaId]);
-
-  useEffect(() => pararEnvelope, [pararEnvelope]);
-
-  const receber = useCallback(
-    (txt: string) => {
-      // Modo SOLTO: em conversa o nome vale em qualquer posição (é o "pois
-      // não?" de quem chama no meio do papo). A wake word ESTRITA vive na
-      // sentinela, dentro do reconhecimento.
-      const { chamou, pergunta } = detectarChamada(txt, agente, false);
-      if (chamou && !pergunta) {
-        // Chamou pelo nome e nao perguntou: responde CURTO e fica pronto pra
-        // ouvir. Uma apresentacao longa aqui atrapalha — a pessoa chamou pra
-        // perguntar, nao pra ouvir credencial.
-        setLinha({ texto: "Pois não?", cls: "resposta" });
-        tocarCurta(somPoisNao);
-        setTimeout(() => aplicarEstado("repouso"), 1200);
-        return;
-      }
-      onEnviar(pergunta || txt);
-    },
-    [onEnviar, agente, tocarCurta, aplicarEstado],
-  );
-
-  // ── reconhecimento de fala ────────────────────────────────────────────
-  // A página nasce em SENTINELA: mic aberto só esperando "oi {nome}" — é a
-  // wake word que ATIVA a conversa, sem clique nenhum. Em conversa, o fim de
-  // fala é automático (VAD por silêncio): falou, parou, ele responde. O botão
-  // de microfone continua sendo o interruptor manual (e o desliga-tudo).
-  const escuta = useRef<Escuta>("desligada");
-  const [escutaUI, setEscutaUI] = useState<Escuta>("desligada");
-  const mudarEscuta = useCallback((e: Escuta) => {
-    escuta.current = e;
-    setEscutaUI(e);
-  }, []);
-  // Houve gesto do usuário? Sem gesto, permissão negada no auto-início da
-  // sentinela falha em SILÊNCIO (flash vermelho na cara de quem só abriu o
-  // link seria hostil).
-  const houveGesto = useRef(false);
-  const reinicio = useRef<number | null>(null);
-
-  // VAD: buffers do turno em andamento + o timer de silêncio que o fecha.
-  const bufFinal = useRef("");
-  const interimAtual = useRef("");
-  const vadTimer = useRef<number | null>(null);
-  const limparVad = useCallback(() => {
-    if (vadTimer.current) {
-      window.clearTimeout(vadTimer.current);
-      vadTimer.current = null;
-    }
-    bufFinal.current = "";
-    interimAtual.current = "";
-  }, []);
-
-  // 🚨 UM dono so pro reinicio. Antes o `onend` e o efeito de estado agendavam
-  // restart os dois, brigando num laco a cada ~500ms — a tela travava e o
-  // indicador de microfone piscava sem parar.
-  // 🚨 `rodando` reflete o que o NAVEGADOR diz, nunca o que eu suponho. A versao
-  // anterior marcava false no catch do start() — mas quando ele lanca
-  // "already started" o reconhecimento ESTA rodando, entao a flag passava a
-  // mentir e a escuta nunca mais comecava. Agora so onstart/onend escrevem nela.
+  // ── escuta: vontade × realidade (um dono só pro liga/desliga) ─────────
   const rodando = useRef(false);
   const querEscutar = useRef(false);
+  const reinicio = useRef<number | null>(null);
 
-  /** Faz a realidade bater com a vontade. Unico ponto que liga/desliga. */
   const sincronizar = useCallback(() => {
     const rec = recRef.current;
     if (!rec) return;
@@ -498,9 +506,77 @@ export default function VozPublica({
     }
   }, []);
 
+  // VAD + follow-up: buffers e timers
+  const bufFinal = useRef("");
+  const interimAtual = useRef("");
+  const vadTimer = useRef<number | null>(null);
+  const followTimer = useRef<number | null>(null);
+
+  const limparVad = useCallback(() => {
+    if (vadTimer.current) {
+      window.clearTimeout(vadTimer.current);
+      vadTimer.current = null;
+    }
+    bufFinal.current = "";
+    interimAtual.current = "";
+  }, []);
+
+  const cancelarFollowUp = useCallback(() => {
+    if (followTimer.current) {
+      window.clearTimeout(followTimer.current);
+      followTimer.current = null;
+    }
+  }, []);
+
+  const armarFollowUp = useCallback(() => {
+    cancelarFollowUp();
+    followTimer.current = window.setTimeout(() => {
+      followTimer.current = null;
+      // 20s de escuta sem nenhum turno → volta a exigir a chamada
+      if (faseRef.current === "escutando") {
+        mudarFase("sentinela");
+        setLinha({ texto: "", cls: "" });
+      }
+    }, FOLLOWUP_MS);
+  }, [cancelarFollowUp, mudarFase]);
+
+  /** Escuta reaberta DEPOIS da resposta: follow-up sem wake word. */
+  const voltarAEscutar = useCallback(() => {
+    // Sair da tela ou mic mutado no meio: respeita.
+    if (faseRef.current === "desligada") return;
+    mudarFase("escutando");
+    armarFollowUp();
+  }, [mudarFase, armarFollowUp]);
+
+  /** Um texto do usuário (voz ou campo) entra no agente. */
+  const receber = useCallback(
+    (txt: string) => {
+      const { chamou, pergunta } = detectarChamada(txt, agenteRef.current, false);
+      if (chamou && !pergunta) {
+        // Chamou pelo nome e não perguntou: responde curto e fica ouvindo.
+        setLinha({ texto: "Pois não?", cls: "resposta" });
+        tocarCurta(somPoisNao);
+        window.setTimeout(voltarAEscutar, 900);
+        return;
+      }
+      cancelarFollowUp();
+      mudarFase("pensando");
+      onEnviarRef.current(pergunta || txt);
+    },
+    [tocarCurta, voltarAEscutar, cancelarFollowUp, mudarFase],
+  );
+  const receberRef = useRef(receber);
+  useEffect(() => {
+    receberRef.current = receber;
+  });
+
+  // ── o reconhecimento — monta UMA vez ──────────────────────────────────
   useEffect(() => {
     const SR = (window.SpeechRecognition || window.webkitSpeechRecognition) as any;
-    if (!SR) return;
+    if (!SR) {
+      setMicBloqueado(true);
+      return;
+    }
     const rec = new SR();
     rec.lang = "pt-BR";
     rec.interimResults = true;
@@ -512,25 +588,22 @@ export default function VozPublica({
       const turno = `${bufFinal.current} ${interimAtual.current}`.replace(/\s+/g, " ").trim();
       bufFinal.current = "";
       interimAtual.current = "";
-      // Ruído/muleta ("hum", "é") não vira chamada de LLM na conta do tenant.
       if (!falaValida(turno)) {
         setLinha({ texto: "", cls: "" });
+        armarFollowUp(); // ruído não vira LLM; a janela de follow-up volta a contar
         return;
       }
-      // Zera o buffer do navegador: o isFinal pendente DESTE trecho não pode
-      // chegar atrasado e virar um segundo envio. O onend religa a escuta.
       try {
-        rec.abort();
+        rec.abort(); // zera o buffer do navegador (isFinal atrasado ≠ 2º envio)
       } catch {
         /* ignora */
       }
       setLinha({ texto: turno, cls: "" });
-      receber(turno);
+      receberRef.current(turno);
     };
 
     rec.onstart = () => {
       rodando.current = true;
-      aplicarEstado("ouvindo");
     };
     rec.onresult = (ev: any) => {
       let parcial = "";
@@ -540,10 +613,9 @@ export default function VozPublica({
         else parcial += ev.results[i][0].transcript;
       }
 
-      if (escuta.current === "conversa") {
-        // Acumula finais + interim e deixa O SILÊNCIO decidir o fim do turno.
-        // Enviar no isFinal do Chrome cortava a frase em pausa de respiração
-        // (~0,6s); o timer só dispara depois de VAD_SILENCIO_MS sem palavra nova.
+      const f = faseRef.current;
+      if (f === "escutando") {
+        cancelarFollowUp(); // tem fala acontecendo — o follow-up não expira no meio
         if (final) bufFinal.current = `${bufFinal.current} ${final}`.trim();
         interimAtual.current = parcial;
         const mostrado = `${bufFinal.current} ${parcial}`.replace(/\s+/g, " ").trim();
@@ -553,44 +625,40 @@ export default function VozPublica({
         return;
       }
 
-      // SENTINELA: só a CHAMADA acorda ("oi tier" no começo da frase, ou frase
-      // curta endereçada). Conversa de fundo que apenas MENCIONA o agente é
-      // descartada — a dica na tela diz como chamar, então o silêncio aqui não
-      // é degradê mudo. Nada acumula: cada trecho é avaliado e morre.
-      const ouvido = (final || parcial).trim();
-      if (!ouvido || !detectarChamada(ouvido, agente, true).chamou) return;
-      mudarEscuta("conversa");
-      void destravarAudio(); // melhor esforço: sem gesto o Chrome pode segurar o som
-      bufFinal.current = "";
-      interimAtual.current = "";
-      try {
-        rec.abort(); // zera o trecho; onend religa já em modo conversa
-      } catch {
-        /* ignora */
+      if (f === "sentinela") {
+        // Só a CHAMADA acorda (wake word estrita — fundo que menciona o agente
+        // não dispara LLM). O status na tela diz como chamar.
+        const ouvido = (final || parcial).trim();
+        if (!ouvido || !detectarChamada(ouvido, agenteRef.current, true).chamou) return;
+        void destravarAudio(); // melhor esforço: sem gesto o Chrome pode segurar o som
+        bufFinal.current = "";
+        interimAtual.current = "";
+        mudarFase("escutando");
+        try {
+          rec.abort(); // zera o trecho; onend religa já em escutando
+        } catch {
+          /* ignora */
+        }
+        receberRef.current(ouvido);
       }
-      receber(ouvido);
+      // pensando/falando/desligada: mic deveria estar off — descarta eco.
     };
     rec.onerror = (e: any) => {
       if (e.error === "no-speech" || e.error === "aborted") return;
-      if (e.error === "not-allowed") {
-        mudarEscuta("desligada");
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
         querEscutar.current = false;
-        // Sem gesto (auto-início da sentinela): falha em silêncio — flash
-        // vermelho na cara de quem só abriu o link seria hostil.
-        if (!houveGesto.current) return;
+        setMicBloqueado(true);
+        mudarFase("desligada");
+        return; // o status na tela vira o CTA — nunca falha em silêncio
       }
-      aplicarEstado("erro");
-      setLinha({ texto: e.error === "not-allowed" ? "microfone bloqueado" : `erro: ${e.error}`, cls: "" });
-      setTimeout(() => {
-        aplicarEstado("repouso");
-        setLinha({ texto: "", cls: "" });
-      }, 2600);
+      // erro transitório (ex: network): mostra e deixa o onend religar
+      setLinha({ texto: `microfone: ${e.error}`, cls: "parcial" });
+      window.setTimeout(() => setLinha((l) => (l.texto.startsWith("microfone:") ? { texto: "", cls: "" } : l)), 2400);
     };
     rec.onend = () => {
       rodando.current = false;
-      setEstado((st) => (st === "ouvindo" ? "repouso" : st));
-      // O Chrome encerra sozinho apos ~1min de silencio. Se ainda queremos
-      // escutar, volta — com um respiro pra nao virar laco apertado.
+      // O Chrome encerra sozinho após ~1min de silêncio. Se ainda queremos
+      // escutar, volta — com um respiro pra não virar laço apertado.
       if (querEscutar.current) {
         if (reinicio.current) window.clearTimeout(reinicio.current);
         reinicio.current = window.setTimeout(sincronizar, 300);
@@ -598,17 +666,17 @@ export default function VozPublica({
     };
     recRef.current = rec;
 
-    // A SENTINELA NASCE LIGADA: abrir a página e dizer "oi tier" já ativa a
-    // conversa. Se a permissão for negada, o onerror desliga em silêncio.
-    mudarEscuta("sentinela");
-    querEscutar.current = true;
-    sincronizar();
+    // 🚨 O MIC NASCE 100% DESLIGADO — decisão do dono ("entrar com o microfone
+    // ativo é gambiarra"). Nada de permissão/getUserMedia no load: UM toque na
+    // esfera (ou no mic) ARMA a sentinela — e esse mesmo gesto destrava o
+    // autoplay do Chrome. Instanciar o SR aqui não abre microfone (só .start()).
 
     return () => {
-      mudarEscuta("desligada");
+      faseRef.current = "desligada";
       querEscutar.current = false;
       if (reinicio.current) window.clearTimeout(reinicio.current);
       if (vadTimer.current) window.clearTimeout(vadTimer.current);
+      if (followTimer.current) window.clearTimeout(followTimer.current);
       try {
         rec.abort();
       } catch {
@@ -616,90 +684,252 @@ export default function VozPublica({
       }
       recRef.current = null;
     };
-  }, [receber, aplicarEstado, sincronizar, agente, mudarEscuta, destravarAudio]);
+    // monta UMA vez de propósito — tudo que muda entra por ref
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Enquanto ele fala ou pensa, nao queremos escutar — senao o microfone ouve o
-  // alto-falante e ele se chama sozinho (VAD + eco = pior ainda: fecharia turno
-  // com a fala da Dora). Este efeito so muda a VONTADE; ligar e desligar de
-  // fato e sempre do `sincronizar`. Buffers do VAD morrem junto.
-  useEffect(() => {
-    const ocupado = estado === "falando" || estado === "pensando";
-    querEscutar.current = escutaUI !== "desligada" && !ocupado;
-    if (ocupado) limparVad();
-    sincronizar();
-  }, [estado, escutaUI, sincronizar, limparVad]);
+  // ── ditado: escreve no CAMPO ao vivo (rec separado; suspende a escuta) ──
+  const recDitado = useRef<any>(null);
+  const [ditando, setDitando] = useState(false);
+  const baseDitado = useRef("");
+  const finaisDitado = useRef("");
 
-  /** O botão de microfone: liga a conversa; em conversa, DESLIGA TUDO
-   *  (sentinela inclusive — desligou é desligou, privacidade). */
-  const falar = useCallback(() => {
-    const rec = recRef.current;
-    if (!rec) return;
+  const toggleDitado = useCallback(() => {
     houveGesto.current = true;
-
-    if (escuta.current === "conversa") {
-      mudarEscuta("desligada");
-      querEscutar.current = false;
-      limparVad();
-      if (reinicio.current) window.clearTimeout(reinicio.current);
+    void destravarAudio();
+    if (ditando) {
       try {
-        rec.abort();
+        recDitado.current?.stop(); // stop (não abort): entrega o trecho pendente
       } catch {
         /* ignora */
       }
-      aplicarEstado("repouso");
-      setLinha({ texto: "", cls: "" });
       return;
     }
+    const SR = (window.SpeechRecognition || window.webkitSpeechRecognition) as any;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = "pt-BR";
+    rec.interimResults = true;
+    rec.continuous = true;
+    baseDitado.current = texto.trim() ? `${texto.trim()} ` : "";
+    finaisDitado.current = "";
+    rec.onresult = (ev: any) => {
+      let parcial = "";
+      let final = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        if (ev.results[i].isFinal) final += ev.results[i][0].transcript;
+        else parcial += ev.results[i][0].transcript;
+      }
+      if (final) finaisDitado.current = `${finaisDitado.current}${final} `;
+      setTexto(`${baseDitado.current}${finaisDitado.current}${parcial}`.replace(/\s+/g, " ").trimStart());
+    };
+    rec.onend = () => setDitando(false);
+    rec.onerror = () => setDitando(false);
+    recDitado.current = rec;
+    try {
+      rec.start();
+      setDitando(true);
+    } catch {
+      setDitando(false);
+    }
+  }, [ditando, texto, destravarAudio]);
 
-    void destravarAudio(); // precisa ser DENTRO do gesto
-    // Sem attachMic: o reconhecimento ja abre o microfone. Dois capturas
-    // simultaneas travavam a interface no Windows. A esfera usa o envelope.
-    mudarEscuta("conversa");
-    querEscutar.current = true;
+  useEffect(
+    () => () => {
+      try {
+        recDitado.current?.abort();
+      } catch {
+        /* ignora */
+      }
+    },
+    [],
+  );
+
+  // ── mic ON só em sentinela/escutando (e nunca durante o ditado) ───────
+  useEffect(() => {
+    const querMic = (fase === "sentinela" || fase === "escutando") && !ditando;
+    querEscutar.current = querMic;
+    if (!querMic) limparVad();
     sincronizar();
-  }, [aplicarEstado, sincronizar, mudarEscuta, limparVad, destravarAudio]);
+  }, [fase, ditando, sincronizar, limparVad]);
+
+  // ── filler "só um momento": paraquedas, nunca protocolo ───────────────
+  useEffect(() => {
+    if (fase !== "pensando") return;
+    const id = window.setTimeout(() => {
+      if (faseRef.current === "pensando") tocarCurta(somAguarde);
+    }, PACIENCIA_MS);
+    return () => window.clearTimeout(id);
+  }, [fase, tocarCurta]);
+
+  // pai confirma o pensando (caminho do campo de texto da tela de conversa)
+  useEffect(() => {
+    if (pensando && faseRef.current !== "pensando") mudarFase("pensando");
+    if (!pensando && faseRef.current === "pensando") {
+      // resposta não veio (erro no POST)? não deixa a fase presa com mic off
+      const id = window.setTimeout(() => {
+        if (faseRef.current === "pensando") voltarAEscutar();
+      }, 800);
+      return () => window.clearTimeout(id);
+    }
+  }, [pensando, mudarFase, voltarAEscutar]);
+
+  // ── a resposta chegou: FALANDO (áudio intocável até o fim) ────────────
+  const respostaTexto = ultimaResposta?.texto ?? "";
+  const respostaId = ultimaResposta?.id ?? 0;
+  const pendenteRef = useRef<{ urls: string[]; texto: string } | null>(null);
+
+  useEffect(() => {
+    if (!respostaTexto) return;
+    setLinha({ texto: respostaTexto, cls: "resposta" });
+    pararCurta(); // a resposta chegou: cala o "um momento" (só o filler!)
+    setPrecisaToque(false);
+    mudarFase("falando");
+    const urls = ultimaResposta?.audioUrls ?? [];
+    if (urls.length) {
+      vizRef.current?.simulate(false);
+      void tocarFalas(
+        urls,
+        () => {
+          vizRef.current?.setLevel(0);
+          voltarAEscutar(); // fim do áudio → escuta reabre (follow-up)
+        },
+        () => falarTexto(respostaTexto, voltarAEscutar),
+        (pend) => {
+          // autoplay bloqueado (zero-clique real): não perde a resposta
+          pendenteRef.current = { urls: pend, texto: respostaTexto };
+          setPrecisaToque(true);
+        },
+      );
+      return;
+    }
+    falarTexto(respostaTexto, voltarAEscutar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [respostaId]);
+
+  const tocarPendente = useCallback(() => {
+    const p = pendenteRef.current;
+    if (!p) return;
+    setPrecisaToque(false);
+    houveGesto.current = true;
+    void destravarAudio();
+    mudarFase("falando");
+    void tocarFalas(
+      p.urls,
+      () => {
+        vizRef.current?.setLevel(0);
+        voltarAEscutar();
+      },
+      () => falarTexto(p.texto, voltarAEscutar),
+    );
+  }, [destravarAudio, tocarFalas, falarTexto, voltarAEscutar, mudarFase]);
+
+  useEffect(() => pararEnvelope, [pararEnvelope]);
+
+  // ── controles ─────────────────────────────────────────────────────────
+  /** O gesto de ARMAR: liga a sentinela (wake word) e destrava o áudio. */
+  const armarSentinela = useCallback(() => {
+    houveGesto.current = true;
+    setMicBloqueado(false);
+    void destravarAudio();
+    mudarFase("sentinela");
+    setLinha({ texto: "", cls: "" });
+  }, [destravarAudio, mudarFase]);
+
+  /** Muta o mic (NÃO toca no áudio que estiver tocando). */
+  const desligarEscuta = useCallback(() => {
+    cancelarFollowUp();
+    limparVad();
+    soltarMic(); // solta a captura de verdade: o indicador do navegador apaga
+    // se estiver falando, deixa falar — só o mic desliga
+    if (faseRef.current !== "falando" && faseRef.current !== "pensando") {
+      setLinha({ texto: "", cls: "" });
+    }
+    mudarFase("desligada");
+  }, [cancelarFollowUp, limparVad, mudarFase, soltarMic]);
+
+  const escutaLigada = fase !== "desligada";
+
+  const enviarTexto = useCallback(() => {
+    const v = texto.trim();
+    if (!v) return;
+    houveGesto.current = true;
+    void destravarAudio();
+    if (ditando) {
+      try {
+        recDitado.current?.stop();
+      } catch {
+        /* ignora */
+      }
+    }
+    setTexto("");
+    setLinha({ texto: v, cls: "" });
+    receber(v);
+  }, [texto, destravarAudio, receber, ditando]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const alvo = e.target as HTMLElement | null;
-      if (e.code === "Space" && alvo?.tagName !== "INPUT") {
+      const alvoEl = e.target as HTMLElement | null;
+      if (e.code === "Space" && alvoEl?.tagName !== "INPUT") {
         e.preventDefault();
-        falar();
-      }
-      if (e.key === "Escape") {
-        speechSynthesis?.cancel();
-        aplicarEstado("repouso");
-        setLinha({ texto: "", cls: "" });
+        if (escutaLigada) desligarEscuta();
+        else armarSentinela();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [falar, aplicarEstado]);
+  }, [escutaLigada, armarSentinela, desligarEscuta]);
 
+  // ── UI ────────────────────────────────────────────────────────────────
   const corPonto =
-    estado === "ouvindo" || estado === "falando"
+    fase === "escutando" || fase === "falando"
       ? "bg-white shadow-[0_0_12px_rgba(255,255,255,0.75)]"
-      : estado === "pensando"
+      : fase === "pensando"
         ? "bg-[#8e8e93] animate-pulse"
-        : estado === "erro"
-          ? "bg-[#ff453a] shadow-[0_0_12px_rgba(255,69,58,0.8)]"
+        : fase === "sentinela"
+          ? "bg-[#8e8e93]"
           : "bg-[#2c2c2e]";
+
+  // Estado do mic SEMPRE visível — e clicável quando é um convite à ação.
+  // A página abre desarmada: a dica deixa ÓBVIO que um toque liga.
+  const status: { texto: string; acao: (() => void) | null } = precisaToque
+    ? { texto: "toque para ouvir a resposta", acao: tocarPendente }
+    : fase === "desligada"
+      ? micBloqueado
+        ? { texto: "microfone bloqueado — toque para tentar de novo", acao: armarSentinela }
+        : { texto: "toque na esfera para começar", acao: armarSentinela }
+      : fase === "sentinela"
+        ? { texto: `diga "oi ${nomeCurto}"`, acao: null }
+        : fase === "escutando"
+          ? { texto: "escutando — pode falar", acao: null }
+          : fase === "pensando"
+            ? { texto: "pensando…", acao: null }
+            : { texto: "respondendo…", acao: null };
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black text-[#f2f2f7] select-none">
-      <span className={`fixed top-[22px] left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full z-30 transition-all ${corPonto}`} />
+      <span
+        className={`fixed top-[22px] left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full z-30 transition-all ${corPonto}`}
+      />
 
       <div className="flex-1 min-h-0 grid place-items-center px-4 pt-6">
         {/* A animacao vai no PAI. No proprio elemento, o visualizador media a
-            caixa durante o scale(.88) e o canvas ficava 12% ampliado pra sempre. */}
-        <div className="w-[min(72vmin,560px)] aspect-square voz-entra">
+            caixa durante o scale(.88) e o canvas ficava 12% ampliado pra sempre.
+            Desarmada, a PRÓPRIA ESFERA é o botão de começar (1 gesto arma a
+            sentinela E destrava o autoplay). */}
+        <div
+          className={`w-[min(72vmin,560px)] aspect-square voz-entra ${fase === "desligada" ? "cursor-pointer" : ""}`}
+          onClick={fase === "desligada" ? armarSentinela : undefined}
+          role={fase === "desligada" ? "button" : undefined}
+          aria-label={fase === "desligada" ? "Tocar para começar a conversa por voz" : undefined}
+        >
           <div id="esfera-voz" className="w-full h-full" />
         </div>
       </div>
 
       {linha.texto ? (
         <p
-          className={`fixed left-0 right-0 bottom-[110px] text-center px-[7vw] z-30 font-light leading-[1.4] tracking-[-0.01em] max-h-[24vh] overflow-hidden text-[clamp(16px,2.1vw,24px)] ${
+          className={`fixed left-0 right-0 bottom-[118px] text-center px-[7vw] z-30 font-light leading-[1.4] tracking-[-0.01em] max-h-[24vh] overflow-hidden text-[clamp(16px,2.1vw,24px)] ${
             linha.cls === "parcial" ? "text-[#8e8e93]" : "text-[#f2f2f7]"
           }`}
         >
@@ -707,23 +937,24 @@ export default function VozPublica({
         </p>
       ) : null}
 
-      <p
-        className={`fixed left-0 right-0 bottom-[86px] text-center z-30 text-[11px] tracking-[0.14em] uppercase text-[#48484a] transition-opacity duration-500 ${
-          linha.texto ? "opacity-0" : "opacity-100"
+      {/* status do mic: SEMPRE visível; vira CTA quando há ação a tomar */}
+      <button
+        type="button"
+        onClick={status.acao ?? undefined}
+        disabled={!status.acao}
+        className={`fixed left-1/2 -translate-x-1/2 bottom-[88px] z-30 text-[11px] tracking-[0.14em] uppercase transition-colors ${
+          status.acao ? "text-[#c7c7cc] underline underline-offset-4 decoration-[#48484a] cursor-pointer" : "text-[#48484a]"
         }`}
       >
-        {escutaUI === "conversa"
-          ? "escutando — pode falar"
-          : escutaUI === "sentinela"
-            ? `diga "oi ${nomeCurto}" — ou aperte o microfone`
-            : "aperte o microfone e fale"}
-      </p>
+        {status.texto}
+      </button>
 
+      {/* barra: [+ conversa] [campo] [mic ditado] [círculo branco: escuta/enviar] */}
       <div className="fixed left-1/2 -translate-x-1/2 bottom-[18px] z-40 w-[min(92vw,760px)] h-14 rounded-[28px] bg-[#1c1c1e] flex items-center gap-1.5 pl-2.5 pr-2">
         <button
           type="button"
           onClick={onVerConversa}
-          title="Ver a conversa"
+          title={`Ver a conversa — ${titulo}`}
           aria-label="Ver a conversa"
           className="shrink-0 h-9 w-9 rounded-full grid place-items-center text-[#f2f2f7] hover:bg-[#2c2c2e] transition-colors"
         >
@@ -736,53 +967,60 @@ export default function VozPublica({
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && texto.trim()) {
-              houveGesto.current = true;
-              void destravarAudio(); // gesto do usuario: libera o som
-              const v = texto.trim();
-              setTexto("");
-              setLinha({ texto: v, cls: "" });
-              receber(v);
-            }
+            if (e.key === "Enter" && texto.trim()) enviarTexto();
           }}
-          placeholder="Mensagem"
+          placeholder={ditando ? "Pode falar — estou escrevendo…" : "Mensagem"}
           autoComplete="off"
           enterKeyHint="send"
           className="flex-1 min-w-0 h-full bg-transparent border-0 outline-none text-[16px] text-[#f2f2f7] placeholder:text-[#8e8e93] px-1"
         />
 
+        {/* mic de DITADO: fala e o texto vai sendo escrito no campo */}
         <button
           type="button"
-          onClick={falar}
-          title={
-            escutaUI === "conversa"
-              ? "Desligar o microfone"
-              : `Conversar por voz — ou diga "oi ${nomeCurto}"`
-          }
-          aria-label={escutaUI === "conversa" ? "Desligar o microfone" : "Conversar por voz"}
+          onClick={toggleDitado}
+          title={ditando ? "Parar o ditado" : "Ditar por voz (escreve no campo)"}
+          aria-label={ditando ? "Parar o ditado" : "Ditar por voz"}
           className={`shrink-0 h-9 w-9 rounded-full grid place-items-center transition-colors ${
-            escutaUI === "conversa" ? "bg-[#f2f2f7] text-[#1c1c1e]" : "text-[#f2f2f7] hover:bg-[#2c2c2e]"
+            ditando ? "text-[#ff453a] bg-[#2c2c2e] animate-pulse" : "text-[#f2f2f7] hover:bg-[#2c2c2e]"
           }`}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
             <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
             <path d="M12 18v4" />
-            {escutaUI === "desligada" ? <path d="M3 3l18 18" /> : null}
           </svg>
         </button>
 
-        <button
-          type="button"
-          onClick={onVerConversa}
-          title={`Sair da voz — ${titulo}`}
-          aria-label="Sair da voz"
-          className="shrink-0 h-9 w-9 rounded-full grid place-items-center bg-[#3a3a3c] hover:bg-[#48484a] text-[#f2f2f7] transition-colors"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
+        {/* círculo branco: com texto vira ↑ enviar; sem texto é o modo de voz
+            (waveform) — branco = escuta ligada; escuro = mutado */}
+        {texto.trim() ? (
+          <button
+            type="button"
+            onClick={enviarTexto}
+            title="Enviar"
+            aria-label="Enviar"
+            className="shrink-0 h-9 w-9 rounded-full grid place-items-center bg-white text-black transition hover:bg-[#e8e8ed]"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={escutaLigada ? desligarEscuta : armarSentinela}
+            title={escutaLigada ? "Desligar o microfone" : "Conversar por voz"}
+            aria-label={escutaLigada ? "Desligar o microfone" : "Conversar por voz"}
+            className={`shrink-0 h-9 w-9 rounded-full grid place-items-center transition-colors ${
+              escutaLigada ? "bg-white text-black hover:bg-[#e8e8ed]" : "bg-[#3a3a3c] text-[#f2f2f7] hover:bg-[#48484a]"
+            }`}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M4 9v6M8 6v12M12 3v18M16 6v12M20 9v6" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

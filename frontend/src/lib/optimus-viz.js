@@ -1275,34 +1275,80 @@ function drawGL(G,cv,t,E,q){
 }
 
 
-/* ================= PO: esfera de pontos crus, sem brilho nenhum =================
-   A chave e a distribuicao: latitude UNIFORME (nao asin), o que agrupa nos polos e
-   produz as duas calotas claras. A casca adensa sozinha na silhueta. */
-var POP=null;
+/* ================= PO v2: nebulosa de particulas 3D =================
+   Refeita a pedido ("mais realista, mais real e sensivel ao som"). Tres
+   camadas: glow central (sprite pre-renderizado, respiracao MINIMA) + casca
+   de particulas 3D com profundidade REAL (tras: menor/escuro; frente:
+   maior/brilhante) + halo de motes soltos derivando em volta. Blending
+   aditivo + RASTRO (fade parcial em vez de clear total) da o look de
+   materia viva. Movimento: flow-field barato por particula (deriva propria
+   em lon + balanco em lat, seeds individuais) — nunca pulso uniforme.
+   SOM REAL: E/BANDS vem de AnalyserNode (mic do visitante em escuta /
+   playback da Dora em fala): grave dispara ondas radiais varrendo a casca,
+   RMS abre o bloom do glow, transiente de silaba da o kick de dispersao.
+   Contagem ADAPTATIVA: nasce em 9k e degrada 30% se o FPS cair de 45. */
+var POP=null,POHALO=null,POGLOW=null;
+var PON=9000;
+var POFPS={t:0,n:0,fps:60,checked:0};
+/* humor por fase da conversa (setMood na API): muda deriva, cintilacao,
+   contracao e redemoinho — a assinatura visual de cada estado */
+var POMOOD="calma";
+var POMOODP={
+  calma:     {drift:1,   twk:.10, contract:1,    swirl:0,      piso:1.0 },
+  sentinela: {drift:1,   twk:.24, contract:1,    swirl:0,      piso:1.12},
+  escutando: {drift:1.25,twk:.14, contract:1,    swirl:0,      piso:1.22},
+  pensando:  {drift:.9,  twk:.12, contract:.955, swirl:.00035, piso:1.08},
+  falando:   {drift:1.1, twk:.12, contract:1,    swirl:.00012, piso:1.2 }
+};
+/* strings de fillStyle pre-computadas: 9k concat por frame e alocacao a toa */
+var POAL=[];for(var _pa=0;_pa<24;_pa++)POAL.push("rgba(255,255,255,"+(_pa/23).toFixed(3)+")");
 function buildPo(){
-  var N=16000,a=[];
-  for(var i=0;i<N;i++){
-    var la=-1.5708+Math.random()*3.1416;      /* uniforme em latitude: agrupa nos polos */
+  var a=[];
+  for(var i=0;i<PON;i++){
+    /* uniforme NA SUPERFICIE (asin): a silhueta adensa sozinha na projecao */
+    var la=Math.asin(2*Math.random()-1);
     var lo=Math.random()*6.283;
-    var cl=Math.cos(la),sl=Math.sin(la);
-    a.push({d:[cl*Math.cos(lo),sl,cl*Math.sin(lo)],
-            r:1+(Math.random()-.5)*.055,       /* casca com espessura minima: borda felpuda */
-            b:.35+Math.pow(Math.random(),1.6)*.65,
-            s:Math.random()<.14?1.8:1.15,
+    a.push({la:la,lo:lo,
+            /* flow-field: deriva propria em lon (sentido/velocidade individuais)
+               + balancinho em lat — cada particula anda seu caminho na casca */
+            w:(.00002+Math.random()*.00006)*(Math.random()<.5?-1:1),
+            f1:.3+Math.random()*.8,p1:Math.random()*6.283,a1:.02+Math.random()*.05,
+            f2:.2+Math.random()*.6,p2:Math.random()*6.283,a2:.012+Math.random()*.035,
+            r:1+(Math.random()-.5)*.05,        /* casca com espessura minima */
+            b:.3+Math.pow(Math.random(),1.5)*.7,
+            s:Math.random()<.12?1.9:1.2,
             bd:(i*7)%24,
-            /* seeds do movimento ORGANICO: cada particula tem seu proprio par de
-               frequencias/fases (ruido barato: 2 senos dessincronizados) + fase de
-               cintilacao. E o que faz a superficie FERVILHAR como poeira em
-               suspensao em vez de a esfera inteira pulsar em fase unica. */
-            f1:.45+Math.random()*.75,n1:Math.random()*6.283,
-            f2:1.2+Math.random()*1.1,n2:Math.random()*6.283,
-            tf:.5+Math.random()*1.1,tw:Math.random()*6.283,
-            /* estado do po mexido pelo ponteiro (deslocamento + velocidade em
-               px de tela; zero = particula assentada, fisica nem roda) */
+            tf:.5+Math.random()*1.2,tw:Math.random()*6.283,
+            /* po mexido pelo ponteiro (zerado = fisica nem roda) */
             ox:0,oy:0,wx:0,wy:0});
   }
   return a;
 }
+function buildHalo(){
+  /* motes soltos em volta da esfera: poucos, lentos, esmaecidos */
+  var a=[];
+  for(var i=0;i<240;i++){
+    a.push({la:Math.asin(2*Math.random()-1),lo:Math.random()*6.283,
+            r:1.16+Math.pow(Math.random(),1.6)*.62,
+            w:(.00001+Math.random()*.000045)*(Math.random()<.5?-1:1),
+            f:.15+Math.random()*.4,p:Math.random()*6.283,
+            b:.10+Math.random()*.30,s:.9+Math.random()*1.3});
+  }
+  return a;
+}
+function poGlow(){
+  /* sprite do glow pre-renderizado UMA vez: drawImage por frame, zero alocacao */
+  var cv=document.createElement("canvas");cv.width=cv.height=256;
+  var c=cv.getContext("2d");
+  var g=c.createRadialGradient(128,128,0,128,128,128);
+  g.addColorStop(0,"rgba(185,200,255,.60)");
+  g.addColorStop(.38,"rgba(130,150,225,.16)");
+  g.addColorStop(1,"rgba(0,0,0,0)");
+  c.fillStyle=g;c.fillRect(0,0,256,256);
+  return cv;
+}
+/* buffers das frentes de onda (reusados por frame — nada aloca no loop) */
+var POWF=new Float32Array(8),POWA=new Float32Array(8),POWX=[null,null,null,null,null,null,null,null];
 var POW=[],POPREV=0,POLAST=-9999;
 /* Ponteiro sobre a esfera: mouse no desktop, dedo no celular. So marca posicao
    e velocidade — a fisica acontece por particula, dentro do vPo. */
@@ -1331,95 +1377,121 @@ function poPtrAttach(cv){
 /* Em repouso a esfera fica PARADA. O giro nao vem do relogio: ele acumula
    proporcional a voz, com uma zona morta pra respiro/ruido de fundo nao
    fazer a esfera derivar sozinha. Silencio = imovel. */
-var POROT=0,POTPREV=0;
-var PO_DEADZONE=.22;   /* abaixo disso e silencio: nao gira */
-var PO_PISO=1.25;      /* brilho minimo parada: sem banda de voz ela precisa se sustentar sozinha */
+var POROT=0,POPREV=0,POLAST=-9999,POTPREV=0;
+var PO_DEADZONE=.22;   /* abaixo disso e silencio: o giro rapido nao acumula */
 var PO_YAW0=-.42,PO_PIT0=.16;  /* pose de repouso: leve 3/4, nao de frente */
+
 function vPo(ctx,w,h,t,E){
-  if(!POP)POP=buildPo();
+  if(!POP){POP=buildPo();POHALO=buildHalo();}
+  if(!POGLOW)POGLOW=poGlow();
   poPtrAttach(ctx.canvas);
-  /* ponteiro parado ha >160ms = saiu/parou: sem forca nova, o po so assenta */
   if(POPTR.on&&performance.now()-POPTR.t>160)POPTR.on=false;
 
-  /* ataque de silaba dispara uma onda que atravessa a esfera */
+  /* FPS adaptativo: 3 janelas de 2s no boot; abaixo de 45fps corta 30% */
+  POFPS.n++;
+  if(!POFPS.t)POFPS.t=t;
+  else if(t-POFPS.t>2000){
+    POFPS.fps=POFPS.n*1000/(t-POFPS.t);POFPS.n=0;POFPS.t=t;
+    if(POFPS.checked<3){POFPS.checked++;
+      if(POFPS.fps<45&&PON>4200){PON=(PON*.7)|0;POP=null;return;}}
+  }
+
+  var MD=POMOODP[POMOOD]||POMOODP.calma;
+
+  /* RASTRO: fade parcial em vez de clear — o brilho de um frame vaza pro
+     seguinte e o movimento ganha corpo (materia, nao pontinhos) */
+  ctx.globalCompositeOperation="source-over";
+  ctx.fillStyle="rgba(0,0,0,.42)";
+  ctx.fillRect(0,0,w,h);
+
+  var CX=w/2,CY=h/2,M=Math.min(w,h);
+
+  /* audio real (AnalyserNode via BANDS): grave + transiente de silaba */
+  var bass=(BANDS[0]+BANDS[1]+BANDS[2]+BANDS[3])*.25;
   var dE=E-POPREV;POPREV=E;
-  if(dE>.035&&t-POLAST>150&&POW.length<5){
+  if(dE>.03&&t-POLAST>140&&POW.length<6){
     POLAST=t;
     var ax=[Math.random()*2-1,Math.random()*2-1,Math.random()*2-1];
     var ln=Math.hypot(ax[0],ax[1],ax[2])||1;
-    POW.push({t0:t,ax:[ax[0]/ln,ax[1]/ln,ax[2]/ln],amp:.16+E*.42,dur:820});
+    /* ataque de fala = onda radial varrendo a casca (o kick que assenta) */
+    POW.push({t0:t,ax:[ax[0]/ln,ax[1]/ln,ax[2]/ln],amp:(.10+E*.34)*(1+bass*.8),dur:760});
   }
   for(var q=POW.length-1;q>=0;q--)if(t-POW[q].t0>POW[q].dur)POW.splice(q,1);
 
-  ctx.globalCompositeOperation="source-over";
-  ctx.fillStyle="#000";ctx.fillRect(0,0,w,h);
-  var CX=w/2,CY=h/2,M=Math.min(w,h);
-  /* GIRO: o rapido so avanca enquanto ha voz (PO_DEADZONE); por baixo existe
-     uma deriva LENTISSIMA de repouso (uma volta em ~107s) pra nunca parecer
-     um frame congelado — no silencio o olho ve materia em suspensao, nao
-     rotacao. O vaivem do balanco continua senoidal (volta pro lugar). */
+  /* rotacao 3D lenta com PRECESSAO do eixo; a fala acelera o giro */
   var dt=POTPREV?Math.min(t-POTPREV,64):0;POTPREV=t;
   var fala=E>PO_DEADZONE?E-PO_DEADZONE:0;
-  POROT+=dt*(fala*.00062+.0000585);
+  POROT+=dt*(fala*.00055+.000052+MD.swirl);
   var esp=t*.001;
-  var respiro=Math.sin(esp*1.55)*.55+Math.sin(esp*.62)*.45;  /* ~4s e ~10s */          /* -1..1 lento */
-  var balanco=Math.sin(esp*.34)*.030+Math.sin(esp*.19)*.018;        /* vaivem, em rad */
-  var yaw=PO_YAW0+POROT+balanco;
-  var pit=PO_PIT0+Math.sin(POROT*1.6)*.07+Math.sin(esp*.28)*.016;
-  /* O raio quase NAO respira mais (±2,2%): escala uniforme da esfera inteira
-     le como pulso artificial de CSS, nao como materia viva. O movimento que
-     "prova vida" desceu pra dentro das particulas (ruido por ponto, abaixo).
-     O audio tambem quase nao escala o conjunto (E*.02) — falar deforma a
-     SUPERFICIE (ondas de silaba + ruido modulado), nao infla a esfera. */
-  var R=M*.30*(1+E*.02+respiro*.022);
+  var yaw=PO_YAW0+POROT+Math.sin(esp*.21)*.05;
+  var pit=PO_PIT0+Math.sin(esp*.147)*.11+Math.sin(POROT*1.3)*.05;
   var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
-  var PRAD=M*.13,PRAD2=PRAD*PRAD;  /* alcance do dedo/mouse: ~13% do diametro */
 
-  /* frentes de onda: posicao em cosseno, pra comparar sem acos */
-  var NW=POW.length,WF=[],WA=[],WX=[];
+  /* raio quase fixo: pulso global le como CSS; o som deforma a SUPERFICIE */
+  var R=M*.285*MD.contract*(1+E*.02+Math.sin(esp*.45)*.008);
+  var PRAD=M*.13,PRAD2=PRAD*PRAD;
+
+  /* ── camada 1: glow central — o bloom abre com o RMS ── */
+  var gsz=R*3.1*(1+E*.22);
+  ctx.globalCompositeOperation="lighter";
+  ctx.globalAlpha=.15+E*.36+bass*.12;
+  ctx.drawImage(POGLOW,CX-gsz/2,CY-gsz/2,gsz,gsz);
+  ctx.globalAlpha=1;
+
+  /* frentes de onda em buffers reusados (cos pra comparar sem acos) */
+  var NW=POW.length;
   for(var k=0;k<NW;k++){
     var pr=(t-POW[k].t0)/POW[k].dur;
-    WF.push(Math.cos(pr*3.1416));
-    WA.push(POW[k].amp*(1-pr)*(1-pr));
-    WX.push(POW[k].ax);
+    POWF[k]=Math.cos(pr*3.1416);
+    POWA[k]=POW[k].amp*(1-pr)*(1-pr);
+    POWX[k]=POW[k].ax;
   }
 
+  /* ── camada 2: halo de motes soltos (atras da casca) ── */
+  for(var hI=0;hI<POHALO.length;hI++){
+    var H=POHALO[hI];
+    var hlon=H.lo+t*H.w,hlat=H.la+Math.sin(esp*H.f+H.p)*.05;
+    var hcl=Math.cos(hlat);
+    var hx=hcl*Math.cos(hlon)*H.r,hy=Math.sin(hlat)*H.r,hz=hcl*Math.sin(hlon)*H.r;
+    var hx1=hx*cy-hz*sy,hz1=hx*sy+hz*cy;
+    var hy1=hy*cp-hz1*sp,hz2=hy*sp+hz1*cp;
+    var hsc=1/(3.1-hz2*.95),hdep=(hz2/H.r+1)/2;
+    var hal=H.b*(.12+hdep*.5)*(.5+E*.9);
+    if(hal<.03)continue;if(hal>1)hal=1;
+    ctx.fillStyle=POAL[(hal*23)|0];
+    var hs=H.s*hsc*1.2;
+    ctx.fillRect(CX+hx1*R*2.6*hsc,CY+hy1*R*2.6*hsc,hs,hs);
+  }
+
+  /* ── camada 3: a casca ── */
+  var piso=1.15*MD.piso;
   for(var i=0;i<POP.length;i++){
-    var P=POP[i],bd=BANDS[P.bd],d=P.d;
-    /* 1. respiro por banda: cada grupo de pontos infla no seu proprio ritmo */
-    var rr=P.r*(1+bd*.26+E*.05);
-    /* 2. onda de choque: um aro de pontos levantados atravessando a superficie */
+    var P=POP[i],bd=BANDS[P.bd];
+    /* flow-field: cada particula ANDA pela casca no seu proprio caminho */
+    var lon=P.lo+t*P.w*MD.drift+Math.sin(esp*P.f1+P.p1)*P.a1;
+    var lat=P.la+Math.sin(esp*P.f2+P.p2)*P.a2;
+    var cl=Math.cos(lat),d0=cl*Math.cos(lon),d1=Math.sin(lat),d2=cl*Math.sin(lon);
+
+    /* onda de choque: aro de pontos levantados atravessando a superficie */
     var lift=0,hot=0;
     for(var k2=0;k2<NW;k2++){
-      var ax2=WX[k2],dd=d[0]*ax2[0]+d[1]*ax2[1]+d[2]*ax2[2]-WF[k2];
-      var g=Math.exp(-(dd*dd)*58);
-      lift+=g*WA[k2];hot+=g*WA[k2];
+      var ax2=POWX[k2],dd=d0*ax2[0]+d1*ax2[1]+d2*ax2[2]-POWF[k2];
+      var g=Math.exp(-(dd*dd)*52);
+      lift+=g*POWA[k2];hot+=g*POWA[k2];
     }
-    /* ruido POR PARTICULA (2 senos com seed propria — barato, sem noise 2D):
-       a superficie fervilha dessincronizada, como poeira em suspensao. A voz
-       MODULA a amplitude do ruido (deformacao local), em vez de escalar o
-       conjunto: falar faz a casca ferver mais, nao a esfera inchar. */
-    var nz=Math.sin(esp*P.f1+P.n1)*.62+Math.sin(esp*P.f2+P.n2)*.38;
-    rr*=1+nz*(.028+E*.075);
-    rr+=lift;
-    var px=d[0]*rr,py=d[1]*rr,pz=d[2]*rr;
+
+    var rr=P.r*(1+bd*.16)+lift;
+    var px=d0*rr,py=d1*rr,pz=d2*rr;
     var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
     var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
-    var sc=1/(3.05-z2*.9),dep=(z2+1)/2;
-    var al=P.b*(.26+dep*.60)*(.55+PO_PISO+bd*1.5)+hot*2.6;
-    /* cintilancia INDIVIDUAL (twinkle): cada ponto pisca no seu proprio ritmo
-       e fase (seed propria). A fase por ponto se cancela no agregado — brilho
-       total estavel, superficie viva. O pulso GLOBAL de brilho que vinha junto
-       do respiro caiu de ±16% pra ±4%: era ele, somado ao raio ±10%, que dava
-       a cara de "pulsando por CSS". */
-    al*=(1+Math.sin(esp*P.tf+P.tw)*.13)*(1+respiro*.04);
+    var sc=1/(3.1-z2*.95),dep=(z2+1)/2;
+
+    /* PROFUNDIDADE REAL: tras escuro e pequeno, frente clara e maior */
+    var al=P.b*(.10+dep*dep*.85)*(piso+E*1.35+bd*1.1)+hot*2.4;
+    al*=1+Math.sin(esp*P.tf+P.tw)*MD.twk;   /* cintilacao individual */
+
     var gx=CX+x1*R*2.6*sc,gy=CY+y1*R*2.6*sc;
-    /* PO MEXIDO PELO PONTEIRO: particulas perto do cursor/dedo levam um
-       empurrao suave (repulsao + leve redemoinho tangencial) e ganham um
-       tiquinho de brilho — poeirinha levantada — assentando de volta em ~1s
-       (atrito .85 na velocidade, mola .94 no deslocamento). Nada de explosao.
-       Custo: early-out por distancia² quando o ponteiro esta ativo, e a
-       fisica NEM RODA pra particula assentada (estado zerado). */
+    /* po mexido pelo ponteiro: repulsao + redemoinho, assenta em ~1s */
     if(POPTR.on){
       var qx=gx-POPTR.x,qy=gy-POPTR.y,q2=qx*qx+qy*qy;
       if(q2<PRAD2){
@@ -1436,13 +1508,14 @@ function vPo(ctx,w,h,t,E){
       if(o2<.03&&P.wx*P.wx+P.wy*P.wy<.01){P.ox=P.oy=P.wx=P.wy=0;}
       else{gx+=P.ox;gy+=P.oy;if(o2>3)al+=Math.min(.45,o2*.012);}
     }
-    if(al<.05)continue;if(al>1)al=1;
-    ctx.fillStyle="rgba(255,255,255,"+al+")";
-    var s=P.s*sc*1.35*(1+bd*.55+hot*2.2);
+
+    if(al<.04)continue;if(al>1)al=1;
+    ctx.fillStyle=POAL[(al*23)|0];
+    var s=P.s*sc*1.5*(.5+dep*.9)*(1+bd*.4+hot*1.8);
     ctx.fillRect(gx,gy,s,s);
   }
+  ctx.globalCompositeOperation="source-over";
 }
-
 
 
 /* ================= ANTHROPIC =================
@@ -1737,6 +1810,9 @@ var API = {
   },
   /* voz simulada, para desenvolver sem microfone (o sandbox de iframe bloqueia getUserMedia) */
   simulate: function (on) { SIM = on !== false; if (SIM) _analyser = null; return API; },
+  /* humor da esfera de po (assinatura visual por fase da conversa):
+     calma | sentinela | escutando | pensando | falando */
+  setMood: function (m) { POMOOD = POMOODP[m] ? m : "calma"; return API; },
   setPalette: function (p) { PAL = p; return API; },
   getBands: function () { return BANDS; }
 };
