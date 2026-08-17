@@ -35,6 +35,7 @@ export default function Signup() {
     setLoading(true);
     try {
       await api.post("/auth/signup", { nome_pessoa: nomePessoa, nome, email, password: senha });
+      sessionStorage.removeItem("ta_sso"); // login explícito vence SSO federado antigo da aba
       toast.success("Conta criada");
       window.location.href = "/admin/agentes";
     } catch (err: any) {
@@ -50,6 +51,7 @@ export default function Signup() {
       setLoading(true);
       try {
         await api.post("/auth/google", { access_token: tokenResponse.access_token });
+        sessionStorage.removeItem("ta_sso"); // login explícito vence SSO federado antigo da aba
         toast.success("Bem-vindo");
         window.location.href = "/admin/agentes";
       } catch (err: any) {

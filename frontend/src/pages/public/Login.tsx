@@ -35,6 +35,10 @@ export default function Login() {
     setLoading(true);
     try {
       await api.post("/auth/login", { email, password: senha });
+      // Login explícito SEMPRE vence um SSO federado antigo da aba: sem isto,
+      // o interceptor manda o Bearer velho do sessionStorage e o backend
+      // (que prioriza header sobre cookie) te deixa preso na conta anterior.
+      sessionStorage.removeItem("ta_sso");
       toast.success("Bem-vindo");
       window.location.href = "/admin/agentes";
     } catch (err: any) {
@@ -225,6 +229,7 @@ function GoogleLoginButton({
       setLoading(true);
       try {
         await api.post("/auth/google", { access_token: tokenResponse.access_token });
+        sessionStorage.removeItem("ta_sso"); // login explícito vence SSO federado antigo da aba
         toast.success("Bem-vindo");
         window.location.href = "/admin/agentes";
       } catch (err: any) {

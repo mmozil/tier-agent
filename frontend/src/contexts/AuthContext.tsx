@@ -51,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignora
     }
+    sessionStorage.removeItem("ta_sso"); // não deixa o Bearer federado ressuscitar a sessão
     setUser(null);
     window.location.href = "/login";
   }

@@ -57,15 +57,29 @@ class CurrentUser:
 
 async def get_current_user(
     authorization: str | None = Header(default=None),
+    ta_session: str | None = Cookie(default=None),
     tier_session: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> CurrentUser:
-    """Lê JWT do Authorization header OU do cookie SSO Tier."""
+    """Lê JWT do Authorization header OU do cookie de sessão do Agent (ta_session).
+
+    🚨 tier_session (cookie do ERP em .tier.finance) NÃO é mais fonte primária —
+    os segredos são diferentes e o nome compartilhado causava atropelo de sessão
+    entre Agent e ERP (incidente 17/08/2026). Ele fica só como fallback de
+    transição: se contém um token NOSSO válido (sessão antiga do Agent), ainda
+    autentica até expirar; token do ERP falha a assinatura e é ignorado.
+    """
     token = None
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1]
+    elif ta_session:
+        token = ta_session
     elif tier_session:
-        token = tier_session
+        try:
+            jwt.decode(tier_session, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+            token = tier_session  # sessão legada do Agent — aceita até o vencimento
+        except JWTError:
+            token = None  # token do ERP no cookie compartilhado — não é nosso
 
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autenticado")

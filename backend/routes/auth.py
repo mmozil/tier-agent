@@ -3,8 +3,9 @@
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Response, UploadFile
 from google.auth.transport import requests as google_requests
+from jose import JWTError, jwt
 from google.oauth2 import id_token as google_id_token
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
@@ -60,21 +61,39 @@ async def _find_member(db: AsyncSession, email: str) -> TaMember | None:
 
 
 def _set_cookie(response: Response, token: str) -> None:
-    """Set tier_session cookie cross-subdomain pra SSO."""
+    """Cookie de sessão do Agent — host-only (ta_session), NUNCA o tier_session do ERP."""
     response.set_cookie(
-        key=settings.tier_sso_cookie_name,
+        key=settings.session_cookie_name,
         value=token,
         max_age=settings.jwt_ttl_hours * 3600,
         httponly=True,
         secure=settings.is_production,
         samesite="lax",
-        domain=settings.tier_sso_cookie_domain if settings.is_production else None,
+        domain=settings.session_cookie_domain or None,
         path="/",
     )
 
 
+def _expulsar_cookie_legado(response: Response, tier_session: str | None) -> None:
+    """Migração do incidente 17/08: se o tier_session (cookie do ERP em
+    .tier.finance) contém um token NOSSO (assinado pelo Agent), é o squat antigo
+    que quebrava a sessão do ERP — expira. Token do ERP (assinatura alheia) fica."""
+    if not tier_session:
+        return
+    try:
+        jwt.decode(tier_session, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError:
+        return  # não é nosso — provavelmente sessão legítima do ERP
+    response.delete_cookie(key="tier_session", domain=".tier.finance", path="/")
+
+
 @router.post("/signup", response_model=AuthOut, status_code=201)
-async def signup(payload: SignupIn, response: Response, db: AsyncSession = Depends(get_db)):
+async def signup(
+    payload: SignupIn,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    tier_session: str | None = Cookie(default=None),
+):
     existing = await _find_tenant(db, payload.email)
     if existing:
         raise HTTPException(400, "E-mail já cadastrado")
@@ -100,13 +119,19 @@ async def signup(payload: SignupIn, response: Response, db: AsyncSession = Depen
         extra_claims={"email": tenant.email, "tenant_id": tenant.id, "is_admin": tenant.is_admin},
     )
     _set_cookie(response, token)
+    _expulsar_cookie_legado(response, tier_session)
     return AuthOut(
         access_token=token, tenant_id=tenant.id, email=tenant.email, is_admin=tenant.is_admin
     )
 
 
 @router.post("/login", response_model=AuthOut)
-async def login(payload: LoginIn, response: Response, db: AsyncSession = Depends(get_db)):
+async def login(
+    payload: LoginIn,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    tier_session: str | None = Cookie(default=None),
+):
     # 1) dono (TaTenant) — login original, inalterado
     tenant = await _find_tenant(db, payload.email)
     if tenant:
@@ -120,6 +145,7 @@ async def login(payload: LoginIn, response: Response, db: AsyncSession = Depends
             },
         )
         _set_cookie(response, token)
+        _expulsar_cookie_legado(response, tier_session)
         return AuthOut(
             access_token=token, tenant_id=tenant.id, email=tenant.email,
             is_admin=tenant.is_admin, role="owner",
@@ -142,6 +168,7 @@ async def login(payload: LoginIn, response: Response, db: AsyncSession = Depends
         },
     )
     _set_cookie(response, token)
+    _expulsar_cookie_legado(response, tier_session)
     return AuthOut(
         access_token=token, tenant_id=member.tenant_id, email=member.email,
         is_admin=False, role=member.role, member_id=member.id, member_name=member.nome,
@@ -155,7 +182,10 @@ class GoogleLoginIn(BaseModel):
 
 @router.post("/google", response_model=AuthOut)
 async def google_login(
-    payload: GoogleLoginIn, response: Response, db: AsyncSession = Depends(get_db)
+    payload: GoogleLoginIn,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    tier_session: str | None = Cookie(default=None),
 ):
     """Login via Google OAuth — aceita credential (ID token GIS) OU access_token (popup)."""
     if not settings.google_client_id:
@@ -219,18 +249,20 @@ async def google_login(
         extra_claims={"email": tenant.email, "tenant_id": tenant.id, "is_admin": tenant.is_admin},
     )
     _set_cookie(response, token)
+    _expulsar_cookie_legado(response, tier_session)
     return AuthOut(
         access_token=token, tenant_id=tenant.id, email=tenant.email, is_admin=tenant.is_admin
     )
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(response: Response, tier_session: str | None = Cookie(default=None)):
     response.delete_cookie(
-        key=settings.tier_sso_cookie_name,
-        domain=settings.tier_sso_cookie_domain if settings.is_production else None,
+        key=settings.session_cookie_name,
+        domain=settings.session_cookie_domain or None,
         path="/",
     )
+    _expulsar_cookie_legado(response, tier_session)
     return {"status": "logged_out"}
 
 

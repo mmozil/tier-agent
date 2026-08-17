@@ -24,8 +24,14 @@ class Settings(BaseSettings):
 
     fernet_key: str = Field(min_length=32)
 
-    tier_sso_cookie_domain: str = ".tier.finance"
-    tier_sso_cookie_name: str = "tier_session"
+    # Cookie de sessão PRÓPRIO do Agent, host-only (Domain vazio = só o host da API).
+    # 🚨 NUNCA voltar pro nome/domínio do ERP ("tier_session" em ".tier.finance"):
+    # os dois backends têm segredos JWT diferentes e o login de um passava a
+    # atropelar a sessão do outro (incidente 17/08/2026 — "logo numa conta e caio
+    # noutra"). Campos renomeados de tier_sso_* de propósito, pra env antiga
+    # TIER_SSO_COOKIE_DOMAIN do Coolify não religar o domínio compartilhado.
+    session_cookie_domain: str = ""
+    session_cookie_name: str = "ta_session"
 
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
