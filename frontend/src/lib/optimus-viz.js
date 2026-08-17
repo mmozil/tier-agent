@@ -1288,7 +1288,9 @@ function drawGL(G,cv,t,E,q){
    RMS abre o bloom do glow, transiente de silaba da o kick de dispersao.
    Contagem ADAPTATIVA: nasce em 9k e degrada 30% se o FPS cair de 45. */
 var POP=null,POHALO=null,POGLOW=null;
-var PON=9000;
+var PON=14000;
+var POSZ=1;      /* fator global de tamanho: 1o estagio do guard de FPS */
+var POKICK=0;    /* sacudida por transiente de voz (decai sozinha) */
 var POFPS={t:0,n:0,fps:60,checked:0};
 /* humor por fase da conversa (setMood na API): muda deriva, cintilacao,
    contracao e redemoinho — a assinatura visual de cada estado */
@@ -1316,7 +1318,7 @@ function buildPo(){
             f2:.2+Math.random()*.6,p2:Math.random()*6.283,a2:.012+Math.random()*.035,
             r:1+(Math.random()-.5)*.05,        /* casca com espessura minima */
             b:.3+Math.pow(Math.random(),1.5)*.7,
-            s:Math.random()<.12?1.9:1.2,
+            s:Math.random()<.10?1.25:.8,   /* poeira FINA: delicada, numerosa */
             bd:(i*7)%24,
             tf:.5+Math.random()*1.2,tw:Math.random()*6.283,
             /* po mexido pelo ponteiro (zerado = fisica nem roda) */
@@ -1392,8 +1394,12 @@ function vPo(ctx,w,h,t,E){
   if(!POFPS.t)POFPS.t=t;
   else if(t-POFPS.t>2000){
     POFPS.fps=POFPS.n*1000/(t-POFPS.t);POFPS.n=0;POFPS.t=t;
-    if(POFPS.checked<3){POFPS.checked++;
-      if(POFPS.fps<45&&PON>4200){PON=(PON*.7)|0;POP=null;return;}}
+    if(POFPS.checked<4){POFPS.checked++;
+      if(POFPS.fps<45){
+        /* 1o estagio: afina o desenho; so depois corta contagem */
+        if(POSZ>.85)POSZ=.8;
+        else if(PON>5200){PON=(PON*.75)|0;POP=null;return;}
+      }}
   }
 
   var MD=POMOODP[POMOOD]||POMOODP.calma;
@@ -1406,17 +1412,15 @@ function vPo(ctx,w,h,t,E){
 
   var CX=w/2,CY=h/2,M=Math.min(w,h);
 
-  /* audio real (AnalyserNode via BANDS): grave + transiente de silaba */
+  /* audio real (AnalyserNode via BANDS). A voz NAO vira onda varrendo a
+     casca (rejeitado pelo dono): ela AGITA as particulas — amplitude manda na
+     intensidade da danca individual, transiente da uma sacudida que assenta.
+     "Poeira dancando com o som", nao "superficie ondulando". */
   var bass=(BANDS[0]+BANDS[1]+BANDS[2]+BANDS[3])*.25;
   var dE=E-POPREV;POPREV=E;
-  if(dE>.03&&t-POLAST>140&&POW.length<6){
-    POLAST=t;
-    var ax=[Math.random()*2-1,Math.random()*2-1,Math.random()*2-1];
-    var ln=Math.hypot(ax[0],ax[1],ax[2])||1;
-    /* ataque de fala = onda radial varrendo a casca (o kick que assenta) */
-    POW.push({t0:t,ax:[ax[0]/ln,ax[1]/ln,ax[2]/ln],amp:(.10+E*.34)*(1+bass*.8),dur:760});
-  }
-  for(var q=POW.length-1;q>=0;q--)if(t-POW[q].t0>POW[q].dur)POW.splice(q,1);
+  if(dE>.03)POKICK=Math.min(1,POKICK+dE*5);
+  POKICK*=.93;
+  var POJIT=E*.05+POKICK*.042;   /* rad de tremor por particula: 0 em silencio */
 
   /* rotacao 3D lenta com PRECESSAO do eixo; a fala acelera o giro */
   var dt=POTPREV?Math.min(t-POTPREV,64):0;POTPREV=t;
@@ -1438,15 +1442,6 @@ function vPo(ctx,w,h,t,E){
   ctx.drawImage(POGLOW,CX-gsz/2,CY-gsz/2,gsz,gsz);
   ctx.globalAlpha=1;
 
-  /* frentes de onda em buffers reusados (cos pra comparar sem acos) */
-  var NW=POW.length;
-  for(var k=0;k<NW;k++){
-    var pr=(t-POW[k].t0)/POW[k].dur;
-    POWF[k]=Math.cos(pr*3.1416);
-    POWA[k]=POW[k].amp*(1-pr)*(1-pr);
-    POWX[k]=POW[k].ax;
-  }
-
   /* ── camada 2: halo de motes soltos (atras da casca) ── */
   for(var hI=0;hI<POHALO.length;hI++){
     var H=POHALO[hI];
@@ -1464,30 +1459,25 @@ function vPo(ctx,w,h,t,E){
   }
 
   /* ── camada 3: a casca ── */
-  var piso=1.15*MD.piso;
+  var piso=.92*MD.piso;
   for(var i=0;i<POP.length;i++){
     var P=POP[i],bd=BANDS[P.bd];
-    /* flow-field: cada particula ANDA pela casca no seu proprio caminho */
-    var lon=P.lo+t*P.w*MD.drift+Math.sin(esp*P.f1+P.p1)*P.a1;
-    var lat=P.la+Math.sin(esp*P.f2+P.p2)*P.a2;
+    /* flow-field: cada particula ANDA pela casca no seu proprio caminho.
+       Com VOZ, entra o tremor individual: cada particula dança no seu ritmo
+       e fase, mais forte na banda dela — sem padrao coletivo de onda. */
+    var danca=POJIT*(.35+bd*1.3);
+    var lon=P.lo+t*P.w*MD.drift+Math.sin(esp*P.f1+P.p1)*P.a1+Math.sin(t*.011*P.f2+P.p2)*danca;
+    var lat=P.la+Math.sin(esp*P.f2+P.p2)*P.a2+Math.cos(t*.013*P.f1+P.p1)*danca*.8;
     var cl=Math.cos(lat),d0=cl*Math.cos(lon),d1=Math.sin(lat),d2=cl*Math.sin(lon);
 
-    /* onda de choque: aro de pontos levantados atravessando a superficie */
-    var lift=0,hot=0;
-    for(var k2=0;k2<NW;k2++){
-      var ax2=POWX[k2],dd=d0*ax2[0]+d1*ax2[1]+d2*ax2[2]-POWF[k2];
-      var g=Math.exp(-(dd*dd)*52);
-      lift+=g*POWA[k2];hot+=g*POWA[k2];
-    }
-
-    var rr=P.r*(1+bd*.16)+lift;
+    var rr=P.r*(1+bd*.10);
     var px=d0*rr,py=d1*rr,pz=d2*rr;
     var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
     var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
     var sc=1/(3.1-z2*.95),dep=(z2+1)/2;
 
     /* PROFUNDIDADE REAL: tras escuro e pequeno, frente clara e maior */
-    var al=P.b*(.10+dep*dep*.85)*(piso+E*1.35+bd*1.1)+hot*2.4;
+    var al=P.b*(.10+dep*dep*.85)*(piso+E*1.25+bd*.9);
     al*=1+Math.sin(esp*P.tf+P.tw)*MD.twk;   /* cintilacao individual */
 
     var gx=CX+x1*R*2.6*sc,gy=CY+y1*R*2.6*sc;
@@ -1511,7 +1501,7 @@ function vPo(ctx,w,h,t,E){
 
     if(al<.04)continue;if(al>1)al=1;
     ctx.fillStyle=POAL[(al*23)|0];
-    var s=P.s*sc*1.5*(.5+dep*.9)*(1+bd*.4+hot*1.8);
+    var s=P.s*POSZ*sc*1.35*(.5+dep*.9)*(1+bd*.3);
     ctx.fillRect(gx,gy,s,s);
   }
   ctx.globalCompositeOperation="source-over";
