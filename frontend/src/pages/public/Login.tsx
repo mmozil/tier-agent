@@ -116,17 +116,10 @@ export default function Login() {
 
             <div className="pt-3" />
 
-            <p className="text-center text-[14px] text-[#8A94A7]">
-              Não tem uma conta?{" "}
-              <Link to="/signup" className="text-[#003083] hover:text-[#002266] font-semibold transition-colors">
-                Criar conta
-              </Link>
-            </p>
-
             <button
               type="submit"
               disabled={loading}
-              className="w-full h-8 bg-[#003083] hover:bg-[#002266] active:scale-[0.98] text-white font-semibold rounded-lg text-[15px] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-[#003083]/20"
+              className="w-full h-[50px] bg-[#003083] hover:bg-[#002266] active:scale-[0.98] text-white font-semibold rounded-lg text-[15px] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-[#003083]/20"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Entrar"}
             </button>
@@ -138,6 +131,13 @@ export default function Login() {
             </div>
 
             {GOOGLE_ENABLED ? <GoogleLoginButton loading={loading} setLoading={setLoading} /> : null}
+
+            <p className="text-center text-[14px] text-[#8A94A7] pt-1">
+              Não tem uma conta?{" "}
+              <Link to="/signup" className="text-[#003083] hover:text-[#002266] font-semibold transition-colors">
+                Criar conta
+              </Link>
+            </p>
           </form>
         </motion.div>
 
@@ -246,7 +246,7 @@ function GoogleLoginButton({
       type="button"
       onClick={() => loginWithGoogle()}
       disabled={loading}
-      className="w-full h-8 bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[#0A1628] font-semibold rounded-lg text-[14px] flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50"
+      className="w-full h-[50px] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[#0A1628] font-semibold rounded-lg text-[14px] flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50"
     >
       <GoogleIcon />
       Continuar com Google
