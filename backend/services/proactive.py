@@ -99,16 +99,30 @@ async def find_tenant_whatsapp_connector(db, tenant_id: int):
     )
 
 
-async def send_text_via_connector(conn, external_chat_id: str, text: str) -> bool:
-    """Envia texto pelo adapter do canal do connector. False = falhou (já logado)."""
+async def send_text_via_connector(
+    conn, external_chat_id: str, text: str, imagem_url: str | None = None
+) -> bool:
+    """Envia texto pelo adapter do canal do connector. False = falhou (já logado).
+
+    `imagem_url` (opcional): manda UMA mensagem com a imagem e o texto como
+    legenda — nunca duas. O adapter do WhatsApp já trata anexo do tipo 'image'
+    (POST .../messages/image com `image_url` + `caption`); canal que não trate
+    anexo entrega só o texto, então passar imagem nunca impede a mensagem de
+    sair. Parâmetro opcional de propósito: todos os callers antigos seguem
+    válidos sem mudança.
+    """
     from core.encryption import decrypt
     from services.connectors import registry
-    from services.connectors.base import ConnectorConfig, OutboundMessage
+    from services.connectors.base import ConnectorAttachment, ConnectorConfig, OutboundMessage
 
     try:
         impl = registry.get(conn.kind)
         cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
-        await impl.send(cfg, OutboundMessage(external_chat_id=external_chat_id, content=text))
+        anexos = [ConnectorAttachment(kind="image", url=imagem_url)] if imagem_url else []
+        await impl.send(
+            cfg,
+            OutboundMessage(external_chat_id=external_chat_id, content=text, attachments=anexos),
+        )
     except Exception:
         logger.exception(
             "envio proativo falhou connector=%s kind=%s chat=%s", conn.id, conn.kind, external_chat_id

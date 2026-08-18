@@ -40,6 +40,9 @@ class ProactiveWhatsAppIn(BaseModel):
     tenant_id: int
     telefone: str = Field(min_length=1, description="Dígitos, com DDI (ex.: 5511999999999)")
     texto: str = Field(min_length=1)
+    # Opcional: manda UMA mensagem com a imagem e o texto como legenda (não duas).
+    # Usado pelo lembrete de visita do CRM, que ilustra com o logo da conta.
+    imagem_url: str | None = Field(default=None, max_length=500)
 
 
 @router.post("/proactive-whatsapp")
@@ -69,7 +72,18 @@ async def proactive_whatsapp(
         raise HTTPException(404, "tenant sem connector whatsapp habilitado em agente ativo")
 
     external_chat_id = f"{telefone}@s.whatsapp.net"
-    ok = await proactive.send_text_via_connector(conn, external_chat_id, texto)
+    imagem_url = (body.imagem_url or "").strip() or None
+    # Só http(s): a URL vai direto pro Engine baixar. Valor estranho vira envio
+    # de texto puro — a mensagem sair importa mais que a ilustração.
+    if imagem_url and not imagem_url.lower().startswith(("http://", "https://")):
+        logger.warning("proactive: imagem_url ignorada (esquema inválido) tenant=%s", body.tenant_id)
+        imagem_url = None
+    ok = await proactive.send_text_via_connector(conn, external_chat_id, texto, imagem_url=imagem_url)
+    if not ok and imagem_url:
+        # A imagem pode ter derrubado o envio (URL fora do ar, formato recusado
+        # pelo Engine). Reenvia como texto: o lembrete é o que não pode faltar.
+        logger.warning("proactive: envio com imagem falhou, refazendo sem imagem tenant=%s", body.tenant_id)
+        ok = await proactive.send_text_via_connector(conn, external_chat_id, texto)
     if not ok:
         raise HTTPException(502, "falha ao enviar a mensagem no WhatsApp")
 
