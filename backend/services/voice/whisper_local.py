@@ -38,11 +38,26 @@ def _get_model():
     return _MODEL
 
 
-def _transcribe_file(path: str, language: str) -> tuple[str, float]:
+def _transcribe_file(path: str, language: str) -> tuple[str, float, list[dict]]:
+    """Devolve (texto, duração, trechos com tempo).
+
+    Os trechos SEMPRE existiram — o faster-whisper entrega `start`/`end` em cada
+    segmento e a gente jogava fora ao juntar o texto. Guardar é de graça, e é o
+    que deixa a ata do Discoo dizer em que minuto cada tarefa foi combinada.
+    """
     model = _get_model()
     segments, info = model.transcribe(path, language=language, beam_size=1, vad_filter=True)
-    text = " ".join(s.text.strip() for s in segments).strip()
-    return text, float(getattr(info, "duration", 0) or 0)
+    trechos: list[dict] = []
+    partes: list[str] = []
+    # o gerador do faster-whisper é consumido UMA vez — daí montar texto e
+    # trechos no mesmo laço em vez de iterar duas.
+    for s in segments:
+        t = (s.text or "").strip()
+        if not t:
+            continue
+        partes.append(t)
+        trechos.append({"inicio": round(float(s.start or 0), 2), "fim": round(float(s.end or 0), 2), "texto": t})
+    return " ".join(partes).strip(), float(getattr(info, "duration", 0) or 0), trechos
 
 
 async def transcribe_bytes(
@@ -56,13 +71,14 @@ async def transcribe_bytes(
         with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
             f.write(data)
             tmp = f.name
-        text, dur = await asyncio.to_thread(_transcribe_file, tmp, language)
+        text, dur, trechos = await asyncio.to_thread(_transcribe_file, tmp, language)
         return TranscribeResult(
             ok=bool(text),
             text=text,
             confidence=1.0 if text else 0.0,
             duration_seconds=dur,
             language=language,
+            segments=trechos,
         )
     except Exception as e:  # noqa: BLE001
         logger.exception("whisper local falhou")

@@ -204,6 +204,10 @@ class TranscribeOut(BaseModel):
     duration_seconds: float | None = None
     language: str | None = None
     error: str | None = None
+    # Trechos com tempo ({inicio, fim, texto}) quando o motor souber informar —
+    # hoje o whisper local sabe. Campo opcional de propósito: quem não usa
+    # (QA de Ligações) ignora, e nenhum caller antigo quebra.
+    segments: list[dict] | None = None
 
 
 @router.post("/transcribe", response_model=TranscribeOut)
@@ -222,6 +226,7 @@ async def transcribe_audio(
         duration_seconds=getattr(res, "duration_seconds", None),
         language=getattr(res, "language", None),
         error=getattr(res, "error", None),
+        segments=getattr(res, "segments", None),
     )
 
 

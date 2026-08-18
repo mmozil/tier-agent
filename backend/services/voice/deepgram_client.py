@@ -28,6 +28,10 @@ class TranscribeResult:
     duration_seconds: float = 0.0
     language: str = DEFAULT_LANGUAGE
     error: str | None = None
+    # Trechos com tempo: [{"inicio": 12.4, "fim": 15.9, "texto": "..."}].
+    # Só o whisper local preenche hoje. O Discoo usa pra carimbar o minuto em
+    # cada tarefa da ata — sem isso a linha existe, só não tem [12:04].
+    segments: list[dict] | None = None
 
 
 async def transcribe_url(
