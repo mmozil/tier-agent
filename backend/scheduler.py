@@ -19,6 +19,7 @@ from typing import Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import or_, select
+from sqlalchemy.orm import aliased
 
 from core.db import db_context
 from models import (
@@ -421,6 +422,31 @@ async def _send_proactive(db, conv: TaConversation, text_content: str) -> bool:
     return await proactive.send_text_via_connector(conn, conv.external_id, text_content)
 
 
+def _sem_atendimento_humano(now):
+    """Filtro: o CONTATO não pode ter atendimento humano em curso.
+
+    🚨 Quando uma conversa vira `handed_off`, a próxima mensagem do mesmo contato
+    abre uma conversa NOVA (`active`, sem histórico). O follow-up enxergava só
+    essa nova e disparava a etapa 1 da cadência — a mensagem de PRIMEIRO contato
+    — para quem já estava negociando e já tinha recebido preço. Foi exatamente o
+    que aconteceu com o CCDA (conversa 210 `handed_off` com 12 mensagens ×
+    conversa 212 `active` com 4).
+
+    Enquanto existir conversa entregue a humano nos últimos 7 dias, o bot cala.
+    """
+    outra = aliased(TaConversation)
+    return ~(
+        select(outra.id)
+        .where(
+            outra.external_id == TaConversation.external_id,
+            outra.agent_id == TaConversation.agent_id,
+            outra.status == "handed_off",
+            outra.last_message_at >= now - timedelta(days=7),
+        )
+        .exists()
+    )
+
+
 async def followup_inactivity_job() -> None:
     """Follow-up por inatividade: conversa 'active' parada > N horas → 1 nudge.
 
@@ -504,6 +530,7 @@ async def followup_inactivity_job() -> None:
                                 ),
                                 TaConversation.status == "active",
                                 TaConversation.last_message_at < threshold,
+                                _sem_atendimento_humano(now),
                             )
                             .limit(100)  # cap defensivo por tick
                         )
@@ -525,9 +552,15 @@ async def followup_inactivity_job() -> None:
                             msg = msg.replace("{nome}", nome)
                         else:
                             msg = msg.replace(", {nome}", "").replace("{nome}", "").replace("  ", " ")
+                        # 🚨 MARCA ANTES DE ENVIAR. A marca vinha depois do envio,
+                        # e nessa janela (deploy roda 2 containers por alguns
+                        # segundos) o mesmo nudge saía duas vezes — medido: 4,6ms
+                        # entre as duas. Perder um ciclo é invisível; mandar duas
+                        # vezes pro cliente, não.
+                        conv.followup_step = step + 1
+                        conv.last_followup_at = now
+                        await db.commit()
                         if await _send_proactive(db, conv, msg):
-                            conv.followup_step = step + 1
-                            conv.last_followup_at = now
                             db.add(TaMessageLog(conversation_id=conv.id, role="assistant", content=msg))
                             sent_total += 1
                             houve = True
@@ -551,13 +584,15 @@ async def followup_inactivity_job() -> None:
                                 TaConversation.last_followup_at.is_(None),
                                 TaConversation.last_followup_at < TaConversation.last_message_at,
                             ),
+                            _sem_atendimento_humano(now),
                         )
                         .limit(50)  # cap defensivo por tick
                     )
                 ).scalars().all()
                 for conv in convs:
+                    conv.last_followup_at = now  # claim antes do envio (ver acima)
+                    await db.commit()
                     if await _send_proactive(db, conv, message):
-                        conv.last_followup_at = now
                         db.add(TaMessageLog(conversation_id=conv.id, role="assistant", content=message))
                         sent_total += 1
                 if convs:
