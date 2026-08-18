@@ -4,7 +4,6 @@ Tier Engine é multi-instance multi-tenant em prod (whats.tier.finance).
 Cada agent tem 1 instância Engine. Outbound = POST REST. Inbound = webhook.
 """
 
-import base64
 import logging
 
 import httpx
@@ -38,18 +37,21 @@ class WhatsAppConnector:
         image = next((a for a in msg.attachments if a.kind == "image"), None)
 
         async with httpx.AsyncClient(timeout=30) as cli:
-            if audio:
-                body = {
-                    "to": msg.external_chat_id,
-                    "audio_base64": base64.b64encode(audio.raw_bytes).decode() if audio.raw_bytes else None,
-                    "audio_url": audio.url,
-                    "mime": audio.mime or "audio/ogg",
-                }
+            if audio and audio.url:
+                # Mesmo contrato da imagem: o Engine valida `{to, mediaUrl}` e
+                # NÃO aceita base64 neste endpoint (`audio_base64`/`audio_url`/
+                # `mime` davam 422). Áudio só como bytes cai no `else` e sai
+                # como texto — melhor que 422 silencioso.
+                body = {"to": msg.external_chat_id, "mediaUrl": audio.url}
                 r = await cli.post(f"{base}/audio", json=body, headers=headers)
             elif image:
+                # 🚨 O Engine espera `mediaUrl` (camelCase) — `image_url` levava
+                # 422 validation_error. Só apareceu quando o envio proativo com
+                # imagem estreou; até então este ramo nunca tinha rodado em prod.
+                # Contrato: POST /messages/image {to, mediaUrl, caption?}.
                 body = {
                     "to": msg.external_chat_id,
-                    "image_url": image.url,
+                    "mediaUrl": image.url,
                     "caption": msg.content,
                 }
                 r = await cli.post(f"{base}/image", json=body, headers=headers)
