@@ -238,16 +238,39 @@ def _format_for_whatsapp(text: str) -> str:
     return t.strip()
 
 
+def _sem_travessao(text: str) -> str:
+    """Travessão no meio da frase denuncia texto de máquina (pedido do dono do
+    CCDA, 18/08 — higiene geral de linguagem). Em/en dash viram vírgula, e
+    somem quando abrem linha (marcador de lista). HÍFEN comum não é tocado:
+    telefone 4043-0461, CNPJ e datas ficam intactos."""
+    if not text or ("—" not in text and "–" not in text):
+        return text
+    text = _re.sub(r"(?m)^[ \t]*[—–][ \t]*", "", text)
+    text = _re.sub(r"[ \t]*[—–][ \t]*", ", ", text)
+    text = _re.sub(r",[ \t]*,", ", ", text)
+    text = _re.sub(r"([.!?:;])[ \t]*,[ \t]+", r"\1 ", text)
+    return text
+
+
 def _split_into_bubbles(text: str, max_len: int = 700) -> list[str]:
     """Divide resposta longa em até 4 balões (mais humano no WhatsApp).
 
     Quebra em parágrafos (\\n\\n), mantém listas/blocos inteiros, agrupa blocos
-    pequenos. Resposta curta → 1 balão (sem split)."""
+    pequenos. Resposta curta SEM parágrafos → 1 balão (sem split)."""
     text = (text or "").strip()
     if not text:
         return []
-    if len(text) <= max_len:
+    # Rajada à brasileira (18/08): parágrafo separado pelo agente vira balão
+    # próprio MESMO em resposta curta — mensagem, enter, outra mensagem.
+    # Sem linha em branco, resposta curta segue inteira como sempre.
+    if len(text) <= max_len and "\n\n" not in text:
         return [text]
+    if len(text) <= max_len:
+        # Cada parágrafo vira um balão ("Oi, Marcos!" sozinho é EXATAMENTE o
+        # padrão brasileiro) — quem decide o fatiamento é a persona; aqui só
+        # respeitamos, com teto de 4 pra nunca virar metralhadora.
+        curtos = [b.strip() for b in text.split("\n\n") if b.strip()]
+        return curtos[:4] if len(curtos) > 1 else [text]
     blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
     bubbles: list[str] = []
     cur = ""
@@ -1025,7 +1048,7 @@ async def handle_inbound_message(
     try:
         connector_impl = registry.get(connector_kind)
         cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
-        _clean = _sanitize_reply(reply.text)
+        _clean = _sem_travessao(_sanitize_reply(reply.text))
         if connector_kind in ("whatsapp", "whatsapp_cloud"):
             _clean = _format_for_whatsapp(_clean)
         _bubbles = _split_into_bubbles(_clean)
