@@ -57,6 +57,56 @@ async def _record_idempotent(
     return False
 
 
+
+def _desembrulhar_mensagem(msg: dict) -> dict:
+    """Tira os ENVELOPES do WhatsApp até chegar na mensagem de verdade.
+
+    🚨 Quando o chat tem **mensagens temporárias** ligadas (ou é "ver uma vez",
+    ou legenda de documento), o Baileys não entrega `conversation` no topo — ele
+    embrulha tudo em `ephemeralMessage.message.*`. Ler só o topo devolvia texto
+    VAZIO, e aí o agente respondia sem ter o que responder: regenerava a resposta
+    anterior a partir do histórico, o que na tela do cliente parece o agente
+    repetindo a mesma coisa duas vezes. Foi o caso do CCDA em 19/ago.
+    """
+    envelopes = (
+        "ephemeralMessage",
+        "viewOnceMessage",
+        "viewOnceMessageV2",
+        "viewOnceMessageV2Extension",
+        "documentWithCaptionMessage",
+        "editedMessage",
+    )
+    for _ in range(5):  # trava anti-loop: envelope aninhado é raro, infinito é bug
+        if not isinstance(msg, dict):
+            return {}
+        for env in envelopes:
+            interno = msg.get(env)
+            if isinstance(interno, dict):
+                msg = interno.get("message") or interno
+                break
+        else:
+            return msg
+    return msg if isinstance(msg, dict) else {}
+
+
+def _texto_de_botao(msg: dict) -> str:
+    """Resposta de botão/lista também é fala do cliente, não silêncio."""
+    for chave, campos in (
+        ("buttonsResponseMessage", ("selectedDisplayText", "selectedButtonId")),
+        ("listResponseMessage", ("title", "description")),
+        ("templateButtonReplyMessage", ("selectedDisplayText", "selectedId")),
+    ):
+        bloco = msg.get(chave)
+        if isinstance(bloco, dict):
+            for campo in campos:
+                if bloco.get(campo):
+                    return str(bloco[campo])
+            linha = (bloco.get("singleSelectReply") or {}).get("selectedRowId")
+            if linha:
+                return str(linha)
+    return ""
+
+
 @router.post("/whatsapp-engine")
 async def whatsapp_engine_webhook(
     request: Request,
@@ -119,7 +169,7 @@ async def whatsapp_engine_webhook(
     text_content = ""
     attachments: list[ConnectorAttachment] = []
 
-    msg = payload.get("message") or {}
+    msg = _desembrulhar_mensagem(payload.get("message") or {})
     media_url = payload.get("mediaUrl")  # URL R2 pública (pre-uploaded pelo Engine)
 
     # Texto puro (conversation) ou caption de mídia
@@ -156,6 +206,10 @@ async def whatsapp_engine_webhook(
                     ConnectorAttachment(kind="document", url=media_url, mime=msg["documentMessage"].get("mimetype"))
                 )
 
+    # Resposta de botão/lista conta como fala do cliente
+    if not text_content and isinstance(msg, dict):
+        text_content = _texto_de_botao(msg)
+
     # Fallback: formato legado/dev (payload.text/body)
     if not text_content and not attachments:
         text_content = payload.get("text") or payload.get("body") or ""
@@ -178,6 +232,20 @@ async def whatsapp_engine_webhook(
     # garante um placeholder pra mensagem que vem só com mídia.
     if not text_content and attachments:
         text_content = f"[{attachments[0].kind}]"
+
+    # 🚨 MENSAGEM VAZIA NÃO VIRA TURNO. Sem isto, um tipo que o extrator não
+    # conhece chega como texto vazio, o agente não tem o que responder e REGENERA
+    # a resposta anterior a partir do histórico — na tela do cliente isso parece o
+    # agente repetindo a mesma coisa duas vezes (caso CCDA, 19/ago: "Desculpa,
+    # engano" chegou vazio e virou a mesma resposta de novo). Loga as CHAVES do
+    # payload pra o próximo tipo desconhecido aparecer no log, não virar adivinhação.
+    if not (text_content or "").strip() and not attachments:
+        logger.warning(
+            "webhook Engine: mensagem sem texto reconhecível chat=%s tipos=%s — ignorada",
+            external_chat_id,
+            list((payload.get("message") or {}).keys())[:6],
+        )
+        return {"status": "ignored", "reason": "empty_message"}
 
     # Processa em BACKGROUND (sessão de DB própria) pra devolver o 200 na hora. Se
     # processar inline, o webhook segura a resposta durante o delay + LLM + envio; o
