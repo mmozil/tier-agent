@@ -338,6 +338,38 @@ Medido no `/c/demo-tier-empresas`: **llm=2,5–4,4s domina** (1 chamada, prompt 
   chars) às vezes levam 13–14s no OpenRouter — não seguram o visitante (rodam em fundo),
   mas aparecem no log; não confundir com o turno.
 
+## Follow-up automático (cadência) — gotchas (ago/2026)
+
+Job `followup_inactivity_job` (`scheduler.py`). Config por tenant em `TaRuntimeParam`:
+`followup_enabled` · `followup_hours` · `followup_message` · **`followup_cadence`** (JSON com
+`[{h, msg}]` — o CCDA/tenant 17 tem 4 etapas: 24h, 72h, 168h, 240h).
+
+🚨 **Duas regras que vieram de defeito real em produção (CCDA, 18/ago):**
+
+1. **Filtrar por CONTATO, nunca por conversa.** Quando uma conversa vira `handed_off`, a
+   próxima mensagem do mesmo contato **abre uma conversa NOVA** (`active`, sem histórico).
+   O job olhava `status == "active"`, achava a nova e disparava a **etapa 1 da cadência** —
+   a mensagem de *primeiro contato* — para quem já tinha recebido preço. Caso real: conv
+   **210** (12 msgs, `handed_off`, card 3886) × conv **212** (4 msgs, `active`, 2 min depois).
+   Hoje há `_sem_atendimento_humano()`: `NOT EXISTS` correlacionado por `external_id`+
+   `agent_id`; contato com conversa `handed_off` nos últimos 7 dias **não recebe nudge**.
+   ⚠️ `last_followup_at`/`followup_step` moram na CONVERSA — conversa nova zera o contador,
+   por isso a guarda precisa ser no contato.
+
+2. **Marcar ANTES de enviar.** A marca era gravada depois do envio. Há trava Redis
+   (`_locked`) e `max_instances=1`, mas **no rolling update do Coolify rodam 2 containers
+   por alguns segundos** e a janela abre — medido: dois envios com **4,6 ms** de diferença.
+   Perder um ciclo de nudge é invisível; mandar duas vezes pro cliente não é.
+
+**Como validar mudança nesse filtro** (foi o que fechou o caso): compilar a query e conferir
+que a subconsulta **correlaciona** (`str(q.compile(compile_kwargs={"literal_binds": True}))`)
+— sem correlação o `EXISTS` não filtra nada e passa batido; depois rodar o predicado contra
+as linhas reais do incidente.
+
+⬜ **Fica de fundo (não resolvido):** a conversa continua se partindo no handoff, e o texto
+da cadência é **template fixo** que não lê a conversa. O certo é o **agente** escrever o
+follow-up (a cadência vira intenção: lembrar / oferecer ligação / encerrar).
+
 ## Arquitetura backend
 
 - `routes/` — connectors, agents, webhooks, playbooks, billing, containers, etc.
