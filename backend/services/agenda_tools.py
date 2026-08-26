@@ -425,6 +425,95 @@ def _make_agendar_handler(
     return _handler
 
 
+ETAPAS_QUE_O_AGENTE_MOVE = ["Visita Agendada", "Perdido: não tem interesse"]
+
+
+def build_etapa_tool_schema() -> dict:
+    """Schema da tool que registra no funil o que a conversa resolveu.
+
+    🚨 Só DUAS etapas. O agente move o card apenas nos dois momentos que ele
+    mesmo provoca — marcou a visita, ou a família disse que não quer seguir.
+    Todo o resto do funil (tentativa de contato, no-show, visita realizada) é
+    consequência de coisas que acontecem FORA da conversa, e quem move é a
+    automação ou uma pessoa. Uma tool que aceitasse qualquer etapa convidaria o
+    modelo a inventar movimento de funil a partir de conversa fiada.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": "atualizar_etapa_crm",
+            "description": (
+                "Registra no CRM o que ficou decidido na conversa. Use APENAS nestes dois "
+                "momentos: (1) logo depois de agendar_visita dar certo, com etapa='Visita Agendada'; "
+                "(2) quando a família disser explicitamente que não tem mais interesse, com "
+                "etapa='Perdido: não tem interesse' e o motivo em uma frase. "
+                "Não use para mais nada, e nunca avise a família de que fez isso."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "etapa": {
+                        "type": "string",
+                        "enum": ETAPAS_QUE_O_AGENTE_MOVE,
+                        "description": "A etapa do funil para onde o card vai.",
+                    },
+                    "motivo": {
+                        "type": "string",
+                        "description": "Só quando for perda: por que a família não quer seguir.",
+                    },
+                },
+                "required": ["etapa"],
+            },
+        },
+    }
+
+
+def _make_etapa_handler(slug: str, customer_phone: str | None) -> Callable[[dict], Awaitable[str]]:
+    async def _handler(args: dict) -> str:
+        if not customer_phone:
+            # Sem telefone não há como achar o card. Falha SILENCIOSA para o
+            # cliente: o agente não deve pedir desculpa por uma engrenagem
+            # interna que a família não sabe que existe.
+            logger.warning("agenda_tools: atualizar_etapa_crm sem telefone (slug=%s)", slug)
+            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+
+        etapa = str((args or {}).get("etapa") or "").strip()
+        if etapa not in ETAPAS_QUE_O_AGENTE_MOVE:
+            validas = ", ".join(ETAPAS_QUE_O_AGENTE_MOVE)
+            return f"[etapa inválida. Use exatamente uma destas: {validas}]"
+
+        corpo = {"telefone": customer_phone, "etapa": etapa}
+        motivo = str((args or {}).get("motivo") or "").strip()
+        if motivo:
+            corpo["motivo"] = motivo[:200]
+
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
+                r = await cli.post(f"{_base_url()}/{slug}/mover-etapa", json=corpo)
+        except Exception:
+            logger.exception("agenda_tools: POST mover-etapa %s falhou", slug)
+            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+
+        if r.status_code == 404:
+            # contato ou card ainda não existem — comum quando a conversa começou
+            # agora. Não é erro que a família precise ver.
+            logger.info("agenda_tools: mover-etapa %s sem card para %s", slug, customer_phone[-4:])
+            return "[ainda não há negociação aberta para este contato. Siga a conversa normalmente.]"
+        if r.status_code >= 400:
+            logger.warning("agenda_tools: mover-etapa %s retornou %s: %s", slug, r.status_code, r.text[:200])
+            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+
+        try:
+            resp = r.json()
+        except Exception:  # noqa: BLE001
+            resp = {}
+        destino = resp.get("funil") or ""
+        onde = f" no funil {destino}" if destino else ""
+        return f"[registrado no CRM: card em '{resp.get('etapa', etapa)}'{onde}. Não comente isso com a família.]"
+
+    return _handler
+
+
 async def discover_agenda_tools(
     db, agent_id: int, customer_phone: str | None = None
 ) -> tuple[list[dict], dict[str, Callable[[dict], Awaitable[str]]]]:
@@ -445,5 +534,7 @@ async def discover_agenda_tools(
     handlers = {
         "consultar_horarios_visita": _make_consultar_handler(slug),
         "agendar_visita": _make_agendar_handler(slug, config, agendar_schema, extras_map, customer_phone),
+        "atualizar_etapa_crm": _make_etapa_handler(slug, customer_phone),
     }
+    schemas = list(schemas) + [build_etapa_tool_schema()]
     return schemas, handlers
