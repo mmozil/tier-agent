@@ -545,6 +545,137 @@ CATEGORIAS_DE_MOTIVO = [
 ]
 
 
+# ── Série pela data de nascimento ──────────────────────────────────────────────
+# 🚨 A regra é NACIONAL e é uma data: a criança precisa de 6 anos completos até
+# 31 de março do ano letivo para entrar no 1º ano (CNE/CEB 2/2018). Um dia de
+# diferença muda o ano inteiro — nascido em 31/03 entra, nascido em 01/04 espera.
+# É exatamente essa a dúvida que as famílias trazem.
+CORTE_MES, CORTE_DIA = 3, 31
+
+# Idade em 31/03 → série. O CCDA vai do Jardim I ao 3º do Médio; fora dessa
+# faixa a resposta é "fora do que a escola atende", não um palpite.
+SERIE_POR_IDADE = {
+    4: "Jardim I",
+    5: "Jardim II",
+    6: "1º ano do Ensino Fundamental",
+    7: "2º ano do Ensino Fundamental",
+    8: "3º ano do Ensino Fundamental",
+    9: "4º ano do Ensino Fundamental",
+    10: "5º ano do Ensino Fundamental",
+    11: "6º ano do Ensino Fundamental",
+    12: "7º ano do Ensino Fundamental",
+    13: "8º ano do Ensino Fundamental",
+    14: "9º ano do Ensino Fundamental",
+    15: "1ª série do Ensino Médio",
+    16: "2ª série do Ensino Médio",
+    17: "3ª série do Ensino Médio",
+}
+
+
+def calcular_serie(data_nascimento: str, ano_letivo: int) -> dict:
+    """A série da criança no ano letivo pedido, pelo corte de 31/03.
+
+    Devolve também a idade na data de corte e um aviso quando o aniversário cai
+    perto dela — não para hesitar, mas porque é o caso em que a família costuma
+    ter ouvido coisa diferente em outra escola.
+    """
+    from datetime import date as _date
+
+    try:
+        ano, mes, dia = (int(x) for x in str(data_nascimento)[:10].split("-"))
+        nasc = _date(ano, mes, dia)
+    except Exception:  # noqa: BLE001
+        return {"erro": "data de nascimento inválida — use AAAA-MM-DD"}
+
+    corte = _date(ano_letivo, CORTE_MES, CORTE_DIA)
+    if nasc >= corte:
+        return {"erro": "data de nascimento posterior à data de corte do ano letivo pedido"}
+
+    idade = corte.year - nasc.year - ((corte.month, corte.day) < (nasc.month, nasc.day))
+    serie = SERIE_POR_IDADE.get(idade)
+
+    out = {
+        "ano_letivo": ano_letivo,
+        "idade_no_corte": idade,
+        "data_corte": corte.strftime("%d/%m/%Y"),
+        "serie": serie,
+    }
+    if not serie:
+        out["serie"] = None
+        out["aviso"] = (
+            "Idade fora da faixa que o colégio atende (Jardim I ao 3º do Ensino Médio). "
+            "NÃO invente uma série: diga que confirma pessoalmente."
+        )
+        return out
+
+    # 🚨 O caso de borda é o que gera a dúvida: quem faz aniversário em abril
+    # espera um ano inteiro, e a família quase sempre acha que não. Vale dizer a
+    # data de corte em voz alta nesse caso.
+    if (nasc.month, nasc.day) > (CORTE_MES, CORTE_DIA):
+        out["observacao"] = (
+            f"O aniversário é depois de 31/03, então em {ano_letivo} a idade no corte é "
+            f"{idade}. Explique o corte de 31/03 — é a dúvida mais comum das famílias."
+        )
+    return out
+
+
+def build_serie_tool_schema() -> dict:
+    """Schema da tool que calcula a série pela data de nascimento.
+
+    🚨 Existe porque o modelo NÃO PODE fazer esta conta. O corte de 31/03 muda o
+    ano letivo inteiro por um dia de diferença, e conta feita por modelo erra —
+    foi o que aconteceu com o dia da semana, errado em 3 de 3. Aqui o erro é
+    caro: a família ouve que o filho entra este ano quando entra no que vem.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": "consultar_serie_por_nascimento",
+            "description": (
+                "Calcula em que série a criança se enquadra, pela data de nascimento e pelo "
+                "corte legal de 31 de março. Use SEMPRE que a família der a data de nascimento "
+                "ou perguntar se o filho já pode entrar no 1º ano. "
+                "NUNCA calcule a série você mesmo — um dia de diferença muda o ano letivo "
+                "inteiro. Responda com a série que a ferramenta devolver."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "data_nascimento": {
+                        "type": "string",
+                        "description": "Data de nascimento no formato AAAA-MM-DD.",
+                    },
+                    "ano_letivo": {
+                        "type": "integer",
+                        "description": (
+                            "O ano letivo da matrícula. Se a família não disser, use o ano "
+                            "seguinte ao atual (matrícula nova é para o próximo ano)."
+                        ),
+                    },
+                },
+                "required": ["data_nascimento", "ano_letivo"],
+            },
+        },
+    }
+
+
+def _make_serie_handler() -> Callable[[dict], Awaitable[str]]:
+    async def _handler(args: dict) -> str:
+        from datetime import date as _d
+
+        nasc = str((args or {}).get("data_nascimento") or "").strip()
+        try:
+            ano = int((args or {}).get("ano_letivo") or 0)
+        except (TypeError, ValueError):
+            ano = 0
+        if not ano:
+            # Matrícula nova é para o ano seguinte — é o que a família quer saber.
+            ano = _d.today().year + 1
+        return json.dumps(calcular_serie(nasc, ano), ensure_ascii=False)
+
+    return _handler
+
+
 def build_campo_tool_schema() -> dict:
     """Schema da tool que grava no card o que a conversa descobriu.
 
@@ -791,10 +922,12 @@ async def discover_agenda_tools(
         "atualizar_etapa_crm": _make_etapa_handler(slug, customer_phone),
         "marcar_perda": _make_perda_handler(slug, customer_phone),
         "atualizar_campo_crm": _make_campo_handler(slug, customer_phone),
+        "consultar_serie_por_nascimento": _make_serie_handler(),
     }
     schemas = list(schemas) + [
         build_etapa_tool_schema(),
         build_perda_tool_schema(),
         build_campo_tool_schema(),
+        build_serie_tool_schema(),
     ]
     return schemas, handlers
