@@ -60,7 +60,24 @@ def test_o_resumo_entrega_semana_e_dia_br():
 def test_a_instrucao_proibe_o_modelo_de_calcular():
     """Entregar o dado não basta: sem a instrução o modelo continua deduzindo."""
     r = summarize_slots(payload("2026-08-31"), "2026-08-31")
-    assert "não calcule o dia da semana você mesmo" in r["instrucao"]
+    assert "nunca calcule isso você mesmo" in r["instrucao"]
+
+
+def test_a_instrucao_pinta_o_formato_do_DOCUMENTO():
+    """🚨 O v3 manda oferecer 'Dia 00/00 às 00h', SEM dia da semana. O agente
+    dizendo "Domingo 31/08" estava errado duas vezes: o dia estava errado E não
+    devia estar ali. Dia da semana no documento só aparece para combinar
+    LIGAÇÃO ("te ligo na segunda-feira"), nunca para oferecer visita."""
+    i = summarize_slots(payload("2026-08-31"), "2026-08-31")["instrucao"]
+    assert "Dia {dia_br} às {hora}" in i
+    assert "NÃO diga o dia da semana ao oferecer visita" in i
+
+
+def test_semana_continua_no_payload_para_quem_pergunta():
+    """Some da oferta, não do dado: se a família perguntar que dia da semana é,
+    a resposta tem de sair certa em vez de o modelo voltar a deduzir."""
+    r = summarize_slots(payload("2026-08-31"), "2026-08-31")
+    assert r["dias"][0]["semana"] == "segunda-feira"
 
 
 def test_a_data_iso_continua_no_resumo():

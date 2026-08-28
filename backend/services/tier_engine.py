@@ -160,6 +160,36 @@ class ProvidersAllDisabled(RuntimeError):
     """
 
 
+async def _fallback_do_tenant(tenant_id: int | None) -> str:
+    """A frase que este cliente usa quando o modelo não produziu texto.
+
+    `fallback_message` no escopo `tenant`. Vazio/ausente → o chamador usa a
+    neutra. Best-effort: falhar aqui não pode deixar o balão vazio.
+    """
+    if not tenant_id:
+        return ""
+    try:
+        from sqlalchemy import select as _sel
+
+        from core.db import db_context as _dbc
+        from models import TaRuntimeParam as _P
+
+        async with _dbc() as _db:
+            v = (
+                await _db.execute(
+                    _sel(_P.value).where(
+                        _P.escopo == "tenant",
+                        _P.escopo_id == tenant_id,
+                        _P.key == "fallback_message",
+                    )
+                )
+            ).scalar()
+        return (v or "").strip()
+    except Exception:  # noqa: BLE001
+        logger.debug("tier_engine: fallback_message do tenant indisponivel")
+        return ""
+
+
 async def _load_provider(db: AsyncSession, tenant_id: int) -> TaLlmProvider:
     """Config de LLM do tenant — SÓ o provider ATIVO do próprio tenant.
 
@@ -1002,15 +1032,22 @@ async def send_message(
     if text:
         text = _CJK_RE.sub("", text).strip()
     if not text:
-        # 🚨 NEUTRO de propósito. Isto serve TODO tenant, e a versão anterior
-        # ("Prontinho! 🐾") era linguagem de petshop saindo na boca de uma
-        # assistente de colégio. Fallback é o texto que aparece quando tudo
-        # falhou — ele não pode carregar a personalidade de um cliente só.
+        # 🚨 O PADRÃO é NEUTRO de propósito. Isto serve TODO tenant, e a versão
+        # anterior ("Prontinho! 🐾") era linguagem de petshop saindo na boca de
+        # uma assistente de colégio. Fallback é o texto de quando tudo falhou —
+        # ele não pode carregar a personalidade de um cliente só.
         #
-        # E ele aparece mais do que se imagina: sempre que o modelo responde
-        # vazio depois de executar ferramenta. Ver o texto de retorno das
-        # ferramentas, que agora manda CONTINUAR em vez de só "não comentar".
-        text = "Certo! Me avisa se precisar de mais alguma coisa."
+        # Mas cada cliente TEM a frase dele. O CCDA, por exemplo, tem fecho
+        # exato no roteiro ("Posso esclarecer mais alguma outra dúvida?"), e é
+        # essa que deve sair no lugar da genérica. Por isso o texto é parâmetro
+        # por tenant, com o neutro como piso.
+        #
+        # 🚨 Isto aparece mais do que se imagina: sempre que o modelo responde
+        # vazio depois de executar ferramenta. O retorno das ferramentas já manda
+        # CONTINUAR em vez de só "não comentar", o que reduziu muito a chance —
+        # mas o piso continua existindo porque o modelo pode falhar de outras
+        # formas, e balão vazio é pior que frase genérica.
+        text = await _fallback_do_tenant(tenant_id) or "Certo! Me avisa se precisar de mais alguma coisa."
     latency_ms = int((time.perf_counter() - started) * 1000)
     usage = data.get("usage", {})
 

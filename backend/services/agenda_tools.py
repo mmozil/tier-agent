@@ -223,8 +223,13 @@ _SEMANA_PT = ("segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
 
 
 def _dia_da_semana(iso: str) -> str:
-    """O dia da semana de uma data ISO. Conta, não juízo — e é por isso que sai
-    daqui e não da cabeça do modelo."""
+    """O dia da semana de uma data ISO.
+
+    🚨 NÃO entra na oferta de visita: o documento manda 'Dia 00/00 às 00h', sem
+    dia da semana, e o agente dizendo "Domingo 31/08" estava errado duas vezes —
+    o dia estava errado E não devia estar ali. Fica no payload só para quando a
+    família pergunta que dia da semana é. Conta, não juízo: quem tem o calendário
+    é o servidor."""
     try:
         from datetime import date as _d
 
@@ -283,9 +288,11 @@ def summarize_slots(slots_payload: dict, data_pedida: str) -> dict:
             for d, h in sorted(dias.items())
         ],
         "instrucao": (
-            "Ofereça 2 a 3 opções ao cliente. Use SEMPRE 'semana' e 'dia_br' como estão — "
-            "não calcule o dia da semana você mesmo. Para agendar, use o campo 'inicio' "
-            "EXATO do horário escolhido em agendar_visita."
+            "Ofereça 2 a 3 opções no formato exato 'Dia {dia_br} às {hora}' — use o "
+            "'dia_br' como está e NÃO diga o dia da semana ao oferecer visita. "
+            "'semana' está aqui só para o caso de a família perguntar diretamente que "
+            "dia da semana é; nunca calcule isso você mesmo. "
+            "Para agendar, use o campo 'inicio' EXATO do horário escolhido em agendar_visita."
         ),
     }
 
