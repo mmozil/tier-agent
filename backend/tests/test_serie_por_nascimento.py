@@ -78,16 +78,20 @@ def test_nao_ha_buraco_na_tabela():
 
 
 # ── fora da faixa e entradas ruins ───────────────────────────────────
-def test_muito_novo_nao_inventa_serie():
+def test_muito_novo_NAO_e_recusa_e_sim_um_ano_futuro():
+    """Abaixo da idade mínima a criança ENTRA — só que depois. Ver o bloco do
+    caso real no fim deste arquivo: responder "não elegível" e encerrar foi o que
+    perdeu uma matrícula que já estava decidida."""
     r = calcular_serie("2025-01-01", 2027)
     assert r["serie"] is None
-    assert "NÃO invente" in r["aviso"]
+    assert r["entra_em"] == 2029
+    assert "A criança ENTRA" in r["orientacao"]
 
 
 def test_muito_velho_nao_inventa_serie():
     r = calcular_serie("2000-01-01", 2027)
     assert r["serie"] is None
-    assert "confirma pessoalmente" in r["aviso"]
+    assert "confirma pessoalmente" in r["orientacao"]
 
 
 @pytest.mark.parametrize("ruim", ["31/03/2020", "ontem", "", "2020-13-45", "abc"])
@@ -143,3 +147,73 @@ def test_ano_letivo_e_obrigatorio_no_schema():
     assert build_serie_tool_schema()["function"]["parameters"]["required"] == [
         "data_nascimento", "ano_letivo",
     ]
+
+
+# ── fora do corte é um QUANDO, não um NÃO ────────────────────────────
+# Conversa real do atendimento atual da escola (28/08, 19:29). Criança nascida em
+# 02/04/2022, dois dias depois do corte:
+#
+#     "Pelas informações fornecidas, seu filho ainda não é elegível para o Jardim I."
+#     "Infelizmente, ele terá que aguardar mais um ano para iniciar."
+#     "Você tem mais dúvidas ou gostaria de mais alguma informação sobre outro assunto?"
+#
+# Três frases e a família foi embora. Mas essa criança entra no Jardim I em 2027 —
+# é matrícula do ano que vem, não recusa. Nenhuma instrução de tom no prompt
+# salva uma ferramenta que devolve só "não elegível".
+CASO_REAL = "2022-04-02"
+
+
+def test_o_caso_real_devolve_o_ano_em_que_a_crianca_ENTRA():
+    r = calcular_serie(CASO_REAL, 2026)
+    assert r["serie"] is None
+    assert r["entra_em"] == 2027
+    assert r["serie_quando_entrar"] == "Jardim I"
+
+
+def test_no_ano_seguinte_ela_realmente_entra():
+    """A promessa da orientação tem de se cumprir — senão a agente marca um ano
+    que, chegando lá, dá 'não elegível' de novo."""
+    assert calcular_serie(CASO_REAL, 2027)["serie"] == "Jardim I"
+
+
+def test_a_orientacao_PROIBE_o_infelizmente():
+    """🚨 A palavra do atendimento que perdeu a família."""
+    o = calcular_serie(CASO_REAL, 2026)["orientacao"]
+    assert "NUNCA use 'infelizmente'" in o
+    assert "A criança ENTRA" in o
+
+
+def test_a_orientacao_manda_NAO_encerrar():
+    """O atendimento real perguntou 'quer informação sobre outro assunto?' e
+    encerrou. Era matrícula do ano que vem indo embora."""
+    o = calcular_serie(CASO_REAL, 2026)["orientacao"]
+    assert "Nunca encerre a conversa" in o
+    assert "ofereça continuar o contato" in o
+
+
+def test_a_orientacao_manda_reconhecer_a_proximidade_do_corte():
+    """Dois dias parecem injustos, e a família precisa sentir que alguém entende."""
+    assert "dois dias parecem injustos" in calcular_serie(CASO_REAL, 2026)["orientacao"]
+
+
+@pytest.mark.parametrize("nasc,ano,entra", [
+    ("2022-04-02", 2026, 2027),   # falta 1 ano
+    ("2023-04-02", 2026, 2028),   # faltam 2
+    ("2024-01-10", 2026, 2028),   # faltam 2 (aniversário antes do corte)
+])
+def test_calcula_quantos_anos_faltam(nasc, ano, entra):
+    assert calcular_serie(nasc, ano)["entra_em"] == entra
+
+
+def test_idade_ACIMA_da_faixa_nao_promete_ano_nenhum():
+    """Quem já passou do 3º do Médio não 'entra depois' — aí é confirmar
+    pessoalmente, e prometer um ano seria mentira."""
+    r = calcular_serie("2000-01-01", 2027)
+    assert "entra_em" not in r
+    assert "confirma pessoalmente" in r["orientacao"]
+
+
+def test_a_regra_e_apresentada_como_do_CALENDARIO_nao_do_colegio():
+    """Soar como decisão do colégio faz a família achar que há o que negociar,
+    e a conversa vira disputa em vez de agendamento."""
+    assert "não uma decisão do colégio" in calcular_serie("2020-06-15", 2027)["observacao"]
