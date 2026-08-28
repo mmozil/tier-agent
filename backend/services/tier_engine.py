@@ -1002,7 +1002,15 @@ async def send_message(
     if text:
         text = _CJK_RE.sub("", text).strip()
     if not text:
-        text = "Prontinho! 🐾 Me avisa se precisar de mais alguma coisa."
+        # 🚨 NEUTRO de propósito. Isto serve TODO tenant, e a versão anterior
+        # ("Prontinho! 🐾") era linguagem de petshop saindo na boca de uma
+        # assistente de colégio. Fallback é o texto que aparece quando tudo
+        # falhou — ele não pode carregar a personalidade de um cliente só.
+        #
+        # E ele aparece mais do que se imagina: sempre que o modelo responde
+        # vazio depois de executar ferramenta. Ver o texto de retorno das
+        # ferramentas, que agora manda CONTINUAR em vez de só "não comentar".
+        text = "Certo! Me avisa se precisar de mais alguma coisa."
     latency_ms = int((time.perf_counter() - started) * 1000)
     usage = data.get("usage", {})
 

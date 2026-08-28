@@ -88,7 +88,11 @@ def test_as_duas_listas_de_campo_nao_podem_divergir():
 # ── handler ──────────────────────────────────────────────────────────
 def test_sem_telefone_nao_alarma_a_familia():
     r = rodar(_make_campo_handler("ccda", None), {"campo": "ano_escolar", "valor": "4º ano"})
-    assert "sem comentar isso" in r
+    # O contrato mudou: a ferramenta manda o modelo CONTINUAR, não ficar mudo.
+    # Antes ela dizia só "sem comentar isso", e o modelo entendia "não diga
+    # nada" — respondia vazio e o fallback do motor entrava no lugar dele.
+    assert "NÃO mencione isso" in r
+    assert "siga o roteiro" in r
     assert "desculpa" not in r.lower()
 
 

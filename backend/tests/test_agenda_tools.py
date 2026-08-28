@@ -158,10 +158,15 @@ def test_summarize_slots_filtra_disponiveis_e_marca_agendaveis():
     out = summarize_slots(payload, "2026-08-20")
     # marcador que liga o freio denies_slots do tier_engine
     assert "AGENDÁVEIS" in out["status"]
-    assert out["dias"] == [
+    # `semana` e `dia_br` entraram depois: o dia da semana passou a vir do
+    # servidor porque o modelo o deduzia da data ISO e errava (31/08 é segunda,
+    # ele ofereceu "domingo" e depois "sábado"). Este teste cobre a FILTRAGEM
+    # dos disponíveis, então compara só isso.
+    assert [{"dia": d["dia"], "horarios": d["horarios"]} for d in out["dias"]] == [
         {"dia": "2026-08-20", "horarios": [{"hora": "09:40", "inicio": "2026-08-20T09:40:00-03:00"}]},
         {"dia": "2026-08-21", "horarios": [{"hora": "10:30", "inicio": "2026-08-21T10:30:00-03:00"}]},
     ]
+    assert [d["semana"] for d in out["dias"]] == ["quinta-feira", "sexta-feira"]
 
 
 def test_summarize_slots_sem_disponibilidade_nao_marca_agendaveis():

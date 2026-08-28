@@ -218,6 +218,30 @@ def build_agendar_payload(
     return body
 
 
+_SEMANA_PT = ("segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
+              "sexta-feira", "sábado", "domingo")
+
+
+def _dia_da_semana(iso: str) -> str:
+    """O dia da semana de uma data ISO. Conta, não juízo — e é por isso que sai
+    daqui e não da cabeça do modelo."""
+    try:
+        from datetime import date as _d
+
+        y, m, dd = (int(x) for x in iso[:10].split("-"))
+        return _SEMANA_PT[_d(y, m, dd).weekday()]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _dia_br(iso: str) -> str:
+    """dd/mm — o formato que a família lê."""
+    try:
+        return "%s/%s" % (iso[8:10], iso[5:7])
+    except Exception:  # noqa: BLE001
+        return iso
+
+
 def summarize_slots(slots_payload: dict, data_pedida: str) -> dict:
     """Resume a resposta de /slots pro modelo: só horários disponíveis, agrupados por dia.
 
@@ -249,10 +273,19 @@ def summarize_slots(slots_payload: dict, data_pedida: str) -> dict:
         "data_pedida": data_pedida,
         "duracao_min": slots_payload.get("duracao_min"),
         "timezone": slots_payload.get("timezone"),
-        "dias": [{"dia": d, "horarios": h} for d, h in sorted(dias.items())],
+        # 🚨 `semana` e `dia_br` vêm do SERVIDOR. Sem eles o modelo tinha de
+        # deduzir o dia da semana da data ISO — e errava. Medido numa conversa
+        # real: 31/08 é SEGUNDA e ele ofereceu "domingo", a família corrigiu, ele
+        # ofereceu "sábado", errado de novo. Dia da semana é conta, não juízo:
+        # quem tem o calendário é o servidor.
+        "dias": [
+            {"dia": d, "semana": _dia_da_semana(d), "dia_br": _dia_br(d), "horarios": h}
+            for d, h in sorted(dias.items())
+        ],
         "instrucao": (
-            "Ofereça 2 a 3 opções ao cliente. Para agendar, use o campo 'inicio' EXATO do "
-            "horário escolhido em agendar_visita."
+            "Ofereça 2 a 3 opções ao cliente. Use SEMPRE 'semana' e 'dia_br' como estão — "
+            "não calcule o dia da semana você mesmo. Para agendar, use o campo 'inicio' "
+            "EXATO do horário escolhido em agendar_visita."
         ),
     }
 
@@ -560,14 +593,14 @@ def _make_campo_handler(slug: str, customer_phone: str | None) -> Callable[[dict
     async def _handler(args: dict) -> str:
         if not customer_phone:
             logger.warning("agenda_tools: atualizar_campo_crm sem telefone (slug=%s)", slug)
-            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+            return "[não consegui registrar no sistema agora. NÃO mencione isso para a família. Responda a mensagem dela normalmente e siga o roteiro.]"
 
         campo = str((args or {}).get("campo") or "").strip()
         valor = str((args or {}).get("valor") or "").strip()
         if campo not in CAMPOS_DO_AGENTE:
             return f"[campo inválido. Use um destes: {', '.join(CAMPOS_DO_AGENTE)}]"
         if not valor:
-            return "[valor vazio — não registrei. Siga a conversa normalmente, sem comentar isso.]"
+            return "[valor vazio, não registrei. NÃO mencione isso. Responda a mensagem da família e siga o roteiro.]"
 
         try:
             async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
@@ -577,22 +610,22 @@ def _make_campo_handler(slug: str, customer_phone: str | None) -> Callable[[dict
                 )
         except Exception:
             logger.exception("agenda_tools: POST campo %s falhou", slug)
-            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+            return "[não consegui registrar no sistema agora. NÃO mencione isso para a família. Responda a mensagem dela normalmente e siga o roteiro.]"
 
         if r.status_code == 404:
             logger.info("agenda_tools: campo %s sem card para %s", slug, customer_phone[-4:])
-            return "[registrado. Siga a conversa normalmente, sem comentar isso.]"
+            return "[registrado no sistema. NÃO mencione isso para a família. Agora responda a mensagem dela e siga o roteiro — não deixe de responder.]"
         if r.status_code == 422:
             # o CRM recusou o campo: devolve o motivo pro modelo corrigir agora
             return f"[{(r.json() or {}).get('detail', 'campo recusado')}]"
         if r.status_code >= 400:
             logger.warning("agenda_tools: campo %s retornou %s: %s", slug, r.status_code, r.text[:200])
-            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+            return "[não consegui registrar no sistema agora. NÃO mencione isso para a família. Responda a mensagem dela normalmente e siga o roteiro.]"
 
         movido = (r.json() or {}).get("movido_para")
         logger.info("agenda_tools: campo %s=%r gravado%s", campo, valor[:40],
                     f" (card -> {movido})" if movido else "")
-        return "[registrado. Siga a conversa normalmente, sem comentar isso.]"
+        return "[registrado no sistema. NÃO mencione isso para a família. Agora responda a mensagem dela e siga o roteiro — não deixe de responder.]"
 
     return _handler
 
@@ -644,7 +677,7 @@ def _make_etapa_handler(slug: str, customer_phone: str | None) -> Callable[[dict
             # cliente: o agente não deve pedir desculpa por uma engrenagem
             # interna que a família não sabe que existe.
             logger.warning("agenda_tools: atualizar_etapa_crm sem telefone (slug=%s)", slug)
-            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+            return "[não consegui registrar no sistema agora. NÃO mencione isso para a família. Responda a mensagem dela normalmente e siga o roteiro.]"
 
         etapa = str((args or {}).get("etapa") or "").strip()
         if etapa not in ETAPAS_QUE_O_AGENTE_MOVE:
@@ -663,7 +696,7 @@ def _make_etapa_handler(slug: str, customer_phone: str | None) -> Callable[[dict
                 r = await cli.post(f"{_base_url()}/{slug}/mover-etapa", json=corpo)
         except Exception:
             logger.exception("agenda_tools: POST mover-etapa %s falhou", slug)
-            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+            return "[não consegui registrar no sistema agora. NÃO mencione isso para a família. Responda a mensagem dela normalmente e siga o roteiro.]"
 
         if r.status_code == 404:
             # contato ou card ainda não existem — comum quando a conversa começou
@@ -672,7 +705,7 @@ def _make_etapa_handler(slug: str, customer_phone: str | None) -> Callable[[dict
             return "[ainda não há negociação aberta para este contato. Siga a conversa normalmente.]"
         if r.status_code >= 400:
             logger.warning("agenda_tools: mover-etapa %s retornou %s: %s", slug, r.status_code, r.text[:200])
-            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+            return "[não consegui registrar no sistema agora. NÃO mencione isso para a família. Responda a mensagem dela normalmente e siga o roteiro.]"
 
         try:
             resp = r.json()
@@ -696,7 +729,7 @@ def _make_perda_handler(slug: str, customer_phone: str | None) -> Callable[[dict
     async def _handler(args: dict) -> str:
         if not customer_phone:
             logger.warning("agenda_tools: marcar_perda sem telefone (slug=%s)", slug)
-            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+            return "[não consegui registrar no sistema agora. NÃO mencione isso para a família. Responda a mensagem dela normalmente e siga o roteiro.]"
 
         motivo = str((args or {}).get("motivo") or "").strip() or MOTIVOS_DE_PERDA[0]
         if motivo not in MOTIVOS_DE_PERDA:
@@ -713,17 +746,17 @@ def _make_perda_handler(slug: str, customer_phone: str | None) -> Callable[[dict
                 r = await cli.post(f"{_base_url()}/{slug}/cascata", json=corpo)
         except Exception:
             logger.exception("agenda_tools: POST cascata (perda) %s falhou", slug)
-            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+            return "[não consegui registrar no sistema agora. NÃO mencione isso para a família. Responda a mensagem dela normalmente e siga o roteiro.]"
 
         if r.status_code == 404:
             logger.info("agenda_tools: perda %s sem card para %s", slug, customer_phone[-4:])
-            return "[registrado. Siga a conversa normalmente, sem comentar isso.]"
+            return "[registrado no sistema. NÃO mencione isso para a família. Agora responda a mensagem dela e siga o roteiro — não deixe de responder.]"
         if r.status_code >= 400:
             logger.warning("agenda_tools: perda %s retornou %s: %s", slug, r.status_code, r.text[:200])
-            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+            return "[não consegui registrar no sistema agora. NÃO mencione isso para a família. Responda a mensagem dela normalmente e siga o roteiro.]"
 
         logger.info("agenda_tools: perda registrada (%s) para %s", motivo, customer_phone[-4:])
-        return "[registrado. Siga a conversa normalmente, sem comentar isso.]"
+        return "[registrado no sistema. NÃO mencione isso para a família. Agora responda a mensagem dela e siga o roteiro — não deixe de responder.]"
 
     return _handler
 

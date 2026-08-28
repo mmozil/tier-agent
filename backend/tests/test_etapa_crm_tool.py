@@ -94,7 +94,11 @@ def test_a_descricao_manda_nao_chamar_na_duvida():
 def test_sem_telefone_nao_chama_a_api_e_nao_alarma_a_familia():
     h = _make_etapa_handler("ccda", None)
     r = rodar(h, {"etapa": "Visita Agendada"})
-    assert "sem comentar isso" in r
+    # O contrato mudou: a ferramenta manda o modelo CONTINUAR, não ficar mudo.
+    # Antes ela dizia só "sem comentar isso", e o modelo entendia "não diga
+    # nada" — respondia vazio e o fallback do motor entrava no lugar dele.
+    assert "NÃO mencione isso" in r
+    assert "siga o roteiro" in r
     assert "desculpa" not in r.lower()
 
 
@@ -120,7 +124,11 @@ def test_as_etapas_validas_passam_da_validacao(etapa):
 # ── handler da perda ─────────────────────────────────────────────────
 def test_perda_sem_telefone_nao_alarma_a_familia():
     r = rodar(_make_perda_handler("ccda", None), {"motivo": "não tem interesse"})
-    assert "sem comentar isso" in r
+    # O contrato mudou: a ferramenta manda o modelo CONTINUAR, não ficar mudo.
+    # Antes ela dizia só "sem comentar isso", e o modelo entendia "não diga
+    # nada" — respondia vazio e o fallback do motor entrava no lugar dele.
+    assert "NÃO mencione isso" in r
+    assert "siga o roteiro" in r
     assert "desculpa" not in r.lower()
 
 
