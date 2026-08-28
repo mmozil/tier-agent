@@ -479,8 +479,37 @@ async def _ultima_fala_do_agente(db, conversation_id: int) -> str | None:
     ).scalar_one_or_none()
 
 
-async def _mover_card_da_conversa(db, conv, etapa: str) -> None:
-    """Move o card do contato para a etapa pedida, pelo endpoint público do CRM.
+async def _cascata_contexto(db, conv) -> dict:
+    """O que o card sabe e que muda o TEXTO do 1º disparo.
+
+    A origem 3 tem nove variantes, uma por categoria de motivo, e a categoria
+    mora no card. Sem esta leitura o reengajamento cai sempre no texto neutro —
+    que é justamente o que o documento v3 veio corrigir.
+
+    🚨 Best-effort: CRM fora do ar não pode impedir o reengajamento. Sem contexto
+    o texto sai neutro, que é o erro seguro.
+    """
+    try:
+        import httpx
+
+        from services.agenda_tools import _base_url, get_agenda_slug
+
+        slug = await get_agenda_slug(db, conv.agent_id)
+        telefone = (conv.external_id or "").split("@")[0]
+        if not slug or not telefone:
+            return {}
+        async with httpx.AsyncClient(timeout=10.0) as cli:
+            r = await cli.get(
+                f"{_base_url()}/{slug}/cascata-contexto", params={"telefone": telefone}
+            )
+        return r.json() if r.status_code < 400 else {}
+    except Exception:  # noqa: BLE001
+        logger.debug("followup: contexto da cascata indisponivel (conv %s)", conv.id)
+        return {}
+
+
+async def _registrar_cascata(db, conv, *, campos: dict, perda: str | None = None) -> None:
+    """Grava o eixo 5 no card e, no encerramento, tira o card do funil.
 
     🚨 Best-effort e silencioso: se o CRM estiver fora, o reengajamento JÁ
     aconteceu e a família já recebeu a mensagem. Falhar aqui não pode desfazer
@@ -492,25 +521,24 @@ async def _mover_card_da_conversa(db, conv, etapa: str) -> None:
         from services.agenda_tools import _base_url, get_agenda_slug
 
         slug = await get_agenda_slug(db, conv.agent_id)
-        if not slug:
-            return
         telefone = (conv.external_id or "").split("@")[0]
-        if not telefone:
+        if not slug or not telefone:
             return
-        corpo = {"telefone": telefone, "etapa": etapa}
-        if etapa.lower().startswith("perdido"):
-            corpo["motivo"] = "esgotou tentativas"
+        corpo = {"telefone": telefone, "campos": campos}
+        if perda:
+            corpo["perda"] = perda
         async with httpx.AsyncClient(timeout=10.0) as cli:
-            r = await cli.post(f"{_base_url()}/{slug}/mover-etapa", json=corpo)
+            r = await cli.post(f"{_base_url()}/{slug}/cascata", json=corpo)
         if r.status_code >= 400:
-            logger.info(
-                "followup: card nao moveu para '%s' (conv %s): %s",
-                etapa, conv.id, r.text[:120],
-            )
+            logger.info("followup: cascata nao registrou (conv %s): %s", conv.id, r.text[:120])
         else:
-            logger.info("followup: card da conversa %s -> %s", conv.id, etapa)
+            logger.info(
+                "followup: conversa %s -> tentativa %s%s",
+                conv.id, campos.get("tentativa_reengajamento"),
+                " + PERDA" if perda else "",
+            )
     except Exception:  # noqa: BLE001
-        logger.warning("followup: falha ao mover card da conversa %s", conv.id, exc_info=True)
+        logger.warning("followup: falha ao registrar cascata da conversa %s", conv.id, exc_info=True)
 
 
 async def followup_inactivity_job() -> None:
@@ -613,11 +641,17 @@ async def followup_inactivity_job() -> None:
                         # para quem já conversou isso lê como se o colégio
                         # tivesse esquecido a conversa.
                         passos_cascata = None
-                        etapa_alvo = None
+                        origem = None
+                        ctx = {}
                         if _cascatas_ligadas(tid):
                             ultima = await _ultima_fala_do_agente(db, conv.id)
                             origem = _cascatas.identificar_origem(ultima)
-                            passos_cascata = _cascatas.passos(origem)
+                            # A categoria do motivo mora no CARD, não na conversa —
+                            # é ela que escolhe qual dos nove textos da origem 3 sai.
+                            ctx = await _cascata_contexto(db, conv)
+                            passos_cascata = _cascatas.passos(
+                                origem, ctx.get("categoria_motivo")
+                            )
 
                         efetiva = passos_cascata or cadence
                         if step >= len(efetiva):
@@ -626,8 +660,24 @@ async def followup_inactivity_job() -> None:
                             continue  # etapa ainda não venceu
                         if step > 0 and conv.last_followup_at and now < conv.last_followup_at + timedelta(hours=20):
                             continue  # espaçamento mínimo: conversa velha não leva a cadência inteira de uma vez
-                        msg = efetiva[step]["msg"]
-                        etapa_alvo = efetiva[step].get("etapa")
+                        passo = efetiva[step]
+                        msg = passo["msg"]
+                        perda = passo.get("perda")
+                        # 🚨 O encerramento (D+13) NÃO manda mensagem: a despedida
+                        # já saiu no D+10. Ele só registra a perda — e por isso é
+                        # tratado aqui, antes de tudo que existe para enviar.
+                        if perda and not msg:
+                            conv.followup_step = step + 1
+                            conv.last_followup_at = now
+                            await db.commit()
+                            await _registrar_cascata(
+                                db, conv,
+                                campos={"tentativa_reengajamento": str(passo.get("tentativa") or ""),
+                                        "status_atendimento": "PERDIDO"},
+                                perda=perda,
+                            )
+                            houve = True
+                            continue
                         nome = (conv.contact_name or "").strip().split(" ")[0]
                         if nome:
                             msg = msg.replace("{nome}", nome)
@@ -645,11 +695,24 @@ async def followup_inactivity_job() -> None:
                             db.add(TaMessageLog(conversation_id=conv.id, role="assistant", content=msg))
                             sent_total += 1
                             houve = True
-                            # O contador de tentativa do desenho: cada disparo
-                            # move o card uma etapa. Best-effort — o CRM fora do
-                            # ar não pode impedir o reengajamento de acontecer.
-                            if etapa_alvo:
-                                await _mover_card_da_conversa(db, conv, etapa_alvo)
+                            # O contador de tentativa do desenho. Ele DEIXOU de ser
+                            # coluna do funil: cinco colunas de "Tentativa de
+                            # Contato" diziam onde o card estava quando o que
+                            # contavam era quantas vezes tentamos falar. Virou
+                            # campo, e o card fica onde a família chegou.
+                            if passos_cascata:
+                                campos = {
+                                    "tentativa_reengajamento": str(passo.get("tentativa") or ""),
+                                    "status_atendimento": "EM_REENGAJAMENTO",
+                                }
+                                if origem:
+                                    campos["origem_da_cascata"] = str(origem)
+                                # Só na origem 3 o contexto muda o texto — gravar
+                                # nas outras poluiria o card com informação que
+                                # não decidiu nada.
+                                if origem == 3 and ctx.get("categoria_motivo"):
+                                    campos["contexto_reengajamento"] = str(ctx["categoria_motivo"])
+                                await _registrar_cascata(db, conv, campos=campos)
                     if houve:
                         await db.commit()
                     continue

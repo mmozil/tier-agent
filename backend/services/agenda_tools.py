@@ -425,29 +425,51 @@ def _make_agendar_handler(
     return _handler
 
 
-ETAPAS_QUE_O_AGENTE_MOVE = ["Visita Agendada", "Perdido: não tem interesse"]
+# As seis etapas do eixo 1 do documento v3 que o agente alcança pela conversa.
+# 🚨 "Entrada de Lead" fica FORA: é onde o card nasce, e uma tool que pudesse
+# voltar pra lá deixaria o modelo desfazer progresso. E "Perdido" saiu do enum —
+# tem ferramenta própria, por causa da regra de negativa (ver `marcar_perda`).
+ETAPAS_QUE_O_AGENTE_MOVE = [
+    "Série identificada",
+    "Motivo identificado",
+    "Interesse em avançar",
+    "Visita Agendada",
+    "Visita Realizada",
+]
+
+# 🚨 Lista FECHADA de motivos. O v3 é explícito sobre o que NÃO é perda, e sem um
+# enum o modelo escreveria "cliente disse que vai pensar" como motivo — que é
+# exatamente o caso em que ele não deveria ter chamado a ferramenta.
+MOTIVOS_DE_PERDA = ["não tem interesse"]
 
 
 def build_etapa_tool_schema() -> dict:
     """Schema da tool que registra no funil o que a conversa resolveu.
 
-    🚨 Só DUAS etapas. O agente move o card apenas nos dois momentos que ele
-    mesmo provoca — marcou a visita, ou a família disse que não quer seguir.
-    Todo o resto do funil (tentativa de contato, no-show, visita realizada) é
-    consequência de coisas que acontecem FORA da conversa, e quem move é a
-    automação ou uma pessoa. Uma tool que aceitasse qualquer etapa convidaria o
-    modelo a inventar movimento de funil a partir de conversa fiada.
+    🚨 Só o que a CONVERSA resolve. O resto do funil (tentativa de contato,
+    no-show, reengajamento) é consequência de coisas que acontecem FORA da
+    conversa, e quem move é a automação. Uma tool que aceitasse qualquer etapa
+    convidaria o modelo a inventar movimento de funil a partir de conversa fiada.
+
+    🚨 As etapas do enum são o NOME exato da coluna. O agente não tem como saber
+    ids, e id numa instrução de prompt é o tipo de coisa que fica errada em
+    silêncio quando alguém reordena o funil na tela.
     """
     return {
         "type": "function",
         "function": {
             "name": "atualizar_etapa_crm",
             "description": (
-                "Registra no CRM o que ficou decidido na conversa. Use APENAS nestes dois "
-                "momentos: (1) logo depois de agendar_visita dar certo, com etapa='Visita Agendada'; "
-                "(2) quando a família disser explicitamente que não tem mais interesse, com "
-                "etapa='Perdido: não tem interesse' e o motivo em uma frase. "
-                "Não use para mais nada, e nunca avise a família de que fez isso."
+                "Registra no CRM o estágio comercial que a conversa acabou de alcançar. "
+                "Use assim que o evento acontecer de fato: "
+                "'Série identificada' quando souber o ano escolar; "
+                "'Motivo identificado' quando a família contar por que está procurando escola; "
+                "'Interesse em avançar' quando ela demonstrar intenção de continuar (conhecer, ligação); "
+                "'Visita Agendada' logo depois de agendar_visita dar certo; "
+                "'Visita Realizada' quando a visita tiver acontecido. "
+                "NÃO avance uma etapa só porque a família respondeu — avance quando o evento "
+                "daquela etapa ocorrer. Para perda, use marcar_perda. "
+                "Nunca avise a família de que fez isso."
             ),
             "parameters": {
                 "type": "object",
@@ -457,12 +479,48 @@ def build_etapa_tool_schema() -> dict:
                         "enum": ETAPAS_QUE_O_AGENTE_MOVE,
                         "description": "A etapa do funil para onde o card vai.",
                     },
-                    "motivo": {
-                        "type": "string",
-                        "description": "Só quando for perda: por que a família não quer seguir.",
-                    },
                 },
                 "required": ["etapa"],
+            },
+        },
+    }
+
+
+def build_perda_tool_schema() -> dict:
+    """Schema da tool de perda — separada da de etapa, e de propósito.
+
+    🚨 A regra que justifica a separação é a NEGATIVA. O v3 lista o que não é
+    perda: "vou pensar", "depois vejo", "agora não", "está caro", "vou conversar
+    com meu marido/esposa", "estou pesquisando", "estou olhando outras escolas".
+    Como valor de enum dentro da tool de etapa, essa regra não teria onde morar —
+    a descrição do enum é uma linha, e ali ela some.
+
+    Perder um lead cedo demais é o erro caro: o card sai do funil, para de ser
+    reengajado, e ninguém revisita.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": "marcar_perda",
+            "description": (
+                "Registra que a família NÃO quer mais seguir. Use SOMENTE diante de recusa "
+                "explícita: 'não tenho interesse', 'não quero mais informações', 'pode encerrar', "
+                "'já escolhi outra escola', 'não entre mais em contato'. "
+                "NUNCA conte como perda: 'vou pensar', 'depois vejo', 'agora não', 'está caro', "
+                "'vou conversar com meu marido/esposa', 'estou pesquisando', 'estou olhando outras "
+                "escolas'. Na dúvida, NÃO chame esta ferramenta. "
+                "Nunca avise a família de que fez isso."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "motivo": {
+                        "type": "string",
+                        "enum": MOTIVOS_DE_PERDA,
+                        "description": "O motivo da perda.",
+                    },
+                },
+                "required": ["motivo"],
             },
         },
     }
@@ -483,9 +541,11 @@ def _make_etapa_handler(slug: str, customer_phone: str | None) -> Callable[[dict
             return f"[etapa inválida. Use exatamente uma destas: {validas}]"
 
         corpo = {"telefone": customer_phone, "etapa": etapa}
+        # A perda não passa mais por aqui: tem ferramenta própria. Motivo que
+        # chegasse nesta tool seria motivo sem perda — dado solto no card.
         motivo = str((args or {}).get("motivo") or "").strip()
         if motivo:
-            corpo["motivo"] = motivo[:200]
+            logger.info("agenda_tools: motivo ignorado em atualizar_etapa_crm (use marcar_perda)")
 
         try:
             async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
@@ -514,6 +574,49 @@ def _make_etapa_handler(slug: str, customer_phone: str | None) -> Callable[[dict
     return _handler
 
 
+def _make_perda_handler(slug: str, customer_phone: str | None) -> Callable[[dict], Awaitable[str]]:
+    """Registra a perda pelo endpoint da cascata, que já sabe fazer as três
+    coisas que uma perda exige: guardar de onde o card saiu
+    (`ultima_etapa_ativa`, sem o qual a reativação do v3 não tem para onde
+    voltar), gravar o motivo como CAMPO — a perda virou uma coluna só — e rodar
+    o handoff para o funil de Loss.
+    """
+
+    async def _handler(args: dict) -> str:
+        if not customer_phone:
+            logger.warning("agenda_tools: marcar_perda sem telefone (slug=%s)", slug)
+            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+
+        motivo = str((args or {}).get("motivo") or "").strip() or MOTIVOS_DE_PERDA[0]
+        if motivo not in MOTIVOS_DE_PERDA:
+            # 🚨 Não recusa: normaliza. Recusar faria o modelo tentar de novo com
+            # outro texto e, na terceira, desistir de registrar — a perda ficaria
+            # invisível no funil, que é pior do que um motivo aproximado.
+            logger.info("agenda_tools: motivo de perda fora da lista (%r) — normalizado", motivo)
+            motivo = MOTIVOS_DE_PERDA[0]
+
+        corpo = {"telefone": customer_phone, "campos": {"status_atendimento": "PERDIDO"},
+                 "perda": motivo}
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
+                r = await cli.post(f"{_base_url()}/{slug}/cascata", json=corpo)
+        except Exception:
+            logger.exception("agenda_tools: POST cascata (perda) %s falhou", slug)
+            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+
+        if r.status_code == 404:
+            logger.info("agenda_tools: perda %s sem card para %s", slug, customer_phone[-4:])
+            return "[registrado. Siga a conversa normalmente, sem comentar isso.]"
+        if r.status_code >= 400:
+            logger.warning("agenda_tools: perda %s retornou %s: %s", slug, r.status_code, r.text[:200])
+            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+
+        logger.info("agenda_tools: perda registrada (%s) para %s", motivo, customer_phone[-4:])
+        return "[registrado. Siga a conversa normalmente, sem comentar isso.]"
+
+    return _handler
+
+
 async def discover_agenda_tools(
     db, agent_id: int, customer_phone: str | None = None
 ) -> tuple[list[dict], dict[str, Callable[[dict], Awaitable[str]]]]:
@@ -535,6 +638,7 @@ async def discover_agenda_tools(
         "consultar_horarios_visita": _make_consultar_handler(slug),
         "agendar_visita": _make_agendar_handler(slug, config, agendar_schema, extras_map, customer_phone),
         "atualizar_etapa_crm": _make_etapa_handler(slug, customer_phone),
+        "marcar_perda": _make_perda_handler(slug, customer_phone),
     }
-    schemas = list(schemas) + [build_etapa_tool_schema()]
+    schemas = list(schemas) + [build_etapa_tool_schema(), build_perda_tool_schema()]
     return schemas, handlers
