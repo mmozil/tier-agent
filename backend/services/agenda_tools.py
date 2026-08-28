@@ -486,6 +486,117 @@ def build_etapa_tool_schema() -> dict:
     }
 
 
+# Os campos que a CONVERSA descobre. Fechado, e igual ao do lado do CRM — se as
+# duas listas divergirem, o modelo chama um campo que o endpoint recusa e a
+# jornada trava sem explicacao na tela.
+CAMPOS_DO_AGENTE = [
+    "ano_escolar",
+    "nome_do_filho",
+    "escola_atual",
+    "motivo_procura",
+    "motivo_procura_categoria",
+    "preco_apresentado",
+    "valor_apresentado",
+]
+
+CATEGORIAS_DE_MOTIVO = [
+    "Adaptação", "Pedagógico", "Rotina", "Logística",
+    "Estrutura", "Desempenho", "Preço", "Mudança", "Outro",
+]
+
+
+def build_campo_tool_schema() -> dict:
+    """Schema da tool que grava no card o que a conversa descobriu.
+
+    🚨 Esta tool é o PRIMEIRO ELO da jornada. Duas transições do funil acontecem
+    quando o DADO chega, não quando alguém move o card: `ano_escolar` preenchido
+    leva a "Série identificada", `motivo_procura_categoria` leva a "Motivo
+    identificado". Sem ela o agente conversa bem, o CRM não sabe de nada e o card
+    fica parado em Entrada de Lead para sempre.
+
+    🚨 A tool NÃO move etapa, de propósito. Pedir ao modelo que grave o campo E
+    mova o card seria pedir que ele repita uma regra que o CRM já sabe — e ele
+    erraria em algum momento. Quem move é a automação, do lado do CRM.
+
+    🚨 `motivo_procura_categoria` tem enum: a categoria escolhe qual dos nove
+    textos de reengajamento sai depois. Texto livre ali viraria uma categoria
+    nova por conversa, e a cascata cairia sempre no genérico.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": "atualizar_campo_crm",
+            "description": (
+                "Grava no CRM uma informação que a família acabou de dar. Chame assim que "
+                "souber, uma vez por informação: ano_escolar (a série), nome_do_filho, "
+                "escola_atual, motivo_procura (o que a família disse, com as palavras dela), "
+                "motivo_procura_categoria (classifique o motivo), preco_apresentado ('sim' "
+                "quando você acabou de informar o valor) e valor_apresentado. "
+                "Nunca avise a família de que fez isso."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "campo": {
+                        "type": "string",
+                        "enum": CAMPOS_DO_AGENTE,
+                        "description": "Qual informação está sendo gravada.",
+                    },
+                    "valor": {
+                        "type": "string",
+                        "description": (
+                            "O valor. Para motivo_procura_categoria use exatamente uma destas: "
+                            + ", ".join(CATEGORIAS_DE_MOTIVO)
+                        ),
+                    },
+                },
+                "required": ["campo", "valor"],
+            },
+        },
+    }
+
+
+def _make_campo_handler(slug: str, customer_phone: str | None) -> Callable[[dict], Awaitable[str]]:
+    async def _handler(args: dict) -> str:
+        if not customer_phone:
+            logger.warning("agenda_tools: atualizar_campo_crm sem telefone (slug=%s)", slug)
+            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+
+        campo = str((args or {}).get("campo") or "").strip()
+        valor = str((args or {}).get("valor") or "").strip()
+        if campo not in CAMPOS_DO_AGENTE:
+            return f"[campo inválido. Use um destes: {', '.join(CAMPOS_DO_AGENTE)}]"
+        if not valor:
+            return "[valor vazio — não registrei. Siga a conversa normalmente, sem comentar isso.]"
+
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
+                r = await cli.post(
+                    f"{_base_url()}/{slug}/campo",
+                    json={"telefone": customer_phone, "campo": campo, "valor": valor},
+                )
+        except Exception:
+            logger.exception("agenda_tools: POST campo %s falhou", slug)
+            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+
+        if r.status_code == 404:
+            logger.info("agenda_tools: campo %s sem card para %s", slug, customer_phone[-4:])
+            return "[registrado. Siga a conversa normalmente, sem comentar isso.]"
+        if r.status_code == 422:
+            # o CRM recusou o campo: devolve o motivo pro modelo corrigir agora
+            return f"[{(r.json() or {}).get('detail', 'campo recusado')}]"
+        if r.status_code >= 400:
+            logger.warning("agenda_tools: campo %s retornou %s: %s", slug, r.status_code, r.text[:200])
+            return "[não foi possível registrar no CRM agora. Siga a conversa normalmente, sem comentar isso.]"
+
+        movido = (r.json() or {}).get("movido_para")
+        logger.info("agenda_tools: campo %s=%r gravado%s", campo, valor[:40],
+                    f" (card -> {movido})" if movido else "")
+        return "[registrado. Siga a conversa normalmente, sem comentar isso.]"
+
+    return _handler
+
+
 def build_perda_tool_schema() -> dict:
     """Schema da tool de perda — separada da de etapa, e de propósito.
 
@@ -639,6 +750,11 @@ async def discover_agenda_tools(
         "agendar_visita": _make_agendar_handler(slug, config, agendar_schema, extras_map, customer_phone),
         "atualizar_etapa_crm": _make_etapa_handler(slug, customer_phone),
         "marcar_perda": _make_perda_handler(slug, customer_phone),
+        "atualizar_campo_crm": _make_campo_handler(slug, customer_phone),
     }
-    schemas = list(schemas) + [build_etapa_tool_schema(), build_perda_tool_schema()]
+    schemas = list(schemas) + [
+        build_etapa_tool_schema(),
+        build_perda_tool_schema(),
+        build_campo_tool_schema(),
+    ]
     return schemas, handlers
