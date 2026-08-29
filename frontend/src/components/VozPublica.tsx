@@ -907,19 +907,25 @@ export default function VozPublica({
      A decisão de o mic não nascer ligado no CARREGAMENTO da página continua de
      pé — ela vale para quem só abriu o link, não para quem entrou na tela de voz
      de propósito. */
-  /* 🚨 Duas portas para a MESMA tela, e elas não valem a mesma coisa:
-     abrir o link  → SENTINELA: o mic escuta, mas só a chamada ("oi {nome}")
-                     libera a conversa. Quem digitou a URL pode só estar olhando.
-     clicar o botão → ESCUTANDO: o clique JÁ é o pedido de conversar, e pedir a
-                     palavra depois seria pedir duas vezes a mesma coisa. */
+  /* 🚨 CARREGAR O LINK NÃO LIGA NADA. A fase nasce "desligada": microfone
+     fechado, sem indicador de gravação no navegador, sem escuta.
+
+     Só duas coisas ligam, e as duas são um pedido explícito:
+       · o BOTÃO de conversa por voz  → entra ESCUTANDO (o clique é a chamada)
+       · um toque na esfera           → arma a SENTINELA, que espera "oi {nome}"
+
+     Eu já armei microfone na carga da página três vezes nesta sessão, e as três
+     estavam erradas. Quem abre um link pode só estar olhando — abrir o mic dele
+     sem pedir é o que o dono chamou de gambiarra, e ele tem razão: o navegador
+     acende o ponto de gravação e a pessoa não pediu nada. */
   const jaArmou = useRef(false);
   useEffect(() => {
-    if (jaArmou.current) return;
+    if (jaArmou.current || !comecarEscutando) return;
     jaArmou.current = true;
     houveGesto.current = true;
     setMicBloqueado(false);
     void destravarAudio();
-    mudarFase(comecarEscutando ? "escutando" : "sentinela");
+    mudarFase("escutando");
     setLinha({ texto: "", cls: "" });
   }, [comecarEscutando, destravarAudio, mudarFase]);
 
@@ -984,7 +990,10 @@ export default function VozPublica({
     : fase === "desligada"
       ? micBloqueado
         ? { texto: "microfone bloqueado — toque para tentar de novo", acao: armarSentinela }
-        : { texto: "toque na esfera para começar", acao: armarSentinela }
+        : // 🚨 O rótulo diz as DUAS saídas, porque são duas mesmo: tocar a
+          // esfera põe o agente à escuta da chamada, e o botão de voz entra
+          // direto na conversa. Dizer só uma esconde metade da tela.
+          { texto: `toque na esfera e diga "oi ${nomeCurto}"`, acao: armarSentinela }
       : fase === "sentinela"
         ? { texto: `diga "oi ${nomeCurto}"`, acao: null }
         : fase === "escutando"
