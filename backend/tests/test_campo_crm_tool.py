@@ -31,6 +31,12 @@ def test_schema_existe_com_enum_fechado():
     assert fn["parameters"]["required"] == ["campo", "valor"]
 
 
+def test_nome_do_contato_e_gravavel():
+    """O roteiro manda usar o nome do responsável assim que souber. Sem isto o
+    modelo chamava a ferramenta e levava '[campo inválido]' — medido no log."""
+    assert "nome" in CAMPOS_DO_AGENTE
+
+
 def test_os_dois_campos_que_movem_o_card_estao_na_lista():
     """🚨 São eles que disparam as automações. Se saírem daqui, o card não anda."""
     assert "ano_escolar" in CAMPOS_DO_AGENTE
@@ -78,6 +84,11 @@ def test_as_duas_listas_de_campo_nao_podem_divergir():
     o que não pode existir é campo do AGENTE fora da lista do CRM.
     """
     do_crm = {
+        # 🚨 `nome` não é campo custom: é o nome do CONTATO, outra tabela. Entrou
+        # na lista porque o modelo tentava gravá-lo e levava 422 de volta — e ele
+        # estava certo em querer, o roteiro manda usar o nome do responsável
+        # assim que souber. Quem sabe que ali é outra tabela é o CRM.
+        "nome",
         "ano_escolar", "nome_do_filho", "escola_atual", "origem_do_lead",
         "motivo_procura", "motivo_procura_categoria",
         "preco_apresentado", "valor_apresentado", "data_preco_apresentado",

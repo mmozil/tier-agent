@@ -1027,6 +1027,33 @@ async def send_message(
             text = _strip_thinking((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
         except Exception:
             logger.exception("tier_engine: fecho final sem ferramentas falhou")
+
+    # 🚨 SEGUNDA CHANCE quando o modelo cala DEPOIS de usar ferramenta.
+    #
+    # Medido: ele chama as ferramentas, recebe os resultados e devolve 2 tokens.
+    # Sem isto, o balão que chega ao cliente é o texto de fallback — e um
+    # fallback no meio do roteiro é pior que um erro, porque parece resposta.
+    #
+    # O motor já faz exatamente isso no freio "anuncia e para": empurra uma
+    # deixa e tenta de novo. Aqui a deixa diz o óbvio que o modelo perdeu de
+    # vista — registrar no sistema não é responder à pessoa.
+    if not (text or "").strip() and tool_calls_made:
+        brakes_fired.append("mudo_apos_ferramenta")
+        try:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "[sistema] Você executou as ações internas, mas não respondeu à "
+                    "pessoa. Registrar no sistema NÃO é responder. Escreva agora a "
+                    "próxima mensagem do roteiro para ela, sem mencionar nada de "
+                    "sistema, ferramenta ou registro."
+                ),
+            })
+            data = await _complete_with_fallback(provider, messages, None)
+            text = _strip_thinking((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
+            logger.info("tier_engine: freio mudo_apos_ferramenta recuperou %d chars", len(text or ""))
+        except Exception:
+            logger.exception("tier_engine: segunda chance apos ferramenta falhou")
     # 2ª camada anti-CJK: remove caractere oriental residual ANTES do guard de texto vazio
     # (se sobrar só CJK, vira "" e cai no fallback — nunca manda balão vazio nem chinês).
     if text:

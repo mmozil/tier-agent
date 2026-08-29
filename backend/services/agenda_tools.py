@@ -530,6 +530,11 @@ def build_etapa_tool_schema() -> dict:
 # duas listas divergirem, o modelo chama um campo que o endpoint recusa e a
 # jornada trava sem explicacao na tela.
 CAMPOS_DO_AGENTE = [
+    # 🚨 `nome` é campo NATIVO do contato, não custom — mas o modelo tentou
+    # gravá-lo e levou "[campo inválido]" de volta. Ele estava certo em querer:
+    # o roteiro manda usar o nome do responsável assim que souber. Quem trata a
+    # diferença é o CRM, não o modelo.
+    "nome",
     "ano_escolar",
     "nome_do_filho",
     "escola_atual",
