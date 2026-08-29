@@ -229,8 +229,21 @@ export default function VozPublica({
         v.simulate(false);
         pararEnvelope();
         v.setLevel(0);
-        // a superfície segue a VOZ DO USUÁRIO em tempo real (analyser do mic)
-        void ligarMicAnalyserRef.current?.();
+        // 🚨 NÃO abrir uma segunda captura do microfone aqui.
+        //
+        // O `getUserMedia` do analisador e o SpeechRecognition disputam o mesmo
+        // microfone. No Windows o analisador ganha e o RECONHECIMENTO FICA SEM
+        // ÁUDIO — sem erro, sem log. O sintoma é cruel: a esfera reage à voz
+        // (o analisador tem o mic) e a pessoa jura que está sendo ouvida,
+        // enquanto nenhuma palavra vira transcrição. Medido: dez "oi tier"
+        // seguidos sem nenhuma reação.
+        //
+        // O próprio arquivo já avisava disso na função do analisador. Escutar é
+        // a função da tela; ver a voz é enfeite. Quando os dois não cabem, quem
+        // fica é a escuta.
+        //
+        // A esfera continua viva pelo envelope da resposta — que é o momento em
+        // que ela realmente precisa se mexer.
       } else if (f !== "falando") {
         v.simulate(false);
         pararEnvelope();
@@ -853,8 +866,23 @@ export default function VozPublica({
   useEffect(() => {
     if (jaArmou.current) return;
     jaArmou.current = true;
-    armarSentinela();
-  }, [armarSentinela]);
+    // 🚨 Entra em ESCUTANDO, não em sentinela. Sentinela espera a palavra-chave
+    // ("oi tier") e a tela diz isso — mas quem clicou no botão de voz JÁ chamou:
+    // o clique é a chamada. Pedir a palavra depois é pedir duas vezes.
+    //
+    // Foi exatamente o que aconteceu no teste: a tela dizia «DIGA "OI TIER"», a
+    // pessoa falava a pergunta, e nada acontecia — a fala não era a palavra
+    // certa, então era descartada sem aviso.
+    //
+    // A sentinela continua existindo: depois da janela de follow-up, a escuta
+    // volta pra ela. Ali a palavra-chave faz sentido, porque a pessoa parou de
+    // falar faz tempo e o mic seguiu aberto.
+    houveGesto.current = true;
+    setMicBloqueado(false);
+    void destravarAudio();
+    mudarFase("escutando");
+    setLinha({ texto: "", cls: "" });
+  }, [destravarAudio, mudarFase]);
 
   /** Muta o mic (NÃO toca no áudio que estiver tocando). */
   const desligarEscuta = useCallback(() => {
