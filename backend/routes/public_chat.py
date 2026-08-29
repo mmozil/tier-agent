@@ -232,13 +232,34 @@ async def _audio_da_frase(texto: str) -> bytes | None:
     if len(texto) > TTS_MAX_CHARS:
         texto = texto[:TTS_MAX_CHARS]
 
-    # Já sintetizada nos últimos 5 min? Sai na hora — o Kokoro cobra ~1,5s fixos
+    # Já sintetizada nos últimos 5 min? Sai na hora — o Kokoro cobra ~1,0s fixos
     # por chamada, independente do tamanho da frase (medido: 6 chars = 1,03s).
+    #
+    # 🚨 E aqui não basta olhar o cache: PRECISA de fila de um.
+    # Medido em produção com só o cache: a especulação começava em 34,8s e
+    # terminava em 36,8s; o aquecimento oficial começava em 35,1s, achava o
+    # cache VAZIO (o outro ainda estava sintetizando) e fazia a MESMA frase de
+    # novo, terminando em 38,8s. Dois Kokoros para um áudio, e o segundo era
+    # justamente o que o navegador estava esperando.
+    #
+    # Com a fila, o segundo espera o primeiro em vez de competir com ele.
     chave = _chave_do_conteudo(texto)
+    trava = chave + ":lock"
+    tenho_a_vez = False
     try:
         r = await _redis()
         try:
             b64 = await r.get(chave)
+            if not b64:
+                tenho_a_vez = bool(await r.set(trava, "1", nx=True, ex=25))
+                if not tenho_a_vez:
+                    # Alguém já está sintetizando esta frase: esperar sai mais
+                    # barato (e mais rápido) do que sintetizar em dobro.
+                    for _ in range(60):  # até ~6s
+                        await asyncio.sleep(0.1)
+                        b64 = await r.get(chave)
+                        if b64 or not await r.exists(trava):
+                            break
         finally:
             await r.aclose()
         if b64:
@@ -275,12 +296,27 @@ async def _audio_da_frase(texto: str) -> bytes | None:
             rd = await _redis()
             try:
                 await rd.setex(chave, 300, base64.b64encode(r.audio_bytes).decode())
+                # Solta a fila SEMPRE que fui eu quem sintetizou — quem espera
+                # não pode ficar preso a uma trava de 25s.
+                if tenho_a_vez:
+                    await rd.delete(trava)
             finally:
                 await rd.aclose()
         except Exception:
             logger.debug("webchat voz: não consegui guardar por conteúdo", exc_info=True)
         return r.audio_bytes
 
+    # Nenhum provedor entregou. Solta a fila na saída também: quem está
+    # esperando precisa descobrir AGORA que não vem áudio, e não daqui a 25s.
+    if tenho_a_vez:
+        try:
+            rd = await _redis()
+            try:
+                await rd.delete(trava)
+            finally:
+                await rd.aclose()
+        except Exception:
+            logger.debug("webchat voz: não consegui soltar a fila", exc_info=True)
     return None
 
 
