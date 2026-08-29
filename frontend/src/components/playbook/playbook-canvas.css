@@ -1,0 +1,272 @@
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ *  CANVAS DO PLAYBOOK — tokens de desenho
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * Duas fontes, nenhuma inventada:
+ *
+ *  ① COR      → paleta do animate-ui (tema `neutral` do shadcn, em oklch).
+ *               🔑 Todos os tokens de moldura têm **croma 0** — cinza puro, sem
+ *               matiz nenhum. É por construção que o azul sai: não é uma cor
+ *               "menos azul", é a ausência de matiz.
+ *               Referência já portada em tier-finance:
+ *               `frontend/src/components/animate-ui/animate-ui.css`
+ *
+ *  ② ESTRUTURA → o canvas de fluxo passado pelo dono como referência:
+ *               fundo escuro com grade pontilhada, nó com tile de ícone colorido,
+ *               faixa interna para o modelo, aresta curva de baixo contraste.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  🚨 A REGRA QUE SUSTENTA O DESENHO
+ *
+ *  COR PINTA O TIPO DO NÓ. NUNCA A MOLDURA.
+ *
+ *  O tile do ícone é o único elemento cromático — ele codifica QUE nó é aquele,
+ *  e é informação. Fundo, borda, texto, aresta, controle e painel são todos
+ *  neutros. Cor em controle rouba a atenção do que de fato distingue os nós,
+ *  e é exatamente o que deixa o canvas atual poluído.
+ *
+ *  (Mesma regra que já vale no Central Fleet: a cor da marca pinta DADO —
+ *  barra, pino, regra — nunca controle.)
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1 · SUPERFÍCIES E TEXTO
+   Escala neutral do Tailwind. O hex está ao lado só para conferência —
+   o valor canônico é o oklch, que é o que o animate-ui publica.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.pb-canvas {
+  /* — claro — */
+  --pb-canvas:      oklch(0.985 0 0);      /* #FAFAFA  chão do canvas          */
+  --pb-no:          oklch(1     0 0);      /* #FFFFFF  superfície do nó        */
+  --pb-faixa:       oklch(0.97  0 0);      /* #F5F5F5  faixa interna do nó     */
+  --pb-borda:       oklch(0.922 0 0);      /* #E5E5E5  borda do nó             */
+  --pb-texto:       oklch(0.145 0 0);      /* #0A0A0A  título do nó            */
+  --pb-texto-2:     oklch(0.556 0 0);      /* #737373  rótulo, modelo, eyebrow */
+  --pb-aresta:      oklch(0.708 0 0);      /* #A1A1A1  traço da aresta         */
+  --pb-ponto:       oklch(0.145 0 0 / 8%); /*          ponto da grade          */
+  --pb-alvo:        oklch(0.556 0 0);      /* #737373  handle em repouso       */
+  --pb-erro:        oklch(0.577 0.245 27.325); /* #E7000B                      */
+}
+
+.dark .pb-canvas {
+  /* — escuro — */
+  --pb-canvas:      oklch(0.145 0 0);      /* #0A0A0A  neutral-950             */
+  --pb-no:          oklch(0.205 0 0);      /* #171717  neutral-900             */
+  --pb-faixa:       oklch(0.269 0 0);      /* #262626  neutral-800             */
+  --pb-borda:       oklch(1     0 0 / 10%);/*          branco 10%              */
+  --pb-texto:       oklch(0.985 0 0);      /* #FAFAFA  neutral-50              */
+  --pb-texto-2:     oklch(0.708 0 0);      /* #A1A1A1  neutral-400             */
+  --pb-aresta:      oklch(0.556 0 0);      /* #737373  neutral-500             */
+  --pb-ponto:       oklch(1     0 0 / 7%); /*          branco 7%               */
+  --pb-alvo:        oklch(0.556 0 0);      /* #737373                          */
+  --pb-erro:        oklch(0.704 0.191 22.216); /* #FF6467                      */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2 · COR POR TIPO DE NÓ — só o tile do ícone
+   Um matiz por FAMÍLIA, não por nó: quem olha o canvas de longe precisa
+   distinguir "isso dispara" de "isso faz" de "isso decide". Doze cores
+   diferentes viram confete e não informam nada.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.pb-canvas {
+  --pb-gatilho:   oklch(0.63 0.20 293);   /* violeta — o que INICIA      */
+  --pb-acao:      oklch(0.70 0.16 162);   /* verde   — o que FAZ         */
+  --pb-fluxo:     oklch(0.72 0.16  70);   /* âmbar   — o que DECIDE      */
+  --pb-humano:    oklch(0.65 0.18  20);   /* coral   — o que SAI da IA   */
+
+  /* fundo do tile = o mesmo matiz rebaixado; o glifo fica na cor cheia */
+  --pb-tile-alpha: 16%;
+}
+
+.dark .pb-canvas { --pb-tile-alpha: 22%; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3 · ANATOMIA DO NÓ — medidas lidas da referência
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.pb-no {
+  width: 180px;                    /* largura fixa: fluxo só lê se a coluna alinha */
+  border-radius: 12px;
+  background: var(--pb-no);
+  border: 1px solid var(--pb-borda);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 24%), 0 4px 12px oklch(0 0 0 / 16%);
+  overflow: hidden;                /* a faixa interna encosta sem vazar o canto   */
+}
+
+/* cabeçalho: tile + nome. Altura 34, não 42 — o nó da referência é compacto */
+.pb-no__topo {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.pb-no__tile {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.pb-no__tile svg { width: 12px; height: 12px; stroke-width: 2; }
+
+.pb-no__nome {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pb-texto);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* faixa interna: onde mora o modelo, a condição, a classe.
+   🚨 É ela que dá o "peso" do nó da referência — sem a faixa o cartão fica
+   oco e parece rascunho. */
+.pb-no__faixa {
+  margin: 0 8px 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--pb-faixa);
+  font-size: 11px;
+  color: var(--pb-texto-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+.pb-no__faixa + .pb-no__faixa { margin-top: -4px; }
+
+/* selo dentro da faixa (o "CHAT" da referência) */
+.pb-no__selo {
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pb-texto-2);
+  background: oklch(0.556 0 0 / 18%);
+}
+
+/* eyebrow acima do nó (o "INICIAR" da referência) */
+.pb-no__eyebrow {
+  position: absolute;
+  top: -16px;
+  left: 2px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pb-texto-2);
+}
+
+/* nó incompleto: aro âmbar. Não usar vermelho — incompleto não é erro,
+   é "ainda falta". Vermelho aqui alarma sem motivo. */
+.pb-no--incompleto { border-color: var(--pb-fluxo); }
+
+/* nó selecionado: aro claro, sem cor de marca */
+.pb-no--ativo {
+  border-color: var(--pb-texto-2);
+  box-shadow: 0 0 0 3px oklch(0.556 0 0 / 22%),
+              0 1px 2px oklch(0 0 0 / 24%),
+              0 4px 12px oklch(0 0 0 / 16%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4 · CHÃO, ARESTA E HANDLE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* grade pontilhada — gap 16, ponto 1px. Mais denso vira textura e cansa;
+   mais esparso deixa o fundo chapado e o canvas perde profundidade. */
+.pb-canvas .react-flow__background { background: var(--pb-canvas); }
+.pb-canvas .react-flow__background-pattern circle { fill: var(--pb-ponto); }
+
+/* aresta: 1.5px e baixo contraste. A aresta é ligação, não conteúdo —
+   se ela disputa atenção com o nó, o fluxo vira teia. */
+.pb-canvas .react-flow__edge-path {
+  stroke: var(--pb-aresta);
+  stroke-width: 1.5;
+  stroke-opacity: 0.55;
+}
+.pb-canvas .react-flow__edge.selected .react-flow__edge-path,
+.pb-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke-opacity: 1;
+  stroke-width: 2;
+}
+
+/* handle: TRAÇO, não bolinha. A referência usa um risco vertical curto —
+   ocupa menos e não compete com o tile do ícone. */
+.pb-canvas .react-flow__handle {
+  width: 2px;
+  height: 10px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 1px;
+  background: var(--pb-alvo);
+  opacity: 0.5;
+  transition: opacity 0.15s, height 0.15s;
+}
+.pb-canvas .react-flow__handle:hover,
+.pb-canvas .react-flow__node:hover .react-flow__handle { opacity: 1; height: 14px; }
+.pb-canvas .react-flow__handle-left  { left: -1px; }
+.pb-canvas .react-flow__handle-right { right: -1px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5 · CONTROLES FLUTUANTES
+   A referência tira a paleta fixa e põe um rail flutuante à esquerda.
+   Ganha canvas e o fluxo passa a ocupar a tela — que é o ponto do editor.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.pb-rail {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  border-radius: 12px;
+  background: var(--pb-no);
+  border: 1px solid var(--pb-borda);
+  box-shadow: 0 2px 8px oklch(0 0 0 / 20%);
+}
+.pb-rail button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pb-texto-2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.pb-rail button:hover { background: var(--pb-faixa); color: var(--pb-texto); }
+.pb-rail button[aria-pressed="true"] { background: var(--pb-faixa); color: var(--pb-texto); }
+.pb-rail hr { height: 1px; border: 0; margin: 4px 3px; background: var(--pb-borda); }
+
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ *  O QUE NÃO FAZER AQUI
+ * ════════════════════════════════════════════════════════════════════════════
+ *  · Não usar #003083 nem #5b9bff neste canvas. O azul da marca vive no resto
+ *    do admin; dentro do editor de fluxo ele compete com a cor que codifica
+ *    tipo de nó — e a cor de tipo é o que faz o fluxo ser lido de longe.
+ *  · Não pintar borda de nó com cor de marca. Borda é moldura.
+ *  · Não dar cor diferente para cada nó. Cor é por FAMÍLIA (4 matizes).
+ *  · Não engrossar aresta para "destacar". Aresta forte transforma fluxo em teia.
+ *  · Não usar vermelho em nó incompleto. Incompleto é âmbar; vermelho é falha.
+ */

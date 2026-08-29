@@ -81,6 +81,9 @@ function channelType(kind: string): string {
   if (kind === "whatsapp_cloud") return "WhatsApp Cloud API (oficial)";
   if (kind === "telegram") return "Telegram";
   if (kind === "email") return "E-mail";
+  if (kind === "instagram") return "Instagram Direct";
+  if (kind === "slack") return "Slack";
+  if (kind === "discord") return "Discord";
   return kind;
 }
 
@@ -195,6 +198,10 @@ export default function CanaisPage() {
   const [discordToken, setDiscordToken] = useState("");
   const [discordConnecting, setDiscordConnecting] = useState(false);
   const [discordResult, setDiscordResult] = useState<{ invite_url?: string; bot_username?: string } | null>(null);
+  const [showInstagram, setShowInstagram] = useState(false);
+  const [instagramForm, setInstagramForm] = useState({ page_access_token: "", ig_user_id: "" });
+  const [instagramConnecting, setInstagramConnecting] = useState(false);
+  const [instagramResult, setInstagramResult] = useState<{ webhook_url?: string } | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [showWebchat, setShowWebchat] = useState(false);
   const [webchatForm, setWebchatForm] = useState<WebchatForm>({ ...WEBCHAT_VAZIO });
@@ -308,6 +315,31 @@ export default function CanaisPage() {
       toast.error(err?.response?.data?.detail || "Erro ao conectar o Slack");
     } finally {
       setSlackConnecting(false);
+    }
+  }
+
+  async function connectInstagram() {
+    if (!selectedAgent) { toast.error("Escolha um agente"); return; }
+    if (!instagramForm.page_access_token.trim()) { toast.error("Cole o token de acesso da página"); return; }
+    if (!instagramForm.ig_user_id.trim()) { toast.error("Cole o ID da conta profissional do Instagram"); return; }
+    setInstagramConnecting(true);
+    try {
+      const { data } = await api.post<{ id: number; webhook_url?: string }>("/connectors", {
+        agent_id: selectedAgent,
+        kind: "instagram",
+        config: {
+          page_access_token: instagramForm.page_access_token.trim(),
+          ig_user_id: instagramForm.ig_user_id.trim(),
+        },
+      });
+      setInstagramResult({ webhook_url: data.webhook_url });
+      toast.success("Instagram conectado.");
+      setInstagramForm({ page_access_token: "", ig_user_id: "" });
+      load();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao conectar o Instagram");
+    } finally {
+      setInstagramConnecting(false);
     }
   }
 
@@ -462,6 +494,53 @@ export default function CanaisPage() {
                 <Button variant="ghost" onClick={() => setShowProvision(false)}>Cancelar</Button>
                 <Button variant="primary" onClick={provisionWhatsApp} disabled={provisioning}>{provisioning ? "Criando..." : "Criar e conectar"}</Button>
               </div>
+            </div>
+          </Row>
+        )}
+
+        {showInstagram && (
+          <Row>
+            <div className="p-6 space-y-4 max-w-[620px]">
+              <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar Instagram</h3>
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
+                <Select value={selectedAgent} onChange={(v) => setSelectedAgent(v)} options={agents.map((a) => ({ value: a.id, label: a.nome }))} placeholder="Escolha um agente" />
+              </label>
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Token de acesso da página</span>
+                <input type="password" value={instagramForm.page_access_token} onChange={(e) => setInstagramForm({ ...instagramForm, page_access_token: e.target.value })} placeholder="EAA..." className={`${inputCls} font-mono`} />
+              </label>
+              <label className="block">
+                <span className={`text-[12px] block mb-1 ${FC.sub}`}>ID da conta profissional</span>
+                <input value={instagramForm.ig_user_id} onChange={(e) => setInstagramForm({ ...instagramForm, ig_user_id: e.target.value })} placeholder="17841400000000000" className={`${inputCls} font-mono`} />
+              </label>
+              <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
+                A conta precisa ser <b>profissional</b> e estar ligada a uma página do Facebook, e a página precisa estar conectada ao app da Tier no Instagram. O <b>webhook já está configurado do nosso lado</b> — você não configura nada na Meta. As respostas automáticas só valem dentro da janela de 24 horas desde a última mensagem da pessoa.
+              </p>
+              <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
+                <b>Antes da primeira conta de cliente:</b> as permissões de Instagram do app da Tier (<span className="font-mono text-[11px]">instagram_basic</span>, <span className="font-mono text-[11px]">instagram_manage_messages</span>, <span className="font-mono text-[11px]">pages_manage_metadata</span> + <span className="font-mono text-[11px]">pages_show_list</span> ou <span className="font-mono text-[11px]">pages_read_engagement</span>) precisam estar em <b>Advanced Access</b>, aprovadas em App Review próprio — o App Review do WhatsApp não vale, a Meta aprova permissão por permissão. Em <b>Standard Access</b> a Meta não entrega o webhook e recusa o envio para quem não tem papel no app: conecta e conversa no teste interno, e falha na primeira conta real.
+              </p>
+              {instagramResult ? (
+                <div className={`rounded-[10px] border ${FC.hair} p-3.5 bg-[#0a8f5a]/[0.04]`}>
+                  <p className={`text-[13px] font-medium ${FC.ink}`}>Conectado</p>
+                  <p className={`text-[12px] mt-1 ${FC.sub}`}>As mensagens desta conta já chegam no agente. O endereço abaixo é o mesmo para todos os clientes e fica no app da Tier — está aqui só para conferência.</p>
+                  <div className="mt-2.5">
+                    <span className={`text-[11px] ${FC.mut}`}>URL de callback (gerenciada pela Tier)</span>
+                    <div className="mt-1 flex items-center gap-2">
+                      <code className={`flex-1 text-[11.5px] font-mono break-all px-2 py-1.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] ${FC.ink}`}>{instagramResult.webhook_url}</code>
+                      <Button variant="ghost" size="sm" onClick={() => { navigator.clipboard?.writeText(instagramResult.webhook_url || ""); toast.success("Copiado"); }}>Copiar</Button>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <Button variant="primary" onClick={() => { setShowInstagram(false); setInstagramResult(null); }}>Concluir</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setShowInstagram(false)}>Cancelar</Button>
+                  <Button variant="primary" onClick={connectInstagram} disabled={instagramConnecting}>{instagramConnecting ? "Validando..." : "Conectar"}</Button>
+                </div>
+              )}
             </div>
           </Row>
         )}
@@ -883,6 +962,13 @@ export default function CanaisPage() {
                     desc={CHANNEL_META.discord.short}
                     onClick={() => pickChannel(() => { setDiscordResult(null); setShowDiscord(true); })}
                   />
+                  <ChannelCard
+                    icon={CHANNEL_META.instagram.Icon}
+                    name={CHANNEL_META.instagram.name}
+                    desc={CHANNEL_META.instagram.short}
+                    badge="Meta"
+                    onClick={() => pickChannel(() => { setInstagramResult(null); setShowInstagram(true); })}
+                  />
                 </div>
               </div>
 
@@ -890,7 +976,6 @@ export default function CanaisPage() {
                 <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2.5 ${FC.mut}`}>Em breve</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <ChannelCard icon={CHANNEL_META.telegram.Icon} name={CHANNEL_META.telegram.name} desc={CHANNEL_META.telegram.short} disabled />
-                  <ChannelCard icon={CHANNEL_META.instagram.Icon} name={CHANNEL_META.instagram.name} desc={CHANNEL_META.instagram.short} disabled />
                   <ChannelCard icon={CHANNEL_META.email.Icon} name={CHANNEL_META.email.name} desc={CHANNEL_META.email.short} disabled />
                 </div>
               </div>

@@ -69,14 +69,29 @@ declare global {
  */
 type Fase = "desligada" | "sentinela" | "escutando" | "pensando" | "falando";
 
-// Quanto de silêncio o agente aguenta antes de avisar "só um momento".
-// Abaixo disso a resposta vem direto — pra "oi" o aviso era pior que a espera.
-const PACIENCIA_MS = 2500;
+/* Quanto de silêncio o agente aguenta antes de avisar "só um momento".
+
+   🚨 2500 era o PIOR valor possível, e era o que estava aqui.
+   Medido em produção: o servidor devolve a resposta entre 2,0s e 3,1s. Ou seja,
+   o aviso caía EXATAMENTE em cima da resposta — e como resposta não atropela
+   filler (e não deve mesmo), ela ficava esperando o aviso terminar. O filler,
+   que existe pra encurtar a espera, estava ALONGANDO ela em ~1,5s.
+   Foi o que o dono descreveu: "ela fala ok, vou, aí trava, e começa a responder
+   sem terminar de falar o que já começou".
+
+   Em 1200 ele cobre o buraco em vez de disputar com a resposta: começa em 1,2s,
+   acaba por volta de 2,7s, e a resposta chega em 2,6s — encaixe, não colisão.
+   E o primeiro som deixa de ser em 5,6s pra ser em 1,2s, que é o número que a
+   pessoa sente. Resposta mais rápida que isso não ganha filler nenhum. */
+const PACIENCIA_MS = 1200;
 
 // Fim de fala automático: este silêncio depois da última palavra fecha o turno
 // e envia — SEM apertar nada. Curto demais corta pausa de respiração; longo
 // demais vira "ele demora pra entender que terminei".
 const VAD_SILENCIO_MS = 1300;
+// ...mas quando o próprio navegador fecha a frase (`isFinal`) e ela tem corpo,
+// esperar o silêncio inteiro é esperar por nada. Medido: corta ~0,85s por turno.
+const VAD_APOS_FINAL_MS = 450;
 
 // Depois da resposta, a escuta REABRE sozinha por esta janela (follow-up sem
 // wake word — é o turn-taking do ChatGPT Voice). Sem fala, volta pra sentinela.
@@ -671,7 +686,22 @@ export default function VozPublica({
         const mostrado = `${bufFinal.current} ${parcial}`.replace(/\s+/g, " ").trim();
         if (mostrado) setLinha({ texto: mostrado, cls: "parcial" });
         if (vadTimer.current) window.clearTimeout(vadTimer.current);
-        if (mostrado) vadTimer.current = window.setTimeout(fecharTurno, VAD_SILENCIO_MS);
+        /* 🚨 Esperar sempre os mesmos 1,3s é jogar fora a única informação boa
+           que o navegador dá de graça: o `isFinal`.
+
+           Ele significa "o Chrome decidiu que a frase acabou" — o mesmo juízo
+           que o timer tenta imitar, só que feito com o áudio na mão em vez de
+           por cronômetro. Quando ele chega numa frase que já tem corpo (3+
+           palavras), esperar mais 1,3s é esperar por nada.
+
+           Não dá pra usar analisador de energia aqui: uma segunda captura do
+           microfone STARVA o SpeechRecognition no Windows (já aconteceu, e o
+           sintoma é a esfera reagindo à voz sem transcrever nada). Então a
+           única leitura de fim de fala que sobra é esta. */
+        const fechou = final.trim().length > 0;
+        const temCorpo = mostrado.split(/\s+/).length >= 3;
+        const espera = fechou && temCorpo ? VAD_APOS_FINAL_MS : VAD_SILENCIO_MS;
+        if (mostrado) vadTimer.current = window.setTimeout(fecharTurno, espera);
         return;
       }
 
