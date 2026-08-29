@@ -583,6 +583,7 @@ export default function VozPublica({
       followTimer.current = null;
       // 20s de escuta sem nenhum turno → volta a exigir a chamada
       if (faseRef.current === "escutando") {
+        sentinelaDoGesto.current = false; // decaiu sozinha: só a chamada acorda
         mudarFase("sentinela");
         setLinha({ texto: "", cls: "" });
       }
@@ -678,7 +679,13 @@ export default function VozPublica({
         // Só a CHAMADA acorda (wake word estrita — fundo que menciona o agente
         // não dispara LLM). O status na tela diz como chamar.
         const ouvido = (final || parcial).trim();
-        if (!ouvido || !detectarChamada(ouvido, agenteRef.current, true).chamou) return;
+        if (!ouvido) return;
+        // Depois do GESTO, uma frase inteira também abre — não só a chamada.
+        // Quem tocou e falou já pediu. Palavra solta segue sendo ruído.
+        const fraseDeVerdade =
+          sentinelaDoGesto.current && final.trim().split(/\s+/).length >= 2;
+        if (!fraseDeVerdade && !detectarChamada(ouvido, agenteRef.current, true).chamou) return;
+        sentinelaDoGesto.current = false;
         void destravarAudio(); // melhor esforço: sem gesto o Chrome pode segurar o som
         bufFinal.current = "";
         interimAtual.current = "";
@@ -884,12 +891,23 @@ export default function VozPublica({
 
   useEffect(() => pararEnvelope, [pararEnvelope]);
 
+  /* 🚨 Nem toda sentinela vale o mesmo.
+     A que nasce de um TOQUE na esfera: a pessoa acabou de gesticular e está
+     com a boca aberta pra falar — exigir a senha depois do gesto é pedir duas
+     vezes a mesma coisa. Foi exatamente o teste do dono ("toquei nele, falei, e
+     ele não responde"): ele disse a PERGUNTA, não a chamada, e a frase foi
+     descartada em silêncio.
+     A que a conversa DECAI depois do follow-up: podem ter passado minutos com o
+     mic aberto, e aí a chamada é o que separa conversa de ruído de sala. */
+  const sentinelaDoGesto = useRef(false);
+
   // ── controles ─────────────────────────────────────────────────────────
   /** O gesto de ARMAR: liga a sentinela (wake word) e destrava o áudio. */
   const armarSentinela = useCallback(() => {
     houveGesto.current = true;
     setMicBloqueado(false);
     void destravarAudio();
+    sentinelaDoGesto.current = true;
     mudarFase("sentinela");
     setLinha({ texto: "", cls: "" });
   }, [destravarAudio, mudarFase]);
