@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import logging
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
@@ -39,6 +40,18 @@ def _verify_tier_signature(body: bytes, signature: str | None) -> bool:
     ).hexdigest()
     sig_clean = signature.replace("sha256=", "")
     return hmac.compare_digest(expected, sig_clean)
+
+
+def _segredo_confere(enviado: str, esperado: str) -> bool:
+    """Comparação em tempo constante tolerante a não-ASCII.
+
+    `hmac.compare_digest` com `str` exige ASCII puro e levanta TypeError fora
+    disso — como o valor vem de entrada não autenticada (query/header), isso
+    viraria 500 em vez de 401, e um 500 já é sinal pra quem está sondando.
+    """
+    if not enviado or not esperado:
+        return False
+    return hmac.compare_digest(enviado.encode("utf-8"), esperado.encode("utf-8"))
 
 
 async def _record_idempotent(
@@ -90,7 +103,7 @@ def _desembrulhar_mensagem(msg: dict) -> dict:
 
 
 def _texto_de_botao(msg: dict) -> str:
-    """Resposta de botão/lista também é fala do cliente, não silêncio."""
+    """Resposta de botão/lista também é texto do cliente, não silêncio."""
     for chave, campos in (
         ("buttonsResponseMessage", ("selectedDisplayText", "selectedButtonId")),
         ("listResponseMessage", ("title", "description")),
@@ -101,9 +114,9 @@ def _texto_de_botao(msg: dict) -> str:
             for campo in campos:
                 if bloco.get(campo):
                     return str(bloco[campo])
-            linha = (bloco.get("singleSelectReply") or {}).get("selectedRowId")
-            if linha:
-                return str(linha)
+            titulo = (bloco.get("singleSelectReply") or {}).get("selectedRowId")
+            if titulo:
+                return str(titulo)
     return ""
 
 
@@ -233,12 +246,13 @@ async def whatsapp_engine_webhook(
     if not text_content and attachments:
         text_content = f"[{attachments[0].kind}]"
 
-    # 🚨 MENSAGEM VAZIA NÃO VIRA TURNO. Sem isto, um tipo que o extrator não
-    # conhece chega como texto vazio, o agente não tem o que responder e REGENERA
-    # a resposta anterior a partir do histórico — na tela do cliente isso parece o
-    # agente repetindo a mesma coisa duas vezes (caso CCDA, 19/ago: "Desculpa,
-    # engano" chegou vazio e virou a mesma resposta de novo). Loga as CHAVES do
-    # payload pra o próximo tipo desconhecido aparecer no log, não virar adivinhação.
+    # 🚨 MENSAGEM VAZIA NÃO VIRA TURNO. Sem isto, um tipo de mensagem que o
+    # extrator não conhece chega como texto vazio, o agente não tem o que
+    # responder e REGENERA a resposta anterior a partir do histórico — na tela do
+    # cliente isso parece o agente repetindo a mesma coisa duas vezes (caso CCDA,
+    # 19/ago: "Desculpa, engano" chegou vazio e virou a mesma resposta de novo).
+    # Loga as CHAVES do payload pra o próximo tipo desconhecido aparecer no log em
+    # vez de virar adivinhação.
     if not (text_content or "").strip() and not attachments:
         logger.warning(
             "webhook Engine: mensagem sem texto reconhecível chat=%s tipos=%s — ignorada",
@@ -806,47 +820,109 @@ async def _process_slack_message(
 # ============================================================
 # Instagram DM inbound — Meta Graph API webhook
 # ============================================================
-@router.get("/instagram/{ig_user_id}")
-async def instagram_verify(
-    ig_user_id: str,
-    request: Request,
-):
-    """Verify token handshake do Meta (GET com hub.mode=subscribe + hub.verify_token + hub.challenge)."""
+def _instagram_app_secrets() -> list[str]:
+    """App secrets aceitos na validação da assinatura do webhook do Instagram.
+
+    O DM do Instagram chega pelo MESMO app Meta do WhatsApp Cloud, então o secret
+    do Cloud serve. INSTAGRAM_APP_SECRET existe pra quem separa os dois apps.
+    """
     import os as _os
 
-    mode = request.query_params.get("hub.mode")
-    token = request.query_params.get("hub.verify_token")
-    challenge = request.query_params.get("hub.challenge")
+    nomes = (
+        "INSTAGRAM_APP_SECRET",
+        "META_APP_SECRET",
+        "WHATSAPP_CLOUD_APP_SECRET",
+        "WHATSAPP_CLOUD_APP_SECRET_LEGACY",
+    )
+    return [v for v in (_os.environ.get(n) for n in nomes) if v]
 
-    expected = _os.environ.get("META_WEBHOOK_VERIFY_TOKEN")
-    if mode == "subscribe" and token == expected and challenge:
-        return int(challenge) if challenge.isdigit() else challenge
-    raise HTTPException(403, "Verify token mismatch")
+
+def _verify_instagram_signature(body: bytes, signature: str | None) -> bool:
+    """HMAC SHA-256 do body com o App Secret (header X-Hub-Signature-256).
+
+    FAIL-CLOSED de propósito: sem secret configurado o webhook não processa nada.
+    O WhatsApp Cloud nasceu permissivo e já está em produção (mexer ali derruba
+    ingestão); o Instagram entra agora, e o ig_user_id é público — deixar passar
+    sem assinatura é convite a forjar POST, queimar LLM e injetar prompt na conta
+    do cliente.
+    """
+    secrets = _instagram_app_secrets()
+    if not secrets:
+        logger.error(
+            "webhook instagram recusado: nenhum app secret configurado "
+            "(defina INSTAGRAM_APP_SECRET ou WHATSAPP_CLOUD_APP_SECRET)"
+        )
+        return False
+    if not signature:
+        return False
+    for secret in secrets:
+        esperado = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        if hmac.compare_digest(esperado, signature):
+            return True
+    return False
 
 
-@router.post("/instagram/{ig_user_id}")
-async def instagram_webhook(
-    ig_user_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Recebe DM Instagram via Meta Graph webhook.
+def _instagram_verify_token() -> str | None:
+    """Verify token do objeto `instagram` — ÚNICO por app Meta, nunca por conta.
+
+    A Meta guarda UMA Callback URL + UM Verify Token por objeto, no App Dashboard
+    do app: "Account level webhooks customization is not supported"
+    (developers.facebook.com/docs/instagram-platform/webhooks). O Instagram não
+    tem o override por conta que o WhatsApp tem
+    (developers.facebook.com/docs/whatsapp/cloud-api/guides/set-up-webhooks),
+    então token por conector é impossível de configurar do 2º cliente em diante:
+    só um valor cabe no painel.
+    """
+    import os as _os
+
+    return (
+        _os.environ.get("INSTAGRAM_VERIFY_TOKEN")
+        or _os.environ.get("META_WEBHOOK_VERIFY_TOKEN")
+        or None
+    )
+
+
+def _instagram_ig_id(entry: dict) -> str:
+    """IGID da conta que RECEBEU a DM — é ele que roteia o conector.
+
+    Sai do PAYLOAD, nunca da URL: a Callback URL é uma só pro app inteiro, então
+    o mesmo POST carrega DMs de todas as contas conectadas. Rotear pelo caminho
+    entregaria a mensagem do cliente B ao agente do cliente A.
+    `entry[].id` é o IGID do negócio; `recipient.id` é o mesmo valor e serve de
+    reforço quando o entry vem sem id.
+    """
+    ig_id = str(entry.get("id") or "").strip()
+    if ig_id:
+        return ig_id
+    for ev in entry.get("messaging") or []:
+        rid = str(((ev or {}).get("recipient") or {}).get("id") or "").strip()
+        if rid:
+            return rid
+    return ""
+
+
+async def _instagram_handle(request: Request, db: AsyncSession) -> dict:
+    """Recebe DM Instagram via Meta Graph webhook (multi-conta no mesmo endpoint).
 
     Payload Meta:
     {
       "object": "instagram",
       "entry": [{
-        "id": "<ig_user_id>",
+        "id": "<ig_user_id do NEGÓCIO>",
         "time": ...,
         "messaging": [{
           "sender": {"id": "<scoped_user_id>"},
-          "recipient": {"id": "<ig_user_id>"},
+          "recipient": {"id": "<ig_user_id do NEGÓCIO>"},
           "timestamp": ...,
           "message": {"mid": "...", "text": "...", "attachments": [...]}
         }]
       }]
     }
     """
+    body = await request.body()
+    if not _verify_instagram_signature(body, request.headers.get("X-Hub-Signature-256")):
+        raise HTTPException(401, "Assinatura inválida")
+
     try:
         data = await request.json()
     except Exception:
@@ -860,6 +936,11 @@ async def instagram_webhook(
 
     results = []
     for entry in data.get("entry") or []:
+        ig_user_id = _instagram_ig_id(entry)
+        if not ig_user_id:
+            logger.warning("webhook instagram: entry sem id de conta — ignorado")
+            continue
+
         for ev in entry.get("messaging") or []:
             msg = ev.get("message") or {}
             if msg.get("is_echo"):
@@ -905,15 +986,99 @@ async def instagram_webhook(
                 text_content=text_content,
                 attachments=attachments,
             )
-            results.append({"sender": sender_id, "status": result.get("status")})
+            results.append({"ig": ig_user_id, "sender": sender_id, "status": result.get("status")})
 
-    logger.info("webhook instagram processed ig=%s events=%s", ig_user_id, len(results))
+    logger.info("webhook instagram processed events=%s", len(results))
     return {"status": "ok", "processed": results}
+
+
+@router.get("/instagram")
+async def instagram_verify(request: Request):
+    """Verify token handshake do Meta (GET com hub.mode=subscribe + hub.verify_token + hub.challenge)."""
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    esperado = _instagram_verify_token()
+    # `esperado` precisa existir: sem ele, token=None do requisitante casaria com
+    # expected=None e o handshake passaria pra qualquer um.
+    if mode == "subscribe" and challenge and _segredo_confere(token or "", esperado or ""):
+        return int(challenge) if challenge.isdigit() else challenge
+    raise HTTPException(403, "Verify token mismatch")
+
+
+@router.post("/instagram")
+async def instagram_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    return await _instagram_handle(request, db)
+
+
+# Compat: URL com o IGID no caminho (conectores criados antes da rota fixa).
+# O caminho é IGNORADO no roteamento — quem manda é o entry[].id do payload.
+@router.get("/instagram/{ig_user_id}")
+async def instagram_verify_legacy(ig_user_id: str, request: Request):
+    return await instagram_verify(request)
+
+
+@router.post("/instagram/{ig_user_id}")
+async def instagram_webhook_legacy(
+    ig_user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    return await _instagram_handle(request, db)
 
 
 # ============================================================
 # Email inbound — webhook genérico (Mailgun/Postmark/SES/Stalwart)
 # ============================================================
+async def _verify_email_secret(db: AsyncSession, connector_id: int, request: Request) -> bool:
+    """Confere o segredo do conector de e-mail (header ou query).
+
+    FAIL-CLOSED: conector sem `webhook_secret` na config recusa tudo. O
+    connector_id é um inteiro sequencial na URL — sem segredo, qualquer um
+    injeta mensagem na conversa de qualquer agente.
+    """
+    import json as _json
+
+    from core.encryption import decrypt as _decrypt
+
+    # Header primeiro: a query string vai parar em access log, Referer e proxy.
+    # A query fica como plano B porque nem todo provedor deixa mandar header
+    # custom no forward (Postmark, por exemplo).
+    enviado = (
+        request.headers.get("X-Tier-Webhook-Token")
+        or request.query_params.get("token")
+        or ""
+    ).strip()
+    if not enviado:
+        return False
+
+    conn = (
+        await db.execute(select(TaConnector).where(TaConnector.id == connector_id))
+    ).scalar_one_or_none()
+    if not conn or conn.kind != "email":
+        return False
+
+    try:
+        cfg = _json.loads(_decrypt(conn.config_json_enc))
+    except Exception:  # noqa: BLE001
+        logger.warning("webhook email: config ilegível conn=%s", connector_id, exc_info=True)
+        return False
+
+    esperado = str(cfg.get("webhook_secret") or "").strip()
+    if not esperado:
+        logger.error(
+            "webhook email recusado: conector %s sem webhook_secret — "
+            "salve o canal de novo pra gerar a URL com token",
+            connector_id,
+        )
+        return False
+    return _segredo_confere(enviado, esperado)
+
+
 @router.post("/email/{connector_id}")
 async def email_webhook(
     connector_id: int,
@@ -929,7 +1094,15 @@ async def email_webhook(
     - Genérico: {from, to, subject, text}
 
     Normaliza tudo pra {from_addr, subject, text}.
+
+    Autenticação: segredo por conector, aceito no header `X-Tier-Webhook-Token`
+    ou na query `?token=`. Os provedores assinam de formas incompatíveis entre si
+    (Mailgun tem HMAC próprio, Postmark não tem nada), então o denominador comum
+    é um segredo que a gente gera e o cliente cola no forward.
     """
+    if not await _verify_email_secret(db, connector_id, request):
+        raise HTTPException(401, "Token do webhook inválido ou ausente")
+
     try:
         ct = request.headers.get("content-type", "")
         if "application/json" in ct:

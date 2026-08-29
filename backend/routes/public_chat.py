@@ -24,6 +24,7 @@ emergência — estes aqui são o de serviço.
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -42,7 +43,7 @@ from core.config import get_settings
 from core.db import db_context
 from core.encryption import decrypt
 from models import TaAgent, TaConnector
-from services import agent_runtime
+from services import agent_runtime, tier_engine
 from services.connectors.adapters.webchat import drenar
 
 logger = logging.getLogger(__name__)
@@ -208,6 +209,17 @@ async def _aquecer_fala(token: str) -> None:
             await r.aclose()
 
 
+def _chave_do_conteudo(texto: str) -> str:
+    """A mesma frase, sintetizada uma vez só.
+
+    🚨 A chave é o TEXTO, não o token. É isso que deixa a síntese ESPECULATIVA
+    (disparada no meio do streaming, antes de existir token) encontrar-se com o
+    aquecimento oficial (disparado depois, já com token): os dois pedem a mesma
+    frase, então batem na mesma chave e o segundo não sintetiza nada.
+    """
+    return "webchat:voz:h:" + hashlib.sha1(texto.strip().encode("utf-8")).hexdigest()[:24]
+
+
 async def _audio_da_frase(texto: str) -> bytes | None:
     """Sintetiza UMA frase e devolve os bytes do MP3.
 
@@ -219,6 +231,20 @@ async def _audio_da_frase(texto: str) -> bytes | None:
         return None
     if len(texto) > TTS_MAX_CHARS:
         texto = texto[:TTS_MAX_CHARS]
+
+    # Já sintetizada nos últimos 5 min? Sai na hora — o Kokoro cobra ~1,5s fixos
+    # por chamada, independente do tamanho da frase (medido: 6 chars = 1,03s).
+    chave = _chave_do_conteudo(texto)
+    try:
+        r = await _redis()
+        try:
+            b64 = await r.get(chave)
+        finally:
+            await r.aclose()
+        if b64:
+            return base64.b64decode(b64)
+    except Exception:
+        logger.debug("webchat voz: cache por conteúdo indisponível", exc_info=True)
 
     from services.voice import elevenlabs_client, minimax_client, openai_compat_client
 
@@ -245,6 +271,14 @@ async def _audio_da_frase(texto: str) -> bytes | None:
             continue
 
         logger.info("webchat voz: %s gerou %d KB", nome, len(r.audio_bytes) // 1024)
+        try:
+            rd = await _redis()
+            try:
+                await rd.setex(chave, 300, base64.b64encode(r.audio_bytes).decode())
+            finally:
+                await rd.aclose()
+        except Exception:
+            logger.debug("webchat voz: não consegui guardar por conteúdo", exc_info=True)
         return r.audio_bytes
 
     return None
@@ -453,7 +487,47 @@ async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request)
                 modo_voz=entrada.voz,  # tela de voz: resposta curta, gera mais rapido
             )
 
-    tarefa = _agendar(_rodar_runtime())
+    # ── SÍNTESE ESPECULATIVA ────────────────────────────────────────────
+    # 🚨 O que fazia a voz parecer travada não era o modelo: era a ORDEM.
+    # O TTS só começava depois da resposta INTEIRA pronta, e o Kokoro cobra
+    # ~1,5s fixos. Somava 3s de modelo + 1,5s de voz, em série.
+    #
+    # Agora a primeira frase vai pro TTS assim que o modelo a FECHA, enquanto
+    # ele ainda escreve o resto. Quando o HTTP volta, o MP3 costuma estar
+    # pronto e o GET do navegador é instantâneo.
+    #
+    # "Especulativa" porque o turno ainda pode mudar de rumo (uma ferramenta
+    # roda e o modelo reescreve). Se mudar, perdemos UMA chamada ao Kokoro,
+    # que é self-hosted. O encontro é pelo hash do texto: se a frase final for
+    # a mesma, o aquecimento oficial acha pronto e não sintetiza de novo.
+    escuta = None
+    if entrada.voz:
+        ja = {"disparou": False}
+
+        def _na_primeira_frase(parcial: str) -> bool:
+            if ja["disparou"]:
+                return True
+            falas = _partir_em_falas(parcial)
+            if not falas:
+                return False
+            # < 40 chars ainda pode ser colado na frase seguinte por
+            # `_partir_em_falas` — sintetizar agora seria sintetizar outra coisa.
+            if len(falas[0]) < 40:
+                return False
+            ja["disparou"] = True
+            logger.info("webchat voz: especulando o TTS de %d chars", len(falas[0]))
+            _agendar(_audio_da_frase(falas[0]))
+            return True
+
+        escuta = tier_engine.escutar_primeira_frase(_na_primeira_frase)
+
+    try:
+        tarefa = _agendar(_rodar_runtime())
+    finally:
+        # O contexto já foi copiado pela tarefa — desligo aqui pra não vazar
+        # a escuta pro resto da requisição.
+        if escuta is not None:
+            tier_engine.parar_de_escutar(escuta)
 
     # Espera o PRIMEIRO dos dois: a resposta na fila ou o runtime terminar.
     # (O adapter webchat envia a resposta INTEIRA num push só — sem corrida de

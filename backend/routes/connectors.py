@@ -3,6 +3,7 @@
 import json
 import logging
 import re as _re
+import secrets as _secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -80,6 +81,20 @@ def _summary(kind: str, cfg: dict) -> dict:
         return {"bot_username": cfg.get("bot_username") or "—", "tipo": "Telegram"}
     if kind == "email":
         return {"email": cfg.get("email") or "—", "tipo": "E-mail"}
+    if kind == "instagram":
+        return {
+            "tipo": "Instagram Direct",
+            "conta": cfg.get("username") or cfg.get("ig_user_id") or "—",
+            "ig_user_id": cfg.get("ig_user_id"),
+            # Não pareia: tendo token e a página assinada nos eventos, responde.
+            "status": cfg.get("status") or ("connected" if cfg.get("page_access_token") else "pending"),
+            "oficial": True,
+            "transporte": "Meta Graph API",
+            "webhook": "Callback única do app da Tier (roteada pelo ID da conta)",
+            "pareamento": "Token da página (sem QR)",
+            "janela": "Janela 24h: só dá pra responder até 24h da última mensagem da pessoa",
+            "eventos_assinados": bool(cfg.get("subscribed_at")),
+        }
     if kind == "slack":
         return {"tipo": "Slack", "team": cfg.get("team") or cfg.get("team_id") or "—"}
     if kind == "discord":
@@ -137,7 +152,7 @@ async def list_connectors(
 
 
 # Canais "traga sua chave" conectáveis pelo form genérico (token → valida → cria).
-_TOKEN_CHANNELS = {"slack", "telegram", "discord"}
+_TOKEN_CHANNELS = {"slack", "telegram", "discord", "instagram"}
 # Permissões do convite Discord: View Channels + Send + Read History + Embed + Attach + Reactions.
 _DISCORD_INVITE_PERMS = 117824
 
@@ -166,17 +181,34 @@ async def create_connector(
     # (sem ele qualquer um forja um POST pro connector_id e queima LLM / injeta prompt).
     if kind == "slack" and not str((payload.config or {}).get("signing_secret") or "").strip():
         raise HTTPException(400, "Slack exige o Signing Secret (autentica os eventos do webhook).")
+    # Instagram: os dois campos vêm do painel da Meta e o webhook resolve o
+    # conector pelo ig_user_id — sem ele a mensagem chega e não acha o agente.
+    if kind == "instagram":
+        cfg_in = payload.config or {}
+        if not str(cfg_in.get("page_access_token") or "").strip():
+            raise HTTPException(400, "Instagram exige o token de acesso da página (page_access_token).")
+        if not str(cfg_in.get("ig_user_id") or "").strip():
+            raise HTTPException(400, "Instagram exige o ID da conta profissional (ig_user_id).")
 
     from services.connectors import registry
     from services.connectors.base import ConnectorConfig
 
     try:
         impl = registry.get(kind)
-        ok = await impl.validate_config(ConnectorConfig(data=payload.config or {}))
+        cfg_val = ConnectorConfig(data=payload.config or {})
+        # Adapter que sabe explicar a falha (Instagram) devolve o motivo: "confira o
+        # token" é resposta errada quando o token está certo e o que falta é Advanced
+        # Access nas permissões do app — manda quem depura pro lugar errado.
+        diagnosticar = getattr(impl, "diagnosticar", None)
+        if diagnosticar is not None:
+            ok, motivo = await diagnosticar(cfg_val)
+        else:
+            ok = await impl.validate_config(cfg_val)
+            motivo = "Credenciais inválidas — confira o token."
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"Falha ao validar credenciais: {e}")
     if not ok:
-        raise HTTPException(400, "Credenciais inválidas — confira o token.")
+        raise HTTPException(400, motivo or "Credenciais inválidas — confira o token.")
 
     cfg = dict(payload.config or {})
     # Discord: guarda a identidade do bot (id vira client_id do convite; username pro resumo).
@@ -188,13 +220,50 @@ async def create_connector(
             cfg["bot_id"] = ident.get("id")
             cfg["bot_username"] = ident.get("username")
 
-    conn = TaConnector(
-        agent_id=agent.id,
-        kind=kind,
-        config_json_enc=encrypt(json.dumps(cfg)),
-        enabled=True,
-    )
-    db.add(conn)
+    # Instagram: assina a página nos eventos. Sem isso a Meta NÃO entrega nada —
+    # é o modo de falha "conectou, validou e nunca chega mensagem".
+    if kind == "instagram":
+        assinar = getattr(impl, "assinar_webhook", None)
+        if assinar is not None:
+            assinou, motivo_assinatura = await assinar(ConnectorConfig(data=cfg))
+            if not assinou:
+                raise HTTPException(400, motivo_assinatura)
+            from datetime import datetime as _dt
+
+            cfg["subscribed_at"] = _dt.utcnow().isoformat()
+
+    # Reconectar a MESMA conta atualiza o conector em vez de criar outro: com dois
+    # conectores do mesmo ig_user_id, resolve_connector_by_instance devolve um
+    # qualquer (não há ORDER BY) e metade das mensagens iria pro token velho.
+    conn = None
+    if kind == "instagram":
+        ig_novo = str(cfg.get("ig_user_id") or "").strip()
+        existentes = (
+            await db.execute(
+                select(TaConnector).where(
+                    TaConnector.agent_id == agent.id, TaConnector.kind == "instagram"
+                )
+            )
+        ).scalars().all()
+        for c in existentes:
+            try:
+                if str((json.loads(decrypt(c.config_json_enc)) or {}).get("ig_user_id") or "") == ig_novo:
+                    conn = c
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+
+    if conn is not None:
+        conn.config_json_enc = encrypt(json.dumps(cfg))
+        conn.enabled = True
+    else:
+        conn = TaConnector(
+            agent_id=agent.id,
+            kind=kind,
+            config_json_enc=encrypt(json.dumps(cfg)),
+            enabled=True,
+        )
+        db.add(conn)
     await db.commit()
     await db.refresh(conn)
 
@@ -206,6 +275,13 @@ async def create_connector(
         token = (payload.config or {}).get("bot_token") or ""
         bot_id = token.split(":")[0] if ":" in token else ""
         out["webhook_url"] = f"{base}/telegram/{bot_id}" if bot_id else None
+    elif kind == "instagram":
+        # URL FIXA e informativa: a Meta só aceita UMA Callback URL + UM Verify
+        # Token por objeto `instagram`, no App Dashboard do app da Tier — e não
+        # tem override por conta como o WhatsApp. Quem configura isso é a Tier,
+        # uma vez; o cliente não cola nada. O roteamento sai do entry[].id.
+        out["webhook_url"] = f"{base}/instagram"
+        out["webhook_gerenciado"] = True
     elif kind == "discord":
         # Discord é Gateway (sem webhook). Devolve o convite pra adicionar o bot ao servidor.
         bid = cfg.get("bot_id")
@@ -517,7 +593,7 @@ class GenericSetupIn(BaseModel):
     enabled: bool = True
 
 
-@router.post("/generic", response_model=ConnectorOut, status_code=201)
+@router.post("/generic", status_code=201)
 async def setup_generic_connector(
     payload: GenericSetupIn,
     user: CurrentUser = Depends(get_current_user),
@@ -563,7 +639,24 @@ async def setup_generic_connector(
         )
     ).scalar_one_or_none()
 
-    cfg_enc = encrypt(json.dumps(payload.config))
+    cfg = dict(payload.config or {})
+
+    # Segredo do webhook: gerado uma vez e PRESERVADO no update — se mudasse a
+    # cada save, a URL que o cliente configurou no provedor parava de funcionar.
+    campo_segredo = {"email": "webhook_secret"}.get(kind)
+    if campo_segredo:
+        anterior = ""
+        if existing:
+            try:
+                anterior = str(
+                    (json.loads(decrypt(existing.config_json_enc)) or {}).get(campo_segredo) or ""
+                ).strip()
+            except Exception:  # noqa: BLE001
+                anterior = ""
+        if not str(cfg.get(campo_segredo) or "").strip():
+            cfg[campo_segredo] = anterior or _secrets.token_urlsafe(24)
+
+    cfg_enc = encrypt(json.dumps(cfg))
     if existing:
         existing.config_json_enc = cfg_enc
         existing.enabled = payload.enabled
@@ -578,7 +671,20 @@ async def setup_generic_connector(
         db.add(conn_out)
     await db.commit()
     await db.refresh(conn_out)
-    return conn_out
+
+    out = _serialize(conn_out)
+    base = "https://api-agent.tier.finance/api/v1/webhooks"
+    if kind == "email":
+        # A URL só serve com o token: é ele que autentica o POST do provedor.
+        out["webhook_url"] = f"{base}/email/{conn_out.id}?token={cfg['webhook_secret']}"
+    elif kind == "instagram":
+        out["webhook_url"] = f"{base}/instagram"
+        out["webhook_gerenciado"] = True
+    elif kind == "telegram":
+        token = str(cfg.get("bot_token") or "")
+        bot_id = token.split(":")[0] if ":" in token else ""
+        out["webhook_url"] = f"{base}/telegram/{bot_id}" if bot_id else None
+    return out
 
 
 # ============================================================

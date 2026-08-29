@@ -23,9 +23,11 @@ contra o registry do Tier (mcp_client/code_executor/etc) e re-injeta o resultado
 Hoje os callers não passam tools (persona-driven), então o default é sem ferramentas.
 """
 
+import contextlib
 import logging
 import re
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
@@ -39,6 +41,34 @@ from models import TaFeatureFlag, TaLlmProvider
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# ── A ESCUTA DE FRASE (só a tela de voz usa) ───────────────────────────
+#
+# 🚨 Medido em produção: da última sílaba do visitante ao primeiro som dela
+# eram ~6,5s. O maior pedaço era ESPERA POR NADA — o TTS só começava depois
+# que a resposta INTEIRA existia, e o Kokoro leva ~1,5s fixos.
+#
+# A saída não é o modelo ficar mais rápido: é começar a sintetizar a PRIMEIRA
+# FRASE enquanto ele ainda escreve o resto. Quando o HTTP volta, o MP3 já está
+# no cache e o GET é instantâneo.
+#
+# Vai por ContextVar, e não por parâmetro, de propósito: entre a rota de voz e
+# aqui há três camadas (runtime, adapter, fila) que não têm nada a ver com voz.
+# Enfiar um argumento nelas seria espalhar o assunto por quem não o tem.
+#
+# Fora da tela de voz o contextvar é None e NADA muda — o caminho do WhatsApp,
+# do ERP e do inbox continua exatamente o mesmo, sem streaming.
+_ouvinte_de_frase: ContextVar[Callable[[str], None] | None] = ContextVar("ouvinte_de_frase", default=None)
+
+
+def escutar_primeira_frase(cb: Callable[[str], None] | None):
+    """Liga a escuta pro turno atual. Devolve o token pra desligar depois."""
+    return _ouvinte_de_frase.set(cb)
+
+
+def parar_de_escutar(token) -> None:
+    with contextlib.suppress(Exception):
+        _ouvinte_de_frase.reset(token)
 
 # Endpoints default por provider (OpenAI-compatible salvo anthropic).
 _DEFAULT_BASE_URL = {
@@ -286,11 +316,96 @@ async def _call_openai_compatible(
     if tools:
         payload["tools"] = tools
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    # Alguém escutando? Então vale o streaming: a primeira frase sai ~1,7s antes
+    # do fim da resposta, e é esse adiantamento que paga o TTS.
+    ouvinte = _ouvinte_de_frase.get()
+    if ouvinte is not None:
+        with contextlib.suppress(Exception):
+            return await _stream_openai_compatible(
+                base_url=base_url, headers=headers, payload=payload, model=model,
+                timeout_s=timeout_s, ouvinte=ouvinte,
+            )
+        # 🚨 Falhou o streaming? Cai no caminho normal. Voz é melhoria; um
+        # provedor que não fala SSE não pode derrubar a conversa.
+        logger.warning("tier_engine: streaming falhou em %s — sigo sem", model)
+
     async with httpx.AsyncClient(timeout=timeout_s) as cli:
         r = await cli.post(f"{base_url}/chat/completions", json=payload, headers=headers)
     if r.status_code >= 400:
         raise RuntimeError(f"LLM {model} retornou {r.status_code}: {r.text[:300]}")
     return r.json()
+
+
+async def _stream_openai_compatible(
+    *, base_url: str, headers: dict, payload: dict, model: str, timeout_s: int,
+    ouvinte: Callable[[str], None],
+) -> dict:
+    """Mesma chamada, em SSE — e avisa o ouvinte na primeira frase fechada.
+
+    Devolve o MESMO formato do não-streaming: quem chama não sabe a diferença.
+
+    🚨 `tool_calls` chega picotado por índice (o `arguments` vem em pedaços de
+    JSON que só fecham no fim). Remontar por índice não é detalhe: sem isso o
+    agente perde as ferramentas e a jornada do CRM para de andar.
+    """
+    import json as _json
+
+    # `include_usage` é o padrão OpenAI pra receber a contagem de tokens no
+    # último evento — sem ele o turno de voz entraria no custo como zero.
+    # Provedor que recusar o campo cai no fallback não-streaming, que é uma
+    # perda de velocidade, nunca de resposta.
+    corpo = {**payload, "stream": True, "stream_options": {"include_usage": True}}
+    texto: list[str] = []
+    pedacos: dict[int, dict] = {}
+    avisou = False
+    usage: dict = {}
+
+    async with httpx.AsyncClient(timeout=timeout_s) as cli:
+        async with cli.stream("POST", f"{base_url}/chat/completions", json=corpo, headers=headers) as r:
+            if r.status_code >= 400:
+                await r.aread()
+                raise RuntimeError(f"LLM {model} retornou {r.status_code}: {r.text[:300]}")
+            async for linha in r.aiter_lines():
+                if not linha.startswith("data:"):
+                    continue
+                dado = linha[5:].strip()
+                if not dado or dado == "[DONE]":
+                    continue
+                try:
+                    j = _json.loads(dado)
+                except Exception:
+                    continue
+                if j.get("usage"):
+                    usage = j["usage"]
+                esc = (j.get("choices") or [{}])[0]
+                delta = esc.get("delta") or {}
+
+                if delta.get("content"):
+                    texto.append(delta["content"])
+                    # Frase fechada? O ouvinte decide se já dá pra sintetizar.
+                    if not avisou and any(c in delta["content"] for c in ".!?"):
+                        juntado = "".join(texto)
+                        with contextlib.suppress(Exception):
+                            avisou = bool(ouvinte(juntado))
+
+                for tc in delta.get("tool_calls") or []:
+                    i = tc.get("index", 0)
+                    alvo = pedacos.setdefault(
+                        i, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                    )
+                    if tc.get("id"):
+                        alvo["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        alvo["function"]["name"] = fn["name"]
+                    if fn.get("arguments"):
+                        alvo["function"]["arguments"] += fn["arguments"]
+
+    msg: dict[str, Any] = {"role": "assistant", "content": "".join(texto)}
+    if pedacos:
+        msg["tool_calls"] = [pedacos[i] for i in sorted(pedacos)]
+    return {"model": model, "choices": [{"message": msg}], "usage": usage}
 
 
 def _openai_tools_to_anthropic(tools: list[dict] | None) -> list[dict]:
