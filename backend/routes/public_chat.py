@@ -124,6 +124,11 @@ def _provedores_tts() -> list[str]:
     return ordem
 
 
+# Teto da PRIMEIRA fala. É a única que alguém espera de olho na tela — as
+# outras chegam enquanto ela já está falando.
+PRIMEIRA_FALA_MAX = 140
+
+
 def _partir_em_falas(texto: str, maximo: int = 4) -> list[str]:
     """Quebra a resposta em frases faláveis.
 
@@ -143,6 +148,29 @@ def _partir_em_falas(texto: str, maximo: int = 4) -> list[str]:
             falas.append(p)
     if len(falas) > maximo:
         falas = [*falas[: maximo - 1], " ".join(falas[maximo - 1 :])]
+
+    # 🚨 A PRIMEIRA fala tem que ser CURTA — ela é a única que a pessoa espera.
+    #
+    # Medido em produção: quando o modelo escreve um período longo sem ponto, a
+    # primeira fala saiu com 281 caracteres e o Kokoro levou 6,5s só nela,
+    # segurando a fila e atrasando o turno seguinte junto. O tempo do Kokoro
+    # cresce com o texto (medido: 6 chars = 1,03s · 171 chars = 2,00s), então
+    # frase comprida no INÍCIO é o pior lugar possível.
+    #
+    # Corta na vírgula (ou ; :) mais próxima do teto e joga o resto pra frente.
+    # Não inventa pausa onde não havia: a vírgula já é uma.
+    if falas and len(falas[0]) > PRIMEIRA_FALA_MAX:
+        cabeca = falas[0]
+        corte = max(cabeca.rfind(c, 0, PRIMEIRA_FALA_MAX) for c in ",;:")
+        if corte > 40:  # achou pausa em lugar útil
+            resto = cabeca[corte + 1 :].strip()
+            falas[0] = cabeca[: corte + 1].strip()
+            if resto and len(falas) < maximo:
+                falas.insert(1, resto)
+            elif resto:
+                # Já no teto de falas: o resto entra grudado na próxima, em vez
+                # de virar uma fala a mais que ninguém vai buscar.
+                falas[1] = f"{resto} {falas[1]}"
     return falas[:maximo]
 
 
