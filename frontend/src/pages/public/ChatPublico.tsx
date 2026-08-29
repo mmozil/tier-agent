@@ -63,6 +63,10 @@ export default function ChatPublico() {
   // "+" da barra alterna. A voz só faz sentido depois que o contato foi pedido.
   const [params] = useSearchParams();
   const [modo, setModo] = useState<"voz" | "conversa">(params.get("texto") ? "conversa" : "voz");
+  /* 🚨 Abrir o link NÃO libera a conversa — a tela espera "oi {nome}". Quem
+     libera é o BOTÃO. São dois jeitos de chegar na mesma tela, e só um deles é
+     um pedido explícito de conversar: quem digitou a URL pode só estar olhando. */
+  const [liberouPeloBotao, setLiberouPeloBotao] = useState(false);
   // Última fala do agente — é o que a tela de voz pronuncia. Leva um `id` porque
   // duas respostas iguais seguidas precisam disparar a fala de novo.
   const [ultimaResposta, setUltimaResposta] = useState<{ texto: string; id: number; audioUrls?: string[] } | null>(null);
@@ -228,6 +232,7 @@ export default function ChatPublico() {
         titulo={cfg.titulo}
         pensando={pensando}
         ultimaResposta={ultimaResposta}
+        comecarEscutando={liberouPeloBotao}
         onEnviar={(t) => enviar(t)}
         onVerConversa={() => setModo("conversa")}
       />
@@ -392,7 +397,11 @@ export default function ChatPublico() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setModo("voz")}
+                  onClick={() => {
+                    // O clique É o pedido de conversar: entra escutando.
+                    setLiberouPeloBotao(true);
+                    setModo("voz");
+                  }}
                   aria-label="Conversar por voz"
                   title="Conversar por voz"
                   className="h-9 w-9 shrink-0 rounded-full grid place-items-center bg-white text-black transition hover:bg-[#e8e8ed]"

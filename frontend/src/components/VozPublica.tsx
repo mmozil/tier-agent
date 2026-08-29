@@ -124,6 +124,7 @@ export default function VozPublica({
   titulo,
   pensando,
   ultimaResposta,
+  comecarEscutando = false,
   onEnviar,
   onVerConversa,
 }: {
@@ -132,6 +133,8 @@ export default function VozPublica({
   pensando: boolean;
   /** `id` muda a cada resposta — duas iguais seguidas precisam falar de novo. */
   ultimaResposta: { texto: string; id: number; audioUrls?: string[] } | null;
+  /** Chegou pelo BOTÃO (pedido explícito) e não por abrir o link. */
+  comecarEscutando?: boolean;
   onEnviar: (texto: string) => void;
   onVerConversa: () => void;
 }) {
@@ -438,6 +441,9 @@ export default function VozPublica({
 
   /** Toca uma fala curta pré-gravada (filler / pois não). Só ELA é cortável. */
   const curtaRef = useRef<HTMLAudioElement | null>(null);
+  /** Se a fala curta está no ar agora, e o que roda quando ela terminar. */
+  const curtaTocando = useRef(false);
+  const aoFimDaCurta = useRef<(() => void) | null>(null);
   const tocarCurta = useCallback(
     (src: string) => {
       try {
@@ -449,7 +455,18 @@ export default function VozPublica({
         el.ontimeupdate = () => {
           alvo.current = 0.45 + Math.random() * 0.3;
         };
-        void el.play().catch(() => {});
+        curtaTocando.current = true;
+        const soltar = () => {
+          curtaTocando.current = false;
+          const proxima = aoFimDaCurta.current;
+          aoFimDaCurta.current = null;
+          proxima?.();
+        };
+        el.onended = soltar;
+        el.onerror = soltar;   // sem áudio, a resposta não pode ficar presa
+        void el.play().catch(() => {
+          soltar();            // autoplay barrado: segue sem o filler
+        });
       } catch {
         /* sem audio curto: so nao ha aviso sonoro */
       }
@@ -457,12 +474,31 @@ export default function VozPublica({
     [rodarEnvelope],
   );
 
+  /* 🚨 CORTAR o filler no meio é o que faz a conversa soar picotada: ela começa
+     "só um momento, já te..." e a resposta entra por cima, engolindo o resto.
+     Duas falas ao mesmo tempo não somam — atropelam.
+
+     Quem chega depois ESPERA. O filler é curto (~1,5s) e já está no ar; a
+     resposta entra quando ele acaba. Custa menos de dois segundos e é a
+     diferença entre uma frase e um tropeço. */
   const pararCurta = useCallback(() => {
-    try {
-      curtaRef.current?.pause();
-    } catch {
-      /* ignora */
+    // Só interrompe se ela NÃO estiver no ar — se estiver, deixa terminar.
+    if (!curtaTocando.current) {
+      try {
+        curtaRef.current?.pause();
+      } catch {
+        /* ignora */
+      }
     }
+  }, []);
+
+  /** Roda `fn` agora, ou quando o filler terminar de falar. */
+  const depoisDaCurta = useCallback((fn: () => void) => {
+    if (!curtaTocando.current) {
+      fn();
+      return;
+    }
+    aoFimDaCurta.current = fn;
   }, []);
 
   /** Fala pelo navegador (fallback quando o servidor não deu áudio). */
@@ -794,29 +830,38 @@ export default function VozPublica({
 
   useEffect(() => {
     if (!respostaTexto) return;
+    // O texto aparece JÁ — só o áudio espera. Ver a resposta enquanto a frase
+    // curta termina é o comportamento certo: o olho não precisa esperar o ouvido.
     setLinha({ texto: respostaTexto, cls: "resposta" });
-    pararCurta(); // a resposta chegou: cala o "um momento" (só o filler!)
+    pararCurta();
     setPrecisaToque(false);
-    mudarFase("falando");
-    const urls = ultimaResposta?.audioUrls ?? [];
-    if (urls.length) {
-      vizRef.current?.simulate(false);
-      void tocarFalas(
-        urls,
-        () => {
-          vizRef.current?.setLevel(0);
-          voltarAEscutar(); // fim do áudio → escuta reabre (follow-up)
-        },
-        () => falarTexto(respostaTexto, voltarAEscutar),
-        (pend) => {
-          // autoplay bloqueado (zero-clique real): não perde a resposta
-          pendenteRef.current = { urls: pend, texto: respostaTexto };
-          setPrecisaToque(true);
-        },
-      );
-      return;
-    }
-    falarTexto(respostaTexto, voltarAEscutar);
+
+    /* 🚨 Se a fala curta está no ar, a resposta ESPERA ela acabar. Entrar por
+       cima é o que fazia a conversa soar picotada: "só um momento, já te—" e a
+       resposta engolindo o resto. O filler dura ~1,5s e já começou; atravessá-lo
+       economiza um segundo e custa a frase inteira. */
+    depoisDaCurta(() => {
+      mudarFase("falando");
+      const urls = ultimaResposta?.audioUrls ?? [];
+      if (urls.length) {
+        vizRef.current?.simulate(false);
+        void tocarFalas(
+          urls,
+          () => {
+            vizRef.current?.setLevel(0);
+            voltarAEscutar(); // fim do áudio → escuta reabre (follow-up)
+          },
+          () => falarTexto(respostaTexto, voltarAEscutar),
+          (pend) => {
+            // autoplay bloqueado (zero-clique real): não perde a resposta
+            pendenteRef.current = { urls: pend, texto: respostaTexto };
+            setPrecisaToque(true);
+          },
+        );
+        return;
+      }
+      falarTexto(respostaTexto, voltarAEscutar);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [respostaId]);
 
@@ -862,27 +907,21 @@ export default function VozPublica({
      A decisão de o mic não nascer ligado no CARREGAMENTO da página continua de
      pé — ela vale para quem só abriu o link, não para quem entrou na tela de voz
      de propósito. */
+  /* 🚨 Duas portas para a MESMA tela, e elas não valem a mesma coisa:
+     abrir o link  → SENTINELA: o mic escuta, mas só a chamada ("oi {nome}")
+                     libera a conversa. Quem digitou a URL pode só estar olhando.
+     clicar o botão → ESCUTANDO: o clique JÁ é o pedido de conversar, e pedir a
+                     palavra depois seria pedir duas vezes a mesma coisa. */
   const jaArmou = useRef(false);
   useEffect(() => {
     if (jaArmou.current) return;
     jaArmou.current = true;
-    // 🚨 Entra em ESCUTANDO, não em sentinela. Sentinela espera a palavra-chave
-    // ("oi tier") e a tela diz isso — mas quem clicou no botão de voz JÁ chamou:
-    // o clique é a chamada. Pedir a palavra depois é pedir duas vezes.
-    //
-    // Foi exatamente o que aconteceu no teste: a tela dizia «DIGA "OI TIER"», a
-    // pessoa falava a pergunta, e nada acontecia — a fala não era a palavra
-    // certa, então era descartada sem aviso.
-    //
-    // A sentinela continua existindo: depois da janela de follow-up, a escuta
-    // volta pra ela. Ali a palavra-chave faz sentido, porque a pessoa parou de
-    // falar faz tempo e o mic seguiu aberto.
     houveGesto.current = true;
     setMicBloqueado(false);
     void destravarAudio();
-    mudarFase("escutando");
+    mudarFase(comecarEscutando ? "escutando" : "sentinela");
     setLinha({ texto: "", cls: "" });
-  }, [destravarAudio, mudarFase]);
+  }, [comecarEscutando, destravarAudio, mudarFase]);
 
   /** Muta o mic (NÃO toca no áudio que estiver tocando). */
   const desligarEscuta = useCallback(() => {
