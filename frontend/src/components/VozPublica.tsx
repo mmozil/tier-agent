@@ -836,6 +836,26 @@ export default function VozPublica({
     setLinha({ texto: "", cls: "" });
   }, [destravarAudio, mudarFase]);
 
+  /* 🚨 ENTRAR NA TELA DE VOZ JÁ ARMA A ESCUTA.
+     Antes era preciso um segundo toque, NA ESFERA, e nada dizia isso. O usuário
+     abria, falava, e a esfera até se mexia — porque o analisador segue o som
+     ambiente — mas o reconhecimento nunca tinha começado. Interface que se mexe
+     sem fazer nada é pior que interface parada: parece viva.
+
+     O clique no botão que trouxe a pessoa até aqui JÁ É o gesto do usuário que o
+     Chrome exige para liberar áudio e microfone. Exigir outro era pedir duas
+     vezes a mesma coisa.
+
+     A decisão de o mic não nascer ligado no CARREGAMENTO da página continua de
+     pé — ela vale para quem só abriu o link, não para quem entrou na tela de voz
+     de propósito. */
+  const jaArmou = useRef(false);
+  useEffect(() => {
+    if (jaArmou.current) return;
+    jaArmou.current = true;
+    armarSentinela();
+  }, [armarSentinela]);
+
   /** Muta o mic (NÃO toca no áudio que estiver tocando). */
   const desligarEscuta = useCallback(() => {
     cancelarFollowUp();
