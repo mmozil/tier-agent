@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Plus, Trash2, Loader2, Zap, GripVertical, X, CheckCircle2, XCircle, Cpu, Pencil } from "lucide-react";
 
@@ -46,6 +46,20 @@ interface TestResult {
   sample?: string;
   detail?: string;
 }
+
+type AgenteUsando = {
+  agent_id: number;
+  nome: string;
+  provider: string | null;
+  modelo: string | null;
+  /** false = alguém escolheu um modelo SÓ para este agente; ele ignora o padrão. */
+  herdado: boolean;
+  provider_id: number | null;
+};
+type QuemUsa = {
+  padrao_da_conta: { id: number; provider: string; modelo: string } | null;
+  agentes: AgenteUsando[];
+};
 
 // Máscara da chave no padrão Firecrawl: prefixo + pontos + sufixo (ex: sk-proj•••••f7bf).
 // Sem prefixo (keys antigas/curtas) cai no fallback só-sufixo.
@@ -133,7 +147,11 @@ export default function LlmProvidersPage() {
     // Provider GLOBAL (tenant_id null) é o padrão compartilhado da Tier — só admin Tier
     // pode mexer (o backend retorna 403). Desligá-lo deixaria TODOS os agentes sem LLM.
     if (p.tenant_id === null) {
-      toast("Esse é o modelo GLOBAL da plataforma (não dá pra desligar aqui) — mas não precisa: o seu provider tem prioridade e é o que o agente usa.", { icon: "ℹ️" });
+      // 🚨 A frase antiga dizia "o seu provider é o que o agente usa" — e isso é
+      // falso quando o agente tem modelo próprio, que foi exatamente o caso que
+      // deixou o dono dois meses achando que rodava DeepSeek enquanto rodava
+      // gpt-4o-mini. A tela não pode afirmar o que ela não checou.
+      toast("Esse é o modelo GLOBAL da plataforma e não dá pra desligar aqui — mas o seu provider tem prioridade sobre ele. Confira em “Quem usa o quê” qual modelo cada agente está usando.", { icon: "ℹ️" });
       return;
     }
     try {
@@ -297,6 +315,42 @@ export default function LlmProvidersPage() {
   // agente fica em silêncio (não cai no modelo global da plataforma — ver
   // tier_engine.ProvidersAllDisabled). Aviso só na visão do cliente (admin enxerga o
   // global, tenant_id=null, então não dispara o banner).
+  /* 🚨 A configuração de LLM vive em DOIS lugares: a credencial na conta e a
+     escolha de modelo no agente (mesmo desenho do Dify). Esta página mostrava
+     só o primeiro — e o dono leu "DeepSeek" enquanto o agente dele rodava em
+     gpt-4o-mini havia dois meses. As duas informações estavam certas; faltava
+     alguém dizer que a segunda existia. */
+  const [uso, setUso] = useState<QuemUsa | null>(null);
+  const [aplicando, setAplicando] = useState<number | null>(null);
+
+  const carregarUso = useCallback(async () => {
+    try {
+      const r = await api.get("/llm-providers/quem-usa");
+      setUso(r.data);
+    } catch {
+      setUso(null); // sem isto a página segue útil; só perde o quadro
+    }
+  }, []);
+  useEffect(() => {
+    void carregarUso();
+  }, [carregarUso, providers]);
+
+  async function apontarAgente(agentId: number, providerId: number, modelo: string | null) {
+    setAplicando(agentId);
+    try {
+      await api.post(`/llm-providers/${providerId}/aplicar`, {
+        agent_ids: [agentId],
+        modelo,
+      });
+      toast.success(modelo ? `Agente agora usa ${modelo}` : "Agente voltou a herdar o padrão da conta");
+      await carregarUso();
+    } catch {
+      toast.error("Não consegui aplicar");
+    } finally {
+      setAplicando(null);
+    }
+  }
+
   const isAdminView = providers.some((p) => p.tenant_id === null);
   const tenantProviders = providers.filter((p) => p.tenant_id !== null);
   const agentSilent = !loading && !isAdminView && !tenantProviders.some((p) => p.active);
@@ -327,6 +381,64 @@ export default function LlmProvidersPage() {
                   Nenhuma LLM ativa — o agente <b>não responde</b>. Cadastre e ligue uma LLM aqui pra
                   ativá-lo. Não há modelo padrão da plataforma como fallback.
                 </p>
+              </div>
+            </div>
+          </Row>
+        )}
+
+        {/* ─── Quem usa o quê ─── */}
+        {uso && uso.agentes.length > 0 && (
+          <Row>
+            <div className="px-4 py-3.5">
+              <p className={`text-[13px] font-medium ${FC.ink}`}>Quem usa o quê</p>
+              <p className={`mt-0.5 text-[12.5px] leading-5 ${FC.sub}`}>
+                A <b>credencial</b> fica na conta; o <b>modelo</b> pode ser escolhido por agente. Um
+                agente com escolha própria ignora o padrão daqui de cima — é o que permite ter um
+                agente no gpt-4o-mini e outro no DeepSeek com a mesma chave.
+              </p>
+
+              <div className="mt-3 divide-y divide-black/[0.06]">
+                {uso.agentes.map((a) => (
+                  <div key={a.agent_id} className="flex items-center gap-3 py-2.5">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        a.modelo ? (a.herdado ? "bg-black/25" : "bg-[#0a8f5a]") : "bg-amber-500"
+                      }`}
+                      title={a.herdado ? "herda o padrão da conta" : "modelo próprio"}
+                    />
+                    <span className={`text-[13px] ${FC.ink} min-w-0 truncate`}>{a.nome}</span>
+
+                    <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                      {a.modelo ? (
+                        <>
+                          {a.provider && <ProviderLogo provider={a.provider} className="w-3.5 h-3.5" />}
+                          <code className={`text-[12px] ${FC.sub}`}>{a.modelo}</code>
+                        </>
+                      ) : (
+                        <span className="text-[12px] text-amber-600">sem LLM — não responde</span>
+                      )}
+                    </span>
+
+                    <span className="shrink-0 w-[128px] text-right">
+                      {a.herdado ? (
+                        <span className={`text-[11.5px] ${FC.sub}`}>herdado da conta</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={aplicando === a.agent_id || !uso.padrao_da_conta}
+                          onClick={() =>
+                            uso.padrao_da_conta &&
+                            apontarAgente(a.agent_id, uso.padrao_da_conta.id, null)
+                          }
+                          className="text-[11.5px] text-[#0a8f5a] hover:underline disabled:opacity-40"
+                          title="Voltar a usar o padrão da conta"
+                        >
+                          {aplicando === a.agent_id ? "aplicando…" : "escolha própria · voltar a herdar"}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           </Row>

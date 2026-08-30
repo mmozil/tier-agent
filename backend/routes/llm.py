@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user, require_admin
 from core.db import get_db
 from core.encryption import decrypt, encrypt
-from models import TaLlmProvider
+from models import TaAgent, TaLlmProvider
 
 router = APIRouter(prefix="/llm-providers", tags=["llm"])
 
@@ -203,6 +203,151 @@ async def supported_providers():
         ],
         "tier_labels": _MODEL_TIER_LABELS,
     }
+
+
+class AgenteUsandoOut(BaseModel):
+    agent_id: int
+    nome: str
+    provider: str | None
+    modelo: str | None
+    herdado: bool
+    provider_id: int | None
+
+
+class QuemUsaOut(BaseModel):
+    padrao_da_conta: dict | None
+    agentes: list[AgenteUsandoOut]
+
+
+@router.get("/quem-usa", response_model=QuemUsaOut)
+async def quem_usa(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Qual modelo CADA agente usa de verdade, e se ele herdou ou escolheu.
+
+    🚨 Existe porque a tela mentia por omissão. A configuração de LLM vive em
+    DOIS lugares — a credencial na conta, a escolha de modelo no agente (mesmo
+    desenho do Dify) — e esta página só mostrava o primeiro. O dono olhou,
+    leu "DeepSeek", e o agente dele estava rodando em gpt-4o-mini havia dois
+    meses. As duas informações estavam certas; faltava alguém dizer que a
+    segunda existia.
+
+    A conta é calculada EXATAMENTE como o motor calcula (`_load_provider` +
+    `_apply_agent_model`): ativo de menor priority, empate pelo maior id, e a
+    escolha do agente por cima. Se algum dia divergir, esta tela passa a mentir
+    de novo — então a ordem aqui não é detalhe de apresentação.
+    """
+    padrao = (
+        await db.execute(
+            select(TaLlmProvider)
+            .where(TaLlmProvider.tenant_id == user.tenant_id, TaLlmProvider.active.is_(True))
+            .order_by(TaLlmProvider.priority.asc(), TaLlmProvider.id.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+
+    agentes = list(
+        (
+            await db.execute(
+                select(TaAgent)
+                .where(TaAgent.tenant_id == user.tenant_id, TaAgent.active.is_(True))
+                .order_by(TaAgent.id.asc())
+            )
+        ).scalars().all()
+    )
+
+    saida: list[AgenteUsandoOut] = []
+    for a in agentes:
+        base = padrao
+        # O agente pode apontar para OUTRA credencial do mesmo tenant.
+        if getattr(a, "llm_provider_id", None):
+            alt = (
+                await db.execute(
+                    select(TaLlmProvider).where(
+                        TaLlmProvider.id == a.llm_provider_id,
+                        TaLlmProvider.tenant_id == user.tenant_id,
+                        TaLlmProvider.active.is_(True),
+                    )
+                )
+            ).scalars().first()
+            if alt is not None:
+                base = alt
+        saida.append(
+            AgenteUsandoOut(
+                agent_id=a.id,
+                nome=a.nome,
+                provider=base.provider if base else None,
+                modelo=(a.llm_model or (base.default_model if base else None)),
+                herdado=not a.llm_model,
+                provider_id=base.id if base else None,
+            )
+        )
+
+    return QuemUsaOut(
+        padrao_da_conta=(
+            {"id": padrao.id, "provider": padrao.provider, "modelo": padrao.default_model}
+            if padrao
+            else None
+        ),
+        agentes=saida,
+    )
+
+
+class AplicarEmAgentesIn(BaseModel):
+    agent_ids: list[int]
+    # None = o agente volta a HERDAR o padrão da conta.
+    modelo: str | None = None
+
+
+@router.post("/{provider_id}/aplicar")
+async def aplicar_em_agentes(
+    provider_id: int,
+    body: AplicarEmAgentesIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Aponta agentes escolhidos para esta credencial (e, opcionalmente, um modelo).
+
+    É o pedido do dono: "quando for cadastrar a LLM, poder escolher qual agente
+    vai usar — pode ser que num agente eu queira gpt-4o-mini e no outro o
+    DeepSeek". A capacidade já existia no motor; faltava um lugar para exercê-la
+    sem entrar agente por agente.
+
+    `modelo=None` devolve o agente à herança, que é como sair da exceção.
+    """
+    prov = (
+        await db.execute(
+            select(TaLlmProvider).where(
+                TaLlmProvider.id == provider_id,
+                TaLlmProvider.tenant_id == user.tenant_id,
+            )
+        )
+    ).scalars().first()
+    if prov is None:
+        raise HTTPException(404, "Credencial não encontrada nesta conta")
+    if not prov.active:
+        raise HTTPException(400, "Ligue a credencial antes de apontar agentes para ela")
+
+    agentes = list(
+        (
+            await db.execute(
+                select(TaAgent).where(
+                    TaAgent.id.in_(body.agent_ids or []),
+                    TaAgent.tenant_id == user.tenant_id,
+                )
+            )
+        ).scalars().all()
+    )
+    if len(agentes) != len(set(body.agent_ids or [])):
+        # Agente de outra conta na lista: recusa tudo em vez de aplicar em parte.
+        raise HTTPException(404, "Algum agente não é desta conta")
+
+    for a in agentes:
+        a.llm_provider_id = prov.id
+        a.llm_model = (body.modelo or "").strip() or None
+    await db.commit()
+    return {"ok": True, "agentes": [a.id for a in agentes]}
 
 
 @router.get("", response_model=list[LlmProviderOut])
