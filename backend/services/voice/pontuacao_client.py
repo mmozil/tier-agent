@@ -47,6 +47,18 @@ async def pontuar(texto: str) -> str:
     if not base or not cru:
         return texto
 
+    # 🚨 Medido em produção: a chamada custa ~400 ms, não os 94 ms do teste
+    # isolado (o resto é HTTP + abertura de sessão ONNX por pedido). Então não
+    # se paga por nada.
+    #
+    # Não há linguição para desfazer quando:
+    #   · a frase é curta ("sim", "quanto custa", "pode ser amanhã") — e turno
+    #     curto é o mais comum numa conversa falada;
+    #   · o texto JÁ tem pontuação — veio do campo digitado, ou o navegador
+    #     acertou sozinho.
+    if len(cru.split()) < 4 or any(c in cru for c in ".?!"):
+        return texto
+
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT_S) as cli:
             r = await cli.post(f"{base}/pontuar", json={"texto": cru})

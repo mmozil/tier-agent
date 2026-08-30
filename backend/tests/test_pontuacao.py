@@ -98,3 +98,29 @@ async def test_mesmas_palavras_com_acento_e_maiuscula_passa(monkeypatch):
 async def test_texto_vazio_nao_chama_o_servico(monkeypatch):
     monkeypatch.setenv("PONTUACAO_URL", "http://tier-pontuacao:9100")
     assert await pontuacao_client.pontuar("   ") == "   "
+
+
+@pytest.mark.asyncio
+async def test_frase_curta_nao_paga_os_400ms(monkeypatch):
+    """🚨 Turno curto é o mais comum numa conversa falada, e não tem linguição
+    para desfazer. Chamar o serviço ali é pagar 400 ms por nada."""
+    monkeypatch.setenv("PONTUACAO_URL", "http://tier-pontuacao:9100")
+    for curto in ("sim", "pode ser", "quanto custa", "ok obrigado"):
+        # se chamasse o serviço, o mock devolveria outra coisa
+        assert await _com({"texto": "REESCRITO"}, texto=curto) == curto
+
+
+@pytest.mark.asyncio
+async def test_texto_que_ja_tem_pontuacao_passa_direto(monkeypatch):
+    """Veio do campo digitado, ou o navegador acertou sozinho."""
+    monkeypatch.setenv("PONTUACAO_URL", "http://tier-pontuacao:9100")
+    ja = "Bom dia! Quanto custa o plano de vocês?"
+    assert await _com({"texto": "REESCRITO POR ENGANO"}, texto=ja) == ja
+
+
+@pytest.mark.asyncio
+async def test_linguicao_de_verdade_continua_sendo_pontuado(monkeypatch):
+    """A trava de cima não pode desligar o recurso: quatro palavras ou mais,
+    sem nenhum ponto, é exatamente o caso que existe para consertar."""
+    monkeypatch.setenv("PONTUACAO_URL", "http://tier-pontuacao:9100")
+    assert await _com({"texto": PONTUADO}) == PONTUADO
