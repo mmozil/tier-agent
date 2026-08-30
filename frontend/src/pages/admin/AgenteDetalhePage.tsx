@@ -496,7 +496,16 @@ export default function AgenteDetalhePage() {
                           <Button
                             variant="ghost"
                             onClick={() => {
-                              patch({ llm_model: "" });
+                              /* 🚨 Limpa os DOIS. Um agente sai do padrão de duas
+                                 formas — modelo próprio OU ponteiro para outra
+                                 credencial — e este botão só limpava a primeira.
+                                 Num agente que aponta (o caso do Tier Empresas,
+                                 que aponta para a linha do gpt-4o-mini), clicar
+                                 aqui não fazia NADA no servidor enquanto a tela
+                                 já mostrava o padrão: mentira otimista, o pior
+                                 tipo, porque some sem deixar rastro até alguém
+                                 recarregar. */
+                              patch({ llm_model: "", llm_provider_id: null });
                               setRt((prev) =>
                                 prev
                                   ? {

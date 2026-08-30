@@ -337,7 +337,19 @@ async def agent_runtime_config(
             )
         ).scalars().all()
     )
-    chosen = next((p for p in llms if p.id == agent.llm_provider_id), None) or (llms[0] if llms else None)
+    # O padrão da conta é o primeiro desta ordem (priority asc, id desc) — a MESMA
+    # que o motor usa. `chosen` é o que ESTE agente usa: a credencial apontada,
+    # se houver, senão o padrão.
+    padrao_conta = llms[0] if llms else None
+    chosen = next((p for p in llms if p.id == agent.llm_provider_id), None) or padrao_conta
+    # 🚨 "Herdado" é usar o padrão da conta, e um agente sai dele de DUAS formas:
+    # escrevendo um modelo próprio OU apontando para outra credencial. Olhando só
+    # a primeira, um agente que aponta para outra chave apareceria como
+    # "herda o padrão da conta" enquanto roda outro modelo — que é exatamente a
+    # frase errada que fez o dono passar dois meses achando que rodava DeepSeek.
+    herda = not agent.llm_model and (
+        not agent.llm_provider_id or (padrao_conta is not None and agent.llm_provider_id == padrao_conta.id)
+    )
 
     emb = (
         await db.execute(
@@ -363,8 +375,10 @@ async def agent_runtime_config(
             "scope": "tenant",
             "provider": chosen.provider if chosen else None,
             "model": agent.llm_model or (chosen.default_model if chosen else None),
-            "inherited": not agent.llm_model,
-            "tenant_default_model": chosen.default_model if chosen else None,
+            "inherited": herda,
+            # O padrão da CONTA, não o que este agente escolheu — é o valor ao
+            # qual ele volta se soltar a escolha.
+            "tenant_default_model": padrao_conta.default_model if padrao_conta else None,
             "provider_id": chosen.id if chosen else None,
             "fallback": [f.get("model") for f in (chosen.fallback_chain_json or []) if isinstance(f, dict)]
             if chosen
