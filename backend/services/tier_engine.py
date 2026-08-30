@@ -149,8 +149,45 @@ _CJK_RE = re.compile(
 )
 
 
+# 🚨 O PRONOME PRESO AO VERBO — "ajudá-lo", "assisti-lo", "atendê-la".
+#
+# O dono ouviu isso na tela de voz e foi direto ao ponto: "assisti o quê? Parece
+# uma TV. Esse termo não usamos aqui no Brasil." Ele tem razão duas vezes: a
+# ênclise em atendimento soa a filme dublado, e "assistir alguém", no Brasil,
+# é assistir televisão.
+#
+# A persona já proíbe. Mas proibição em prompt é pedido, não garantia — medido:
+# de cinco saudações, quatro obedeceram e uma escapou. Numa frase que TODO
+# cliente ouve na primeira interação, uma em cinco é muito.
+#
+# Por isso a troca é determinística e vale para todos os tenants: em pt-BR de
+# atendimento não existe caso em que "ajudá-lo" seja melhor que "ajudar".
+#
+# Lista FECHADA de propósito. Um regex genérico de `-lo/-la` pegaria construção
+# legítima ("é preciso lê-lo antes"), e reescrever texto do modelo por engano é
+# pior que a ênclise.
+_ENCLISE = {
+    "ajudá": "ajudar", "atendê": "atender", "auxiliá": "auxiliar",
+    "assisti": "ajudar", "informá": "informar", "orientá": "orientar",
+    "apoiá": "apoiar", "servi": "servir", "acompanhá": "acompanhar",
+    "atualizá": "atualizar", "avisá": "avisar",
+}
+_ENCLISE_RE = re.compile(
+    r"\b(" + "|".join(_ENCLISE) + r")-(?:lo|la|los|las)\b", re.IGNORECASE
+)
+
+
+def _sem_enclise(text: str) -> str:
+    """Troca o pronome preso pelo infinitivo simples. Preserva a caixa inicial."""
+    def _troca(m: "re.Match[str]") -> str:
+        base = _ENCLISE[m.group(1).lower()]
+        return base.capitalize() if m.group(1)[:1].isupper() else base
+
+    return _ENCLISE_RE.sub(_troca, text or "")
+
+
 def _strip_thinking(text: str) -> str:
-    return _THINK_RE.sub("", text or "").strip()
+    return _sem_enclise(_THINK_RE.sub("", text or "").strip())
 
 
 @dataclass
