@@ -609,6 +609,17 @@ export function Section({
     const v = typeof localStorage !== "undefined" ? localStorage.getItem(key) : null;
     return v === null ? defaultOpen : v === "1";
   });
+  /* Abrir DE FORA (o índice da página). Sem isto, clicar em "Conhecimento" no
+     índice rolava até uma seção recolhida — uma barra de 60px — e a pessoa
+     via "não abriu nada". O evento evita subir o estado de todas as seções
+     para o pai só para um clique. */
+  useEffect(() => {
+    const abrir = (ev: Event) => {
+      if ((ev as CustomEvent<string>).detail === id) setOpen(true);
+    };
+    window.addEventListener("ta-secao-abrir", abrir);
+    return () => window.removeEventListener("ta-secao-abrir", abrir);
+  }, [id]);
   useEffect(() => {
     try {
       localStorage.setItem(key, open ? "1" : "0");
@@ -768,7 +779,7 @@ export function SplitPane({
           assenta devagar. */}
       <div
         className={`shrink-0 min-w-0 flex flex-col overflow-hidden ${
-          dragging ? "" : "transition-[width] duration-[520ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+          dragging ? "" : "transition-[width] duration-[520ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
         }`}
         style={{ width: rightCollapsed ? `${collapsedRightPx}px` : `${rightPct}%` }}
       >

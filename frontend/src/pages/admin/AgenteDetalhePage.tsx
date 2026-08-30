@@ -132,6 +132,54 @@ export default function AgenteDetalhePage() {
       return false;
     }
   });
+  /* O índice marca a seção em que a pessoa está — senão sete botões iguais
+     não dizem onde ela está. O observador olha o container que ROLA (a coluna
+     esquerda do SplitPane), não a janela: a página é `fixed`, a janela nunca
+     rola. */
+  const [secaoAtiva, setSecaoAtiva] = useState<string>(SECOES[0].id);
+  useEffect(() => {
+    if (loading) return;
+    const primeira = document.getElementById(SECOES[0].id);
+    const raiz = primeira?.closest(".overflow-y-auto") as HTMLElement | null;
+    if (!raiz) return;
+    const io = new IntersectionObserver(
+      (entradas) => {
+        const visivel = entradas
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (visivel) setSecaoAtiva(visivel.target.id);
+      },
+      { root: raiz, rootMargin: "-20% 0px -70% 0px" },
+    );
+    SECOES.forEach((s) => {
+      const el = document.getElementById(s.id);
+      if (el) io.observe(el);
+    });
+    return () => io.disconnect();
+  }, [loading]);
+
+  useEffect(() => {
+    if (loading) return;
+    const alvo = window.location.hash.replace(/^#/, "");
+    if (alvo && SECOES.some((s) => s.id === alvo)) irParaSecao(alvo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  function irParaSecao(id: string) {
+    // 🚨 Abre ANTES de rolar. Seção recolhida é uma barra de 60px; rolar até
+    // ela e deixá-la fechada foi o "cliquei e não abriu nada".
+    window.dispatchEvent(new CustomEvent("ta-secao-abrir", { detail: id }));
+    setSecaoAtiva(id);
+    requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    try {
+      history.replaceState(null, "", `#${id}`);
+    } catch {
+      /* ignora */
+    }
+  }
+
   function alternarTestar() {
     setTestarAberto((v) => {
       try {
@@ -355,15 +403,24 @@ export default function AgenteDetalhePage() {
             <nav className={`sticky top-0 z-20 w-full ${FC.base}`}>
               <div className="mx-auto" style={{ maxWidth: CONTENT_MAX }}>
                 <div className={`border-l border-r ${FC.hair} flex items-center gap-1 overflow-x-auto px-4 py-3`}>
-                  {SECOES.map((s) => (
-                    <a
-                      key={s.id}
-                      href={`#${s.id}`}
-                      className={`shrink-0 h-9 px-3.5 inline-flex items-center rounded-[10px] text-[13.5px] ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-colors`}
-                    >
-                      {s.label}
-                    </a>
-                  ))}
+                  {SECOES.map((s) => {
+                    const ativa = s.id === secaoAtiva;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => irParaSecao(s.id)}
+                        aria-current={ativa ? "location" : undefined}
+                        className={`shrink-0 h-9 px-3.5 inline-flex items-center rounded-[10px] text-[13.5px] transition-colors ${
+                          ativa
+                            ? `${FC.ink} bg-black/[0.05] dark:bg-white/[0.08] font-medium`
+                            : `${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`
+                        }`}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </nav>
@@ -789,7 +846,7 @@ function ChatPanel({
   if (!aberto) {
     return (
       <div
-        className={`flex flex-col items-center h-full min-h-0 border-l ${FC.hair} bg-white dark:bg-[#0f1216] animate-[ta-surge_320ms_ease-out_180ms_both] motion-reduce:animate-none`}
+        className={`flex flex-col items-center h-full min-h-0 border-l ${FC.hair} bg-white dark:bg-[#0f1216] animate-[ta-surge_320ms_ease-out_180ms_both]`}
       >
         <div className={`h-[60px] w-full shrink-0 flex items-center justify-center border-b ${FC.hair}`}>
           <button
@@ -821,7 +878,7 @@ function ChatPanel({
        final e a cortina do SplitPane vai revelando. O `animate` entra 140ms
        depois, quando a cortina já abriu o suficiente para ter o que mostrar. */
     <div
-      className={`flex flex-col h-full min-h-0 min-w-[360px] border-l ${FC.hair} bg-white dark:bg-[#0f1216] animate-[ta-desliza_460ms_cubic-bezier(0.22,1,0.36,1)_140ms_both] motion-reduce:animate-none`}
+      className={`flex flex-col h-full min-h-0 min-w-[360px] border-l ${FC.hair} bg-white dark:bg-[#0f1216] animate-[ta-desliza_460ms_cubic-bezier(0.22,1,0.36,1)_140ms_both]`}
     >
       <div className={`h-[60px] shrink-0 px-5 flex items-center gap-2.5 border-b ${FC.hair}`}>
         <MessageSquare className={`w-4 h-4 ${FC.mut}`} />
