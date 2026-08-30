@@ -516,6 +516,43 @@ async def abrir_link(slug: str):
     }
 
 
+class EntradaPontuar(BaseModel):
+    texto: str
+
+
+@router.post("/{slug}/pontuar")
+async def pontuar_texto(slug: str, entrada: EntradaPontuar, request: Request):
+    """Pontua o que a pessoa está falando, ENQUANTO ela fala.
+
+    🚨 A pontuação do turno já acontecia — mas só depois que a pessoa terminava.
+    E o que ela vê na tela durante a fala inteira é o texto cru do navegador,
+    que é justamente o trecho mais longo. O dono mandou o print de um parágrafo
+    corrido, sem uma vírgula, com a legenda "ESCUTANDO — PODE FALAR" embaixo.
+
+    Aqui a tela manda só a parte JÁ FECHADA da fala (o que o navegador deu como
+    definitivo), a cada respiro. O rabo que ainda está sendo dito continua cru,
+    porque pontuar frase pela metade é adivinhar onde ela termina.
+
+    Sem sessão e sem gravar nada: é a mesma superfície pública do chat, com os
+    mesmos limites por IP.
+    """
+    texto = (entrada.texto or "").strip()
+    if not texto:
+        return {"texto": ""}
+    if len(texto) > TAMANHO_MAX_MSG:
+        raise HTTPException(400, "Texto muito longo")
+
+    ip = _ip_do_cliente(request)
+    # Teto próprio, mais generoso que o de mensagem (isto dispara a cada frase
+    # fechada, não a cada turno) e mais barato de servir.
+    if not await _passou_no_limite(f"webchat:lim:pont:{ip}", 240, 60):
+        raise HTTPException(429, "Muitas requisições")
+
+    from services.voice import pontuacao_client
+
+    return {"texto": await pontuacao_client.pontuar(texto)}
+
+
 @router.post("/{slug}/mensagem", response_model=RespostaMensagem)
 async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request):
     """Manda uma mensagem pro agente e devolve o que ele respondeu.

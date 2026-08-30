@@ -258,6 +258,15 @@ export default function ChatPublico() {
         ultimaResposta={ultimaResposta}
         comecarEscutando={liberouPeloBotao}
         falaLimpa={falaLimpa}
+        pontuar={async (t) => {
+          const r = await fetch(`${API}/${encodeURIComponent(slug)}/pontuar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ texto: t }),
+          });
+          if (!r.ok) return t;
+          return ((await r.json()) as { texto?: string }).texto || t;
+        }}
         onEnviar={(t) => enviar(t)}
         onVerConversa={() => setModo("conversa")}
       />

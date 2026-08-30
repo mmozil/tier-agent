@@ -146,6 +146,7 @@ export default function VozPublica({
   ultimaResposta,
   comecarEscutando = false,
   falaLimpa = null,
+  pontuar,
   onEnviar,
   onVerConversa,
 }: {
@@ -158,6 +159,8 @@ export default function VozPublica({
   comecarEscutando?: boolean;
   /** O que a pessoa disse, já pontuado pelo servidor. `id` muda a cada turno. */
   falaLimpa?: { texto: string; id: number } | null;
+  /** Pontua um trecho JÁ FECHADO da fala, enquanto a pessoa ainda fala. */
+  pontuar?: (texto: string) => Promise<string>;
   onEnviar: (texto: string) => void;
   onVerConversa: () => void;
 }) {
@@ -707,6 +710,14 @@ export default function VozPublica({
       interimAtual.current = "";
       if (!falaValida(turno)) {
         setLinha({ texto: "", cls: "" });
+        // 🚨 Aborta AQUI também. Sem isto, `ev.results` guarda o ruído e o
+        // próximo turno — que agora reconstrói a lista inteira — nasceria com
+        // o lixo do anterior grudado na frente.
+        try {
+          rec.abort();
+        } catch {
+          /* ignora */
+        }
         armarFollowUp(); // ruído não vira LLM; a janela de follow-up volta a contar
         return;
       }
@@ -723,9 +734,24 @@ export default function VozPublica({
       rodando.current = true;
     };
     rec.onresult = (ev: any) => {
+      /* 🚨 RECONSTRÓI do zero, não acumula.
+         Antes o laço começava em `ev.resultIndex` e o que viesse fechado era
+         SOMADO ao buffer. Só que o Chrome reemite: um mesmo trecho pode chegar
+         como parcial e depois como fechado, e às vezes o `resultIndex` aponta
+         para um índice já consumido. Cada reemissão virava mais uma cópia.
+
+         O sintoma está no print do dono: "...ele vai poder me ajudar nesse meu
+         nesse meu projeto ele tem como ajudar nesse meu projeto" — o mesmo
+         pedaço três vezes. E isso não é só feio na tela: o turno inteiro sai
+         assim para o modelo.
+
+         `ev.results` é cumulativo e é a verdade do navegador. Lê-lo inteiro a
+         cada evento é idempotente: reemissão nenhuma duplica. O `abort()` entre
+         turnos zera essa lista, então o turno anterior nunca vaza para o
+         seguinte. */
       let parcial = "";
       let final = "";
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      for (let i = 0; i < ev.results.length; i++) {
         if (ev.results[i].isFinal) final += ev.results[i][0].transcript;
         else parcial += ev.results[i][0].transcript;
       }
@@ -734,10 +760,16 @@ export default function VozPublica({
       vigia.current.ouviuAlgo = Date.now(); // veio transcrição: não há inanição
       if (f === "escutando") {
         cancelarFollowUp(); // tem fala acontecendo — o follow-up não expira no meio
-        if (final) bufFinal.current = `${bufFinal.current} ${final}`.trim();
+        bufFinal.current = final.trim(); // substitui: `final` já é o turno todo
         interimAtual.current = parcial;
-        const mostrado = `${bufFinal.current} ${parcial}`.replace(/\s+/g, " ").trim();
+        // Já temos este trecho pontuado? Mostra o limpo e deixa cru só o rabo.
+        const base =
+          fechadoLimpo.current.cru && fechadoLimpo.current.cru === bufFinal.current
+            ? fechadoLimpo.current.limpo
+            : bufFinal.current;
+        const mostrado = `${base} ${parcial}`.replace(/\s+/g, " ").trim();
         if (mostrado) setLinha({ texto: mostrado, cls: "parcial" });
+        pedirPontuacao(bufFinal.current);
         if (vadTimer.current) window.clearTimeout(vadTimer.current);
         /* 🚨 Esperar sempre os mesmos 1,3s é jogar fora a única informação boa
            que o navegador dá de graça: o `isFinal`.
@@ -1006,6 +1038,45 @@ export default function VozPublica({
      O servidor já devolve a versão pontuada; aqui ela substitui o que está na
      tela. Só enquanto a linha ainda é a fala dele (`parcial`/vazia) — se a
      resposta já entrou, reescrever por cima seria apagar o que ele está lendo. */
+  /* 🚨 PONTUAR ENQUANTO A PESSOA FALA.
+     A pontuação do turno já existia — mas só depois que ela terminava. E o que
+     fica na tela durante a fala inteira, que é o trecho mais longo, é o texto
+     cru do navegador. O dono mandou o print: um parágrafo corrido, sem uma
+     vírgula, com "ESCUTANDO — PODE FALAR" embaixo.
+
+     Só a parte JÁ FECHADA vai. O rabo que ainda está sendo dito continua cru,
+     porque pontuar frase pela metade é adivinhar onde ela termina — e a
+     adivinhação mudaria de lugar a cada palavra nova, piscando na tela.
+
+     Espera um respiro (700ms sem mudança) para não disparar a cada sílaba. */
+  const pontuarRef = useRef(pontuar);
+  useEffect(() => {
+    pontuarRef.current = pontuar;
+  });
+  const fechadoLimpo = useRef({ cru: "", limpo: "" });
+  const pontTimer = useRef<number | null>(null);
+
+  const pedirPontuacao = useCallback((fechado: string) => {
+    const fn = pontuarRef.current;
+    if (!fn) return;
+    if (pontTimer.current) window.clearTimeout(pontTimer.current);
+    const alvo = fechado.trim();
+    // Menos de 4 palavras não tem linguição para desfazer, e a chamada custa.
+    if (alvo.split(/\s+/).length < 4 || alvo === fechadoLimpo.current.cru) return;
+    pontTimer.current = window.setTimeout(() => {
+      void fn(alvo)
+        .then((limpo) => {
+          if (!limpo || limpo === alvo) return;
+          fechadoLimpo.current = { cru: alvo, limpo };
+          // Só repinta se a fala ainda é o que está na tela.
+          setLinha((l) => (l.cls === "parcial" ? { texto: `${limpo} ${interimAtual.current}`.trim(), cls: "parcial" } : l));
+        })
+        .catch(() => {
+          /* sem pontuação a fala continua aparecendo crua — é o de hoje */
+        });
+    }, 700);
+  }, []);
+
   const ultimaLimpa = useRef(0);
   useEffect(() => {
     if (!falaLimpa || falaLimpa.id === ultimaLimpa.current) return;
