@@ -188,7 +188,26 @@ export default function ChatPublico() {
         }
         if (!r.ok) throw new Error(String(r.status));
 
-        const d: { baloes: string[]; audio_urls?: string[] } = await r.json();
+        const d: { baloes: string[]; audio_urls?: string[]; texto_usuario?: string | null } =
+          await r.json();
+
+        /* 🚨 O reconhecimento do Chrome em pt-BR devolve uma linha minúscula sem
+           pontuação — "um linguição". O servidor limpa isso (~100 ms) e devolve
+           aqui; a tela troca o balão pelo texto certo.
+
+           Troca o ÚLTIMO balão do visitante, e só se ainda for o texto cru que
+           acabamos de pôr: entre o envio e a resposta a pessoa pode ter falado
+           de novo, e reescrever a fala errada seria pior que não pontuar. */
+        if (d.texto_usuario) {
+          setBaloes((b) => {
+            const i = b.map((x) => x.de).lastIndexOf("visitante");
+            if (i < 0 || b[i].texto !== conteudo) return b;
+            const copia = [...b];
+            copia[i] = { ...copia[i], texto: d.texto_usuario as string };
+            return copia;
+          });
+        }
+
         setBaloes((b) => [...b, ...(d.baloes || []).map((t) => ({ de: "agente" as const, texto: t }))]);
         const falado = (d.baloes || []).join(" ").trim();
         if (falado) setUltimaResposta({ texto: falado, id: Date.now(), audioUrls: d.audio_urls ?? [] });

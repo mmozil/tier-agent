@@ -81,6 +81,14 @@ class RespostaMensagem(BaseModel):
         default_factory=list,
         description="Uma URL por FRASE, na ordem. A 1a fica pronta em ~1s; as outras vao atras.",
     )
+    texto_usuario: str | None = Field(
+        None,
+        description=(
+            "O que a pessoa disse, JÁ pontuado — só na tela de voz. A tela mostra o "
+            "texto cru do navegador enquanto ela fala; com isto ela troca pelo limpo "
+            "depois. Vem None quando nada mudou."
+        ),
+    )
 
 
 # TTS só na resposta do próprio agente. NÃO existe endpoint de "sintetize este
@@ -549,6 +557,26 @@ async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request)
 
     # Prefixo `web:` deixa a origem óbvia no inbox e evita colidir com telefone.
     chat_id = f"web:{entrada.session_id}"
+
+    # 🚨 SÓ na tela de voz. Texto digitado já vem pontuado pela pessoa, e passar
+    # o modelo por cima dele seria reescrever o que ela escreveu.
+    #
+    # O reconhecimento do Chrome em pt-BR devolve UMA linha minúscula, sem
+    # pontuação — "um linguição", nas palavras do dono. Três perguntas coladas
+    # viram uma frase só, e o modelo responde a uma delas.
+    #
+    # Custa ~100 ms (o Whisper custaria 1,5 s e tiraria a escuta ao vivo), e
+    # falha devolve o texto cru: sem pontuação a conversa continua.
+    if entrada.voz:
+        from services.voice import pontuacao_client
+
+        _t_p = time.monotonic()
+        texto_pontuado = await pontuacao_client.pontuar(texto)
+        if texto_pontuado != texto:
+            logger.info("webchat voz: pontuado em %.0fms | %s", (time.monotonic() - _t_p) * 1000,
+                        texto_pontuado[:120])
+            texto = texto_pontuado
+
     t_pronto = time.monotonic()
 
     async def _rodar_runtime() -> dict:
@@ -657,6 +685,10 @@ async def enviar_mensagem(slug: str, entrada: EntradaMensagem, request: Request)
         encerrado=status in {"tenant_suspended", "agent_inactive"},
         audio_url=(audio_urls[0] if audio_urls else None),
         audio_urls=audio_urls,
+        # `texto` foi reatribuído lá em cima quando a pontuação mudou algo. Só
+        # devolve quando mudou mesmo — a tela troca o balão, e trocar por um
+        # texto idêntico faria a linha piscar sem motivo.
+        texto_usuario=(texto if entrada.voz and texto != (entrada.texto or "").strip() else None),
     )
 
 
