@@ -335,6 +335,30 @@ export default function LlmProvidersPage() {
     void carregarUso();
   }, [carregarUso, providers]);
 
+  const [aplicando, setAplicando] = useState<number | null>(null);
+
+  /* Associar um agente a ESTA credencial — ou soltá-lo de volta para o padrão.
+     🚨 Fica dentro da credencial de propósito: aqui o assunto é "quem usa esta
+     chave", que é pergunta de credencial. A pergunta espelhada ("que modelo
+     este agente usa") mora na lista de agentes. Duas telas, duas perguntas,
+     nenhuma com a lista da outra empilhada em cima. */
+  async function associar(agentId: number, providerId: number, herdar: boolean) {
+    setAplicando(agentId);
+    try {
+      await api.post(`/llm-providers/${providerId}/aplicar`, {
+        agent_ids: [agentId],
+        modelo: null,
+        herdar,
+      });
+      toast.success(herdar ? "Agente voltou a herdar o padrão da conta" : "Agente associado a esta LLM");
+      await carregarUso();
+    } catch {
+      toast.error("Não consegui aplicar");
+    } finally {
+      setAplicando(null);
+    }
+  }
+
   const isAdminView = providers.some((p) => p.tenant_id === null);
   const tenantProviders = providers.filter((p) => p.tenant_id !== null);
   const agentSilent = !loading && !isAdminView && !tenantProviders.some((p) => p.active);
@@ -819,6 +843,42 @@ export default function LlmProvidersPage() {
                   </div>
                 )}
               </div>
+
+              {/* Quem usa esta credencial */}
+              {uso && detail.tenant_id !== null && uso.agentes.length > 0 && (
+                <div className={`pt-3 mt-1 border-t ${FC.hair}`}>
+                  <p className={`text-[12px] font-medium ${FC.ink}`}>Agentes nesta LLM</p>
+                  <p className={`mt-0.5 text-[11.5px] leading-4 ${FC.sub}`}>
+                    Marque quem usa <code className="font-mono">{detail.default_model}</code>. Quem fica
+                    desmarcado segue o padrão da conta.
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    {uso.agentes.map((a) => {
+                      const nesta = a.provider_id === detail.id && !a.herdado;
+                      return (
+                        <label
+                          key={a.agent_id}
+                          className="flex items-center gap-2.5 py-1 cursor-pointer select-none"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={nesta}
+                            disabled={aplicando === a.agent_id}
+                            onChange={(e) => associar(a.agent_id, detail.id, !e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#003083] cursor-pointer"
+                          />
+                          <span className={`text-[12.5px] ${FC.ink}`}>{a.nome}</span>
+                          {!nesta && (
+                            <span className={`text-[11px] ${FC.mut} truncate`}>
+                              {a.herdado ? "padrão da conta" : "outra LLM"} · {a.modelo}
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Ações */}
               <div className="flex items-center justify-between gap-2 pt-1">

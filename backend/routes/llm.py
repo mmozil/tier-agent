@@ -273,13 +273,23 @@ async def quem_usa(
             ).scalars().first()
             if alt is not None:
                 base = alt
+        # 🚨 "Herdado" é usar o padrão da conta — e um agente pode sair dele de
+        # DUAS formas: escrevendo um modelo próprio (`llm_model`) OU apontando
+        # para outra credencial (`llm_provider_id`). Olhar só o primeiro marcaria
+        # como "herdado" um agente que aponta para outra chave e roda outro
+        # modelo — exatamente o erro que esta tela existe para não repetir.
+        aponta_para_outra = bool(
+            getattr(a, "llm_provider_id", None)
+            and padrao is not None
+            and a.llm_provider_id != padrao.id
+        )
         saida.append(
             AgenteUsandoOut(
                 agent_id=a.id,
                 nome=a.nome,
                 provider=base.provider if base else None,
                 modelo=(a.llm_model or (base.default_model if base else None)),
-                herdado=not a.llm_model,
+                herdado=not a.llm_model and not aponta_para_outra,
                 provider_id=base.id if base else None,
             )
         )
@@ -296,8 +306,10 @@ async def quem_usa(
 
 class AplicarEmAgentesIn(BaseModel):
     agent_ids: list[int]
-    # None = o agente volta a HERDAR o padrão da conta.
+    # Modelo específico. Vazio = usa o `default_model` da própria credencial.
     modelo: str | None = None
+    # True = o agente SAI desta credencial e volta a herdar o padrão da conta.
+    herdar: bool = False
 
 
 @router.post("/{provider_id}/aplicar")
@@ -344,10 +356,17 @@ async def aplicar_em_agentes(
         raise HTTPException(404, "Algum agente não é desta conta")
 
     for a in agentes:
-        a.llm_provider_id = prov.id
-        a.llm_model = (body.modelo or "").strip() or None
+        if body.herdar:
+            # 🚨 Zera os DOIS. Limpar só um deixaria o agente num meio-termo que
+            # a tela não sabe nomear: apontando para uma credencial sem modelo,
+            # ou com modelo sem credencial.
+            a.llm_provider_id = None
+            a.llm_model = None
+        else:
+            a.llm_provider_id = prov.id
+            a.llm_model = (body.modelo or "").strip() or None
     await db.commit()
-    return {"ok": True, "agentes": [a.id for a in agentes]}
+    return {"ok": True, "agentes": [a.id for a in agentes], "herdando": body.herdar}
 
 
 @router.get("", response_model=list[LlmProviderOut])
