@@ -272,22 +272,24 @@ export default function AgenteDetalhePage() {
       style={{ left: "var(--ta-sidebar-w, 240px)" }}
     >
       {/* ── HEADER ─────────────────────────────────────────────── */}
-      <header className={`h-[60px] shrink-0 px-4 flex items-center gap-3 border-b ${FC.hair} bg-white dark:bg-[#0f1216]`}>
+      {/* 84px, não 60: o nome do agente é o título da tela e vivia com 12px
+          de folga para o teto, na mesma altura de um item de menu. */}
+      <header className={`h-[84px] shrink-0 pl-5 pr-7 flex items-center gap-4 border-b ${FC.hair} bg-white dark:bg-[#0f1216]`}>
         <Link to="/admin/agentes" className={iconBtn} title="Voltar para Agentes">
           <ArrowLeft className="w-4 h-4" />
         </Link>
 
         {agent.avatar_url ? (
-          <img src={agent.avatar_url} alt="" className={`w-9 h-9 rounded-full object-cover border ${FC.hair} shrink-0`} />
+          <img src={agent.avatar_url} alt="" className={`w-11 h-11 rounded-full object-cover border ${FC.hair} shrink-0`} />
         ) : (
-          <div className="w-9 h-9 shrink-0 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[12px] font-semibold text-[#003083] dark:text-[#5b9bff]">
+          <div className="w-11 h-11 shrink-0 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[13px] font-semibold text-[#003083] dark:text-[#5b9bff]">
             {agent.nome.slice(0, 2).toUpperCase()}
           </div>
         )}
 
         <div className="min-w-0">
-          <div className={`text-[15px] font-medium leading-5 truncate ${FC.ink}`}>{agent.nome}</div>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className={`text-[19px] font-[500] tracking-[-0.2px] leading-6 truncate fc-crisp ${FC.ink}`}>{agent.nome}</div>
+          <div className="flex items-center gap-2 mt-1">
             <span className={`inline-flex items-center gap-1.5 text-[12px] ${FC.sub}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${agent.active ? "bg-[#0a8f5a]" : "bg-[#F5A300]"}`} />
               {agent.active ? "Ativo" : "Pausado"}
@@ -352,12 +354,12 @@ export default function AgenteDetalhePage() {
                 contínuo em vez de blocos soltos. */}
             <nav className={`sticky top-0 z-20 w-full ${FC.base}`}>
               <div className="mx-auto" style={{ maxWidth: CONTENT_MAX }}>
-                <div className={`border-l border-r ${FC.hair} flex items-center gap-0.5 overflow-x-auto px-4 py-2`}>
+                <div className={`border-l border-r ${FC.hair} flex items-center gap-1 overflow-x-auto px-4 py-3`}>
                   {SECOES.map((s) => (
                     <a
                       key={s.id}
                       href={`#${s.id}`}
-                      className={`shrink-0 h-7 px-2.5 inline-flex items-center rounded-[8px] text-[12.5px] ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-colors`}
+                      className={`shrink-0 h-9 px-3.5 inline-flex items-center rounded-[10px] text-[13.5px] ${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover} transition-colors`}
                     >
                       {s.label}
                     </a>
@@ -786,7 +788,9 @@ function ChatPanel({
      avisa que há algo lá dentro. */
   if (!aberto) {
     return (
-      <div className={`flex flex-col items-center h-full min-h-0 border-l ${FC.hair} bg-white dark:bg-[#0f1216]`}>
+      <div
+        className={`flex flex-col items-center h-full min-h-0 border-l ${FC.hair} bg-white dark:bg-[#0f1216] animate-[ta-surge_320ms_ease-out_180ms_both] motion-reduce:animate-none`}
+      >
         <div className={`h-[60px] w-full shrink-0 flex items-center justify-center border-b ${FC.hair}`}>
           <button
             type="button"
@@ -812,7 +816,13 @@ function ChatPanel({
   }
 
   return (
-    <div className={`flex flex-col h-full min-h-0 border-l ${FC.hair} bg-white dark:bg-[#0f1216]`}>
+    /* `min-w-[360px]`: enquanto a largura cresce, o conteúdo NÃO reflui a cada
+       quadro (título quebrando, campo encolhendo) — ele já nasce no tamanho
+       final e a cortina do SplitPane vai revelando. O `animate` entra 140ms
+       depois, quando a cortina já abriu o suficiente para ter o que mostrar. */
+    <div
+      className={`flex flex-col h-full min-h-0 min-w-[360px] border-l ${FC.hair} bg-white dark:bg-[#0f1216] animate-[ta-desliza_460ms_cubic-bezier(0.22,1,0.36,1)_140ms_both] motion-reduce:animate-none`}
+    >
       <div className={`h-[60px] shrink-0 px-5 flex items-center gap-2.5 border-b ${FC.hair}`}>
         <MessageSquare className={`w-4 h-4 ${FC.mut}`} />
         <span className={`text-[20px] font-[450] tracking-[-0.1px] leading-7 fc-crisp ${FC.ink}`}>Testar</span>

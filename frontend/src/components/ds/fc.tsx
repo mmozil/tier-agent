@@ -760,9 +760,15 @@ export function SplitPane({
       />
       {/* A largura anima entre % e px (o CSS interpola via calc). Durante o
           arrasto a transição sai, senão o painel fica correndo atrás do mouse. */}
+      {/* 🚨 `overflow-hidden` é o que faz o deslize existir. Sem ele o conteúdo
+          do painel aparece inteiro no primeiro quadro, transbordando a
+          largura que ainda está crescendo — e o olho lê "abriu seco", mesmo
+          com a largura animando. Com ele, a largura vira uma cortina que
+          revela o painel. 520ms com curva de saída longa: rápido no começo,
+          assenta devagar. */}
       <div
-        className={`shrink-0 min-w-0 flex flex-col ${
-          dragging ? "" : "transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        className={`shrink-0 min-w-0 flex flex-col overflow-hidden ${
+          dragging ? "" : "transition-[width] duration-[520ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
         }`}
         style={{ width: rightCollapsed ? `${collapsedRightPx}px` : `${rightPct}%` }}
       >

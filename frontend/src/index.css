@@ -125,3 +125,15 @@
 @media (prefers-reduced-motion: reduce) {
   .voz-entra { animation: none; opacity: 1; transform: none; }
 }
+
+/* Página do agente — o painel de teste entra deslizando (ver SplitPane +
+   ChatPanel em AgenteDetalhePage). `both` no uso mantém o estado inicial
+   durante o atraso, senão o conteúdo pisca antes de começar. */
+@keyframes ta-desliza {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes ta-surge {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
