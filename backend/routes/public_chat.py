@@ -111,10 +111,22 @@ def _provedores_tts() -> list[str]:
     `TTS_PROVIDER` força um. Sem ele, vale o que estiver configurado — o
     self-hosted vem primeiro porque não custa por caractere.
     """
+    # 🚨 `TTS_PROVIDER` aceita LISTA separada por vírgula, e é assim que roda em
+    # produção: `edge,openai_compat`.
+    #
+    # O Edge é o endpoint não oficial da Microsoft — voz muito melhor, 930ms
+    # contra 1440ms do Kokoro, e pode ser cortado sem aviso. Justamente por isso
+    # ele nunca é o único: com o Kokoro atrás na fila, um Edge fora do ar deixa
+    # a voz feia e lenta, não muda.
+    #
+    # Um nome só continua valendo (`TTS_PROVIDER=edge`), mas aí é escolha
+    # explícita de ficar sem rede de segurança.
     forcado = (os.environ.get("TTS_PROVIDER") or "").strip().lower()
     if forcado:
-        return [forcado]
+        return [p.strip() for p in forcado.split(",") if p.strip()]
     ordem = []
+    if os.environ.get("TTS_EDGE_VOICE"):
+        ordem.append("edge")  # não pede chave: é a leitura em voz alta do Edge
     if os.environ.get("TTS_OPENAI_BASE_URL"):
         ordem.append("openai_compat")  # Kokoro self-hosted / OpenAI / DeepInfra
     if os.environ.get("MINIMAX_API_KEY"):
@@ -295,9 +307,10 @@ async def _audio_da_frase(texto: str) -> bytes | None:
     except Exception:
         logger.debug("webchat voz: cache por conteúdo indisponível", exc_info=True)
 
-    from services.voice import elevenlabs_client, minimax_client, openai_compat_client
+    from services.voice import edge_client, elevenlabs_client, minimax_client, openai_compat_client
 
     clientes = {
+        "edge": edge_client,
         "openai_compat": openai_compat_client,
         "kokoro": openai_compat_client,  # apelido: Kokoro fala esse protocolo
         "minimax": minimax_client,

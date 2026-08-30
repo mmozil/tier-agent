@@ -1,5 +1,5 @@
-"""Voice services — Deepgram STT (PT-BR) + ElevenLabs TTS Flash v2.5."""
+"""Voice services — STT (Deepgram) e TTS (Edge, Kokoro, ElevenLabs, MiniMax)."""
 
-from . import deepgram_client, elevenlabs_client
+from . import deepgram_client, edge_client, elevenlabs_client
 
-__all__ = ["deepgram_client", "elevenlabs_client"]
+__all__ = ["deepgram_client", "edge_client", "elevenlabs_client"]

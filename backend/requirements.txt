@@ -56,3 +56,8 @@ pytest==8.3.4
 pytest-asyncio==0.25.0
 ruff==0.8.4
 faster-whisper==1.1.0
+
+# TTS pelas vozes neurais do Edge (endpoint nao oficial da Microsoft).
+# Motor primario desde 29/08/2026; o Kokoro fica atras dele na fila do
+# TTS_PROVIDER, entao uma queda daqui deixa a voz feia, nao muda.
+edge-tts==7.2.8
