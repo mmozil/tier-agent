@@ -9,6 +9,7 @@ import {
   Loader2,
   Lock,
   MessageSquare,
+  PanelRightClose,
   PauseCircle,
   PlayCircle,
   Plus,
@@ -241,6 +242,28 @@ export default function AgenteDetalhePage() {
     );
   }
 
+  /* O teste nasce RECOLHIDO. Aberto por padrão ele tomava 42% da tela para
+     uma conversa que na maior parte do tempo está vazia — e espremia a
+     configuração, que é o que a pessoa veio fazer. A régua fica à vista, com
+     um botão; abre quando se quer conversar, e lembra a escolha. */
+  const [testarAberto, setTestarAberto] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ta-agente-testar") === "1";
+    } catch {
+      return false;
+    }
+  });
+  function alternarTestar() {
+    setTestarAberto((v) => {
+      try {
+        localStorage.setItem("ta-agente-testar", v ? "0" : "1");
+      } catch {
+        /* modo privado — só não persiste */
+      }
+      return !v;
+    });
+  }
+
   return (
     // Tela cheia: escapa do container do AdminLayout pra o painel de teste ter
     // altura real. `left` vem da var publicada pela sidebar (que varia 200-420).
@@ -318,8 +341,12 @@ export default function AgenteDetalhePage() {
       {/* ── CORPO: config (rola) │ teste (fixo) ─────────────────── */}
       <SplitPane
         storageKey="ta-agente-split"
+        rightCollapsed={!testarAberto}
         left={
-          <div className="pb-16">
+          /* Respiro nas bordas. As seções encostavam no topo e nos lados do
+             painel — "muito lá em cima na ponta". Os rails continuam correndo
+             dentro da coluna; só a coluna deixou de ir de parede a parede. */
+          <div className="pb-16 pt-6 px-6">
             {/* Índice — navega por âncora, NÃO troca de tela (não é aba).
                 Vive nos mesmos rails das seções pra a coluna ter um eixo vertical
                 contínuo em vez de blocos soltos. */}
@@ -639,7 +666,16 @@ export default function AgenteDetalhePage() {
             <Spacer h={40} />
           </div>
         }
-        right={<ChatPanel agentId={agent.id} agentName={agent.nome} model={modeloAtual} persona={persona} />}
+        right={
+          <ChatPanel
+            agentId={agent.id}
+            agentName={agent.nome}
+            model={modeloAtual}
+            persona={persona}
+            aberto={testarAberto}
+            onAlternar={alternarTestar}
+          />
+        }
       />
     </div>
   );
@@ -664,10 +700,14 @@ function ChatPanel({
   agentName,
   model,
   persona,
+  aberto,
+  onAlternar,
 }: {
   agentId: number;
   agentName: string;
   model: string | null;
+  aberto: boolean;
+  onAlternar: () => void;
   persona: string;
 }) {
   const [itens, setItens] = useState<Msg[]>([]);
@@ -741,6 +781,36 @@ function ChatPanel({
     }
   }
 
+  /* RECOLHIDO: uma régua com o botão. O mesmo componente continua montado,
+     então a conversa que já existia sobrevive ao recolher — o ponto na régua
+     avisa que há algo lá dentro. */
+  if (!aberto) {
+    return (
+      <div className={`flex flex-col items-center h-full min-h-0 border-l ${FC.hair} bg-white dark:bg-[#0f1216]`}>
+        <div className={`h-[60px] w-full shrink-0 flex items-center justify-center border-b ${FC.hair}`}>
+          <button
+            type="button"
+            onClick={onAlternar}
+            title="Abrir o teste — conversar com o agente"
+            className="relative w-9 h-9 rounded-full inline-flex items-center justify-center bg-[#003083] text-white hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0f1216] transition-colors active:scale-[0.97]"
+          >
+            <MessageSquare className="w-4 h-4" />
+            {itens.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#0a8f5a] ring-2 ring-white dark:ring-[#0f1216]" />
+            )}
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={onAlternar}
+          className={`mt-5 [writing-mode:vertical-rl] rotate-180 text-[11px] font-medium tracking-[0.14em] uppercase ${FC.mut} hover:text-[#262626] dark:hover:text-white transition-colors`}
+        >
+          Testar
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex flex-col h-full min-h-0 border-l ${FC.hair} bg-white dark:bg-[#0f1216]`}>
       <div className={`h-[60px] shrink-0 px-5 flex items-center gap-2.5 border-b ${FC.hair}`}>
@@ -761,6 +831,9 @@ function ChatPanel({
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
         )}
+        <button onClick={onAlternar} className={iconBtn} title="Recolher o teste">
+          <PanelRightClose className="w-4 h-4" />
+        </button>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto sidebar-scroll px-4 py-4">

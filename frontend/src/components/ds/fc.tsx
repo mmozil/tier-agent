@@ -677,6 +677,8 @@ export function SplitPane({
   defaultRightPct = 42,
   minLeftPx = 420,
   minRightPx = 360,
+  rightCollapsed = false,
+  collapsedRightPx = 64,
 }: {
   storageKey: string;
   left: ReactNode;
@@ -684,6 +686,10 @@ export function SplitPane({
   defaultRightPct?: number;
   minLeftPx?: number;
   minRightPx?: number;
+  /** Painel da direita RECOLHIDO numa régua estreita (sem arrastar). A largura
+      aberta continua guardada, então reabrir volta ao tamanho de antes. */
+  rightCollapsed?: boolean;
+  collapsedRightPx?: number;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [rightPct, setRightPct] = useState(() => {
@@ -745,12 +751,21 @@ export function SplitPane({
             /* ignore */
           }
         }}
-        title="Arraste para redimensionar · duplo-clique para redefinir"
-        className={`relative w-px shrink-0 cursor-col-resize ${FC.hairBg} after:absolute after:inset-y-0 after:-left-2 after:-right-2 after:content-[''] ${
-          dragging ? "bg-[#003083] dark:bg-[#5b9bff]" : "hover:bg-[#003083]/40 dark:hover:bg-[#5b9bff]/40"
-        } transition-colors`}
+        title={rightCollapsed ? undefined : "Arraste para redimensionar · duplo-clique para redefinir"}
+        className={`relative w-px shrink-0 ${FC.hairBg} after:absolute after:inset-y-0 after:-left-2 after:-right-2 after:content-[''] transition-colors ${
+          rightCollapsed
+            ? "pointer-events-none"
+            : `cursor-col-resize ${dragging ? "bg-[#003083] dark:bg-[#5b9bff]" : "hover:bg-[#003083]/40 dark:hover:bg-[#5b9bff]/40"}`
+        }`}
       />
-      <div className="shrink-0 min-w-0 flex flex-col" style={{ width: `${rightPct}%` }}>
+      {/* A largura anima entre % e px (o CSS interpola via calc). Durante o
+          arrasto a transição sai, senão o painel fica correndo atrás do mouse. */}
+      <div
+        className={`shrink-0 min-w-0 flex flex-col ${
+          dragging ? "" : "transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        }`}
+        style={{ width: rightCollapsed ? `${collapsedRightPx}px` : `${rightPct}%` }}
+      >
         {right}
       </div>
     </div>
