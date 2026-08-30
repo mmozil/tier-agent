@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Plus, Trash2, Loader2, Zap, GripVertical, X, CheckCircle2, XCircle, Cpu, Pencil } from "lucide-react";
 
@@ -394,7 +395,8 @@ export default function LlmProvidersPage() {
               <p className={`mt-0.5 text-[12.5px] leading-5 ${FC.sub}`}>
                 A <b>credencial</b> fica na conta; o <b>modelo</b> pode ser escolhido por agente. Um
                 agente com escolha própria ignora o padrão daqui de cima — é o que permite ter um
-                agente no gpt-4o-mini e outro no DeepSeek com a mesma chave.
+                agente no gpt-4o-mini e outro no DeepSeek com a mesma chave. Para trocar o modelo de
+                um agente só, clique no nome dele.
               </p>
 
               <div className="mt-3 divide-y divide-black/[0.06]">
@@ -406,7 +408,18 @@ export default function LlmProvidersPage() {
                       }`}
                       title={a.herdado ? "herda o padrão da conta" : "modelo próprio"}
                     />
-                    <span className={`text-[13px] ${FC.ink} min-w-0 truncate`}>{a.nome}</span>
+                    {/* 🚨 O caminho para trocar existe e é bom — mora na página do
+                        agente, em Modelos, com a dica certa ("vale só para este
+                        agente"). O que faltava era esta tela dizer que ele existe:
+                        quem descobre a divergência AQUI não tinha como saber onde
+                        arrumá-la. O nome vira o caminho. */}
+                    <Link
+                      to={`/admin/agentes/${a.agent_id}#modelos`}
+                      className={`text-[13px] ${FC.ink} min-w-0 truncate hover:underline`}
+                      title="Abrir o agente para trocar o modelo só dele"
+                    >
+                      {a.nome}
+                    </Link>
 
                     <span className="ml-auto flex items-center gap-1.5 shrink-0">
                       {a.modelo ? (
@@ -421,7 +434,13 @@ export default function LlmProvidersPage() {
 
                     <span className="shrink-0 w-[128px] text-right">
                       {a.herdado ? (
-                        <span className={`text-[11.5px] ${FC.sub}`}>herdado da conta</span>
+                        <Link
+                          to={`/admin/agentes/${a.agent_id}#modelos`}
+                          className={`text-[11.5px] ${FC.sub} hover:underline`}
+                          title="Escolher um modelo só para este agente"
+                        >
+                          herdado · trocar só neste
+                        </Link>
                       ) : (
                         <button
                           type="button"
