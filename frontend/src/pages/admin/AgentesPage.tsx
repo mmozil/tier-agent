@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import { ProviderLogo } from "@/components/icons/providerLogos";
 import {
   ArrowUpRight,
   DollarSign,
@@ -257,6 +258,9 @@ function AgentGlyph({ className = "" }: { className?: string }) {
 export default function AgentesPage() {
   const navigate = useNavigate();
   const [agents, setAgents] = useState<Agent[]>([]);
+  /* O modelo EFETIVO de cada agente (herança já resolvida) vem do mesmo cálculo
+     que o motor usa — pedir aqui evita a tela reimplementar a regra e divergir. */
+  const [llmPorAgente, setLlmPorAgente] = useState<Record<number, LlmDoAgente>>({});
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
@@ -270,6 +274,16 @@ export default function AgentesPage() {
         api.get<{ templates: Template[] }>("/templates"),
       ]);
       setAgents(a.data);
+      try {
+        const u = await api.get("/llm-providers/quem-usa");
+        const mapa: Record<number, LlmDoAgente> = {};
+        for (const x of u.data?.agentes ?? []) {
+          mapa[x.agent_id] = { provider: x.provider, modelo: x.modelo, herdado: x.herdado };
+        }
+        setLlmPorAgente(mapa);
+      } catch {
+        setLlmPorAgente({}); // sem isto a lista segue útil; só não mostra o modelo
+      }
       setTemplates(t.data.templates);
     } catch (e) {
       console.error(e);
@@ -379,6 +393,7 @@ export default function AgentesPage() {
                               key={a.id}
                               agent={a}
                               templateLabel={templates.find((t) => t.key === a.template_kind)?.label}
+                              llm={llmPorAgente[a.id]}
                               menuOpen={openMenuId === a.id}
                               onOpenMenu={(open) => setOpenMenuId(open ? a.id : null)}
                               onClick={() => navigate(`/admin/agentes/${a.id}`)}
@@ -447,9 +462,12 @@ function resumoPersona(persona: string | null | undefined): string {
   return limpo;
 }
 
+type LlmDoAgente = { provider: string | null; modelo: string | null; herdado: boolean };
+
 function AgentCard({
   agent,
   templateLabel,
+  llm,
   menuOpen,
   onOpenMenu,
   onClick,
@@ -458,6 +476,7 @@ function AgentCard({
 }: {
   agent: Agent;
   templateLabel?: string;
+  llm?: LlmDoAgente;
   menuOpen: boolean;
   onOpenMenu: (open: boolean) => void;
   onClick: () => void;
@@ -533,11 +552,34 @@ function AgentCard({
         </p>
       </div>
 
-      {/* Rodapé: papel/modelo + abrir */}
+      {/* Rodapé: papel + LLM + abrir */}
       <div className={`mt-3 pt-3 flex items-center justify-between gap-2 border-t ${FC.hair}`}>
         <span className={`inline-flex min-w-0 items-center gap-1.5 text-[11px] ${FC.sub}`}>
           {RoleIcon && <RoleIcon className="w-3.5 h-3.5 shrink-0" />}
-          <span className="truncate">{templateLabel || agent.template_kind || "Sem modelo"}</span>
+          <span className="truncate">{templateLabel || agent.template_kind || "Sem papel"}</span>
+          {/* 🚨 O modelo mora AQUI porque é aqui que a pergunta nasce: quem quer
+              saber "qual modelo?" está pensando no agente, não na chave. Antes
+              essa informação só existia dentro do agente e na tela de
+              credenciais — e foi por isso que o dono passou dois meses achando
+              que rodava DeepSeek enquanto rodava gpt-4o-mini.
+              O ponto cheio marca escolha própria; vazio, herança. */}
+          {llm && (
+            <>
+              <span className="opacity-40 shrink-0">·</span>
+              <span
+                className="inline-flex min-w-0 items-center gap-1"
+                title={
+                  llm.herdado
+                    ? `${llm.modelo} — herdado do padrão da conta`
+                    : `${llm.modelo} — escolha própria deste agente`
+                }
+              >
+                {llm.provider && <ProviderLogo provider={llm.provider} className="w-3 h-3 shrink-0" />}
+                <span className="truncate font-mono">{llm.modelo}</span>
+                {!llm.herdado && <span className="w-1 h-1 rounded-full bg-[#0a8f5a] shrink-0" />}
+              </span>
+            </>
+          )}
         </span>
         <span className="font-mono text-[11px] text-[#262626]/30 dark:text-[#6b7280] group-hover:hidden">#{agent.id}</span>
         <span className="hidden items-center gap-0.5 text-[11px] font-medium text-[#003083] dark:text-[#5b9bff] group-hover:inline-flex">

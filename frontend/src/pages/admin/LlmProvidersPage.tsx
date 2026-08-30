@@ -322,7 +322,6 @@ export default function LlmProvidersPage() {
      gpt-4o-mini havia dois meses. As duas informações estavam certas; faltava
      alguém dizer que a segunda existia. */
   const [uso, setUso] = useState<QuemUsa | null>(null);
-  const [aplicando, setAplicando] = useState<number | null>(null);
 
   const carregarUso = useCallback(async () => {
     try {
@@ -335,22 +334,6 @@ export default function LlmProvidersPage() {
   useEffect(() => {
     void carregarUso();
   }, [carregarUso, providers]);
-
-  async function apontarAgente(agentId: number, providerId: number, modelo: string | null) {
-    setAplicando(agentId);
-    try {
-      await api.post(`/llm-providers/${providerId}/aplicar`, {
-        agent_ids: [agentId],
-        modelo,
-      });
-      toast.success(modelo ? `Agente agora usa ${modelo}` : "Agente voltou a herdar o padrão da conta");
-      await carregarUso();
-    } catch {
-      toast.error("Não consegui aplicar");
-    } finally {
-      setAplicando(null);
-    }
-  }
 
   const isAdminView = providers.some((p) => p.tenant_id === null);
   const tenantProviders = providers.filter((p) => p.tenant_id !== null);
@@ -387,78 +370,29 @@ export default function LlmProvidersPage() {
           </Row>
         )}
 
-        {/* ─── Quem usa o quê ─── */}
-        {uso && uso.agentes.length > 0 && (
+        {/* 🚨 Aqui NÃO entra a lista de agentes.
+            Eu tinha posto uma — e ficou esquisito por três motivos, todos de
+            organização: (a) empilhava uma lista de AGENTES numa página cuja
+            lista é de CREDENCIAIS, e a página perdia o assunto; (b) espremia
+            estado e ação no mesmo link ("escolha própria · voltar a herdar"),
+            com gramática diferente em cada linha; (c) invertia o sujeito — quem
+            pergunta "qual modelo?" está pensando no AGENTE, não na chave.
+
+            Uma frase basta para a pessoa saber que o segundo nível existe. Ver
+            e trocar acontece onde o assunto é o agente. */}
+        {uso && uso.agentes.some((a) => !a.herdado) && (
           <Row>
-            <div className="px-4 py-3.5">
-              <p className={`text-[13px] font-medium ${FC.ink}`}>Quem usa o quê</p>
-              <p className={`mt-0.5 text-[12.5px] leading-5 ${FC.sub}`}>
-                A <b>credencial</b> fica na conta; o <b>modelo</b> pode ser escolhido por agente. Um
-                agente com escolha própria ignora o padrão daqui de cima — é o que permite ter um
-                agente no gpt-4o-mini e outro no DeepSeek com a mesma chave. Para trocar o modelo de
-                um agente só, clique no nome dele.
+            <div className="flex items-start gap-2.5 px-4 py-3">
+              <span className="mt-[5px] w-2 h-2 rounded-full bg-[#003083]/40 dark:bg-[#5b9bff]/50 shrink-0" />
+              <p className={`text-[13px] leading-5 ${FC.sub}`}>
+                Cada agente pode usar um modelo diferente desta chave, e{" "}
+                {uso.agentes.filter((a) => !a.herdado).length === 1 ? "um deles usa" : "alguns usam"}{" "}
+                — a escolha do agente ganha do padrão daqui.{" "}
+                <Link to="/admin/agentes" className="text-[#003083] dark:text-[#5b9bff] hover:underline">
+                  Ver por agente
+                </Link>
+                .
               </p>
-
-              <div className="mt-3 divide-y divide-black/[0.06]">
-                {uso.agentes.map((a) => (
-                  <div key={a.agent_id} className="flex items-center gap-3 py-2.5">
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                        a.modelo ? (a.herdado ? "bg-black/25" : "bg-[#0a8f5a]") : "bg-amber-500"
-                      }`}
-                      title={a.herdado ? "herda o padrão da conta" : "modelo próprio"}
-                    />
-                    {/* 🚨 O caminho para trocar existe e é bom — mora na página do
-                        agente, em Modelos, com a dica certa ("vale só para este
-                        agente"). O que faltava era esta tela dizer que ele existe:
-                        quem descobre a divergência AQUI não tinha como saber onde
-                        arrumá-la. O nome vira o caminho. */}
-                    <Link
-                      to={`/admin/agentes/${a.agent_id}#modelos`}
-                      className={`text-[13px] ${FC.ink} min-w-0 truncate hover:underline`}
-                      title="Abrir o agente para trocar o modelo só dele"
-                    >
-                      {a.nome}
-                    </Link>
-
-                    <span className="ml-auto flex items-center gap-1.5 shrink-0">
-                      {a.modelo ? (
-                        <>
-                          {a.provider && <ProviderLogo provider={a.provider} className="w-3.5 h-3.5" />}
-                          <code className={`text-[12px] ${FC.sub}`}>{a.modelo}</code>
-                        </>
-                      ) : (
-                        <span className="text-[12px] text-amber-600">sem LLM — não responde</span>
-                      )}
-                    </span>
-
-                    <span className="shrink-0 w-[128px] text-right">
-                      {a.herdado ? (
-                        <Link
-                          to={`/admin/agentes/${a.agent_id}#modelos`}
-                          className={`text-[11.5px] ${FC.sub} hover:underline`}
-                          title="Escolher um modelo só para este agente"
-                        >
-                          herdado · trocar só neste
-                        </Link>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={aplicando === a.agent_id || !uso.padrao_da_conta}
-                          onClick={() =>
-                            uso.padrao_da_conta &&
-                            apontarAgente(a.agent_id, uso.padrao_da_conta.id, null)
-                          }
-                          className="text-[11.5px] text-[#0a8f5a] hover:underline disabled:opacity-40"
-                          title="Voltar a usar o padrão da conta"
-                        >
-                          {aplicando === a.agent_id ? "aplicando…" : "escolha própria · voltar a herdar"}
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                ))}
-              </div>
             </div>
           </Row>
         )}
