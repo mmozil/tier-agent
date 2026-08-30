@@ -1380,7 +1380,12 @@ function poPtrAttach(cv){
    proporcional a voz, com uma zona morta pra respiro/ruido de fundo nao
    fazer a esfera derivar sozinha. Silencio = imovel. */
 var POROT=0,POPREV=0,POLAST=-9999,POTPREV=0;
-var PO_DEADZONE=.22;   /* abaixo disso e silencio: o giro rapido nao acumula */
+/* 🚨 Zona morta: abaixo disso e silencio, e o giro rapido nao acumula.
+   Estava em .22 -- alto demais pra voz de pessoa falando perto do microfone do
+   notebook, que costuma pousar entre .15 e .35. Metade da fala normal caia em
+   "silencio" e a esfera ficava parada com alguem falando na frente dela.
+   .12 ainda segura ruido de sala (que fica abaixo de .08 medido). */
+var PO_DEADZONE=.12;
 var PO_YAW0=-.42,PO_PIT0=.16;  /* pose de repouso: leve 3/4, nao de frente */
 
 function vPo(ctx,w,h,t,E){
@@ -1418,9 +1423,22 @@ function vPo(ctx,w,h,t,E){
      "Poeira dancando com o som", nao "superficie ondulando". */
   var bass=(BANDS[0]+BANDS[1]+BANDS[2]+BANDS[3])*.25;
   var dE=E-POPREV;POPREV=E;
-  if(dE>.03)POKICK=Math.min(1,POKICK+dE*5);
-  POKICK*=.93;
-  var POJIT=E*.05+POKICK*.042;   /* rad de tremor por particula: 0 em silencio */
+  /* Transiente: a subida rapida de energia vira sacudida. Gatilho mais sensivel
+     (.03 -> .018) porque silaba de fala normal sobe menos que grito, e e a fala
+     normal que precisa mover a esfera. Decaimento um pouco mais lento pra
+     sacudida ser vista, nao so acontecida. */
+  if(dE>.018)POKICK=Math.min(1,POKICK+dE*6.5);
+  POKICK*=.945;
+  /* 🚨 GANHO DA VOZ NO DESENHO.
+     Era E*.05 + POKICK*.042 -- no maximo ~5 graus de tremor, com a voz no talo.
+     O dono: "tem pouco movimento, nem parece que esta se mexendo". Ele estava
+     olhando pro numero certo: o desenho reagia, mas numa escala que ninguem ve.
+
+     Tres vezes mais tremor, e o transiente (POKICK) mais que dobra -- e ele que
+     da a SACUDIDA de quem levanta a voz, que e exatamente o que se pede quando
+     se diz "falo mais alto, falo mais baixo". Continua sendo poeira dancando
+     com o som, nao onda varrendo a casca (isso o dono ja tinha rejeitado). */
+  var POJIT=E*.16+POKICK*.10;
 
   /* rotacao 3D lenta com PRECESSAO do eixo; a fala acelera o giro */
   var dt=POTPREV?Math.min(t-POTPREV,64):0;POTPREV=t;
@@ -1432,7 +1450,9 @@ function vPo(ctx,w,h,t,E){
   var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
 
   /* raio quase fixo: pulso global le como CSS; o som deforma a SUPERFICIE */
-  var R=M*.285*MD.contract*(1+E*.02+Math.sin(esp*.45)*.008);
+  /* O raio respira com a voz. Em .02 o corpo inteiro crescia 2% do talo ao
+     silencio -- invisivel. Em .055 le como respiracao sem virar pulso de CSS. */
+  var R=M*.285*MD.contract*(1+E*.055+Math.sin(esp*.45)*.008);
   var PRAD=M*.13,PRAD2=PRAD*PRAD;
 
   /* ── camada 1: glow central — o bloom abre com o RMS ── */

@@ -255,6 +255,13 @@ export default function VozPublica({
         v.simulate(false);
         pararEnvelope();
         v.setLevel(0);
+        // A voz de quem fala move a esfera — a menos que esta máquina já tenha
+        // provado que não aguenta as duas capturas (ver `vigia`).
+        if (!vigia.current.desistiu) {
+          vigia.current.energiaDesde = 0;
+          vigia.current.ouviuAlgo = Date.now();
+          void ligarMicAnalyserRef.current?.();
+        }
         // 🚨 NÃO abrir uma segunda captura do microfone aqui.
         //
         // O `getUserMedia` do analisador e o SpeechRecognition disputam o mesmo
@@ -336,6 +343,43 @@ export default function VozPublica({
   useEffect(() => {
     ligarMicAnalyserRef.current = ligarMicAnalyser;
   });
+
+  /* O VIGIA. Roda só enquanto a tela escuta.
+     A pergunta que ele responde é uma só: "está entrando som e NÃO está saindo
+     transcrição?". Se sim por 3s, a segunda captura roubou o microfone do
+     reconhecimento — que é a falha conhecida, e é silenciosa por natureza:
+     nenhum erro é disparado, o áudio simplesmente não chega. */
+  useEffect(() => {
+    if (fase !== "escutando" && fase !== "sentinela") return;
+    if (vigia.current.desistiu) return;
+    const id = window.setInterval(() => {
+      const an = micAnalyser.current;
+      if (!an) return;
+      const buf = new Uint8Array(an.frequencyBinCount);
+      an.getByteFrequencyData(buf);
+      let soma = 0;
+      for (let i = 0; i < buf.length; i++) soma += buf[i];
+      const energia = soma / buf.length / 255;
+
+      const v = vigia.current;
+      if (energia < 0.05) {
+        v.energiaDesde = 0; // silêncio não acusa ninguém
+        return;
+      }
+      if (!v.energiaDesde) v.energiaDesde = Date.now();
+      const falandoHa = Date.now() - v.energiaDesde;
+      const mudoHa = Date.now() - v.ouviuAlgo;
+      if (falandoHa > 3000 && mudoHa > 3000) {
+        v.desistiu = true;
+        soltarMic();
+        vizRef.current?.setLevel(0);
+        // Escutar é a função da tela; ver a voz é enfeite. Quando os dois não
+        // cabem, quem fica é a escuta.
+        console.warn("[voz] o analisador estava roubando o microfone do reconhecimento — desliguei");
+      }
+    }, 400);
+    return () => window.clearInterval(id);
+  }, [fase]);
 
   /** Solta o microfone de verdade (indicador do navegador apaga). */
   const soltarMic = useCallback(() => {
@@ -687,6 +731,7 @@ export default function VozPublica({
       }
 
       const f = faseRef.current;
+      vigia.current.ouviuAlgo = Date.now(); // veio transcrição: não há inanição
       if (f === "escutando") {
         cancelarFollowUp(); // tem fala acontecendo — o follow-up não expira no meio
         if (final) bufFinal.current = `${bufFinal.current} ${final}`.trim();
@@ -938,6 +983,19 @@ export default function VozPublica({
      A que a conversa DECAI depois do follow-up: podem ter passado minutos com o
      mic aberto, e aí a chamada é o que separa conversa de ruído de sala. */
   const sentinelaDoGesto = useRef(false);
+
+  /* 🚨 O MICROFONE NO DESENHO, E A REDE DE SEGURANÇA QUE ELE EXIGE.
+     Havia um motivo para o analisador estar desligado durante a escuta: em
+     alguma máquina Windows a segunda captura do microfone STARVOU o
+     SpeechRecognition — a esfera reagia à voz e nada virava transcrição, sem
+     erro e sem log. Dez "oi tier" seguidos sem nenhuma reação.
+     Mas desligado, a esfera fica PARADA justamente quando a pessoa fala, que é
+     quando ela deveria estar viva ("nem parece que está se mexendo").
+     Então volta a ligar, com um vigia: se houver energia de áudio por 3s
+     seguidos e o reconhecimento não tiver produzido NADA nesse tempo, é a
+     inanição acontecendo — solta o analisador, marca a máquina como incompatível
+     pelo resto da sessão, e a escuta continua. Escutar ganha de ver. */
+  const vigia = useRef({ energiaDesde: 0, ouviuAlgo: 0, desistiu: false });
 
   // ── controles ─────────────────────────────────────────────────────────
   /* 🚨 A tela mostrava o texto CRU do navegador — minúsculo, sem vírgula nem
