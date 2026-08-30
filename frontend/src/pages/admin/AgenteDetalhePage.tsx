@@ -120,6 +120,28 @@ export default function AgenteDetalhePage() {
   const [stats, setStats] = useState<AgentStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
+  /* 🚨 Hook ANTES de qualquer `return` antecipado. Eu tinha posto este
+     useState logo antes do JSX final — depois do `if (loading) return`. Na
+     primeira renderização (carregando) ele não rodava; na seguinte, rodava.
+     React error #310 na tela inteira: "Rendered more hooks than during the
+     previous render". Hooks vivem no topo, e a ordem deles é contrato. */
+  const [testarAberto, setTestarAberto] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ta-agente-testar") === "1";
+    } catch {
+      return false;
+    }
+  });
+  function alternarTestar() {
+    setTestarAberto((v) => {
+      try {
+        localStorage.setItem("ta-agente-testar", v ? "0" : "1");
+      } catch {
+        /* modo privado — só não persiste */
+      }
+      return !v;
+    });
+  }
 
   // Rascunho local dos campos de texto + autosave debounced.
   const [persona, setPersona] = useState("");
@@ -240,28 +262,6 @@ export default function AgenteDetalhePage() {
         </Link>
       </div>
     );
-  }
-
-  /* O teste nasce RECOLHIDO. Aberto por padrão ele tomava 42% da tela para
-     uma conversa que na maior parte do tempo está vazia — e espremia a
-     configuração, que é o que a pessoa veio fazer. A régua fica à vista, com
-     um botão; abre quando se quer conversar, e lembra a escolha. */
-  const [testarAberto, setTestarAberto] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("ta-agente-testar") === "1";
-    } catch {
-      return false;
-    }
-  });
-  function alternarTestar() {
-    setTestarAberto((v) => {
-      try {
-        localStorage.setItem("ta-agente-testar", v ? "0" : "1");
-      } catch {
-        /* modo privado — só não persiste */
-      }
-      return !v;
-    });
   }
 
   return (
