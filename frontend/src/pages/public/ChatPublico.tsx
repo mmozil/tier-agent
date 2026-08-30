@@ -67,6 +67,10 @@ export default function ChatPublico() {
      libera é o BOTÃO. São dois jeitos de chegar na mesma tela, e só um deles é
      um pedido explícito de conversar: quem digitou a URL pode só estar olhando. */
   const [liberouPeloBotao, setLiberouPeloBotao] = useState(false);
+  /* O que a pessoa disse, já pontuado pelo servidor — a tela de voz troca a
+     linha crua por esta. `id` muda a cada turno pra disparar a troca mesmo
+     quando duas falas iguais se repetem. */
+  const [falaLimpa, setFalaLimpa] = useState<{ texto: string; id: number } | null>(null);
   // Última fala do agente — é o que a tela de voz pronuncia. Leva um `id` porque
   // duas respostas iguais seguidas precisam disparar a fala de novo.
   const [ultimaResposta, setUltimaResposta] = useState<{ texto: string; id: number; audioUrls?: string[] } | null>(null);
@@ -199,6 +203,7 @@ export default function ChatPublico() {
            acabamos de pôr: entre o envio e a resposta a pessoa pode ter falado
            de novo, e reescrever a fala errada seria pior que não pontuar. */
         if (d.texto_usuario) {
+          setFalaLimpa({ texto: d.texto_usuario, id: Date.now() });
           setBaloes((b) => {
             const i = b.map((x) => x.de).lastIndexOf("visitante");
             if (i < 0 || b[i].texto !== conteudo) return b;
@@ -252,6 +257,7 @@ export default function ChatPublico() {
         pensando={pensando}
         ultimaResposta={ultimaResposta}
         comecarEscutando={liberouPeloBotao}
+        falaLimpa={falaLimpa}
         onEnviar={(t) => enviar(t)}
         onVerConversa={() => setModo("conversa")}
       />

@@ -79,11 +79,16 @@ type Fase = "desligada" | "sentinela" | "escutando" | "pensando" | "falando";
    Foi o que o dono descreveu: "ela fala ok, vou, aí trava, e começa a responder
    sem terminar de falar o que já começou".
 
-   Em 1200 ele cobre o buraco em vez de disputar com a resposta: começa em 1,2s,
-   acaba por volta de 2,7s, e a resposta chega em 2,6s — encaixe, não colisão.
-   E o primeiro som deixa de ser em 5,6s pra ser em 1,2s, que é o número que a
-   pessoa sente. Resposta mais rápida que isso não ganha filler nenhum. */
-const PACIENCIA_MS = 1200;
+   Em 1200 ele passou a tocar em TODA pergunta, e o dono foi direto: "em todas
+   as perguntas ela fala 'só um minuto que já te respondo' e depois vem a
+   resposta — esse UX ficou muito ruim". Ele tem razão, e o comentário logo
+   abaixo já dizia o certo: **paraquedas, nunca protocolo**. Um aviso que sempre
+   acontece não é aviso, é um passo a mais entre a pergunta e a resposta.
+
+   Em 3500 ele volta a ser exceção: a resposta chega em 2,0–3,1s, então no turno
+   normal ele NÃO toca. Só aparece quando algo de fato travou — que é quando
+   ouvir "só um momento" ajuda em vez de atrapalhar. */
+const PACIENCIA_MS = 3500;
 
 // Fim de fala automático: este silêncio depois da última palavra fecha o turno
 // e envia — SEM apertar nada. Curto demais corta pausa de respiração; longo
@@ -140,6 +145,7 @@ export default function VozPublica({
   pensando,
   ultimaResposta,
   comecarEscutando = false,
+  falaLimpa = null,
   onEnviar,
   onVerConversa,
 }: {
@@ -150,6 +156,8 @@ export default function VozPublica({
   ultimaResposta: { texto: string; id: number; audioUrls?: string[] } | null;
   /** Chegou pelo BOTÃO (pedido explícito) e não por abrir o link. */
   comecarEscutando?: boolean;
+  /** O que a pessoa disse, já pontuado pelo servidor. `id` muda a cada turno. */
+  falaLimpa?: { texto: string; id: number } | null;
   onEnviar: (texto: string) => void;
   onVerConversa: () => void;
 }) {
@@ -932,6 +940,21 @@ export default function VozPublica({
   const sentinelaDoGesto = useRef(false);
 
   // ── controles ─────────────────────────────────────────────────────────
+  /* 🚨 A tela mostrava o texto CRU do navegador — minúsculo, sem vírgula nem
+     ponto. O dono mandou o print: "eu gostaria de saber se vocês têm integração
+     com o Mercado Livre", tudo corrido. Feio, e é a única coisa que ele vê
+     enquanto espera.
+
+     O servidor já devolve a versão pontuada; aqui ela substitui o que está na
+     tela. Só enquanto a linha ainda é a fala dele (`parcial`/vazia) — se a
+     resposta já entrou, reescrever por cima seria apagar o que ele está lendo. */
+  const ultimaLimpa = useRef(0);
+  useEffect(() => {
+    if (!falaLimpa || falaLimpa.id === ultimaLimpa.current) return;
+    ultimaLimpa.current = falaLimpa.id;
+    setLinha((l) => (l.cls === "resposta" ? l : { texto: falaLimpa.texto, cls: "" }));
+  }, [falaLimpa]);
+
   /** O gesto de ARMAR: liga a sentinela (wake word) e destrava o áudio. */
   const armarSentinela = useCallback(() => {
     houveGesto.current = true;
