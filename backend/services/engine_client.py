@@ -113,6 +113,22 @@ async def disconnect_instance(instance_id: str, api_key: str) -> dict:
     return r.json()
 
 
+async def logout_instance(instance_id: str, api_key: str) -> dict:
+    """Logout de verdade: encerra E apaga a sessão Baileys na Engine.
+
+    `disconnect` só fecha o socket — o vigia da Engine religa sessão válida e a
+    instância volta como zumbi, recebendo mensagem sem conector (incidente 31/08:
+    a órfã do tenant 17 roubava as mensagens do tenant 15 no mesmo número)."""
+    url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/logout"
+    async with httpx.AsyncClient(timeout=15) as cli:
+        r = await cli.post(url, json={}, headers=_instance_headers(api_key))
+    if r.status_code >= 400:
+        raise EngineError(
+            f"logout falhou: {r.status_code}", status=r.status_code, body=r.text[:200]
+        )
+    return r.json()
+
+
 async def delete_instance(instance_id: str) -> None:
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}"
     async with httpx.AsyncClient(timeout=8) as cli:

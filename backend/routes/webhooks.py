@@ -145,7 +145,12 @@ async def whatsapp_engine_webhook(
     _ts = data.get("timestamp") or data.get("ts")
     _inner = data.get("data") or data.get("payload") or {}
     _msg_id = (_inner.get("key") or {}).get("id") if isinstance(_inner, dict) else None
-    event_id = data.get("id") or _msg_id or f"{_inst}-{_ts}-{data.get('event')}"
+    # O escopo por INSTÂNCIA é obrigatório: duas instâncias pareadas no MESMO número
+    # entregam o mesmo key.id — sem o prefixo, a primeira a chegar (mesmo órfã, sem
+    # conector) carimba o id e a entrega legítima vira "duplicata" e morre calada
+    # (incidente 31/08: tenant 15 perdeu 4 de 5 mensagens pra instância órfã do 17).
+    _base_id = data.get("id") or _msg_id or f"{_ts}-{data.get('event')}"
+    event_id = f"{_inst}:{_base_id}"
 
     if await _record_idempotent(db, "whatsapp-engine", event_id, data):
         return {"status": "duplicate", "skipped": True}

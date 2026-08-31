@@ -483,11 +483,19 @@ async def disconnect(
 
     cfg = json.loads(decrypt(conn.config_json_enc))
     # Baileys tem instância remota na Engine pra encerrar; Cloud API (Meta) não.
+    # LOGOUT, não disconnect: disconnect só fecha o socket e o vigia da Engine
+    # religa a sessão — a instância vira zumbi e continua recebendo mensagem sem
+    # conector (e, pareada no mesmo número de outro tenant, rouba a entrega dele
+    # via dedupe — incidente 31/08). Desconectou no painel = sessão apagada.
     if conn.kind == "whatsapp" and cfg.get("instance_id"):
         try:
-            await engine_client.disconnect_instance(cfg["instance_id"], cfg["api_key"])
-        except engine_client.EngineError as e:
-            raise HTTPException(502, f"Tier Engine: {e}")
+            await engine_client.logout_instance(cfg["instance_id"], cfg["api_key"])
+        except engine_client.EngineError:
+            # fallback: pelo menos derruba o socket se o logout não estiver disponível
+            try:
+                await engine_client.disconnect_instance(cfg["instance_id"], cfg["api_key"])
+            except engine_client.EngineError as e:
+                raise HTTPException(502, f"Tier Engine: {e}") from e
     cfg["status"] = "disconnected"
     conn.config_json_enc = encrypt(json.dumps(cfg))
     conn.enabled = False
