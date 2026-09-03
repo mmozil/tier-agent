@@ -759,15 +759,24 @@ async def _job_lock(name: str, ttl: int) -> bool:
     try:
         import redis.asyncio as redis_async
 
-        from core.config import settings
+        from core.config import get_settings
 
-        r = redis_async.from_url(settings.redis_url, decode_responses=True)
+        r = redis_async.from_url(get_settings().redis_url, decode_responses=True)
         try:
             ok = await r.set(f"tier-agent:sched:{name}", "1", nx=True, ex=ttl)
         finally:
             await r.aclose()
         return bool(ok)
     except Exception:
+        # Fail-open COM ALARME: sem lock, cada worker do uvicorn roda o job e o cliente
+        # recebe mensagem em dobro. Foi exatamente este except, mudo, que escondeu por
+        # semanas um ImportError (`settings` não existe em core.config — o certo é
+        # get_settings) e dobrou todo disparo automático. Nunca silenciar aqui.
+        logger.warning(
+            "_job_lock %s: lock Redis indisponível — fail-open, job pode rodar em dobro",
+            name,
+            exc_info=True,
+        )
         return True
 
 
