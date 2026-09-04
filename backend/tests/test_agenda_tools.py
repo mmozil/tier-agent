@@ -6,10 +6,16 @@ obrigatórios (REGRA DURA) e montagem do payload do POST /agendar (extras de vol
 `respostas_extras` com o label original + telefone com fallback pro canal).
 """
 
+import asyncio
+
+import pytest
+
 from services.agenda_tools import (
     _slugify,
+    _make_consultar_handler,
     build_agendar_payload,
     build_tool_schemas,
+    telefone_do_modelo,
     missing_required_fields,
     summarize_slots,
 )
@@ -150,7 +156,13 @@ def test_summarize_slots_filtra_disponiveis_e_marca_agendaveis():
         "de": "2026-08-17",
         "ate": "2026-08-23",
         "slots": [
-            {"dia": "2026-08-20", "hora": "08:00", "inicio": "2026-08-20T08:00:00-03:00", "disponivel": False, "motivo": "passado"},
+            {
+                "dia": "2026-08-20",
+                "hora": "08:00",
+                "inicio": "2026-08-20T08:00:00-03:00",
+                "disponivel": False,
+                "motivo": "passado",
+            },
             {"dia": "2026-08-20", "hora": "09:40", "inicio": "2026-08-20T09:40:00-03:00", "disponivel": True},
             {"dia": "2026-08-21", "hora": "10:30", "inicio": "2026-08-21T10:30:00-03:00", "disponivel": True},
         ],
@@ -173,3 +185,48 @@ def test_summarize_slots_sem_disponibilidade_nao_marca_agendaveis():
     out = summarize_slots({"de": "2026-08-17", "ate": "2026-08-23", "slots": []}, "2026-08-20")
     assert "aviso" in out
     assert "AGENDÁVEIS" not in str(out.get("status", ""))
+
+
+# ── O que aconteceu com o Marcos em 04/09/2026 ───────────────────────────────
+def test_placeholder_de_telefone_do_modelo_nao_vira_telefone():
+    """🚨 O modelo mandou `{TELEFONE_3}`; limpar não-dígitos deixava `"3"`.
+
+    Telefone de um dígito não casa com contato nenhum, então cada agendamento
+    nascia com cliente e card NOVOS, soltos do card da conversa — e o CRM ficava
+    parado em "Entrada de Lead"."""
+    _, extras_map = build_tool_schemas("ccda", CCDA_CONFIG)
+    body = build_agendar_payload(
+        {"inicio": "x", "nome": "y", "assunto": "z", "telefone": "{TELEFONE_3}"},
+        extras_map,
+        customer_phone="5511972603355",
+    )
+    assert body["telefone"] == "5511972603355"
+
+
+@pytest.mark.parametrize("lixo", ["{TELEFONE_3}", "(DDD) NÚMERO", "3", "0", "", "não informado", "1234"])
+def test_telefone_do_modelo_so_aceita_o_que_parece_telefone(lixo):
+    assert telefone_do_modelo(lixo) == ""
+
+
+def test_telefone_do_modelo_aceita_numero_de_verdade():
+    assert telefone_do_modelo("(11) 91234-5678") == "11912345678"
+
+
+def test_consultar_horarios_depois_de_agendar_no_mesmo_turno_nao_desmente():
+    """🚨 O LOOP. Agendar OCUPA o horário; a consulta seguinte, no mesmo turno,
+    já não o traz — e o modelo lia a própria reserva como "não está mais
+    disponível", pedia desculpa e oferecia outro. Três visitas marcadas."""
+    turno = {"agendado": {"inicio": "2026-09-08T10:00:00-03:00", "quando": "08/09 às 10:00"}}
+    handler = _make_consultar_handler("ccda", turno)
+    saida = asyncio.get_event_loop().run_until_complete(handler({"data": "2026-09-08"}))
+    assert "JÁ AGENDOU" in saida
+    assert "08/09 às 10:00" in saida
+    assert "NÃO ofereça outros horários" in saida
+
+
+def test_consultar_horarios_sem_agendamento_no_turno_segue_normal():
+    """Turno limpo (o comum) não pode ser afetado: a validação de data continua
+    sendo o primeiro portão."""
+    handler = _make_consultar_handler("ccda", {})
+    saida = asyncio.get_event_loop().run_until_complete(handler({"data": "ontem"}))
+    assert "data inválida" in saida

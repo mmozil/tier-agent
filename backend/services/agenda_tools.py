@@ -182,6 +182,18 @@ def missing_required_fields(args: dict, agendar_schema: dict) -> list[str]:
     return [r for r in required if not str((args or {}).get(r) or "").strip()]
 
 
+def telefone_do_modelo(bruto: Any) -> str:
+    """Dígitos do telefone que o MODELO passou — e só quando parece telefone.
+
+    🚨 O modelo manda placeholder. Em 04/09/2026 ele passou `{TELEFONE_3}` e o
+    `re.sub` de não-dígitos deixou `"3"`: telefone de um dígito não casa com
+    contato nenhum, então CADA agendamento nasceu com cliente e card NOVOS
+    (14268/69/70), soltos do card da conversa — e o CRM ficou parado em "Entrada
+    de Lead" enquanto a família achava que tinha visita marcada."""
+    digitos = re.sub(r"\D", "", str(bruto or ""))
+    return digitos if len(digitos) >= 10 else ""
+
+
 def build_agendar_payload(
     args: dict, extras_map: dict[str, str], customer_phone: str | None = None
 ) -> dict:
@@ -189,12 +201,12 @@ def build_agendar_payload(
 
     - extras (parâmetros dinâmicos) voltam a ser `respostas_extras: [{label, resposta}]`
       com o label ORIGINAL da agenda (o backend valida por label exato);
-    - telefone: o informado na conversa; sem ele, cai no telefone REAL do canal
-      (identidade vem do WhatsApp, não do modelo — evita placeholder)."""
+    - telefone: o informado na conversa continua tendo prioridade (a família às
+      vezes dá o número de outro responsável) — mas agora só quando PARECE um
+      telefone (ver `telefone_do_modelo`). Sem ele, cai no telefone REAL do
+      canal, que é a identidade com que o ERP acha o contato e o card."""
     args = args or {}
-    telefone = re.sub(r"\D", "", str(args.get("telefone") or "")) or re.sub(
-        r"\D", "", customer_phone or ""
-    )
+    telefone = telefone_do_modelo(args.get("telefone")) or re.sub(r"\D", "", customer_phone or "")
     body: dict[str, Any] = {
         "inicio": str(args.get("inicio") or "").strip(),
         "nome": str(args.get("nome") or "").strip(),
@@ -371,8 +383,22 @@ async def _get_config(slug: str) -> dict | None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Handlers (assinatura idêntica às tools MCP: (args: dict) -> Awaitable[str])
 # ─────────────────────────────────────────────────────────────────────────────
-def _make_consultar_handler(slug: str) -> Callable[[dict], Awaitable[str]]:
+def _make_consultar_handler(slug: str, turno: dict | None = None) -> Callable[[dict], Awaitable[str]]:
     async def _handler(args: dict) -> str:
+        # 🚨 O LOOP DE 04/09/2026. No mesmo turno o modelo chamava `agendar_visita`
+        # e, logo depois, `consultar_horarios_visita` para o mesmo dia. O
+        # agendamento acabara de OCUPAR o horário escolhido, então a consulta já
+        # não o trazia — e o modelo lia a própria reserva como "não está mais
+        # disponível", pedia desculpa e oferecia o horário seguinte. A família
+        # escolhia, ele agendava de novo: três visitas marcadas (09h, 10h e
+        # 10h30) no mesmo dia, e nenhuma confirmada.
+        ja = (turno or {}).get("agendado")
+        if ja:
+            return (
+                f"[VOCÊ JÁ AGENDOU nesta mesma resposta: {ja['quando']}. Esse horário está reservado "
+                "no nome do cliente — NÃO consulte a agenda de novo, NÃO ofereça outros horários e "
+                "NÃO peça desculpa. Apenas confirme a ele o dia, a hora e o local.]"
+            )
         data = str((args or {}).get("data") or "").strip()
         if not _DATE_RE.match(data):
             return "[data inválida — chame de novo com data no formato AAAA-MM-DD, ex.: 2026-08-20]"
@@ -400,6 +426,7 @@ def _make_agendar_handler(
     agendar_schema: dict,
     extras_map: dict[str, str],
     customer_phone: str | None,
+    turno: dict | None = None,
 ) -> Callable[[dict], Awaitable[str]]:
     labels = (config or {}).get("labels") or {}
     nomes_legiveis = {
@@ -435,6 +462,15 @@ def _make_agendar_handler(
                 data = {}
             if not isinstance(data, dict):
                 data = {}
+            # O turno passa a saber que ESTE horário foi reservado agora — é o que
+            # impede a consulta seguinte de desmentir o agendamento (ver
+            # `_make_consultar_handler`).
+            _iso = str(body.get("inicio") or "")
+            if turno is not None:
+                turno["agendado"] = {
+                    "inicio": _iso,
+                    "quando": (f"{_dia_br(_iso)} às {_iso[11:16]}" if len(_iso) >= 16 else _iso),
+                }
             resultado = {
                 "sucesso": True,
                 # 'agendamento_id' também liga o freio de confirmação do tier_engine
@@ -945,9 +981,16 @@ async def discover_agenda_tools(
         return [], {}
     schemas, extras_map = build_tool_schemas(slug, config)
     agendar_schema = schemas[1]
+    # Estado do TURNO (uma mensagem do cliente): os handlers nascem juntos e
+    # morrem juntos, então este dicionário é o único lugar onde uma ferramenta
+    # sabe o que a outra acabou de fazer. Turno novo nasce limpo — remarcar na
+    # mensagem seguinte continua funcionando como sempre.
+    turno: dict = {}
     handlers = {
-        "consultar_horarios_visita": _make_consultar_handler(slug),
-        "agendar_visita": _make_agendar_handler(slug, config, agendar_schema, extras_map, customer_phone),
+        "consultar_horarios_visita": _make_consultar_handler(slug, turno),
+        "agendar_visita": _make_agendar_handler(
+            slug, config, agendar_schema, extras_map, customer_phone, turno
+        ),
         "atualizar_etapa_crm": _make_etapa_handler(slug, customer_phone),
         "marcar_perda": _make_perda_handler(slug, customer_phone),
         "atualizar_campo_crm": _make_campo_handler(slug, customer_phone),
