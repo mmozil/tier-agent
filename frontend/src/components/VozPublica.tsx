@@ -425,8 +425,10 @@ export default function VozPublica({
         micStream.current = stream;
         const src = ac.createMediaStreamSource(stream);
         const an = ac.createAnalyser();
-        an.fftSize = 1024;
-        an.smoothingTimeConstant = 0.6;
+        // iguais ao Voice Orb original (fftSize 512, suavização padrão .8):
+        // é essa leitura que a nuvem replica quando a pessoa fala
+        an.fftSize = 512;
+        an.smoothingTimeConstant = 0.8;
         src.connect(an); // NÃO liga no destination — sem eco no alto-falante
         micAnalyser.current = an;
       }
@@ -555,7 +557,7 @@ export default function VozPublica({
                 fonte.current = ac.createMediaElementSource(el);
                 const an = ac.createAnalyser();
                 an.fftSize = 8192;
-                an.smoothingTimeConstant = 0.5;
+                an.smoothingTimeConstant = 0.8; // mesma suavização do mic: a Dora falando lê igual à pessoa falando
                 fonte.current.connect(an);
                 an.connect(ac.destination);
                 anDora.current = an;

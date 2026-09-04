@@ -1903,7 +1903,10 @@ function makePoGL(cv){
        rot:U("uRot"),c1:U("uC1"),c2:U("uC2"),c3:U("uC3"),var_:U("uVar")},
     fps:{t:0,n:0,checked:0},t0:0,tprev:0,time:0,flow:0,inten:0,roty:0,rotx:0};
 }
-var POG_STATE={calma:0,sentinela:0,escutando:1,pensando:3,falando:2};
+/* fases da pagina -> estados do original. O 'speaking' dele e o unico que OUVE o audio; por isso
+   tanto a pessoa falando (escutando, mic) quanto a Dora falando (falando, playback) caem nele.
+   'sentinela' (esperando o 'oi tier') vira o 'listening' dele, que so pulsa. */
+var POG_STATE={calma:0,sentinela:1,escutando:2,pensando:3,falando:2};
 function drawPoGL(G,cv,t,E){
   if(!G)return;
   var g=G.g,d=Math.min(devicePixelRatio||1,2),rc=cv.getBoundingClientRect();
