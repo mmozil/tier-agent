@@ -1715,7 +1715,23 @@ function vPo(ctx,w,h,t,E){
      3. FAISCAS: poeira que se solta no ataque de cada silaba.
    Regras do dono: silencio = sem rotacao; o gas deriva devagar, as estrelas cintilam;
    a voz acende nucleo, gas e borda, e o po danca. Fallback sem WebGL2: vPo (canvas). */
-var POG={n:9000,shell:.9,spr:1.3,limb:0,glow:.6,voz:2,ejeta:1.6,guard:1,jit:1,
+var POGACC=0;
+/* poeira que se desprende DEVAGAR enquanto fala: nasce na casca, sobe lenta, some. Sem rajada. */
+function poSolta(n,cy,sy,cp,sp){
+  for(var k=0;k<n;k++){
+    var e=POEJ[POEJI];POEJI=(POEJI+1)%POEJN;
+    var la=Math.asin(2*Math.random()-1),lo=Math.random()*6.283,cl=Math.cos(la);
+    var px=cl*Math.cos(lo),py=Math.sin(la),pz=cl*Math.sin(lo);
+    var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
+    var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
+    if(z2<-.1){x1=-x1;z2=-z2;}
+    var v=.00035+Math.random()*.0005;
+    e.on=1;e.x=x1*.99;e.y=y1*.99;e.z=z2*.99;
+    e.vx=x1*v+(Math.random()-.5)*.0003;e.vy=y1*v+.00012+(Math.random()-.5)*.0003;e.vz=z2*v*.5;
+    e.age=0;e.life=1600+Math.random()*1800;e.b=.35+Math.random()*.45;e.s=.8+Math.random()*1.4;
+  }
+}
+var POG={n:9000,shell:.9,spr:1.3,limb:0,glow:.6,voz:2,ejeta:1.0,guard:1,jit:1,
          gas:1,core:1,rim:1,steps:26,drawn:0,snap:null};
 var POG_NOISE=[
 "vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}",
@@ -1767,11 +1783,11 @@ POG_NOISE,
 "  float ang=uT*.00003*(.5+spd)*uM.x*(tone<.5?1.0:-1.0);",
 "  float ca=cos(ang), sa=sin(ang);",
 "  p=vec3(p.x*ca-p.z*sa,p.y,p.x*sa+p.z*ca);",
-"  float amp=(.010+uE*.085+uKick*.05)*uM.w;",
+"  float amp=(.010+uE*.070+uKick*.012)*uM.w;",
 "  vec3 q=p*1.9+vec3(uT*.00022*(.6+spd*.8), ph*3.1, -uT*.00017);",
 "  vec3 dsp=vec3(snoise(q),snoise(q+vec3(11.3,7.7,3.1)),snoise(q+vec3(37.1,19.3,5.7)));",
 "  int b=int(mod(floor(ph*8.0),8.0)); float band=uBands[b];",
-"  p+=dsp*amp+n*(band*.09+uKick*.02);",
+"  p+=dsp*amp+n*(band*.045);",
 "  float cy=cos(uRot.x), sy=sin(uRot.x), cp=cos(uRot.y), sp=sin(uRot.y);",
 "  vec3 c=vec3(p.x*cy-p.z*sy,p.y,p.x*sy+p.z*cy);",
 "  c=vec3(c.x,c.y*cp-c.z*sp,c.y*sp+c.z*cp);",
@@ -1787,7 +1803,7 @@ POG_NOISE,
 "  a=uM.z*(.50+.50*dep)*tw*lit*(1.0+shell*l2*uG[2])*(1.0+uE*1.1+band*.7)*uG[0]*uArea;",
 "  a*=mix(.6,1.0,shell);",
 "  vA=clamp(a,0.0,1.0); vTone=tone; vSz=szm;",
-"  gl_PointSize=max(1.0,(1.15+szm*2.1)*sc*3.0*uDpr*(1.0+uE*.22+uKick*.15)*uG[1]);",
+"  gl_PointSize=max(1.0,(1.15+szm*2.1)*sc*3.0*uDpr*(1.0+uE*.22+uKick*.04)*uG[1]);",
 "}"].join("\n");
 var POG_FS=[
 "#version 300 es",
@@ -1831,7 +1847,7 @@ POG_NOISE,
 "  if(h<0.0){",
 /* fora da esfera: halo atmosferico curto */
 "    float dm=sqrt(max(dot(O,O)-b*b,0.0))-RV;",
-"    col=azulBorda*exp(-dm*14.0)*.22*(1.0+uE*.9+uKick*.4)*uC.z;",
+"    col=azulBorda*exp(-dm*14.0)*.22*(1.0+uE*.9+uKick*.1)*uC.z;",
 "    o=vec4(1.0-exp(-col*1.6),1.0); return;",
 "  }",
 "  float sq=sqrt(h); float t0=-b-sq, t1=-b+sq;",
@@ -1842,7 +1858,7 @@ POG_NOISE,
 "  float t=t0+dt*hash12(gl_FragCoord.xy);",
 "  vec3 acc=vec3(0.0); float T=1.0; float core=0.0;",
 "  vec3 drift=vec3(uT*.000045,uT*.000030,-uT*.000025);",
-"  float con=.72+uE*.55+uKick*.25;",
+"  float con=.72+uE*.55+uKick*.06;",
 "  for(int i=0;i<40;i++){ if(i>=N)break;",
 "    vec3 p=O+dir*t;",
 /* inverso da camera: Rx(-pit) depois Ry(-yaw) — o gas gira junto com as estrelas */
@@ -1864,8 +1880,8 @@ POG_NOISE,
 "    t+=dt;",
 "  }",
 "  col=acc;",
-"  col+=core*vec3(.78,.88,1.0)*(1.3+uE*2.4+uKick*1.0+uBass*.6)*uC.y;",
-"  col+=azulBorda*fres*(.55+uE*.9+uKick*.3)*uC.z;",
+"  col+=core*vec3(.78,.88,1.0)*(1.3+uE*2.4+uKick*.3+uBass*.4)*uC.y;",
+"  col+=azulBorda*fres*(.55+uE*.9+uKick*.08)*uC.z;",
 /* vidro: reflexo da luz alto-esquerda */
 "  vec3 L=normalize(vec3(-.5,.65,.6)); float nl=max(0.0,dot(n0,L));",
 "  col+=vec3(1.0)*(pow(nl,48.0)*.30+pow(nl,8.0)*.06);",
@@ -1955,7 +1971,7 @@ function drawPoGL(G,cv,t,E){
   for(var bi=0;bi<8;bi++)G.bands[bi]=(BANDS[bi*3]+BANDS[bi*3+1]+BANDS[bi*3+2])/3;
   G.gain[0]=POG.shell;G.gain[1]=POG.spr;G.gain[2]=POG.limb;G.gain[3]=POG.glow;
   var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
-  if(kicked&&MD.ejeta>0)poEjeta(Math.min(64,(POKICK*MD.ejeta*POG.ejeta*30)|0)+4,cy,sy,cp,sp);
+  if(MD.ejeta>0){POGACC+=fala*MD.ejeta*POG.ejeta*.22*(dt/16.7);var nE=POGACC|0;if(nE>0){POGACC-=nE;poSolta(Math.min(nE,4),cy,sy,cp,sp);}}
 
   g.viewport(0,0,W,H);g.clear(g.COLOR_BUFFER_BIT);
   /* 1 · nebulosa (opaca) */
@@ -1980,11 +1996,11 @@ function drawPoGL(G,cv,t,E){
   for(var ei=0;ei<POEJN;ei++){
     var e=POEJ[ei];if(!e.on)continue;
     e.age+=dt;if(e.age>=e.life){e.on=0;continue;}
-    e.x+=e.vx*dt;e.y+=e.vy*dt;e.z+=e.vz*dt;e.vx*=.985;e.vy*=.985;e.vz*=.985;
-    var kk=1-e.age/e.life,ea=e.b*kk*kk*(.6+Ev*.5)*POG.ejeta;
+    e.x+=e.vx*dt;e.y+=e.vy*dt;e.z+=e.vz*dt;e.vx*=.996;e.vy*=.996;e.vz*=.996;
+    var kk=1-e.age/e.life,fi=Math.min(1,e.age/320),ea=e.b*fi*kk*(.5+Ev*.35);
     if(ea<.03)continue;
     EP[k*3]=e.x;EP[k*3+1]=e.y;EP[k*3+2]=e.z;
-    ES[k*4]=Math.min(1,ea);ES[k*4+1]=0;ES[k*4+2]=(.7+e.s*.7)*3.1*(.5+kk*.5);ES[k*4+3]=.6;k++;
+    ES[k*4]=Math.min(1,ea);ES[k*4+1]=0;ES[k*4+2]=(.6+e.s*.6)*3.1*(.6+kk*.4);ES[k*4+3]=.5;k++;
   }
   g.uniform1f(G.u.ej,1);
   g.bindVertexArray(G.vaoE);
