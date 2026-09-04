@@ -1599,7 +1599,8 @@ function vPo(ctx,w,h,t,E){
   }
 
   /* ── camada 3: a nuvem ── */
-  var piso=.92*MD.piso*Math.min(1.8,Math.sqrt(14000/POP.length));
+  /* guarda de FPS cortou pontos? cada ponto fica mais claro (medido: sqrt deixava 25-40% mais escuro) */
+  var piso=.92*MD.piso*Math.min(2.4,Math.pow(14000/POP.length,.75));
   var shellG=POT.shell*POAREA;
   var rimG=Ev*MD.rim*1.8+POKICK*.35;
   var drift=MD.drift*(1+E*.6);
