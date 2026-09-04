@@ -1315,19 +1315,19 @@ var POKICK=0;    /* sacudida por transiente de voz (decai sozinha) */
    smix: idem para o tamanho; bodyr: raio interno do corpo (.75 = nevoa em casca grossa);
    gsz: tamanho do glow; voz: quanto a fala acende tudo; guard: guarda de FPS (0 na bancada).
    API.poTune(obj) mexe ao vivo. */
-var POT={fade:.65,glow:.55,body:4.5,shell:6,limb:4,spr:1.25,bloom:3.2,halo:1.3,ejeta:1,
-         dmix:.15,smix:.25,bodyr:.75,gsz:1.4,guard:1,voz:2};
+var POT={fade:1.3,glow:.35,body:1.0,shell:7,limb:3,spr:.9,bloom:.6,halo:1.6,ejeta:1.6,
+         dmix:.15,smix:.25,bodyr:.75,gsz:1.1,guard:1,voz:2};
 function poTune(o){for(var k in o)if(k in POT)POT[k]=+o[k];return POT;}
 var POFPS={t:0,n:0,fps:60,checked:0};
 /* humor por fase da conversa (setMood na API): muda deriva, cintilacao,
    contracao, redemoinho, rastro, luz de borda e quanta poeira se solta */
 var POMOOD="calma";
 var POMOODP={
-  calma:     {drift:1,   twk:.10, contract:1,    swirl:0,      piso:1.0, fade:.60, rim:.45, ejeta:0  },
+  calma:     {drift:1,   twk:.20, contract:1,    swirl:0,      piso:1.0, fade:.60, rim:.45, ejeta:0  },
   sentinela: {drift:1,   twk:.24, contract:1,    swirl:0,      piso:1.12,fade:.60, rim:.6,  ejeta:0  },
-  escutando: {drift:1.25,twk:.14, contract:1,    swirl:0,      piso:1.22,fade:.55, rim:.8,  ejeta:.45},
+  escutando: {drift:1.25,twk:.22, contract:1,    swirl:0,      piso:1.22,fade:.55, rim:.8,  ejeta:.7 },
   pensando:  {drift:.9,  twk:.12, contract:.955, swirl:.00035, piso:1.08,fade:.55, rim:.5,  ejeta:0  },
-  falando:   {drift:1.1, twk:.12, contract:1,    swirl:.00012, piso:1.2, fade:.50, rim:1.2, ejeta:1  }
+  falando:   {drift:1.1, twk:.18, contract:1,    swirl:.00012, piso:1.2, fade:.50, rim:1.2, ejeta:1.3}
 };
 /* strings de fillStyle pre-computadas (branco e frio): 9k concat por frame e alocacao a toa */
 var POAL=[],POALC=[];
@@ -1439,7 +1439,7 @@ function poBuffers(cv){
   POB3C=POB3.getContext("2d",{alpha:false});POB3C.imageSmoothingQuality="medium";
 }
 /* poeira que se solta: pool fixo, nada aloca no loop */
-var POEJ=[],POEJN=320;
+var POEJ=[],POEJN=640;
 for(var _pe=0;_pe<POEJN;_pe++)POEJ.push({on:0,x:0,y:0,z:0,vx:0,vy:0,vz:0,age:0,life:1,b:1,s:1});
 var POEJI=0;
 function poEjeta(n,cy,sy,cp,sp){
@@ -1451,10 +1451,10 @@ function poEjeta(n,cy,sy,cp,sp){
     var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
     var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
     if(z2<-.1){x1=-x1;z2=-z2;}  /* joga para a frente */
-    var v=.0022+Math.random()*.0032;
+    var v=.0026+Math.random()*.0040;
     e.on=1;e.x=x1*1.02;e.y=y1*1.02;e.z=z2*1.02;
     e.vx=x1*v+(Math.random()-.5)*.0009;e.vy=y1*v+(Math.random()-.5)*.0009;e.vz=z2*v*.6;
-    e.age=0;e.life=700+Math.random()*800;e.b=.5+Math.random()*.5;e.s=1.4+Math.random()*1.6;
+    e.age=0;e.life=900+Math.random()*1100;e.b=.55+Math.random()*.45;e.s=1.0+Math.random()*1.8;
   }
 }
 /* buffers das frentes de onda (legado, reusados) */
@@ -1528,7 +1528,7 @@ function vPo(ctx,w,h,t,E){
   var kicked=false;
   if(dE>.018){POKICK=Math.min(1,POKICK+dE*6.5);kicked=dE>.03;}
   POKICK*=.945;
-  var POJIT=E*.16+POKICK*.10;
+  var POJIT=E*.34+POKICK*.30;
 
   var dt=POTPREV?Math.min(t-POTPREV,64):0;POTPREV=t;
   var fala=E>PO_DEADZONE?E-PO_DEADZONE:0;
@@ -1549,7 +1549,7 @@ function vPo(ctx,w,h,t,E){
   var PRAD=M*.13,PRAD2=PRAD*PRAD;
 
   /* poeira que se solta no ataque de silaba */
-  if(kicked&&MD.ejeta>0)poEjeta(Math.min(28,(POKICK*MD.ejeta*26)|0)+2,cy,sy,cp,sp);
+  if(kicked&&MD.ejeta>0)poEjeta(Math.min(64,(POKICK*MD.ejeta*POT.ejeta*30)|0)+4,cy,sy,cp,sp);
 
   /* ── camada 1: glow central frio; com voz, nucleo quente por dentro ── */
   var gsz=R*3.1*POT.gsz*(1+E*.22);
@@ -1576,7 +1576,7 @@ function vPo(ctx,w,h,t,E){
     var bn=bz2/B.r; var blit=.45+.55*Math.max(0,(bx1/B.r)*LX+(by1/B.r)*LY+bn*LZ);
     var bal=B.b*POT.body*POAREA*(.35+bdep*.75)*blit*(.7+Ev*.9+bbd*.5);
     if(bal<.006)continue;if(bal>.16)bal=.16;
-    var bs=B.s*R*2.2*bsc*(1+Ev*.25+bbd*.2);
+    var bs=B.s*R*1.3*bsc*(1+Ev*.25+bbd*.2);
     L.globalAlpha=bal;
     L.drawImage((bdep>.7&&blit>.8)?SQB:SFB,CX+bx1*R*2.6*bsc-bs*.5,CY+by1*R*2.6*bsc-bs*.5,bs,bs);
   }
@@ -1594,8 +1594,8 @@ function vPo(ctx,w,h,t,E){
     var hal=H.b*POT.halo*POAREA*(.12+hdep*.5)*(.5+Ev*.9);
     if(hal<.03)continue;if(hal>1)hal=1;
     L.fillStyle=POALC[(hal*23)|0];
-    var hs=H.s*hsc*1.2;
-    L.fillRect(CX+hx1*R*2.6*hsc,CY+hy1*R*2.6*hsc,hs,hs);
+    var hs=(H.s*hsc*1.2*d+.5)|0;if(hs<1)hs=1;
+    L.setTransform(1,0,0,1,0,0);L.fillRect(((CX+hx1*R*2.6*hsc)*d+.5)|0,((CY+hy1*R*2.6*hsc)*d+.5)|0,hs,hs);L.setTransform(d,0,0,d,0,0);
   }
 
   /* ── camada 3: a nuvem ── */
@@ -1612,7 +1612,7 @@ function vPo(ctx,w,h,t,E){
     var lat=P.la+Math.sin(esp*P.f2+P.p2)*P.a2+Math.cos(t*.013*P.f1+P.p1)*danca*.8;
     var cl=Math.cos(lat),d0=cl*Math.cos(lon),d1=Math.sin(lat),d2=cl*Math.sin(lon);
 
-    var rr=P.r*(1+bd*.10);
+    var rr=P.r*(1+bd*.20+POKICK*.05);
     var px=d0*rr,py=d1*rr,pz=d2*rr;
     var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
     var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
@@ -1657,7 +1657,8 @@ function vPo(ctx,w,h,t,E){
       /* fundo e interior: ponto frio, barato */
       L.globalAlpha=1;
       L.fillStyle=(dep<.5||P.r<.9)?POALC[(al*23)|0]:POAL[(al*23)|0];
-      L.fillRect(gx,gy,s,s);
+      var sd=(s*d+.5)|0;if(sd<1)sd=1;
+      L.setTransform(1,0,0,1,0,0);L.fillRect((gx*d+.5)|0,(gy*d+.5)|0,sd,sd);L.setTransform(d,0,0,d,0,0);
     }
   }
   L.globalAlpha=1;
@@ -1672,9 +1673,10 @@ function vPo(ctx,w,h,t,E){
     var k=1-e.age/e.life,ea=e.b*POT.ejeta*k*k*(.55+E*.5);
     if(ea<.03)continue;
     var esc=1/(3.1-e.z*.95);
-    var ex=CX+e.x*R*2.6*esc,ey=CY+e.y*R*2.6*esc,es=e.s*esc*3.4*POSZ*(.6+k*.6);
-    L.globalAlpha=Math.min(1,ea);
-    L.drawImage(SN,ex-es*.5,ey-es*.5,es,es);
+    var ex=CX+e.x*R*2.6*esc,ey=CY+e.y*R*2.6*esc,es=e.s*esc*2.0*POSZ*(.6+k*.6);
+    if(e.s>2.2){L.globalAlpha=Math.min(1,ea);L.drawImage(SN,ex-es*1.2,ey-es*1.2,es*2.4,es*2.4);}
+    else{L.globalAlpha=1;L.fillStyle=POAL[(Math.min(1,ea)*23)|0];var ed=(es*d+.5)|0;if(ed<1)ed=1;
+      L.setTransform(1,0,0,1,0,0);L.fillRect((ex*d+.5)|0,(ey*d+.5)|0,ed,ed);L.setTransform(d,0,0,d,0,0);}
   }
   L.globalAlpha=1;
   L.globalCompositeOperation="source-over";
