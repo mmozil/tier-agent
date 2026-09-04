@@ -1923,6 +1923,7 @@ function makePoGL(cv){
    'sentinela' (esperando o 'oi tier') vira o 'listening' dele, que so pulsa. */
 var POG_STATE={calma:0,sentinela:1,escutando:2,pensando:3,falando:2};
 var POGDBG={inten:0,alvo:0,state:0,analyser:false,bins:0,fps:0};
+var POGPEAK=.05;
 function poDebug(){return {inten:+POGDBG.inten.toFixed(3),alvo:+POGDBG.alvo.toFixed(3),state:POGDBG.state,analyser:POGDBG.analyser,bins:POGDBG.bins,fps:Math.round(POGDBG.fps),mood:POMOOD,variant:POG.variant,drawn:POG.drawn};}
 function drawPoGL(G,cv,t,E){
   if(!G)return;
@@ -1944,7 +1945,14 @@ function drawPoGL(G,cv,t,E){
   if(typeof _analyser!=="undefined"&&_analyser&&_freq&&_freq.length>8){
     var nb=_freq.length,r1=(nb*.15)|0,r2=(nb*.5)|0,s1=0,s2=0,s3=0,ii;
     for(ii=0;ii<r1;ii++)s1+=_freq[ii];for(ii=r1;ii<r2;ii++)s2+=_freq[ii];for(ii=r2;ii<nb;ii++)s3+=_freq[ii];
-    alvo=Math.min(1,3.5*(.4*s1/r1/255+.4*s2/(r2-r1)/255+.2*s3/(nb-r2)/255));
+    var mix=.4*s1/r1/255+.4*s2/(r2-r1)/255+.2*s3/(nb-r2)/255;
+    /* GANHO AUTOMATICO. O x3.5 do original foi calibrado para MICROFONE (sinal fraco); o audio
+       da resposta (MP3 decodificado) e forte e saturava em 1 o tempo todo — a nuvem travava no
+       maximo e nao respirava com as silabas (medido ao vivo: alvo=1 em 90% das amostras).
+       Normaliza pelo pico deslizante da propria fonte: silencio -> 0, silaba -> ~.9, e vale
+       igual para mic alto, mic baixo ou playback. */
+    POGPEAK=Math.max(mix,POGPEAK*.998,.03);
+    alvo=Math.min(1,mix/POGPEAK*.92);
   } else alvo=Math.min(1,E*POG.voz);
   G.inten+=(alvo-G.inten)*(alvo>G.inten?.15:.04)*Math.min(2,k);
   var u=G.inten;
