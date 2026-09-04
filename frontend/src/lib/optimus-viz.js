@@ -1275,59 +1275,87 @@ function drawGL(G,cv,t,E,q){
 }
 
 
-/* ================= PO v2: nebulosa de particulas 3D =================
-   Refeita a pedido ("mais realista, mais real e sensivel ao som"). Tres
-   camadas: glow central (sprite pre-renderizado, respiracao MINIMA) + casca
-   de particulas 3D com profundidade REAL (tras: menor/escuro; frente:
-   maior/brilhante) + halo de motes soltos derivando em volta. Blending
-   aditivo + RASTRO (fade parcial em vez de clear total) da o look de
-   materia viva. Movimento: flow-field barato por particula (deriva propria
-   em lon + balanco em lat, seeds individuais) — nunca pulso uniforme.
-   SOM REAL: E/BANDS vem de AnalyserNode (mic do visitante em escuta /
-   playback da Dora em fala): grave dispara ondas radiais varrendo a casca,
-   RMS abre o bloom do glow, transiente de silaba da o kick de dispersao.
-   Contagem ADAPTATIVA: nasce em 9k e degrada 30% se o FPS cair de 45. */
-var POP=null,POHALO=null,POGLOW=null;
+/* ================= PO v3: nuvem de poeira volumetrica =================
+   v3 (03/09/2026), a pedido: "mais realista, profissional, melhores efeitos
+   quando fala". O que mudou em relacao a v2, e por que:
+
+   1. SPRITE SUAVE, nao quadrado. A v2 desenhava 14 mil fillRect de 1-2 px:
+      le como campo de estrelas. Poeira e disco de luz com borda macia. As
+      particulas da frente (as que o olho ve) viram sprite pre-renderizado;
+      as do fundo, tenues, continuam fillRect (barato, e ninguem ve a forma).
+   2. VOLUME, nao casca. A v2 era uma casca de espessura .05 — um balao. Agora
+      68% fica na casca e 32% e interior, com brilho menor: a projecao adensa
+      no limbo sozinha (como nuvem de verdade) e o centro ganha profundidade.
+   3. TEMPERATURA DE COR. Frente e brilhante = leve calor (255,244,230);
+      fundo e interior = frio (205,218,255). E o que uma unica luz faz numa
+      nuvem — le como materia iluminada, nao como pontos brancos.
+   4. BLOOM em dois niveis. A cena e desenhada numa CAMADA propria; dela saem
+      duas copias reduzidas (1/4 e 1/8) desenhadas de volta em 'lighter'. A
+      reamostragem bilinear faz o blur de graca. E o que separa "plotado" de
+      "renderizado". A voz abre o bloom.
+   5. LUZ DE BORDA. Particulas no limbo (|z| pequeno) acendem com a voz —
+      nao e onda varrendo a casca (rejeitado pelo dono): e a silhueta inteira
+      respondendo ao volume, como contraluz.
+   6. POEIRA QUE SE SOLTA. No ataque de silaba, algumas particulas se
+      desprendem da casca para fora e apagam em ~1s — folego levantando po.
+      So em 'falando' (cheio) e 'escutando' (leve).
+
+   O que NAO mudou (decisoes do dono que ficam): silencio = esfera parada
+   (giro so com voz, PO_DEADZONE); rastro; respiracao; poeira DANCA com o
+   som, nao ondula; ponteiro mexe no po; humores por fase; guard de FPS. */
+var POP=null,POHALO=null,POGLOW=null,POGLOWQ=null;
 var PON=14000;
 var POSZ=1;      /* fator global de tamanho: 1o estagio do guard de FPS */
+var POSPRT=.30;  /* limiar de alfa para virar sprite (sobe no guard: menos drawImage) */
 var POKICK=0;    /* sacudida por transiente de voz (decai sozinha) */
+/* CALIBRACAO (medida na bancada, 04/09/2026): ganho por camada + geometria.
+   Alvo em calma: disco ~56, nucleo ~63, limbo ~51 de 255 (perfil PLANO — o limbo segura a
+   silhueta, como numa casca de po real); falando: ~90/129/73, <1% saturado.
+   dmix: quanto o alfa cai com a profundidade (era .9 = frente 3x mais clara, virava disco);
+   smix: idem para o tamanho; bodyr: raio interno do corpo (.75 = nevoa em casca grossa);
+   gsz: tamanho do glow; voz: quanto a fala acende tudo; guard: guarda de FPS (0 na bancada).
+   API.poTune(obj) mexe ao vivo. */
+var POT={fade:.65,glow:.55,body:4.5,shell:6,limb:4,spr:1.25,bloom:3.2,halo:1.3,ejeta:1,
+         dmix:.15,smix:.25,bodyr:.75,gsz:1.4,guard:1,voz:2};
+function poTune(o){for(var k in o)if(k in POT)POT[k]=+o[k];return POT;}
 var POFPS={t:0,n:0,fps:60,checked:0};
 /* humor por fase da conversa (setMood na API): muda deriva, cintilacao,
-   contracao e redemoinho — a assinatura visual de cada estado */
+   contracao, redemoinho, rastro, luz de borda e quanta poeira se solta */
 var POMOOD="calma";
 var POMOODP={
-  calma:     {drift:1,   twk:.10, contract:1,    swirl:0,      piso:1.0 },
-  sentinela: {drift:1,   twk:.24, contract:1,    swirl:0,      piso:1.12},
-  escutando: {drift:1.25,twk:.14, contract:1,    swirl:0,      piso:1.22},
-  pensando:  {drift:.9,  twk:.12, contract:.955, swirl:.00035, piso:1.08},
-  falando:   {drift:1.1, twk:.12, contract:1,    swirl:.00012, piso:1.2 }
+  calma:     {drift:1,   twk:.10, contract:1,    swirl:0,      piso:1.0, fade:.60, rim:.45, ejeta:0  },
+  sentinela: {drift:1,   twk:.24, contract:1,    swirl:0,      piso:1.12,fade:.60, rim:.6,  ejeta:0  },
+  escutando: {drift:1.25,twk:.14, contract:1,    swirl:0,      piso:1.22,fade:.55, rim:.8,  ejeta:.45},
+  pensando:  {drift:.9,  twk:.12, contract:.955, swirl:.00035, piso:1.08,fade:.55, rim:.5,  ejeta:0  },
+  falando:   {drift:1.1, twk:.12, contract:1,    swirl:.00012, piso:1.2, fade:.50, rim:1.2, ejeta:1  }
 };
-/* strings de fillStyle pre-computadas: 9k concat por frame e alocacao a toa */
-var POAL=[];for(var _pa=0;_pa<24;_pa++)POAL.push("rgba(255,255,255,"+(_pa/23).toFixed(3)+")");
+/* strings de fillStyle pre-computadas (branco e frio): 9k concat por frame e alocacao a toa */
+var POAL=[],POALC=[];
+for(var _pa=0;_pa<24;_pa++){POAL.push("rgba(255,255,255,"+(_pa/23).toFixed(3)+")");POALC.push("rgba(205,218,255,"+(_pa/23).toFixed(3)+")");}
 function buildPo(){
   var a=[];
   for(var i=0;i<PON;i++){
     /* uniforme NA SUPERFICIE (asin): a silhueta adensa sozinha na projecao */
     var la=Math.asin(2*Math.random()-1);
     var lo=Math.random()*6.283;
+    var casca=Math.random()<.68;
+    /* interior: puxado para fora (pow<1) — densidade cresce rumo a casca,
+       como nuvem que e mais rala no meio e mais densa no limbo */
+    var r=casca?1+(Math.random()-.5)*.06:.35+Math.pow(Math.random(),.55)*.62;
     a.push({la:la,lo:lo,
-            /* flow-field: deriva propria em lon (sentido/velocidade individuais)
-               + balancinho em lat — cada particula anda seu caminho na casca */
             w:(.00002+Math.random()*.00006)*(Math.random()<.5?-1:1),
             f1:.3+Math.random()*.8,p1:Math.random()*6.283,a1:.02+Math.random()*.05,
             f2:.2+Math.random()*.6,p2:Math.random()*6.283,a2:.012+Math.random()*.035,
-            r:1+(Math.random()-.5)*.05,        /* casca com espessura minima */
-            b:.3+Math.pow(Math.random(),1.5)*.7,
-            s:Math.random()<.10?1.25:.8,   /* poeira FINA: delicada, numerosa */
+            r:r,
+            b:(casca?.3+Math.pow(Math.random(),1.5)*.7:.12+Math.pow(Math.random(),2)*.45),
+            s:Math.random()<.10?1.25:.8,
             bd:(i*7)%24,
             tf:.5+Math.random()*1.2,tw:Math.random()*6.283,
-            /* po mexido pelo ponteiro (zerado = fisica nem roda) */
             ox:0,oy:0,wx:0,wy:0});
   }
   return a;
 }
 function buildHalo(){
-  /* motes soltos em volta da esfera: poucos, lentos, esmaecidos */
   var a=[];
   for(var i=0;i<240;i++){
     a.push({la:Math.asin(2*Math.random()-1),lo:Math.random()*6.283,
@@ -1339,7 +1367,6 @@ function buildHalo(){
   return a;
 }
 function poGlow(){
-  /* sprite do glow pre-renderizado UMA vez: drawImage por frame, zero alocacao */
   var cv=document.createElement("canvas");cv.width=cv.height=256;
   var c=cv.getContext("2d");
   var g=c.createRadialGradient(128,128,0,128,128,128);
@@ -1349,16 +1376,94 @@ function poGlow(){
   c.fillStyle=g;c.fillRect(0,0,256,256);
   return cv;
 }
-/* buffers das frentes de onda (reusados por frame — nada aloca no loop) */
+/* nucleo quente: so aparece com voz — a nuvem "esquenta" por dentro ao falar */
+function poGlowQ(){
+  var cv=document.createElement("canvas");cv.width=cv.height=128;
+  var c=cv.getContext("2d");
+  var g=c.createRadialGradient(64,64,0,64,64,64);
+  g.addColorStop(0,"rgba(255,232,205,.55)");
+  g.addColorStop(.45,"rgba(255,214,180,.12)");
+  g.addColorStop(1,"rgba(0,0,0,0)");
+  c.fillStyle=g;c.fillRect(0,0,128,128);
+  return cv;
+}
+/* sprites de particula: disco de luz com borda macia, em dois tons */
+var POSPR=null;
+/* CORPO: massa volumetrica por dentro — sprites grandes, tenues, frios, derivando
+   devagar. E o que faz ler como nuvem de materia e nao como pontos soltos. */
+var POBODY=null;
+/* LUZ: uma fonte, alto-esquerda-frente (view space). Lado iluminado e lado sombra —
+   e isso que faz a esfera parecer um corpo, nao um disco de pontos. Fica no escopo do
+   modulo de proposito: dentro de vPo, declarada depois do corpo, chegava la como
+   undefined (hoisting), virava NaN e o canvas IGNORA globalAlpha=NaN — corpo em alfa 1. */
+var LX=-.46,LY=-.58,LZ=.67;
+function buildBody(){
+  var a=[];
+  for(var i=0;i<400;i++){
+    var la=Math.asin(2*Math.random()-1),lo=Math.random()*6.283;
+    a.push({la:la,lo:lo,r:POT.bodyr+Math.pow(Math.random(),.7)*(.97-POT.bodyr),
+            w:(.00001+Math.random()*.00004)*(Math.random()<.5?-1:1),
+            f:.12+Math.random()*.3,p:Math.random()*6.283,
+            b:.012+Math.random()*.028,s:.05+Math.random()*.10,bd:(i*5)%24});
+  }
+  a.rk=POT.bodyr;
+  return a;
+}
+function poSprites(){
+  function mk(r,g,b){
+    var cv=document.createElement("canvas");cv.width=cv.height=32;
+    var c=cv.getContext("2d");
+    var gr=c.createRadialGradient(16,16,0,16,16,16);
+    gr.addColorStop(0,"rgba("+r+","+g+","+b+",1)");
+    gr.addColorStop(.22,"rgba("+r+","+g+","+b+",.62)");
+    gr.addColorStop(.55,"rgba("+r+","+g+","+b+",.14)");
+    gr.addColorStop(1,"rgba("+r+","+g+","+b+",0)");
+    c.fillStyle=gr;c.fillRect(0,0,32,32);
+    return cv;
+  }
+  return {q:mk(255,244,230),f:mk(205,218,255),n:mk(240,244,255)};
+}
+/* camada de desenho + buffers de bloom (reusados; recriados so quando o canvas muda de tamanho) */
+var POLAY=null,POLC=null,POB1=null,POB1C=null,POB2=null,POB2C=null,POB3=null,POB3C=null,POBW=0,POBH=0;
+function poBuffers(cv){
+  if(POLAY&&POBW===cv.width&&POBH===cv.height)return;
+  POBW=cv.width;POBH=cv.height;
+  POLAY=document.createElement("canvas");POLAY.width=POBW;POLAY.height=POBH;
+  POLC=POLAY.getContext("2d",{alpha:false});
+  POLC.fillStyle="#000";POLC.fillRect(0,0,POBW,POBH);
+  POB1=document.createElement("canvas");POB1.width=Math.max(1,(POBW/4)|0);POB1.height=Math.max(1,(POBH/4)|0);
+  POB1C=POB1.getContext("2d",{alpha:false});POB1C.imageSmoothingQuality="medium";
+  POB2=document.createElement("canvas");POB2.width=Math.max(1,(POBW/8)|0);POB2.height=Math.max(1,(POBH/8)|0);
+  POB2C=POB2.getContext("2d",{alpha:false});POB2C.imageSmoothingQuality="medium";
+  POB3=document.createElement("canvas");POB3.width=Math.max(1,(POBW/16)|0);POB3.height=Math.max(1,(POBH/16)|0);
+  POB3C=POB3.getContext("2d",{alpha:false});POB3C.imageSmoothingQuality="medium";
+}
+/* poeira que se solta: pool fixo, nada aloca no loop */
+var POEJ=[],POEJN=320;
+for(var _pe=0;_pe<POEJN;_pe++)POEJ.push({on:0,x:0,y:0,z:0,vx:0,vy:0,vz:0,age:0,life:1,b:1,s:1});
+var POEJI=0;
+function poEjeta(n,cy,sy,cp,sp){
+  for(var k=0;k<n;k++){
+    var e=POEJ[POEJI];POEJI=(POEJI+1)%POEJN;
+    /* nasce na casca, hemisferio da frente (z>0 depois de girar) */
+    var la=Math.asin(2*Math.random()-1),lo=Math.random()*6.283,cl=Math.cos(la);
+    var px=cl*Math.cos(lo),py=Math.sin(la),pz=cl*Math.sin(lo);
+    var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
+    var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
+    if(z2<-.1){x1=-x1;z2=-z2;}  /* joga para a frente */
+    var v=.0022+Math.random()*.0032;
+    e.on=1;e.x=x1*1.02;e.y=y1*1.02;e.z=z2*1.02;
+    e.vx=x1*v+(Math.random()-.5)*.0009;e.vy=y1*v+(Math.random()-.5)*.0009;e.vz=z2*v*.6;
+    e.age=0;e.life=700+Math.random()*800;e.b=.5+Math.random()*.5;e.s=1.4+Math.random()*1.6;
+  }
+}
+/* buffers das frentes de onda (legado, reusados) */
 var POWF=new Float32Array(8),POWA=new Float32Array(8),POWX=[null,null,null,null,null,null,null,null];
 var POW=[],POPREV=0,POLAST=-9999;
-/* Ponteiro sobre a esfera: mouse no desktop, dedo no celular. So marca posicao
-   e velocidade — a fisica acontece por particula, dentro do vPo. */
+/* Ponteiro sobre a esfera: mouse no desktop, dedo no celular. */
 var POPTR={on:false,x:0,y:0,sp:0,t:-9999};
 function poPtrAttach(cv){
   if(cv._poPtr)return;cv._poPtr=1;
-  /* touch-action SO no canvas: a tela de voz nao rola, e sem isso o browser
-     rouba o pointermove do dedo pra tentar scroll */
   cv.style.touchAction="none";
   var last=null;
   var mv=function(e){
@@ -1376,22 +1481,20 @@ function poPtrAttach(cv){
   cv.addEventListener("pointerleave",off);
   cv.addEventListener("pointercancel",off);
 }
-/* Em repouso a esfera fica PARADA. O giro nao vem do relogio: ele acumula
-   proporcional a voz, com uma zona morta pra respiro/ruido de fundo nao
-   fazer a esfera derivar sozinha. Silencio = imovel. */
+/* Em repouso a esfera fica PARADA. O giro acumula proporcional a voz, com
+   zona morta pra respiro/ruido de fundo nao fazer a esfera derivar. */
 var POROT=0,POPREV=0,POLAST=-9999,POTPREV=0;
-/* 🚨 Zona morta: abaixo disso e silencio, e o giro rapido nao acumula.
-   Estava em .22 -- alto demais pra voz de pessoa falando perto do microfone do
-   notebook, que costuma pousar entre .15 e .35. Metade da fala normal caia em
-   "silencio" e a esfera ficava parada com alguem falando na frente dela.
-   .12 ainda segura ruido de sala (que fica abaixo de .08 medido). */
 var PO_DEADZONE=.12;
 var PO_YAW0=-.42,PO_PIT0=.16;  /* pose de repouso: leve 3/4, nao de frente */
 
 function vPo(ctx,w,h,t,E){
   if(!POP){POP=buildPo();POHALO=buildHalo();}
-  if(!POGLOW)POGLOW=poGlow();
-  poPtrAttach(ctx.canvas);
+  if(!POGLOW){POGLOW=poGlow();POGLOWQ=poGlowQ();}
+  if(!POSPR)POSPR=poSprites();
+  if(!POBODY||POBODY.rk!==POT.bodyr)POBODY=buildBody();
+  var cv=ctx.canvas;
+  poPtrAttach(cv);
+  poBuffers(cv);
   if(POPTR.on&&performance.now()-POPTR.t>160)POPTR.on=false;
 
   /* FPS adaptativo: 3 janelas de 2s no boot; abaixo de 45fps corta 30% */
@@ -1399,48 +1502,34 @@ function vPo(ctx,w,h,t,E){
   if(!POFPS.t)POFPS.t=t;
   else if(t-POFPS.t>2000){
     POFPS.fps=POFPS.n*1000/(t-POFPS.t);POFPS.n=0;POFPS.t=t;
-    if(POFPS.checked<4){POFPS.checked++;
+    if(POFPS.checked<4&&POT.guard){POFPS.checked++;
       if(POFPS.fps<45){
-        /* 1o estagio: afina o desenho; so depois corta contagem */
-        if(POSZ>.85)POSZ=.8;
+        if(POSZ>.85){POSZ=.8;POSPRT=.48;}
         else if(PON>5200){PON=(PON*.75)|0;POP=null;return;}
       }}
   }
 
   var MD=POMOODP[POMOOD]||POMOODP.calma;
+  var d=cv.width/w;  /* DPR efetivo do canvas principal */
 
-  /* RASTRO: fade parcial em vez de clear — o brilho de um frame vaza pro
-     seguinte e o movimento ganha corpo (materia, nao pontinhos) */
-  ctx.globalCompositeOperation="source-over";
-  ctx.fillStyle="rgba(0,0,0,.42)";
-  ctx.fillRect(0,0,w,h);
+  /* ── tudo e desenhado na CAMADA (com rastro); o principal recebe camada + bloom ── */
+  var L=POLC;
+  L.setTransform(d,0,0,d,0,0);
+  L.globalCompositeOperation="source-over";
+  L.globalAlpha=1;
+  L.fillStyle="rgba(0,0,0,"+Math.min(1,MD.fade*POT.fade).toFixed(2)+")";
+  L.fillRect(0,0,w,h);
 
   var CX=w/2,CY=h/2,M=Math.min(w,h);
 
-  /* audio real (AnalyserNode via BANDS). A voz NAO vira onda varrendo a
-     casca (rejeitado pelo dono): ela AGITA as particulas — amplitude manda na
-     intensidade da danca individual, transiente da uma sacudida que assenta.
-     "Poeira dancando com o som", nao "superficie ondulando". */
   var bass=(BANDS[0]+BANDS[1]+BANDS[2]+BANDS[3])*.25;
+  var Ev=E*POT.voz;
   var dE=E-POPREV;POPREV=E;
-  /* Transiente: a subida rapida de energia vira sacudida. Gatilho mais sensivel
-     (.03 -> .018) porque silaba de fala normal sobe menos que grito, e e a fala
-     normal que precisa mover a esfera. Decaimento um pouco mais lento pra
-     sacudida ser vista, nao so acontecida. */
-  if(dE>.018)POKICK=Math.min(1,POKICK+dE*6.5);
+  var kicked=false;
+  if(dE>.018){POKICK=Math.min(1,POKICK+dE*6.5);kicked=dE>.03;}
   POKICK*=.945;
-  /* 🚨 GANHO DA VOZ NO DESENHO.
-     Era E*.05 + POKICK*.042 -- no maximo ~5 graus de tremor, com a voz no talo.
-     O dono: "tem pouco movimento, nem parece que esta se mexendo". Ele estava
-     olhando pro numero certo: o desenho reagia, mas numa escala que ninguem ve.
-
-     Tres vezes mais tremor, e o transiente (POKICK) mais que dobra -- e ele que
-     da a SACUDIDA de quem levanta a voz, que e exatamente o que se pede quando
-     se diz "falo mais alto, falo mais baixo". Continua sendo poeira dancando
-     com o som, nao onda varrendo a casca (isso o dono ja tinha rejeitado). */
   var POJIT=E*.16+POKICK*.10;
 
-  /* rotacao 3D lenta com PRECESSAO do eixo; a fala acelera o giro */
   var dt=POTPREV?Math.min(t-POTPREV,64):0;POTPREV=t;
   var fala=E>PO_DEADZONE?E-PO_DEADZONE:0;
   POROT+=dt*(fala*.00055+.000052+MD.swirl);
@@ -1449,20 +1538,51 @@ function vPo(ctx,w,h,t,E){
   var pit=PO_PIT0+Math.sin(esp*.147)*.11+Math.sin(POROT*1.3)*.05;
   var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
 
-  /* raio quase fixo: pulso global le como CSS; o som deforma a SUPERFICIE */
-  /* O raio respira com a voz. Em .02 o corpo inteiro crescia 2% do talo ao
-     silencio -- invisivel. Em .055 le como respiracao sem virar pulso de CSS. */
   var R=M*.285*MD.contract*(1+E*.055+Math.sin(esp*.45)*.008);
+  /* ESCALA: a calibracao foi feita com R~228 (canvas 1280x800). Num canvas menor os mesmos
+     14 mil pontos caem em menos pixels — no celular (R~110) saturava 34%. Medido: o alfa
+     dos PONTOS cai com R^3 (nao R^2: ponto tem 1px de piso e o anel do limbo afina), o
+     sprite encolhe com R^.8 e o limbo com R^1.4. Glow e bloom nao dependem. Em R>=228 = 1. */
+  var Rk=Math.min(1,R/228);
+  var POAREA=Math.min(1.3,Math.max(.06,Math.pow(R/228,3)));
+  var sprK=POT.spr*Math.pow(Rk,.8),limbK=.9*POT.limb*Math.pow(Rk,1.4);
   var PRAD=M*.13,PRAD2=PRAD*PRAD;
 
-  /* ── camada 1: glow central — o bloom abre com o RMS ── */
-  var gsz=R*3.1*(1+E*.22);
-  ctx.globalCompositeOperation="lighter";
-  ctx.globalAlpha=.15+E*.36+bass*.12;
-  ctx.drawImage(POGLOW,CX-gsz/2,CY-gsz/2,gsz,gsz);
-  ctx.globalAlpha=1;
+  /* poeira que se solta no ataque de silaba */
+  if(kicked&&MD.ejeta>0)poEjeta(Math.min(28,(POKICK*MD.ejeta*26)|0)+2,cy,sy,cp,sp);
 
-  /* ── camada 2: halo de motes soltos (atras da casca) ── */
+  /* ── camada 1: glow central frio; com voz, nucleo quente por dentro ── */
+  var gsz=R*3.1*POT.gsz*(1+E*.22);
+  L.globalCompositeOperation="lighter";
+  L.globalAlpha=(.09+Ev*.26+bass*.08)*POT.glow;
+  L.drawImage(POGLOW,CX-gsz/2,CY-gsz/2,gsz,gsz);
+  if(E>.04){
+    var qsz=R*1.25*(1+E*.5);
+    L.globalAlpha=Math.min(.45,(Ev-.04)*.6+POKICK*.15)*POT.glow;
+    L.drawImage(POGLOWQ,CX-qsz/2,CY-qsz/2,qsz,qsz);
+  }
+  L.globalAlpha=1;
+
+  /* ── camada 1b: corpo volumetrico ── */
+  var SFB=POSPR.f,SQB=POSPR.q;
+  for(var bI=0;bI<POBODY.length;bI++){
+    var B=POBODY[bI],bbd=BANDS[B.bd];
+    var blon=B.lo+t*B.w*MD.drift,blat=B.la+Math.sin(esp*B.f+B.p)*.04;
+    var bcl=Math.cos(blat);
+    var bx=bcl*Math.cos(blon)*B.r,by=Math.sin(blat)*B.r,bz=bcl*Math.sin(blon)*B.r;
+    var bx1=bx*cy-bz*sy,bz1=bx*sy+bz*cy;
+    var by1=by*cp-bz1*sp,bz2=by*sp+bz1*cp;
+    var bsc=1/(3.1-bz2*.95),bdep=(bz2/B.r+1)/2;
+    var bn=bz2/B.r; var blit=.45+.55*Math.max(0,(bx1/B.r)*LX+(by1/B.r)*LY+bn*LZ);
+    var bal=B.b*POT.body*POAREA*(.35+bdep*.75)*blit*(.7+Ev*.9+bbd*.5);
+    if(bal<.006)continue;if(bal>.16)bal=.16;
+    var bs=B.s*R*2.2*bsc*(1+Ev*.25+bbd*.2);
+    L.globalAlpha=bal;
+    L.drawImage((bdep>.7&&blit>.8)?SQB:SFB,CX+bx1*R*2.6*bsc-bs*.5,CY+by1*R*2.6*bsc-bs*.5,bs,bs);
+  }
+  L.globalAlpha=1;
+
+  /* ── camada 2: halo de motes soltos ── */
   for(var hI=0;hI<POHALO.length;hI++){
     var H=POHALO[hI];
     var hlon=H.lo+t*H.w,hlat=H.la+Math.sin(esp*H.f+H.p)*.05;
@@ -1471,22 +1591,23 @@ function vPo(ctx,w,h,t,E){
     var hx1=hx*cy-hz*sy,hz1=hx*sy+hz*cy;
     var hy1=hy*cp-hz1*sp,hz2=hy*sp+hz1*cp;
     var hsc=1/(3.1-hz2*.95),hdep=(hz2/H.r+1)/2;
-    var hal=H.b*(.12+hdep*.5)*(.5+E*.9);
+    var hal=H.b*POT.halo*POAREA*(.12+hdep*.5)*(.5+Ev*.9);
     if(hal<.03)continue;if(hal>1)hal=1;
-    ctx.fillStyle=POAL[(hal*23)|0];
+    L.fillStyle=POALC[(hal*23)|0];
     var hs=H.s*hsc*1.2;
-    ctx.fillRect(CX+hx1*R*2.6*hsc,CY+hy1*R*2.6*hsc,hs,hs);
+    L.fillRect(CX+hx1*R*2.6*hsc,CY+hy1*R*2.6*hsc,hs,hs);
   }
 
-  /* ── camada 3: a casca ── */
-  var piso=.92*MD.piso;
+  /* ── camada 3: a nuvem ── */
+  var piso=.92*MD.piso*Math.min(1.8,Math.sqrt(14000/POP.length));
+  var shellG=POT.shell*POAREA;
+  var rimG=Ev*MD.rim*1.8+POKICK*.35;
+  var drift=MD.drift*(1+E*.6);
+  var SQ=POSPR.q,SF=POSPR.f;
   for(var i=0;i<POP.length;i++){
     var P=POP[i],bd=BANDS[P.bd];
-    /* flow-field: cada particula ANDA pela casca no seu proprio caminho.
-       Com VOZ, entra o tremor individual: cada particula dança no seu ritmo
-       e fase, mais forte na banda dela — sem padrao coletivo de onda. */
     var danca=POJIT*(.35+bd*1.3);
-    var lon=P.lo+t*P.w*MD.drift+Math.sin(esp*P.f1+P.p1)*P.a1+Math.sin(t*.011*P.f2+P.p2)*danca;
+    var lon=P.lo+t*P.w*drift+Math.sin(esp*P.f1+P.p1)*P.a1+Math.sin(t*.011*P.f2+P.p2)*danca;
     var lat=P.la+Math.sin(esp*P.f2+P.p2)*P.a2+Math.cos(t*.013*P.f1+P.p1)*danca*.8;
     var cl=Math.cos(lat),d0=cl*Math.cos(lon),d1=Math.sin(lat),d2=cl*Math.sin(lon);
 
@@ -1494,14 +1615,19 @@ function vPo(ctx,w,h,t,E){
     var px=d0*rr,py=d1*rr,pz=d2*rr;
     var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
     var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
-    var sc=1/(3.1-z2*.95),dep=(z2+1)/2;
+    var sc=1/(3.1-z2*.95),dep=(z2/P.r+1)/2;
 
-    /* PROFUNDIDADE REAL: tras escuro e pequeno, frente clara e maior */
-    var al=P.b*(.10+dep*dep*.85)*(piso+E*1.25+bd*.9);
-    al*=1+Math.sin(esp*P.tf+P.tw)*MD.twk;   /* cintilacao individual */
+    /* PROFUNDIDADE: tras escuro e pequeno, frente clara e maior */
+    var al=P.b*shellG*(1-POT.dmix*(1-dep*dep))*(piso+Ev*1.25+bd*.9);
+    al*=1+Math.sin(esp*P.tf+P.tw)*MD.twk;
+    /* LUZ: normal da casca = posicao; lado sombra cai a 40% */
+    var ir=1/P.r; al*=.45+.55*Math.max(0,x1*ir*LX+y1*ir*LY+z2*ir*LZ);
+    /* LUZ DE BORDA: no limbo (z≈0, so na casca) a voz acende a silhueta */
+    /* LIMBO: na projecao de uma casca a densidade adensa na borda — e o que a faz
+       ler como esfera, nao como disco. Sempre ligado; a voz soma por cima. */
+    if(P.r>.9){var limb=1-Math.abs(z2/P.r);var l2=limb*limb;al*=1+l2*limbK+l2*limb*rimG;}
 
     var gx=CX+x1*R*2.6*sc,gy=CY+y1*R*2.6*sc;
-    /* po mexido pelo ponteiro: repulsao + redemoinho, assenta em ~1s */
     if(POPTR.on){
       var qx=gx-POPTR.x,qy=gy-POPTR.y,q2=qx*qx+qy*qy;
       if(q2<PRAD2){
@@ -1520,13 +1646,56 @@ function vPo(ctx,w,h,t,E){
     }
 
     if(al<.04)continue;if(al>1)al=1;
-    ctx.fillStyle=POAL[(al*23)|0];
-    var s=P.s*POSZ*sc*1.35*(.5+dep*.9)*(1+bd*.3);
-    ctx.fillRect(gx,gy,s,s);
+    var s=P.s*POSZ*sc*1.89*(1-POT.smix*(1-dep))*(1+bd*.3);
+    if(al>POSPRT&&dep>.50){
+      /* particula da frente: sprite suave; quente se brilhante e bem a frente */
+      L.globalAlpha=al;
+      var s2=s*2.6*sprK;
+      L.drawImage((dep>.72&&P.b>.62)?SQ:SF,gx-s2*.5,gy-s2*.5,s2,s2);
+    }else{
+      /* fundo e interior: ponto frio, barato */
+      L.globalAlpha=1;
+      L.fillStyle=(dep<.5||P.r<.9)?POALC[(al*23)|0]:POAL[(al*23)|0];
+      L.fillRect(gx,gy,s,s);
+    }
   }
+  L.globalAlpha=1;
+
+  /* ── camada 4: poeira solta (folego) ── */
+  var SN=POSPR.n;
+  for(var ei=0;ei<POEJN;ei++){
+    var e=POEJ[ei];if(!e.on)continue;
+    e.age+=dt;if(e.age>=e.life){e.on=0;continue;}
+    e.x+=e.vx*dt;e.y+=e.vy*dt;e.z+=e.vz*dt;
+    e.vx*=.985;e.vy*=.985;e.vz*=.985;
+    var k=1-e.age/e.life,ea=e.b*POT.ejeta*k*k*(.55+E*.5);
+    if(ea<.03)continue;
+    var esc=1/(3.1-e.z*.95);
+    var ex=CX+e.x*R*2.6*esc,ey=CY+e.y*R*2.6*esc,es=e.s*esc*3.4*POSZ*(.6+k*.6);
+    L.globalAlpha=Math.min(1,ea);
+    L.drawImage(SN,ex-es*.5,ey-es*.5,es,es);
+  }
+  L.globalAlpha=1;
+  L.globalCompositeOperation="source-over";
+
+  /* ── composicao: fundo preto + camada + bloom (1/4 e 1/8, 'lighter') ── */
+  ctx.globalCompositeOperation="source-over";
+  ctx.globalAlpha=1;
+  ctx.fillStyle="#000";ctx.fillRect(0,0,w,h);
+  ctx.drawImage(POLAY,0,0,w,h);
+  POB1C.setTransform(1,0,0,1,0,0);POB1C.drawImage(POLAY,0,0,POB1.width,POB1.height);
+  POB2C.setTransform(1,0,0,1,0,0);POB2C.drawImage(POB1,0,0,POB2.width,POB2.height);
+  POB3C.setTransform(1,0,0,1,0,0);POB3C.drawImage(POB2,0,0,POB3.width,POB3.height);
+  ctx.globalCompositeOperation="lighter";
+  ctx.globalAlpha=Math.min(1,(.38+Ev*.30+POKICK*.12)*POT.bloom);
+  ctx.drawImage(POB1,0,0,w,h);
+  ctx.globalAlpha=Math.min(1,(.24+Ev*.26)*POT.bloom);
+  ctx.drawImage(POB2,0,0,w,h);
+  ctx.globalAlpha=Math.min(1,(.14+Ev*.22)*POT.bloom);
+  ctx.drawImage(POB3,0,0,w,h);
+  ctx.globalAlpha=1;
   ctx.globalCompositeOperation="source-over";
 }
-
 
 /* ================= ANTHROPIC =================
    A marca do Claude e um catavento de petalas irregulares — o proprio pessoal de
@@ -1823,6 +1992,8 @@ var API = {
   /* humor da esfera de po (assinatura visual por fase da conversa):
      calma | sentinela | escutando | pensando | falando */
   setMood: function (m) { POMOOD = POMOODP[m] ? m : "calma"; return API; },
+  /* ganhos de calibracao do modo "po" (bancada); em prod ficam em 1 */
+  poTune: function (o) { return poTune(o || {}); },
   setPalette: function (p) { PAL = p; return API; },
   getBands: function () { return BANDS; }
 };
