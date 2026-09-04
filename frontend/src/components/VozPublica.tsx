@@ -50,8 +50,24 @@ type Viz = {
   setMood?: (m: string) => void;
   /** modo "po": as três cores da nuvem de partículas (hex) */
   setColors?: (c: string[]) => unknown;
+  /** modo "po": estilo da nuvem — "poeira" (original) ou "simbionte" */
+  setVariant?: (v: string) => unknown;
   list: () => unknown[];
 };
+
+type Estilo = "poeira" | "simbionte";
+const CORES_SIMBIONTE: [string, string, string] = ["#2a2e3d", "#6e7386", "#f4f4ff"];
+function estiloInicial(): Estilo {
+  try {
+    const q = new URLSearchParams(window.location.search).get("estilo");
+    if (q === "simbionte" || q === "poeira") return q;
+    const g = window.localStorage.getItem("voz-estilo");
+    if (g === "simbionte" || g === "poeira") return g;
+  } catch {
+    /* sem armazenamento */
+  }
+  return "poeira";
+}
 
 // ── cores da nuvem ──────────────────────────────────────────────────────
 // A esfera é o porte do "Voice Orb" (modo Particles): três cores misturadas
@@ -254,6 +270,23 @@ export default function VozPublica({
       n[i] = hex;
       return n;
     });
+  // estilo: "poeira" (o original) ou "simbionte" (massa escura, veios, tentáculos)
+  const [estilo, setEstilo] = useState<Estilo>(estiloInicial);
+  const estiloRef = useRef<Estilo>(estilo);
+  useEffect(() => {
+    estiloRef.current = estilo;
+    vizRef.current?.setVariant?.(estilo);
+    try {
+      window.localStorage.setItem("voz-estilo", estilo);
+    } catch {
+      /* sem armazenamento */
+    }
+  }, [estilo]);
+  const escolherEstilo = (e: Estilo) => {
+    setEstilo(e);
+    // o simbionte pede base escura + veio claro; a poeira volta ao trio do original
+    setCores(e === "simbionte" ? CORES_SIMBIONTE : CORES_PADRAO);
+  };
 
   // ── a esfera ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -264,6 +297,7 @@ export default function VozPublica({
       vizRef.current = v;
       v.simulate(false);
       v.setColors?.(coresRef.current);
+      v.setVariant?.(estiloRef.current);
       inst = v.mount("#esfera-voz", "po");
       v.setLevel(0);
     });
@@ -1284,6 +1318,22 @@ export default function VozPublica({
       </button>
       {mostraCores ? (
         <div className="fixed top-[56px] right-[14px] z-40 w-[260px] rounded-2xl bg-[#1c1c1e] p-4 text-[12px] text-[#c7c7cc] shadow-2xl">
+          <p className="mb-3 text-[11px] tracking-[0.14em] uppercase text-[#8e8e93]">Estilo</p>
+          <div className="mb-4 inline-flex w-full rounded-full bg-[#2c2c2e] p-0.5">
+            {(["poeira", "simbionte"] as const).map((e) => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => escolherEstilo(e)}
+                aria-pressed={estilo === e}
+                className={`flex-1 rounded-full py-1.5 text-[12px] capitalize transition-colors ${
+                  estilo === e ? "bg-[#f2f2f7] text-black" : "text-[#c7c7cc] hover:text-[#f2f2f7]"
+                }`}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
           <p className="mb-3 text-[11px] tracking-[0.14em] uppercase text-[#8e8e93]">Cores da esfera</p>
           <div className="grid grid-cols-3 gap-2 mb-3">
             {([0, 1, 2] as const).map((i) => (

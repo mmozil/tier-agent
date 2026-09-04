@@ -1720,7 +1720,11 @@ function vPo(ctx,w,h,t,E){
      - Rotacao: idle .0015 rad/quadro · listening .003 · speaking .0015+.002·int · thinking
        .006 (y) + .002 (x) — como no original (a 60 fps).
    API: OptimusViz.setColors(["#6366f1","#a855f7","#ec4899"]) troca as tres cores ao vivo. */
-var POG={n:150000,voz:2.2,guard:1,ptsz:1,drawn:0,snap:null,rot:1};
+var POG={n:150000,voz:2.2,guard:1,ptsz:1,drawn:0,snap:null,rot:1,variant:0};
+/* estilos: 'poeira' = o original; 'simbionte' = massa escura e viscosa com veios claros, fios
+   esticados ao longo do fluxo e tentaculos que avancam com a voz (pedido do dono, 04/09) */
+var POG_VARIANTS={poeira:0,simbionte:1};
+function poSetVariant(v){var k=typeof v==="string"?POG_VARIANTS[v]:+v;if(k===undefined||isNaN(k))k=0;POG.variant=k;return k;}
 var POGCOL=[[0x63/255,0x66/255,0xf1/255],[0xa8/255,0x55/255,0xf7/255],[0xec/255,0x48/255,0x99/255]];
 function poSetColors(arr){
   if(!arr||!arr.length)return POGCOL;
@@ -1771,7 +1775,7 @@ var POG_VS=[
 "#version 300 es",
 "precision highp float;",
 "in vec3 aP; in vec2 aS;",
-"uniform vec2 uRes; uniform float uDpr,uT,uFlow,uInt,uState,uPtSz;",
+"uniform vec2 uRes; uniform float uDpr,uT,uFlow,uInt,uState,uPtSz,uVar;",
 "uniform vec2 uRot; uniform vec3 uC1,uC2,uC3;",
 "out vec3 vColor; out float vAlpha; out float vIntensity;",
 POG_NOISE,
@@ -1821,6 +1825,24 @@ POG_NOISE,
 "  else if(state<1.5){ float pulseColor=sin(time*1.5+phase)*0.5+0.5; vColor=mix(uC1,uC2,pulseColor); }",
 "  else { vColor=mix(uC2,uC1,sin(time*0.8+phase)*0.5+0.5); }",
 "  vAlpha=0.2+seed*0.3;",
+"  float veia=0.0;",
+"  if(uVar>0.5){",
+"    float inten=(state>1.5&&state<2.5)?deformationIntensity:0.0;",
+"    vec3 fluxo=curlNoise(basePos*0.45+vec3(flowTime*0.05,flowTime*0.04,flowTime*0.06));",
+"    vec3 fino=curlNoise(basePos*1.6+vec3(time*0.09));",
+"    pos=basePos+fluxo*(0.08+seed*0.46)+fino*0.05;",
+"    float lobo=snoise(outward*1.9+vec3(time*0.11,0.0,time*0.07));",
+"    float alcance=max(0.0,lobo-0.2)*(0.45+inten*1.6);",
+"    pos+=outward*alcance*(0.6+seed*0.8);",
+"    pos*=0.92+0.05*sin(time*0.7+phase);",
+"    veia=step(0.85,seed);",
+"    vec3 n=normalize(pos);",
+"    float brilho=pow(max(0.0,dot(n,normalize(vec3(-0.5,0.7,0.6)))),18.0);",
+"    float borda=pow(1.0-abs(n.z),3.0);",
+"    vColor=mix(uC1,uC2,seed*0.8)*1.35+uC3*(veia*1.1+brilho*0.7+borda*0.3)+uC2*inten*0.6;",
+"    vIntensity=1.0+inten*0.6+veia*0.5;",
+"    vAlpha=mix(0.18+seed*0.18,0.7,veia);",
+"  }",
 /* rotacao do objeto (como o Points do three.js): y depois x */
 "  float cy=cos(uRot.x), sy=sin(uRot.x), cp=cos(uRot.y), sp=sin(uRot.y);",
 "  vec3 r=vec3(pos.x*cy+pos.z*sy,pos.y,-pos.x*sy+pos.z*cy);",
@@ -1831,6 +1853,7 @@ POG_NOISE,
 "  gl_Position=vec4(r.x*inv*f/aspect, r.y*inv*f, 0.0, 1.0);",
 "  float baseSize=size*10.5;",
 "  if(state>1.5&&state<2.5) baseSize=size*(10.5+deformationIntensity*3.0);",
+"  if(uVar>0.5) baseSize=size*mix(15.0,6.5,veia)*(1.0+uInt*0.35);",
 "  gl_PointSize=max(1.0,baseSize*uPtSz*uDpr*inv);",
 "}"].join("\n");
 var POG_FS=[
@@ -1877,7 +1900,7 @@ function makePoGL(cv){
   POG.drawn=N;
   return {g:g,pr:pr,vao:vao,N:N,
     u:{res:U("uRes"),dpr:U("uDpr"),t:U("uT"),flow:U("uFlow"),int:U("uInt"),state:U("uState"),ptsz:U("uPtSz"),
-       rot:U("uRot"),c1:U("uC1"),c2:U("uC2"),c3:U("uC3")},
+       rot:U("uRot"),c1:U("uC1"),c2:U("uC2"),c3:U("uC3"),var_:U("uVar")},
     fps:{t:0,n:0,checked:0},t0:0,tprev:0,time:0,flow:0,inten:0,roty:0,rotx:0};
 }
 var POG_STATE={calma:0,sentinela:0,escutando:1,pensando:3,falando:2};
@@ -1895,7 +1918,14 @@ function drawPoGL(G,cv,t,E){
   var k=dt/0.016;   /* o original conta por quadro a 60 fps */
   var st=POG_STATE[POMOOD];if(st===undefined)st=0;
   /* intensidade suavizada: ataque .15, decaimento .04 (por quadro) — nunca salta */
-  var alvo=Math.min(1,E*POG.voz);
+  /* intensidade IGUAL ao original (voice-orb): 3 faixas do espectro, pesos .4/.4/.2, x3.5, teto 1.
+     Sem analyser (voz simulada / nivel fixo) cai no nivel medio x ganho. */
+  var alvo;
+  if(typeof _analyser!=="undefined"&&_analyser&&_freq&&_freq.length>8){
+    var nb=_freq.length,r1=(nb*.15)|0,r2=(nb*.5)|0,s1=0,s2=0,s3=0,ii;
+    for(ii=0;ii<r1;ii++)s1+=_freq[ii];for(ii=r1;ii<r2;ii++)s2+=_freq[ii];for(ii=r2;ii<nb;ii++)s3+=_freq[ii];
+    alvo=Math.min(1,3.5*(.4*s1/r1/255+.4*s2/(r2-r1)/255+.2*s3/(nb-r2)/255));
+  } else alvo=Math.min(1,E*POG.voz);
   G.inten+=(alvo-G.inten)*(alvo>G.inten?.15:.04)*Math.min(2,k);
   var u=G.inten;
   G.time+=.016*k;
@@ -1912,7 +1942,7 @@ function drawPoGL(G,cv,t,E){
   g.uniform1f(G.u.int,u);g.uniform1f(G.u.state,st);
   /* o original desenha num canvas de ate 500 px; em canvas maior o grao escala junto */
   g.uniform1f(G.u.ptsz,POG.ptsz*Math.min(2,Math.max(.6,M/500)));
-  g.uniform2f(G.u.rot,G.roty,G.rotx);
+  g.uniform2f(G.u.rot,G.roty,G.rotx);g.uniform1f(G.u.var_,POG.variant);
   g.uniform3f(G.u.c1,POGCOL[0][0],POGCOL[0][1],POGCOL[0][2]);
   g.uniform3f(G.u.c2,POGCOL[1][0],POGCOL[1][1],POGCOL[1][2]);
   g.uniform3f(G.u.c3,POGCOL[2][0],POGCOL[2][1],POGCOL[2][2]);
@@ -2238,6 +2268,8 @@ var API = {
   poSnap: function (cv) { POG.snap = cv || null; return API; },
   /* modo "po": as tres cores da nuvem (hex), trocadas ao vivo */
   setColors: function (a) { return poSetColors(a); },
+  /* modo "po": estilo da nuvem — "poeira" (original) ou "simbionte" */
+  setVariant: function (v) { return poSetVariant(v); },
   setPalette: function (p) { PAL = p; return API; },
   getBands: function () { return BANDS; }
 };
