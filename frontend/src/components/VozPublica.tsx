@@ -622,8 +622,10 @@ export default function VozPublica({
               try {
                 fonte.current = ac.createMediaElementSource(el);
                 const an = ac.createAnalyser();
-                an.fftSize = 8192;
-                an.smoothingTimeConstant = 0.8; // mesma suavização do mic: a Dora falando lê igual à pessoa falando
+                // iguais ao mic e ao Voice Orb original: fftSize 512 (janela de 12 ms —
+                // 8192 era uma janela de 186 ms e borrava as sílabas), suavização .8
+                an.fftSize = 512;
+                an.smoothingTimeConstant = 0.8;
                 fonte.current.connect(an);
                 an.connect(ac.destination);
                 anDora.current = an;

@@ -1922,6 +1922,8 @@ function makePoGL(cv){
    tanto a pessoa falando (escutando, mic) quanto a Dora falando (falando, playback) caem nele.
    'sentinela' (esperando o 'oi tier') vira o 'listening' dele, que so pulsa. */
 var POG_STATE={calma:0,sentinela:1,escutando:2,pensando:3,falando:2};
+var POGDBG={inten:0,alvo:0,state:0,analyser:false,bins:0,fps:0};
+function poDebug(){return {inten:+POGDBG.inten.toFixed(3),alvo:+POGDBG.alvo.toFixed(3),state:POGDBG.state,analyser:POGDBG.analyser,bins:POGDBG.bins,fps:Math.round(POGDBG.fps),mood:POMOOD,variant:POG.variant,drawn:POG.drawn};}
 function drawPoGL(G,cv,t,E){
   if(!G)return;
   var g=G.g,d=Math.min(devicePixelRatio||1,2),rc=cv.getBoundingClientRect();
@@ -1930,7 +1932,7 @@ function drawPoGL(G,cv,t,E){
   var M=Math.min(rc.width,rc.height);
   /* guarda de FPS: 3 janelas de 2s; abaixo de 40 fps desenha 60% dos pontos */
   var F=G.fps;F.n++;
-  if(!F.t)F.t=t;else if(t-F.t>2000){var fps=F.n*1000/(t-F.t);F.n=0;F.t=t;
+  if(!F.t)F.t=t;else if(t-F.t>2000){var fps=F.n*1000/(t-F.t);POGDBG.fps=fps;F.n=0;F.t=t;
     if(F.checked<4&&POG.guard){F.checked++;if(fps<40&&POG.drawn>30000)POG.drawn=(POG.drawn*.6)|0;}}
   var dt=G.tprev?Math.min((t-G.tprev)/1000,.05):0.016;G.tprev=t;
   var k=dt/0.016;   /* o original conta por quadro a 60 fps */
@@ -1946,6 +1948,7 @@ function drawPoGL(G,cv,t,E){
   } else alvo=Math.min(1,E*POG.voz);
   G.inten+=(alvo-G.inten)*(alvo>G.inten?.15:.04)*Math.min(2,k);
   var u=G.inten;
+  POGDBG.inten=u;POGDBG.alvo=alvo;POGDBG.state=st;POGDBG.analyser=!!(typeof _analyser!=="undefined"&&_analyser);POGDBG.bins=(_freq&&_freq.length)||0;POGDBG.fps=F.n?POGDBG.fps:POGDBG.fps;
   G.time+=.016*k;
   G.flow+=.016*(1+3.5*u)*k;
   if(POG.rot){
@@ -2308,6 +2311,8 @@ var API = {
   setVariant: function (v) { return poSetVariant(v); },
   /* modo "po": cor do fundo da composicao (a cor da pagina por tras: "#000" ou "#fff") */
   setBackground: function (c) { return poSetBackground(c); },
+  /* diagnostico ao vivo: intensidade, alvo, estado, analyser ligado, bins, fps */
+  poDebug: function () { return poDebug(); },
   setPalette: function (p) { PAL = p; return API; },
   getBands: function () { return BANDS; }
 };
