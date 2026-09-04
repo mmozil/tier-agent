@@ -48,8 +48,45 @@ type Viz = {
   attachMic: () => Promise<unknown>;
   attachAnalyser?: (a: AnalyserNode) => unknown;
   setMood?: (m: string) => void;
+  /** modo "po": as três cores da nuvem de partículas (hex) */
+  setColors?: (c: string[]) => unknown;
   list: () => unknown[];
 };
+
+// ── cores da nuvem ──────────────────────────────────────────────────────
+// A esfera é o porte do "Voice Orb" (modo Particles): três cores misturadas
+// por semente em repouso e pela intensidade da voz ao falar. O dono pediu
+// "um modelo igual, com cores alteradas onde possa escolher as cores".
+// Ordem de escolha: ?cores=6366f1,a855f7,ec4899 na URL → guardado no
+// navegador → padrão do original (índigo · roxo · rosa).
+type Trio = [string, string, string];
+const CORES_PADRAO: Trio = ["#6366f1", "#a855f7", "#ec4899"];
+const PRESETS_CORES: { nome: string; cores: Trio }[] = [
+  { nome: "Índigo · roxo · rosa", cores: ["#6366f1", "#a855f7", "#ec4899"] },
+  { nome: "Azul · ciano · gelo", cores: ["#2563eb", "#22d3ee", "#e0f2fe"] },
+  { nome: "Verde · teal · lima", cores: ["#16a34a", "#14b8a6", "#a3e635"] },
+  { nome: "Âmbar · laranja · vermelho", cores: ["#f59e0b", "#f97316", "#ef4444"] },
+  { nome: "Prata · gelo · branco", cores: ["#94a3b8", "#cbd5e1", "#f8fafc"] },
+  { nome: "Dourado · cobre · creme", cores: ["#eab308", "#d97706", "#fde68a"] },
+];
+const HEX6 = /^#[0-9a-f]{6}$/i;
+function coresIniciais(): Trio {
+  try {
+    const q = new URLSearchParams(window.location.search).get("cores");
+    if (q) {
+      const c = q.split(",").map((s) => "#" + s.replace("#", "").trim()).filter((s) => HEX6.test(s));
+      if (c.length >= 1) return [c[0], c[1] ?? c[0], c[2] ?? c[1] ?? c[0]];
+    }
+    const g = window.localStorage.getItem("voz-cores");
+    if (g) {
+      const c = JSON.parse(g);
+      if (Array.isArray(c) && c.length === 3 && c.every((s) => HEX6.test(String(s)))) return [c[0], c[1], c[2]];
+    }
+  } catch {
+    /* sem armazenamento: fica o padrão */
+  }
+  return CORES_PADRAO;
+}
 
 declare global {
   interface Window {
@@ -198,6 +235,26 @@ export default function VozPublica({
     return () => speechSynthesis.removeEventListener("voiceschanged", aquece);
   }, []);
 
+  // ── cores da nuvem: estado + persistência + aplicação ao vivo ─────────
+  const [cores, setCores] = useState<Trio>(coresIniciais);
+  const coresRef = useRef<Trio>(cores);
+  const [mostraCores, setMostraCores] = useState(false);
+  useEffect(() => {
+    coresRef.current = cores;
+    vizRef.current?.setColors?.(cores);
+    try {
+      window.localStorage.setItem("voz-cores", JSON.stringify(cores));
+    } catch {
+      /* navegador sem armazenamento: só não lembra */
+    }
+  }, [cores]);
+  const trocarCor = (i: 0 | 1 | 2, hex: string) =>
+    setCores((c) => {
+      const n: Trio = [c[0], c[1], c[2]];
+      n[i] = hex;
+      return n;
+    });
+
   // ── a esfera ──────────────────────────────────────────────────────────
   useEffect(() => {
     let inst: { destroy?: () => void } | null = null;
@@ -206,6 +263,7 @@ export default function VozPublica({
       if (!vivo || !v) return;
       vizRef.current = v;
       v.simulate(false);
+      v.setColors?.(coresRef.current);
       inst = v.mount("#esfera-voz", "po");
       v.setLevel(0);
     });
@@ -1207,6 +1265,59 @@ export default function VozPublica({
       <span
         className={`fixed top-[22px] left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full z-30 transition-all ${corPonto}`}
       />
+
+      {/* cores da nuvem: botão discreto no canto; abre um painel com as três
+          cores e alguns conjuntos prontos. Fica guardado neste navegador. */}
+      <button
+        type="button"
+        onClick={() => setMostraCores((m) => !m)}
+        title="Cores da esfera"
+        aria-label="Escolher as cores da esfera"
+        aria-expanded={mostraCores}
+        className="fixed top-[14px] right-[14px] z-40 h-9 w-9 rounded-full grid place-items-center bg-[#1c1c1e] hover:bg-[#2c2c2e] transition-colors"
+      >
+        <span className="flex -space-x-1">
+          {cores.map((c, i) => (
+            <span key={i} className="h-3 w-3 rounded-full ring-1 ring-black/60" style={{ background: c }} />
+          ))}
+        </span>
+      </button>
+      {mostraCores ? (
+        <div className="fixed top-[56px] right-[14px] z-40 w-[260px] rounded-2xl bg-[#1c1c1e] p-4 text-[12px] text-[#c7c7cc] shadow-2xl">
+          <p className="mb-3 text-[11px] tracking-[0.14em] uppercase text-[#8e8e93]">Cores da esfera</p>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {([0, 1, 2] as const).map((i) => (
+              <label key={i} className="flex flex-col items-center gap-1.5 cursor-pointer">
+                <input
+                  type="color"
+                  value={cores[i]}
+                  onChange={(e) => trocarCor(i, e.target.value)}
+                  aria-label={`Cor ${i + 1}`}
+                  className="h-9 w-full rounded-lg border-0 bg-transparent p-0 cursor-pointer"
+                />
+                <span className="text-[10px] text-[#8e8e93]">{i === 0 ? "repouso" : i === 1 ? "voz média" : "voz alta"}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-col gap-1">
+            {PRESETS_CORES.map((p) => (
+              <button
+                key={p.nome}
+                type="button"
+                onClick={() => setCores(p.cores)}
+                className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-[#2c2c2e] transition-colors"
+              >
+                <span className="flex -space-x-1 shrink-0">
+                  {p.cores.map((c, i) => (
+                    <span key={i} className="h-3.5 w-3.5 rounded-full ring-1 ring-black/60" style={{ background: c }} />
+                  ))}
+                </span>
+                <span className="text-[#f2f2f7]">{p.nome}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex-1 min-h-0 grid place-items-center px-4 pt-6">
         {/* A animacao vai no PAI. No proprio elemento, o visualizador media a

@@ -1700,43 +1700,44 @@ function vPo(ctx,w,h,t,E){
   ctx.globalCompositeOperation="source-over";
 }
 
-/* ================= PO GL: orbe cosmica em WebGL2 =================
-   v5 (04/09/2026). O dono: "nao esta bom, e como algo COSMICO — olha na internet".
-   Referencias abertas: OriginKit "Cosmic Orb" (galaxia dentro de uma esfera de vidro:
-   nebulosas a deriva, estrelas, borda com lens-flare), VoiceOrbs "Galaxy Orb" (MIT:
-   base escura + neblinas coloridas + po + estrelas com cintilacao + fresnel + brilho
-   de vidro), Shadertoy "Volumetric Galaxy Dust", Three.js Journey (particulas).
-   Tecnica:
-     1. NEBULOSA: raymarch volumetrico numa esfera (fbm de simplex 3D como densidade,
-        emissao por cor conforme densidade e raio, nucleo luminoso, fresnel na borda,
-        brilho de vidro, halo por fora) — um triangulo de tela inteira.
-     2. ESTRELAS: nuvem de pontos GPU (gl_PointSize atenuado, sprite macio, blending
-        aditivo), metade dentro do gas, com ruido simplex no movimento.
-     3. FAISCAS: poeira que se solta no ataque de cada silaba.
-   Regras do dono: silencio = sem rotacao; o gas deriva devagar, as estrelas cintilam;
-   a voz acende nucleo, gas e borda, e o po danca. Fallback sem WebGL2: vPo (canvas). */
-var POGACC=0;
-/* poeira que se desprende DEVAGAR enquanto fala: nasce na casca, sobe lenta, some. Sem rajada. */
-function poSolta(n,cy,sy,cp,sp){
-  for(var k=0;k<n;k++){
-    var e=POEJ[POEJI];POEJI=(POEJI+1)%POEJN;
-    var la=Math.asin(2*Math.random()-1),lo=Math.random()*6.283,cl=Math.cos(la);
-    var px=cl*Math.cos(lo),py=Math.sin(la),pz=cl*Math.sin(lo);
-    var x1=px*cy-pz*sy,z1=px*sy+pz*cy;
-    var y1=py*cp-z1*sp,z2=py*sp+z1*cp;
-    if(z2<-.1){x1=-x1;z2=-z2;}
-    var v=.00035+Math.random()*.0005;
-    e.on=1;e.x=x1*.99;e.y=y1*.99;e.z=z2*.99;
-    e.vx=x1*v+(Math.random()-.5)*.0003;e.vy=y1*v+.00012+(Math.random()-.5)*.0003;e.vz=z2*v*.5;
-    e.age=0;e.life=1600+Math.random()*1800;e.b=.35+Math.random()*.45;e.s=.8+Math.random()*1.4;
+/* ================= PO GL: nuvem de particulas — porte fiel do "Voice Orb" (Tomiwa), modo Particles =================
+   v6 (04/09/2026). O dono escolheu a referencia R7 (voice-orb.netlify.app, modo Particles):
+   "esse e perfeito de particulas, fazer um modelo igual, porem com cores alteradas onde
+   possa escolher as cores". Receita lida do bundle do site (three.js), portada para WebGL2 puro:
+     - 150 mil particulas: 60% na casca (r .95–1.10), 30% dentro (r .40–.95), 10% num halo
+       (r 1.10–1.60); direcao uniforme na esfera; semente e tamanho (.3–1) por particula.
+     - CURL NOISE em tres escalas (macro .3 / media .8 / fina 2.0; amplitudes .18 / .10 / .03):
+       fluxo sem divergencia, cara de fumaca em ar parado.
+     - Estados: idle (fluxo lento) · listening (fluxo mais forte + onda radial) · speaking (o
+       mesmo fluxo do idle, mas o tempo do fluxo avanca mais rapido e o deslocamento cresce com
+       a intensidade SUAVIZADA da voz — ataque .15, decaimento .04 — por isso nao "espirra";
+       fundo de fluxo em repouso sempre ligado) · thinking (fluxo + corrente tangencial).
+     - Cor: tres cores (c1 c2 c3). idle mistura c1→c2 pela semente; speaking c1→c2→c3 pela
+       intensidade; listening pulsa c1↔c2; thinking pulsa c2↔c1.
+     - Sprite: miolo (smoothstep 0–.15) + halo (1-smoothstep 0–.5)^2 × .25; alfa .2–.5 pela
+       semente; cor × intensidade + branco no miolo; blending aditivo (SRC_ALPHA, ONE).
+     - Tamanho: size × 10.5 (× (1+int×3/10.5) falando) × dpr / (3 - z); camera fov 75 a z=3.
+     - Rotacao: idle .0015 rad/quadro · listening .003 · speaking .0015+.002·int · thinking
+       .006 (y) + .002 (x) — como no original (a 60 fps).
+   API: OptimusViz.setColors(["#6366f1","#a855f7","#ec4899"]) troca as tres cores ao vivo. */
+var POG={n:150000,voz:2.2,guard:1,ptsz:1,drawn:0,snap:null,rot:1};
+var POGCOL=[[0x63/255,0x66/255,0xf1/255],[0xa8/255,0x55/255,0xf7/255],[0xec/255,0x48/255,0x99/255]];
+function poSetColors(arr){
+  if(!arr||!arr.length)return POGCOL;
+  var out=[];
+  for(var i=0;i<3;i++){
+    var c=arr[Math.min(i,arr.length-1)];
+    if(typeof c==="string"){var h=c.replace("#","");if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+      var v=parseInt(h,16);if(isNaN(v))continue;out.push([((v>>16)&255)/255,((v>>8)&255)/255,(v&255)/255]);}
+    else if(c&&c.length===3)out.push([+c[0],+c[1],+c[2]]);
   }
+  while(out.length<3)out.push(out[out.length-1]||POGCOL[out.length]);
+  POGCOL=out;return POGCOL;
 }
-var POG={n:9000,shell:.9,spr:1.3,limb:0,glow:.6,voz:2,ejeta:1.0,guard:1,jit:1,
-         gas:1,core:1,rim:1,steps:26,drawn:0,snap:null};
 var POG_NOISE=[
 "vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}",
-"vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}",
-"vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}",
+"vec4 mod289v(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}",
+"vec4 permute(vec4 x){return mod289v(((x*34.0)+1.0)*x);}",
 "vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}",
 "float snoise(vec3 v){",
 "  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);",
@@ -1757,257 +1758,164 @@ var POG_NOISE=[
 "  p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;",
 "  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;",
 "  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));",
+"}",
+"vec3 curlNoise(vec3 p){",
+"  float e=0.1;",
+"  float n1=snoise(vec3(p.x,p.y+e,p.z)); float n2=snoise(vec3(p.x,p.y-e,p.z));",
+"  float n3=snoise(vec3(p.x,p.y,p.z+e)); float n4=snoise(vec3(p.x,p.y,p.z-e));",
+"  float n5=snoise(vec3(p.x+e,p.y,p.z)); float n6=snoise(vec3(p.x-e,p.y,p.z));",
+"  float x=(n1-n2)-(n3-n4); float y=(n3-n4)-(n5-n6); float z=(n5-n6)-(n1-n2);",
+"  return normalize(vec3(x,y,z)+0.0001);",
 "}"].join("\n");
-/* ---- estrelas / faiscas: pontos ---- */
 var POG_VS=[
 "#version 300 es",
 "precision highp float;",
-"in vec3 aP; in vec4 aS;",
-"uniform vec2 uRes; uniform float uDpr,uT,uE,uKick,uR,uEj,uArea;",
-"uniform vec2 uRot; uniform vec4 uM; uniform vec3 uPtr; uniform float uBands[8]; uniform float uG[4];",
-"out float vA; out float vTone; out float vSz;",
+"in vec3 aP; in vec2 aS;",
+"uniform vec2 uRes; uniform float uDpr,uT,uFlow,uInt,uState,uPtSz;",
+"uniform vec2 uRot; uniform vec3 uC1,uC2,uC3;",
+"out vec3 vColor; out float vAlpha; out float vIntensity;",
 POG_NOISE,
 "void main(){",
-"  float ph=aS.x, spd=aS.y, szm=aS.z, tone=aS.w;",
-"  vec3 p=aP; float r=length(p); vec3 n=p/max(r,1e-4);",
-"  float a; float sc; float dep;",
-"  if(uEj>.5){",
-"    vec3 c=p;",
-"    sc=1.0/(3.1-c.z*.95); dep=clamp((c.z+1.0)*.5,0.0,1.0);",
-"    vec2 scr=uRes*.5+vec2(c.x,c.y)*uR*2.6*sc*uDpr;",
-"    gl_Position=vec4(scr/(uRes*.5)-1.0,0.0,1.0);",
-"    a=ph; vTone=tone; vSz=szm;",
-"    gl_PointSize=max(1.0,szm*sc*uDpr);",
-"    vA=clamp(a,0.0,1.0); return;",
+"  float seed=aS.x, size=aS.y; float state=uState; float time=uT; float flowTime=uFlow; float deformationIntensity=uInt;",
+"  float phase=seed*6.28318;",
+"  vec3 basePos=aP; vec3 pos=basePos; vec3 outward=normalize(basePos);",
+"  if(state<0.5){",
+"    vec3 macroFlow=curlNoise(basePos*0.3+vec3(time*0.04,time*0.03,time*0.05));",
+"    vec3 midFlow=curlNoise(basePos*0.8+vec3(time*0.1));",
+"    vec3 fineFlow=curlNoise(basePos*2.0+vec3(time*0.18));",
+"    pos+=macroFlow*0.18+midFlow*0.1+fineFlow*0.03;",
+"    vIntensity=0.65+seed*0.35;",
+"  } else if(state<1.5){",
+"    vec3 macroFlow=curlNoise(basePos*0.35+vec3(time*0.08));",
+"    vec3 midFlow=curlNoise(basePos*0.9+vec3(time*0.18));",
+"    vec3 fineFlow=curlNoise(basePos*2.2+vec3(time*0.32));",
+"    pos+=macroFlow*0.2+midFlow*0.12+fineFlow*0.04;",
+"    float wave=sin(time*1.5-length(basePos)*3.0)*0.04;",
+"    pos+=outward*wave;",
+"    vIntensity=0.85+abs(wave)*6.0;",
+"  } else if(state<2.5){",
+"    float intensity=deformationIntensity;",
+"    vec3 macroFlow=curlNoise(basePos*0.3+vec3(flowTime*0.04,flowTime*0.03,flowTime*0.05));",
+"    vec3 midFlow=curlNoise(basePos*0.8+vec3(flowTime*0.1));",
+"    vec3 fineFlow=curlNoise(basePos*2.0+vec3(flowTime*0.18));",
+"    vec3 idleBackground=curlNoise(basePos*0.3+vec3(time*0.04+100.0,time*0.03+200.0,time*0.05+300.0));",
+"    float displacement=1.0+intensity*1.0;",
+"    vec3 voiceFlow=(macroFlow*0.18+midFlow*0.1+fineFlow*0.03)*displacement;",
+"    vec3 calmFlow=idleBackground*0.18*(1.0-intensity*0.6);",
+"    pos+=voiceFlow+calmFlow;",
+"    vIntensity=0.65+seed*0.35+intensity*1.0;",
+"  } else {",
+"    vec3 macroFlow=curlNoise(basePos*0.35+vec3(time*0.12));",
+"    vec3 midFlow=curlNoise(basePos*0.9+vec3(time*0.25));",
+"    vec3 fineFlow=curlNoise(basePos*2.0+vec3(time*0.4));",
+"    pos+=macroFlow*0.22+midFlow*0.12+fineFlow*0.05;",
+"    vec3 axis=vec3(0.0,1.0,0.0);",
+"    vec3 tangent=normalize(cross(axis,basePos)+vec3(0.001));",
+"    pos+=tangent*0.04;",
+"    vIntensity=0.85+sin(time*1.2+phase)*0.2;",
 "  }",
-"  float ang=uT*.00003*(.5+spd)*uM.x*(tone<.5?1.0:-1.0);",
-"  float ca=cos(ang), sa=sin(ang);",
-"  p=vec3(p.x*ca-p.z*sa,p.y,p.x*sa+p.z*ca);",
-"  float amp=(.010+uE*.070+uKick*.012)*uM.w;",
-"  vec3 q=p*1.9+vec3(uT*.00022*(.6+spd*.8), ph*3.1, -uT*.00017);",
-"  vec3 dsp=vec3(snoise(q),snoise(q+vec3(11.3,7.7,3.1)),snoise(q+vec3(37.1,19.3,5.7)));",
-"  int b=int(mod(floor(ph*8.0),8.0)); float band=uBands[b];",
-"  p+=dsp*amp+n*(band*.045);",
+"  if(state>1.5&&state<2.5){",
+"    float t=deformationIntensity;",
+"    if(t<0.5) vColor=mix(uC1,uC2,t*2.0); else vColor=mix(uC2,uC3,(t-0.5)*2.0);",
+"  } else if(state<0.5){ vColor=mix(uC1,uC2,seed); }",
+"  else if(state<1.5){ float pulseColor=sin(time*1.5+phase)*0.5+0.5; vColor=mix(uC1,uC2,pulseColor); }",
+"  else { vColor=mix(uC2,uC1,sin(time*0.8+phase)*0.5+0.5); }",
+"  vAlpha=0.2+seed*0.3;",
+/* rotacao do objeto (como o Points do three.js): y depois x */
 "  float cy=cos(uRot.x), sy=sin(uRot.x), cp=cos(uRot.y), sp=sin(uRot.y);",
-"  vec3 c=vec3(p.x*cy-p.z*sy,p.y,p.x*sy+p.z*cy);",
-"  c=vec3(c.x,c.y*cp-c.z*sp,c.y*sp+c.z*cp);",
-"  sc=1.0/(3.1-c.z*.95); dep=clamp((c.z/r+1.0)*.5,0.0,1.0);",
-"  vec2 scr=uRes*.5+vec2(c.x,c.y)*uR*2.6*sc*uDpr;",
-"  if(uPtr.z>0.0){ vec2 d=scr-uPtr.xy; float dd=length(d); float pr=uR*.55*uDpr;",
-"    if(dd<pr){ float f=1.0-dd/pr; scr+=(d/max(dd,1.0))*f*f*uPtr.z*uR*.22*uDpr; } }",
-"  gl_Position=vec4(scr/(uRes*.5)-1.0,0.0,1.0);",
-"  float tw=1.0+sin(uT*.0011*(.4+spd*.7)+ph*6.283)*uM.y;",
-"  float shell=step(.92,r);",
-"  float limb=1.0-abs(c.z/r); float l2=limb*limb;",
-"  float lit=.55+.45*max(0.0,dot(c/r,vec3(-.46,.58,.67)));",
-"  a=uM.z*(.50+.50*dep)*tw*lit*(1.0+shell*l2*uG[2])*(1.0+uE*1.1+band*.7)*uG[0]*uArea;",
-"  a*=mix(.6,1.0,shell);",
-"  vA=clamp(a,0.0,1.0); vTone=tone; vSz=szm;",
-"  gl_PointSize=max(1.0,(1.15+szm*2.1)*sc*3.0*uDpr*(1.0+uE*.22+uKick*.04)*uG[1]);",
+"  vec3 r=vec3(pos.x*cy+pos.z*sy,pos.y,-pos.x*sy+pos.z*cy);",
+"  r=vec3(r.x,r.y*cp-r.z*sp,r.y*sp+r.z*cp);",
+/* camera fov 75 em z=3: mv.z = r.z - 3 */
+"  float mvz=r.z-3.0; float inv=1.0/(-mvz); float f=1.0/0.767327;",
+"  float aspect=uRes.x/uRes.y;",
+"  gl_Position=vec4(r.x*inv*f/aspect, r.y*inv*f, 0.0, 1.0);",
+"  float baseSize=size*10.5;",
+"  if(state>1.5&&state<2.5) baseSize=size*(10.5+deformationIntensity*3.0);",
+"  gl_PointSize=max(1.0,baseSize*uPtSz*uDpr*inv);",
 "}"].join("\n");
 var POG_FS=[
 "#version 300 es",
 "precision highp float;",
-"in float vA; in float vTone; in float vSz;",
-"uniform float uE;",
+"in vec3 vColor; in float vAlpha; in float vIntensity;",
 "out vec4 o;",
 "void main(){",
-"  vec2 q=gl_PointCoord-.5; float d=length(q)*2.0;",
-"  if(d>1.0)discard;",
-"  float core=1.0-smoothstep(0.0,.62,d);",
-"  float halo=pow(1.0-d,3.0)*.30;",
-"  float a=(core+halo)*vA;",
-"  if(vSz>300.0) a=pow(1.0-d,2.4)*vA;",
-/* estrelas: azul-branco frio; algumas quentes (ambar); a voz esquenta */
-"  vec3 cool=vec3(.72,.84,1.0), warm=vec3(1.0,.86,.70);",
-"  vec3 col=mix(cool,warm,step(.82,vTone)*.9+uE*.25);",
-"  o=vec4(col*a,a);",
-"}"].join("\n");
-/* ---- nebulosa: raymarch volumetrico (triangulo de tela inteira) ---- */
-var POG_NVS=[
-"#version 300 es",
-"in vec2 a; void main(){gl_Position=vec4(a,0.0,1.0);}"].join("\n");
-var POG_NFS=[
-"#version 300 es",
-"precision highp float;",
-"uniform vec2 uRes; uniform float uT,uE,uKick,uR,uDpr,uSteps,uBass;",
-"uniform vec2 uRot; uniform vec4 uC;",   /* gas, nucleo, borda, (livre) */
-"out vec4 o;",
-POG_NOISE,
-"float fbm(vec3 p){float f=0.0,a=.5;for(int i=0;i<4;i++){f+=a*snoise(p);p=p*2.05+vec3(3.1,1.7,9.2);a*=.5;}return f;}",
-"float hash12(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}",
-"void main(){",
-"  vec2 cen=uRes*.5; float f=2.737*uR*uDpr;",
-"  vec2 uv=(gl_FragCoord.xy-cen)/f;",
-"  vec3 O=vec3(0.0,0.0,3.263); vec3 dir=normalize(vec3(uv,-1.0));",
-"  float RV=.97;",
-"  float b=dot(O,dir); float c=dot(O,O)-RV*RV; float h=b*b-c;",
-"  vec3 col=vec3(0.0);",
-"  vec3 azulBorda=vec3(.35,.60,1.0);",
-"  if(h<0.0){",
-/* fora da esfera: halo atmosferico curto */
-"    float dm=sqrt(max(dot(O,O)-b*b,0.0))-RV;",
-"    col=azulBorda*exp(-dm*14.0)*.22*(1.0+uE*.9+uKick*.1)*uC.z;",
-"    o=vec4(1.0-exp(-col*1.6),1.0); return;",
-"  }",
-"  float sq=sqrt(h); float t0=-b-sq, t1=-b+sq;",
-"  vec3 n0=normalize(O+dir*t0);",
-"  float fres=pow(1.0-max(0.0,dot(-dir,n0)),2.6);",
-"  float cy=cos(uRot.x), sy=sin(uRot.x), cp=cos(uRot.y), sp=sin(uRot.y);",
-"  int N=int(uSteps); float dt=(t1-t0)/float(N);",
-"  float t=t0+dt*hash12(gl_FragCoord.xy);",
-"  vec3 acc=vec3(0.0); float T=1.0; float core=0.0;",
-"  vec3 drift=vec3(uT*.000045,uT*.000030,-uT*.000025);",
-"  float con=.72+uE*.55+uKick*.06;",
-"  for(int i=0;i<40;i++){ if(i>=N)break;",
-"    vec3 p=O+dir*t;",
-/* inverso da camera: Rx(-pit) depois Ry(-yaw) — o gas gira junto com as estrelas */
-"    vec3 w=vec3(p.x,p.y*cp+p.z*sp,-p.y*sp+p.z*cp);",
-"    w=vec3(w.x*cy+w.z*sy,w.y,-w.x*sy+w.z*cy);",
-"    float rr=length(w);",
-"    float shape=smoothstep(RV*1.02,.30,rr);",
-"    float nz=fbm(w*2.9+drift);",
-"    float hue=snoise(w*1.2+vec3(7.3,2.1,4.4)+drift*.5)*.5+.5;",
-"    float dens=max(0.0,nz*con+.24*shape-.10)*shape*uC.x;",
-"    vec3 tinta=mix(vec3(.50,.18,.95),mix(vec3(.18,.52,1.0),vec3(.20,.85,.95),smoothstep(.55,.9,hue)),smoothstep(.15,.55,hue));",
-"    vec3 cc=mix(vec3(.07,.04,.28),tinta,smoothstep(0.0,.30,dens));",
-"    cc=mix(cc,mix(tinta,vec3(.35,.65,1.0),.5),smoothstep(.28,.62,dens));",
-"    cc=mix(cc,vec3(.85,.95,1.0),smoothstep(.55,1.05,dens)*(1.0-rr*.6));",
-"    cc=mix(cc,vec3(1.0,.55,.85),uE*.35*smoothstep(.2,.8,dens));",
-"    float a=dens*dt*3.2;",
-"    acc+=cc*a*T; T*=exp(-a*1.1);",
-"    core+=exp(-rr*rr*7.5)*dt*T;",
-"    t+=dt;",
-"  }",
-"  col=acc;",
-"  col+=core*vec3(.78,.88,1.0)*(1.3+uE*2.4+uKick*.3+uBass*.4)*uC.y;",
-"  col+=azulBorda*fres*(.55+uE*.9+uKick*.08)*uC.z;",
-/* vidro: reflexo da luz alto-esquerda */
-"  vec3 L=normalize(vec3(-.5,.65,.6)); float nl=max(0.0,dot(n0,L));",
-"  col+=vec3(1.0)*(pow(nl,48.0)*.30+pow(nl,8.0)*.06);",
-"  o=vec4(1.0-exp(-col*1.6),1.0);",
+"  vec2 center=gl_PointCoord-vec2(0.5); float dist=length(center);",
+"  if(dist>0.5)discard;",
+"  float core=1.0-smoothstep(0.0,0.15,dist);",
+"  float halo=pow(1.0-smoothstep(0.0,0.5,dist),2.0);",
+"  float alpha=(core*1.0+halo*0.25)*vAlpha;",
+"  vec3 finalColor=vColor*vIntensity+vec3(1.0)*core*0.4*vIntensity;",
+"  o=vec4(finalColor,alpha);",
 "}"].join("\n");
 function makePoGL(cv){
-  var g=cv.getContext("webgl2",{antialias:false,alpha:false,premultipliedAlpha:true,depth:false,stencil:false,powerPreference:"high-performance"});
+  var g=cv.getContext("webgl2",{antialias:false,alpha:false,premultipliedAlpha:false,depth:false,stencil:false,powerPreference:"high-performance"});
   if(!g)return null;
   function sh(ty,src){var s=g.createShader(ty);g.shaderSource(s,src);g.compileShader(s);
     if(!g.getShaderParameter(s,g.COMPILE_STATUS)){console.warn("po-gl:",g.getShaderInfoLog(s));return null}return s}
-  function prog(vs,fs){var p=g.createProgram(),a=sh(g.VERTEX_SHADER,vs),b=sh(g.FRAGMENT_SHADER,fs);
-    if(!a||!b)return null;g.attachShader(p,a);g.attachShader(p,b);g.linkProgram(p);
-    if(!g.getProgramParameter(p,g.LINK_STATUS)){console.warn("po-gl:",g.getProgramInfoLog(p));return null}return p}
-  var pr=prog(POG_VS,POG_FS),pn=prog(POG_NVS,POG_NFS);
-  if(!pr||!pn)return null;
-  /* estrelas: 50% casca (r 1±.03), 50% dentro do gas; uniforme na esfera (asin) */
-  var N=POG.n,P=new Float32Array(N*3),S=new Float32Array(N*4);
-  for(var i=0;i<N;i++){
-    var la=Math.asin(2*Math.random()-1),lo=Math.random()*6.283,cl=Math.cos(la);
-    var casca=Math.random()<.5;
-    var r=casca?1+(Math.random()-.5)*.06:.30+Math.pow(Math.random(),.7)*.62;
-    P[i*3]=cl*Math.cos(lo)*r;P[i*3+1]=Math.sin(la)*r;P[i*3+2]=cl*Math.sin(lo)*r;
-    var u=Math.random();
-    S[i*4]=Math.random();
-    S[i*4+1]=Math.random();
-    S[i*4+2]=u<.06?.8+Math.random()*.3:Math.pow(Math.random(),1.6)*.6;
-    S[i*4+3]=Math.random();
-  }
+  var pr=g.createProgram(),a=sh(g.VERTEX_SHADER,POG_VS),b=sh(g.FRAGMENT_SHADER,POG_FS);
+  if(!a||!b)return null;
+  g.attachShader(pr,a);g.attachShader(pr,b);g.linkProgram(pr);
+  if(!g.getProgramParameter(pr,g.LINK_STATUS)){console.warn("po-gl:",g.getProgramInfoLog(pr));return null}
   g.useProgram(pr);
-  var lP=g.getAttribLocation(pr,"aP"),lS=g.getAttribLocation(pr,"aS");
+  /* distribuicao identica ao original: 60% casca .95–1.10 · 30% interior .40–.95 · 10% halo 1.10–1.60 */
+  var N=POG.n,P=new Float32Array(N*3),S=new Float32Array(N*2);
+  for(var i=0;i<N;i++){
+    var z=2*Math.random()-1,ph=Math.random()*Math.PI*2,rr=Math.sqrt(1-z*z),u=Math.random(),r;
+    r=u<.6?.95+.15*Math.random():u<.9?.4+.55*Math.random():1.1+.5*Math.random();
+    P[i*3]=r*rr*Math.cos(ph);P[i*3+1]=r*rr*Math.sin(ph);P[i*3+2]=r*z;
+    S[i*2]=Math.random();S[i*2+1]=.3+.7*Math.random();
+  }
   var vao=g.createVertexArray();g.bindVertexArray(vao);
   var bP=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bP);g.bufferData(g.ARRAY_BUFFER,P,g.STATIC_DRAW);
-  g.enableVertexAttribArray(lP);g.vertexAttribPointer(lP,3,g.FLOAT,false,0,0);
+  var lP=g.getAttribLocation(pr,"aP");g.enableVertexAttribArray(lP);g.vertexAttribPointer(lP,3,g.FLOAT,false,0,0);
   var bS=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bS);g.bufferData(g.ARRAY_BUFFER,S,g.STATIC_DRAW);
-  g.enableVertexAttribArray(lS);g.vertexAttribPointer(lS,4,g.FLOAT,false,0,0);
-  var EN=POEJN+1,EP=new Float32Array(EN*3),ES=new Float32Array(EN*4);
-  var vaoE=g.createVertexArray();g.bindVertexArray(vaoE);
-  var bEP=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bEP);g.bufferData(g.ARRAY_BUFFER,EP,g.DYNAMIC_DRAW);
-  g.enableVertexAttribArray(lP);g.vertexAttribPointer(lP,3,g.FLOAT,false,0,0);
-  var bES=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bES);g.bufferData(g.ARRAY_BUFFER,ES,g.DYNAMIC_DRAW);
-  g.enableVertexAttribArray(lS);g.vertexAttribPointer(lS,4,g.FLOAT,false,0,0);
-  /* nebulosa: triangulo de tela inteira */
-  var vaoN=g.createVertexArray();g.bindVertexArray(vaoN);
-  var bN=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bN);g.bufferData(g.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),g.STATIC_DRAW);
-  var lN=g.getAttribLocation(pn,"a");g.enableVertexAttribArray(lN);g.vertexAttribPointer(lN,2,g.FLOAT,false,0,0);
+  var lS=g.getAttribLocation(pr,"aS");g.enableVertexAttribArray(lS);g.vertexAttribPointer(lS,2,g.FLOAT,false,0,0);
   g.bindVertexArray(null);
-  g.disable(g.DEPTH_TEST);g.clearColor(0,0,0,1);
-  var psr=g.getParameter(g.ALIASED_POINT_SIZE_RANGE);
+  g.disable(g.DEPTH_TEST);g.enable(g.BLEND);g.blendFunc(g.SRC_ALPHA,g.ONE);
+  g.clearColor(0,0,0,1);
   function U(n){return g.getUniformLocation(pr,n)}
-  function UN(n){return g.getUniformLocation(pn,n)}
   POG.drawn=N;
-  return {g:g,pr:pr,pn:pn,vao:vao,vaoE:vaoE,vaoN:vaoN,bEP:bEP,bES:bES,EP:EP,ES:ES,EN:EN,N:N,maxPt:psr?psr[1]:64,
-    u:{res:U("uRes"),dpr:U("uDpr"),t:U("uT"),e:U("uE"),kick:U("uKick"),r:U("uR"),ej:U("uEj"),area:U("uArea"),
-       rot:U("uRot"),m:U("uM"),ptr:U("uPtr"),bands:U("uBands"),gain:U("uG")},
-    un:{res:UN("uRes"),t:UN("uT"),e:UN("uE"),kick:UN("uKick"),r:UN("uR"),dpr:UN("uDpr"),steps:UN("uSteps"),
-        bass:UN("uBass"),rot:UN("uRot"),c:UN("uC")},
-    fps:{t:0,n:0,checked:0},bands:new Float32Array(8),gain:new Float32Array(4),steps:0};
+  return {g:g,pr:pr,vao:vao,N:N,
+    u:{res:U("uRes"),dpr:U("uDpr"),t:U("uT"),flow:U("uFlow"),int:U("uInt"),state:U("uState"),ptsz:U("uPtSz"),
+       rot:U("uRot"),c1:U("uC1"),c2:U("uC2"),c3:U("uC3")},
+    fps:{t:0,n:0,checked:0},t0:0,tprev:0,time:0,flow:0,inten:0,roty:0,rotx:0};
 }
+var POG_STATE={calma:0,sentinela:0,escutando:1,pensando:3,falando:2};
 function drawPoGL(G,cv,t,E){
   if(!G)return;
   var g=G.g,d=Math.min(devicePixelRatio||1,2),rc=cv.getBoundingClientRect();
   var W=Math.max(1,(rc.width*d)|0),H=Math.max(1,(rc.height*d)|0);
   if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H}
-  var w=rc.width,h=rc.height;
-  poPtrAttach(cv);
-  if(POPTR.on&&performance.now()-POPTR.t>160)POPTR.on=false;
-  var M=Math.min(w,h);
-  /* passos do raymarch: canvas pequeno pede menos; a guarda de FPS corta mais */
-  if(!G.steps)G.steps=M*d<700?18:POG.steps;
+  var M=Math.min(rc.width,rc.height);
+  /* guarda de FPS: 3 janelas de 2s; abaixo de 40 fps desenha 60% dos pontos */
   var F=G.fps;F.n++;
   if(!F.t)F.t=t;else if(t-F.t>2000){var fps=F.n*1000/(t-F.t);F.n=0;F.t=t;
-    if(F.checked<4&&POG.guard){F.checked++;if(fps<40){if(G.steps>12)G.steps=(G.steps*.7)|0;else if(POG.drawn>4000)POG.drawn=(POG.drawn*.65)|0;}}}
-  var MD=POMOODP[POMOOD]||POMOODP.calma;
-  var bass=(BANDS[0]+BANDS[1]+BANDS[2]+BANDS[3])*.25;
-  var dE=E-POPREV;POPREV=E;var kicked=false;
-  if(dE>.018){POKICK=Math.min(1,POKICK+dE*6.5);kicked=dE>.03;}
-  POKICK*=.945;
-  var dt=POTPREV?Math.min(t-POTPREV,64):0;POTPREV=t;
-  var fala=E>PO_DEADZONE?E-PO_DEADZONE:0;
-  POROT+=dt*(fala*.00055+.000052+MD.swirl);
-  var esp=t*.001;
-  var yaw=PO_YAW0+POROT+Math.sin(esp*.21)*.05;
-  var pit=PO_PIT0+Math.sin(esp*.147)*.11+Math.sin(POROT*1.3)*.05;
-  var R=M*.285*MD.contract*(1+E*.055+Math.sin(esp*.45)*.008);
-  var Ev=E*POG.voz;
-  var area=Math.min(1.3,Math.max(.20,Math.pow(R/228,2)));
-  for(var bi=0;bi<8;bi++)G.bands[bi]=(BANDS[bi*3]+BANDS[bi*3+1]+BANDS[bi*3+2])/3;
-  G.gain[0]=POG.shell;G.gain[1]=POG.spr;G.gain[2]=POG.limb;G.gain[3]=POG.glow;
-  var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
-  if(MD.ejeta>0){POGACC+=fala*MD.ejeta*POG.ejeta*.22*(dt/16.7);var nE=POGACC|0;if(nE>0){POGACC-=nE;poSolta(Math.min(nE,4),cy,sy,cp,sp);}}
-
-  g.viewport(0,0,W,H);g.clear(g.COLOR_BUFFER_BIT);
-  /* 1 · nebulosa (opaca) */
-  g.disable(g.BLEND);
-  g.useProgram(G.pn);
-  g.uniform2f(G.un.res,W,H);g.uniform1f(G.un.t,t);g.uniform1f(G.un.e,Ev);g.uniform1f(G.un.kick,POKICK);
-  g.uniform1f(G.un.r,R);g.uniform1f(G.un.dpr,d);g.uniform1f(G.un.steps,G.steps);g.uniform1f(G.un.bass,bass);
-  g.uniform2f(G.un.rot,yaw,pit);g.uniform4f(G.un.c,POG.gas*MD.piso,POG.core,POG.rim,0);
-  g.bindVertexArray(G.vaoN);g.drawArrays(g.TRIANGLES,0,3);
-  /* 2 · estrelas + faiscas (aditivo) */
-  g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE);
-  g.useProgram(G.pr);
-  g.uniform2f(G.u.res,W,H);g.uniform1f(G.u.dpr,d);g.uniform1f(G.u.t,t);g.uniform1f(G.u.e,Ev);
-  g.uniform1f(G.u.kick,POKICK);g.uniform1f(G.u.r,R);g.uniform1f(G.u.area,area);
-  g.uniform2f(G.u.rot,yaw,pit);
-  g.uniform4f(G.u.m,MD.drift,MD.twk,.92*MD.piso,POG.jit);
-  g.uniform3f(G.u.ptr,POPTR.x,H-POPTR.y,POPTR.on?(.35+POPTR.sp*.9):0);
-  g.uniform1fv(G.u.bands,G.bands);g.uniform1fv(G.u.gain,G.gain);
-  var EP=G.EP,ES=G.ES,k=0;
-  var gsz=Math.min(G.maxPt,R*2.0*d*(1+Ev*.18));
-  EP[0]=0;EP[1]=0;EP[2]=0;ES[0]=(.02+Ev*.08+bass*.03)*POG.glow;ES[1]=0;ES[2]=gsz*3.1/d;ES[3]=Math.min(1,Ev*1.5);k=1;
-  for(var ei=0;ei<POEJN;ei++){
-    var e=POEJ[ei];if(!e.on)continue;
-    e.age+=dt;if(e.age>=e.life){e.on=0;continue;}
-    e.x+=e.vx*dt;e.y+=e.vy*dt;e.z+=e.vz*dt;e.vx*=.996;e.vy*=.996;e.vz*=.996;
-    var kk=1-e.age/e.life,fi=Math.min(1,e.age/320),ea=e.b*fi*kk*(.5+Ev*.35);
-    if(ea<.03)continue;
-    EP[k*3]=e.x;EP[k*3+1]=e.y;EP[k*3+2]=e.z;
-    ES[k*4]=Math.min(1,ea);ES[k*4+1]=0;ES[k*4+2]=(.6+e.s*.6)*3.1*(.6+kk*.4);ES[k*4+3]=.5;k++;
+    if(F.checked<4&&POG.guard){F.checked++;if(fps<40&&POG.drawn>30000)POG.drawn=(POG.drawn*.6)|0;}}
+  var dt=G.tprev?Math.min((t-G.tprev)/1000,.05):0.016;G.tprev=t;
+  var k=dt/0.016;   /* o original conta por quadro a 60 fps */
+  var st=POG_STATE[POMOOD];if(st===undefined)st=0;
+  /* intensidade suavizada: ataque .15, decaimento .04 (por quadro) — nunca salta */
+  var alvo=Math.min(1,E*POG.voz);
+  G.inten+=(alvo-G.inten)*(alvo>G.inten?.15:.04)*Math.min(2,k);
+  var u=G.inten;
+  G.time+=.016*k;
+  G.flow+=.016*(1+3.5*u)*k;
+  if(POG.rot){
+    if(st===2)G.roty+=(.0015+.002*u)*k;
+    else if(st===3){G.roty+=.006*k;G.rotx+=.002*k;}
+    else if(st===1)G.roty+=.003*k;
+    else G.roty+=.0015*k;
   }
-  g.uniform1f(G.u.ej,1);
-  g.bindVertexArray(G.vaoE);
-  g.bindBuffer(g.ARRAY_BUFFER,G.bEP);g.bufferSubData(g.ARRAY_BUFFER,0,EP,0,k*3);
-  g.bindBuffer(g.ARRAY_BUFFER,G.bES);g.bufferSubData(g.ARRAY_BUFFER,0,ES,0,k*4);
-  g.drawArrays(g.POINTS,0,k);
-  g.uniform1f(G.u.ej,0);
+  g.viewport(0,0,W,H);g.clear(g.COLOR_BUFFER_BIT);
+  g.useProgram(G.pr);
+  g.uniform2f(G.u.res,W,H);g.uniform1f(G.u.dpr,d);g.uniform1f(G.u.t,G.time);g.uniform1f(G.u.flow,G.flow);
+  g.uniform1f(G.u.int,u);g.uniform1f(G.u.state,st);
+  /* o original desenha num canvas de ate 500 px; em canvas maior o grao escala junto */
+  g.uniform1f(G.u.ptsz,POG.ptsz*Math.min(2,Math.max(.6,M/500)));
+  g.uniform2f(G.u.rot,G.roty,G.rotx);
+  g.uniform3f(G.u.c1,POGCOL[0][0],POGCOL[0][1],POGCOL[0][2]);
+  g.uniform3f(G.u.c2,POGCOL[1][0],POGCOL[1][1],POGCOL[1][2]);
+  g.uniform3f(G.u.c3,POGCOL[2][0],POGCOL[2][1],POGCOL[2][2]);
   g.bindVertexArray(G.vao);
   g.drawArrays(g.POINTS,0,Math.min(G.N,POG.drawn));
   g.bindVertexArray(null);
@@ -2328,6 +2236,8 @@ var API = {
   poTune: function (o) { o = o || {}; for (var k in o) if (k in POG && k !== "snap") POG[k] = +o[k]; return poTune(o); },
   /* bancada: copia cada quadro WebGL para um canvas 2D (medicao) */
   poSnap: function (cv) { POG.snap = cv || null; return API; },
+  /* modo "po": as tres cores da nuvem (hex), trocadas ao vivo */
+  setColors: function (a) { return poSetColors(a); },
   setPalette: function (p) { PAL = p; return API; },
   getBands: function () { return BANDS; }
 };
