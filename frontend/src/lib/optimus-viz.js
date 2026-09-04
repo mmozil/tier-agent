@@ -364,7 +364,7 @@ function G_fio(K){
 
 var CATALOG=[
   {id:"anth",n:"Anthropic",type:"viz",draw:vAnth,d:"O catavento do Claude, gerado por curva polar em vez de path fixo: 11 petalas de comprimento e largura desiguais, cada uma respirando no seu ritmo e crescendo na sua banda de frequencia. Creme e terracota da marca, sem contorno, com sombra macia dando o volume de ameba."},
-  {id:"po",n:"Po",type:"viz",draw:vPo,d:"16 mil pontos brancos crus sobre preto, sem brilho, sem bloom e sem cor. A latitude e sorteada uniforme em vez de por area, o que agrupa nos polos e cria as duas calotas claras. Cada grupo de pontos infla na sua propria banda, e cada silaba dispara um aro de pontos levantados que atravessa a esfera de um lado ao outro."},
+  {id:"po",n:"Po",type:"glpo",draw:vPo,d:"16 mil pontos brancos crus sobre preto, sem brilho, sem bloom e sem cor. A latitude e sorteada uniforme em vez de por area, o que agrupa nos polos e cria as duas calotas claras. Cada grupo de pontos infla na sua propria banda, e cada silaba dispara um aro de pontos levantados que atravessa a esfera de um lado ao outro."},
   {id:"blob",n:"Blob",type:"gl",d:"Raymarching de um SDF com PBR completo: sombra propria, oclusao, espalhamento sob a superficie e iridescencia por interferencia de filme fino. E a unica que tem luz de verdade."},
   {id:"orbeanel",n:"Orbe com anel",type:"viz",draw:cOrbeAnel,d:"Interior liquido com quatro nebulosas e 26 voltas quase circulares inclinadas formando o anel volumetrico. Halo azul sangrando muito alem do corpo."},
   {id:"circulo",n:"Circulo",type:"viz",draw:cCirculo,d:"Fio de 1px com um realce macio percorrendo ele, e dois trechos onde a luz espalha para dentro em 260 tracos finos. Frio, sem fogo e sem faisca: a fala so alarga e acende o espalhamento."},
@@ -1700,6 +1700,305 @@ function vPo(ctx,w,h,t,E){
   ctx.globalCompositeOperation="source-over";
 }
 
+/* ================= PO GL: orbe cosmica em WebGL2 =================
+   v5 (04/09/2026). O dono: "nao esta bom, e como algo COSMICO — olha na internet".
+   Referencias abertas: OriginKit "Cosmic Orb" (galaxia dentro de uma esfera de vidro:
+   nebulosas a deriva, estrelas, borda com lens-flare), VoiceOrbs "Galaxy Orb" (MIT:
+   base escura + neblinas coloridas + po + estrelas com cintilacao + fresnel + brilho
+   de vidro), Shadertoy "Volumetric Galaxy Dust", Three.js Journey (particulas).
+   Tecnica:
+     1. NEBULOSA: raymarch volumetrico numa esfera (fbm de simplex 3D como densidade,
+        emissao por cor conforme densidade e raio, nucleo luminoso, fresnel na borda,
+        brilho de vidro, halo por fora) — um triangulo de tela inteira.
+     2. ESTRELAS: nuvem de pontos GPU (gl_PointSize atenuado, sprite macio, blending
+        aditivo), metade dentro do gas, com ruido simplex no movimento.
+     3. FAISCAS: poeira que se solta no ataque de cada silaba.
+   Regras do dono: silencio = sem rotacao; o gas deriva devagar, as estrelas cintilam;
+   a voz acende nucleo, gas e borda, e o po danca. Fallback sem WebGL2: vPo (canvas). */
+var POG={n:9000,shell:.9,spr:1.3,limb:0,glow:.6,voz:2,ejeta:1.6,guard:1,jit:1,
+         gas:1,core:1,rim:1,steps:26,drawn:0,snap:null};
+var POG_NOISE=[
+"vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}",
+"vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}",
+"vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}",
+"vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}",
+"float snoise(vec3 v){",
+"  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);",
+"  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);",
+"  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);",
+"  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;",
+"  i=mod289(i);",
+"  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));",
+"  float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;",
+"  vec4 j=p-49.0*floor(p*ns.z*ns.z);",
+"  vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);",
+"  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);",
+"  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);",
+"  vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));",
+"  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;",
+"  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);",
+"  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));",
+"  p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;",
+"  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;",
+"  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));",
+"}"].join("\n");
+/* ---- estrelas / faiscas: pontos ---- */
+var POG_VS=[
+"#version 300 es",
+"precision highp float;",
+"in vec3 aP; in vec4 aS;",
+"uniform vec2 uRes; uniform float uDpr,uT,uE,uKick,uR,uEj,uArea;",
+"uniform vec2 uRot; uniform vec4 uM; uniform vec3 uPtr; uniform float uBands[8]; uniform float uG[4];",
+"out float vA; out float vTone; out float vSz;",
+POG_NOISE,
+"void main(){",
+"  float ph=aS.x, spd=aS.y, szm=aS.z, tone=aS.w;",
+"  vec3 p=aP; float r=length(p); vec3 n=p/max(r,1e-4);",
+"  float a; float sc; float dep;",
+"  if(uEj>.5){",
+"    vec3 c=p;",
+"    sc=1.0/(3.1-c.z*.95); dep=clamp((c.z+1.0)*.5,0.0,1.0);",
+"    vec2 scr=uRes*.5+vec2(c.x,c.y)*uR*2.6*sc*uDpr;",
+"    gl_Position=vec4(scr/(uRes*.5)-1.0,0.0,1.0);",
+"    a=ph; vTone=tone; vSz=szm;",
+"    gl_PointSize=max(1.0,szm*sc*uDpr);",
+"    vA=clamp(a,0.0,1.0); return;",
+"  }",
+"  float ang=uT*.00003*(.5+spd)*uM.x*(tone<.5?1.0:-1.0);",
+"  float ca=cos(ang), sa=sin(ang);",
+"  p=vec3(p.x*ca-p.z*sa,p.y,p.x*sa+p.z*ca);",
+"  float amp=(.010+uE*.085+uKick*.05)*uM.w;",
+"  vec3 q=p*1.9+vec3(uT*.00022*(.6+spd*.8), ph*3.1, -uT*.00017);",
+"  vec3 dsp=vec3(snoise(q),snoise(q+vec3(11.3,7.7,3.1)),snoise(q+vec3(37.1,19.3,5.7)));",
+"  int b=int(mod(floor(ph*8.0),8.0)); float band=uBands[b];",
+"  p+=dsp*amp+n*(band*.09+uKick*.02);",
+"  float cy=cos(uRot.x), sy=sin(uRot.x), cp=cos(uRot.y), sp=sin(uRot.y);",
+"  vec3 c=vec3(p.x*cy-p.z*sy,p.y,p.x*sy+p.z*cy);",
+"  c=vec3(c.x,c.y*cp-c.z*sp,c.y*sp+c.z*cp);",
+"  sc=1.0/(3.1-c.z*.95); dep=clamp((c.z/r+1.0)*.5,0.0,1.0);",
+"  vec2 scr=uRes*.5+vec2(c.x,c.y)*uR*2.6*sc*uDpr;",
+"  if(uPtr.z>0.0){ vec2 d=scr-uPtr.xy; float dd=length(d); float pr=uR*.55*uDpr;",
+"    if(dd<pr){ float f=1.0-dd/pr; scr+=(d/max(dd,1.0))*f*f*uPtr.z*uR*.22*uDpr; } }",
+"  gl_Position=vec4(scr/(uRes*.5)-1.0,0.0,1.0);",
+"  float tw=1.0+sin(uT*.0011*(.4+spd*.7)+ph*6.283)*uM.y;",
+"  float shell=step(.92,r);",
+"  float limb=1.0-abs(c.z/r); float l2=limb*limb;",
+"  float lit=.55+.45*max(0.0,dot(c/r,vec3(-.46,.58,.67)));",
+"  a=uM.z*(.50+.50*dep)*tw*lit*(1.0+shell*l2*uG[2])*(1.0+uE*1.1+band*.7)*uG[0]*uArea;",
+"  a*=mix(.6,1.0,shell);",
+"  vA=clamp(a,0.0,1.0); vTone=tone; vSz=szm;",
+"  gl_PointSize=max(1.0,(1.15+szm*2.1)*sc*3.0*uDpr*(1.0+uE*.22+uKick*.15)*uG[1]);",
+"}"].join("\n");
+var POG_FS=[
+"#version 300 es",
+"precision highp float;",
+"in float vA; in float vTone; in float vSz;",
+"uniform float uE;",
+"out vec4 o;",
+"void main(){",
+"  vec2 q=gl_PointCoord-.5; float d=length(q)*2.0;",
+"  if(d>1.0)discard;",
+"  float core=1.0-smoothstep(0.0,.62,d);",
+"  float halo=pow(1.0-d,3.0)*.30;",
+"  float a=(core+halo)*vA;",
+"  if(vSz>300.0) a=pow(1.0-d,2.4)*vA;",
+/* estrelas: azul-branco frio; algumas quentes (ambar); a voz esquenta */
+"  vec3 cool=vec3(.72,.84,1.0), warm=vec3(1.0,.86,.70);",
+"  vec3 col=mix(cool,warm,step(.82,vTone)*.9+uE*.25);",
+"  o=vec4(col*a,a);",
+"}"].join("\n");
+/* ---- nebulosa: raymarch volumetrico (triangulo de tela inteira) ---- */
+var POG_NVS=[
+"#version 300 es",
+"in vec2 a; void main(){gl_Position=vec4(a,0.0,1.0);}"].join("\n");
+var POG_NFS=[
+"#version 300 es",
+"precision highp float;",
+"uniform vec2 uRes; uniform float uT,uE,uKick,uR,uDpr,uSteps,uBass;",
+"uniform vec2 uRot; uniform vec4 uC;",   /* gas, nucleo, borda, (livre) */
+"out vec4 o;",
+POG_NOISE,
+"float fbm(vec3 p){float f=0.0,a=.5;for(int i=0;i<4;i++){f+=a*snoise(p);p=p*2.05+vec3(3.1,1.7,9.2);a*=.5;}return f;}",
+"float hash12(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}",
+"void main(){",
+"  vec2 cen=uRes*.5; float f=2.737*uR*uDpr;",
+"  vec2 uv=(gl_FragCoord.xy-cen)/f;",
+"  vec3 O=vec3(0.0,0.0,3.263); vec3 dir=normalize(vec3(uv,-1.0));",
+"  float RV=.97;",
+"  float b=dot(O,dir); float c=dot(O,O)-RV*RV; float h=b*b-c;",
+"  vec3 col=vec3(0.0);",
+"  vec3 azulBorda=vec3(.35,.60,1.0);",
+"  if(h<0.0){",
+/* fora da esfera: halo atmosferico curto */
+"    float dm=sqrt(max(dot(O,O)-b*b,0.0))-RV;",
+"    col=azulBorda*exp(-dm*14.0)*.22*(1.0+uE*.9+uKick*.4)*uC.z;",
+"    o=vec4(1.0-exp(-col*1.6),1.0); return;",
+"  }",
+"  float sq=sqrt(h); float t0=-b-sq, t1=-b+sq;",
+"  vec3 n0=normalize(O+dir*t0);",
+"  float fres=pow(1.0-max(0.0,dot(-dir,n0)),2.6);",
+"  float cy=cos(uRot.x), sy=sin(uRot.x), cp=cos(uRot.y), sp=sin(uRot.y);",
+"  int N=int(uSteps); float dt=(t1-t0)/float(N);",
+"  float t=t0+dt*hash12(gl_FragCoord.xy);",
+"  vec3 acc=vec3(0.0); float T=1.0; float core=0.0;",
+"  vec3 drift=vec3(uT*.000045,uT*.000030,-uT*.000025);",
+"  float con=.72+uE*.55+uKick*.25;",
+"  for(int i=0;i<40;i++){ if(i>=N)break;",
+"    vec3 p=O+dir*t;",
+/* inverso da camera: Rx(-pit) depois Ry(-yaw) — o gas gira junto com as estrelas */
+"    vec3 w=vec3(p.x,p.y*cp+p.z*sp,-p.y*sp+p.z*cp);",
+"    w=vec3(w.x*cy+w.z*sy,w.y,-w.x*sy+w.z*cy);",
+"    float rr=length(w);",
+"    float shape=smoothstep(RV*1.02,.30,rr);",
+"    float nz=fbm(w*2.9+drift);",
+"    float hue=snoise(w*1.2+vec3(7.3,2.1,4.4)+drift*.5)*.5+.5;",
+"    float dens=max(0.0,nz*con+.24*shape-.10)*shape*uC.x;",
+"    vec3 tinta=mix(vec3(.50,.18,.95),mix(vec3(.18,.52,1.0),vec3(.20,.85,.95),smoothstep(.55,.9,hue)),smoothstep(.15,.55,hue));",
+"    vec3 cc=mix(vec3(.07,.04,.28),tinta,smoothstep(0.0,.30,dens));",
+"    cc=mix(cc,mix(tinta,vec3(.35,.65,1.0),.5),smoothstep(.28,.62,dens));",
+"    cc=mix(cc,vec3(.85,.95,1.0),smoothstep(.55,1.05,dens)*(1.0-rr*.6));",
+"    cc=mix(cc,vec3(1.0,.55,.85),uE*.35*smoothstep(.2,.8,dens));",
+"    float a=dens*dt*3.2;",
+"    acc+=cc*a*T; T*=exp(-a*1.1);",
+"    core+=exp(-rr*rr*7.5)*dt*T;",
+"    t+=dt;",
+"  }",
+"  col=acc;",
+"  col+=core*vec3(.78,.88,1.0)*(1.3+uE*2.4+uKick*1.0+uBass*.6)*uC.y;",
+"  col+=azulBorda*fres*(.55+uE*.9+uKick*.3)*uC.z;",
+/* vidro: reflexo da luz alto-esquerda */
+"  vec3 L=normalize(vec3(-.5,.65,.6)); float nl=max(0.0,dot(n0,L));",
+"  col+=vec3(1.0)*(pow(nl,48.0)*.30+pow(nl,8.0)*.06);",
+"  o=vec4(1.0-exp(-col*1.6),1.0);",
+"}"].join("\n");
+function makePoGL(cv){
+  var g=cv.getContext("webgl2",{antialias:false,alpha:false,premultipliedAlpha:true,depth:false,stencil:false,powerPreference:"high-performance"});
+  if(!g)return null;
+  function sh(ty,src){var s=g.createShader(ty);g.shaderSource(s,src);g.compileShader(s);
+    if(!g.getShaderParameter(s,g.COMPILE_STATUS)){console.warn("po-gl:",g.getShaderInfoLog(s));return null}return s}
+  function prog(vs,fs){var p=g.createProgram(),a=sh(g.VERTEX_SHADER,vs),b=sh(g.FRAGMENT_SHADER,fs);
+    if(!a||!b)return null;g.attachShader(p,a);g.attachShader(p,b);g.linkProgram(p);
+    if(!g.getProgramParameter(p,g.LINK_STATUS)){console.warn("po-gl:",g.getProgramInfoLog(p));return null}return p}
+  var pr=prog(POG_VS,POG_FS),pn=prog(POG_NVS,POG_NFS);
+  if(!pr||!pn)return null;
+  /* estrelas: 50% casca (r 1±.03), 50% dentro do gas; uniforme na esfera (asin) */
+  var N=POG.n,P=new Float32Array(N*3),S=new Float32Array(N*4);
+  for(var i=0;i<N;i++){
+    var la=Math.asin(2*Math.random()-1),lo=Math.random()*6.283,cl=Math.cos(la);
+    var casca=Math.random()<.5;
+    var r=casca?1+(Math.random()-.5)*.06:.30+Math.pow(Math.random(),.7)*.62;
+    P[i*3]=cl*Math.cos(lo)*r;P[i*3+1]=Math.sin(la)*r;P[i*3+2]=cl*Math.sin(lo)*r;
+    var u=Math.random();
+    S[i*4]=Math.random();
+    S[i*4+1]=Math.random();
+    S[i*4+2]=u<.06?.8+Math.random()*.3:Math.pow(Math.random(),1.6)*.6;
+    S[i*4+3]=Math.random();
+  }
+  g.useProgram(pr);
+  var lP=g.getAttribLocation(pr,"aP"),lS=g.getAttribLocation(pr,"aS");
+  var vao=g.createVertexArray();g.bindVertexArray(vao);
+  var bP=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bP);g.bufferData(g.ARRAY_BUFFER,P,g.STATIC_DRAW);
+  g.enableVertexAttribArray(lP);g.vertexAttribPointer(lP,3,g.FLOAT,false,0,0);
+  var bS=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bS);g.bufferData(g.ARRAY_BUFFER,S,g.STATIC_DRAW);
+  g.enableVertexAttribArray(lS);g.vertexAttribPointer(lS,4,g.FLOAT,false,0,0);
+  var EN=POEJN+1,EP=new Float32Array(EN*3),ES=new Float32Array(EN*4);
+  var vaoE=g.createVertexArray();g.bindVertexArray(vaoE);
+  var bEP=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bEP);g.bufferData(g.ARRAY_BUFFER,EP,g.DYNAMIC_DRAW);
+  g.enableVertexAttribArray(lP);g.vertexAttribPointer(lP,3,g.FLOAT,false,0,0);
+  var bES=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bES);g.bufferData(g.ARRAY_BUFFER,ES,g.DYNAMIC_DRAW);
+  g.enableVertexAttribArray(lS);g.vertexAttribPointer(lS,4,g.FLOAT,false,0,0);
+  /* nebulosa: triangulo de tela inteira */
+  var vaoN=g.createVertexArray();g.bindVertexArray(vaoN);
+  var bN=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bN);g.bufferData(g.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),g.STATIC_DRAW);
+  var lN=g.getAttribLocation(pn,"a");g.enableVertexAttribArray(lN);g.vertexAttribPointer(lN,2,g.FLOAT,false,0,0);
+  g.bindVertexArray(null);
+  g.disable(g.DEPTH_TEST);g.clearColor(0,0,0,1);
+  var psr=g.getParameter(g.ALIASED_POINT_SIZE_RANGE);
+  function U(n){return g.getUniformLocation(pr,n)}
+  function UN(n){return g.getUniformLocation(pn,n)}
+  POG.drawn=N;
+  return {g:g,pr:pr,pn:pn,vao:vao,vaoE:vaoE,vaoN:vaoN,bEP:bEP,bES:bES,EP:EP,ES:ES,EN:EN,N:N,maxPt:psr?psr[1]:64,
+    u:{res:U("uRes"),dpr:U("uDpr"),t:U("uT"),e:U("uE"),kick:U("uKick"),r:U("uR"),ej:U("uEj"),area:U("uArea"),
+       rot:U("uRot"),m:U("uM"),ptr:U("uPtr"),bands:U("uBands"),gain:U("uG")},
+    un:{res:UN("uRes"),t:UN("uT"),e:UN("uE"),kick:UN("uKick"),r:UN("uR"),dpr:UN("uDpr"),steps:UN("uSteps"),
+        bass:UN("uBass"),rot:UN("uRot"),c:UN("uC")},
+    fps:{t:0,n:0,checked:0},bands:new Float32Array(8),gain:new Float32Array(4),steps:0};
+}
+function drawPoGL(G,cv,t,E){
+  if(!G)return;
+  var g=G.g,d=Math.min(devicePixelRatio||1,2),rc=cv.getBoundingClientRect();
+  var W=Math.max(1,(rc.width*d)|0),H=Math.max(1,(rc.height*d)|0);
+  if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H}
+  var w=rc.width,h=rc.height;
+  poPtrAttach(cv);
+  if(POPTR.on&&performance.now()-POPTR.t>160)POPTR.on=false;
+  var M=Math.min(w,h);
+  /* passos do raymarch: canvas pequeno pede menos; a guarda de FPS corta mais */
+  if(!G.steps)G.steps=M*d<700?18:POG.steps;
+  var F=G.fps;F.n++;
+  if(!F.t)F.t=t;else if(t-F.t>2000){var fps=F.n*1000/(t-F.t);F.n=0;F.t=t;
+    if(F.checked<4&&POG.guard){F.checked++;if(fps<40){if(G.steps>12)G.steps=(G.steps*.7)|0;else if(POG.drawn>4000)POG.drawn=(POG.drawn*.65)|0;}}}
+  var MD=POMOODP[POMOOD]||POMOODP.calma;
+  var bass=(BANDS[0]+BANDS[1]+BANDS[2]+BANDS[3])*.25;
+  var dE=E-POPREV;POPREV=E;var kicked=false;
+  if(dE>.018){POKICK=Math.min(1,POKICK+dE*6.5);kicked=dE>.03;}
+  POKICK*=.945;
+  var dt=POTPREV?Math.min(t-POTPREV,64):0;POTPREV=t;
+  var fala=E>PO_DEADZONE?E-PO_DEADZONE:0;
+  POROT+=dt*(fala*.00055+.000052+MD.swirl);
+  var esp=t*.001;
+  var yaw=PO_YAW0+POROT+Math.sin(esp*.21)*.05;
+  var pit=PO_PIT0+Math.sin(esp*.147)*.11+Math.sin(POROT*1.3)*.05;
+  var R=M*.285*MD.contract*(1+E*.055+Math.sin(esp*.45)*.008);
+  var Ev=E*POG.voz;
+  var area=Math.min(1.3,Math.max(.20,Math.pow(R/228,2)));
+  for(var bi=0;bi<8;bi++)G.bands[bi]=(BANDS[bi*3]+BANDS[bi*3+1]+BANDS[bi*3+2])/3;
+  G.gain[0]=POG.shell;G.gain[1]=POG.spr;G.gain[2]=POG.limb;G.gain[3]=POG.glow;
+  var cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
+  if(kicked&&MD.ejeta>0)poEjeta(Math.min(64,(POKICK*MD.ejeta*POG.ejeta*30)|0)+4,cy,sy,cp,sp);
+
+  g.viewport(0,0,W,H);g.clear(g.COLOR_BUFFER_BIT);
+  /* 1 · nebulosa (opaca) */
+  g.disable(g.BLEND);
+  g.useProgram(G.pn);
+  g.uniform2f(G.un.res,W,H);g.uniform1f(G.un.t,t);g.uniform1f(G.un.e,Ev);g.uniform1f(G.un.kick,POKICK);
+  g.uniform1f(G.un.r,R);g.uniform1f(G.un.dpr,d);g.uniform1f(G.un.steps,G.steps);g.uniform1f(G.un.bass,bass);
+  g.uniform2f(G.un.rot,yaw,pit);g.uniform4f(G.un.c,POG.gas*MD.piso,POG.core,POG.rim,0);
+  g.bindVertexArray(G.vaoN);g.drawArrays(g.TRIANGLES,0,3);
+  /* 2 · estrelas + faiscas (aditivo) */
+  g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE);
+  g.useProgram(G.pr);
+  g.uniform2f(G.u.res,W,H);g.uniform1f(G.u.dpr,d);g.uniform1f(G.u.t,t);g.uniform1f(G.u.e,Ev);
+  g.uniform1f(G.u.kick,POKICK);g.uniform1f(G.u.r,R);g.uniform1f(G.u.area,area);
+  g.uniform2f(G.u.rot,yaw,pit);
+  g.uniform4f(G.u.m,MD.drift,MD.twk,.92*MD.piso,POG.jit);
+  g.uniform3f(G.u.ptr,POPTR.x,H-POPTR.y,POPTR.on?(.35+POPTR.sp*.9):0);
+  g.uniform1fv(G.u.bands,G.bands);g.uniform1fv(G.u.gain,G.gain);
+  var EP=G.EP,ES=G.ES,k=0;
+  var gsz=Math.min(G.maxPt,R*2.0*d*(1+Ev*.18));
+  EP[0]=0;EP[1]=0;EP[2]=0;ES[0]=(.02+Ev*.08+bass*.03)*POG.glow;ES[1]=0;ES[2]=gsz*3.1/d;ES[3]=Math.min(1,Ev*1.5);k=1;
+  for(var ei=0;ei<POEJN;ei++){
+    var e=POEJ[ei];if(!e.on)continue;
+    e.age+=dt;if(e.age>=e.life){e.on=0;continue;}
+    e.x+=e.vx*dt;e.y+=e.vy*dt;e.z+=e.vz*dt;e.vx*=.985;e.vy*=.985;e.vz*=.985;
+    var kk=1-e.age/e.life,ea=e.b*kk*kk*(.6+Ev*.5)*POG.ejeta;
+    if(ea<.03)continue;
+    EP[k*3]=e.x;EP[k*3+1]=e.y;EP[k*3+2]=e.z;
+    ES[k*4]=Math.min(1,ea);ES[k*4+1]=0;ES[k*4+2]=(.7+e.s*.7)*3.1*(.5+kk*.5);ES[k*4+3]=.6;k++;
+  }
+  g.uniform1f(G.u.ej,1);
+  g.bindVertexArray(G.vaoE);
+  g.bindBuffer(g.ARRAY_BUFFER,G.bEP);g.bufferSubData(g.ARRAY_BUFFER,0,EP,0,k*3);
+  g.bindBuffer(g.ARRAY_BUFFER,G.bES);g.bufferSubData(g.ARRAY_BUFFER,0,ES,0,k*4);
+  g.drawArrays(g.POINTS,0,k);
+  g.uniform1f(G.u.ej,0);
+  g.bindVertexArray(G.vao);
+  g.drawArrays(g.POINTS,0,Math.min(G.N,POG.drawn));
+  g.bindVertexArray(null);
+  if(POG.snap){var sc2=POG.snap;if(sc2.width!==W||sc2.height!==H){sc2.width=W;sc2.height=H;}
+    sc2.getContext("2d").drawImage(cv,0,0);}
+}
+
 /* ================= ANTHROPIC =================
    A marca do Claude e um catavento de petalas irregulares — o proprio pessoal de
    design descreve como "asterisco, catavento ou ameba". Gerado por curva polar em
@@ -1900,6 +2199,18 @@ function Instance(host, def, opts) {
     if (def.type === "gl") {
       this.G = makeGL(cv);
       if (!this.G) this.error = "WebGL2 indisponivel";
+    } else if (def.type === "glpo") {
+      this.G = makePoGL(cv);
+      if (!this.G) {
+        /* fallback: mesmo desenho em canvas 2D */
+        this.def = def = { id: def.id, n: def.n, type: "viz", draw: def.draw, d: def.d };
+        host.removeChild(cv); cv = document.createElement("canvas"); cv.style.display = "block"; cv.style.width = "100%"; cv.style.height = "100%"; host.appendChild(cv); this.cv = cv;
+        this.ctx = cv.getContext("2d", { alpha: false });
+        this._resize();
+        var self0 = this;
+        this._onres = function () { self0._resize(); };
+        addEventListener("resize", this._onres);
+      }
     } else {
       this.ctx = cv.getContext("2d", { alpha: false });
       this._resize();
@@ -1923,6 +2234,7 @@ Instance.prototype._frame = function (t) {
   PALO = d.pal || this.opts.palette || null;
   if (d.type === "dom") siriUpdate(this.dom, t, E);
   else if (d.type === "gl") drawGL(this.G, this.cv, t, E, this.opts.quality || .75);
+  else if (d.type === "glpo") drawPoGL(this.G, this.cv, t, E);
   else if (d.type === "viz") { if (this.w) d.draw(this.ctx, this.w, this.h, t, E); }
   else if (d.type === "orb") { if (this.w) renderOrb(this.ctx, this.w, this.h, t, E); }
   else if (this.w) render(this.ctx, this.w, this.h, this.S, t, E, this._scale);
@@ -1938,6 +2250,7 @@ Instance.prototype.start = function () {
 Instance.prototype.stop = function () { this.running = false; cancelAnimationFrame(this._raf); return this; };
 Instance.prototype.destroy = function () {
   this.stop();
+  if (this.G && this.G.g && this.G.g.getExtension) { var lc = this.G.g.getExtension("WEBGL_lose_context"); if (lc) lc.loseContext(); }
   if (this._onres) removeEventListener("resize", this._onres);
   if (this.cv && this.cv.parentNode) this.cv.parentNode.removeChild(this.cv);
   if (this.dom && this.dom.parentNode) this.dom.parentNode.removeChild(this.dom);
@@ -1996,7 +2309,9 @@ var API = {
      calma | sentinela | escutando | pensando | falando */
   setMood: function (m) { POMOOD = POMOODP[m] ? m : "calma"; return API; },
   /* ganhos de calibracao do modo "po" (bancada); em prod ficam em 1 */
-  poTune: function (o) { return poTune(o || {}); },
+  poTune: function (o) { o = o || {}; for (var k in o) if (k in POG && k !== "snap") POG[k] = +o[k]; return poTune(o); },
+  /* bancada: copia cada quadro WebGL para um canvas 2D (medicao) */
+  poSnap: function (cv) { POG.snap = cv || null; return API; },
   setPalette: function (p) { PAL = p; return API; },
   getBands: function () { return BANDS; }
 };
