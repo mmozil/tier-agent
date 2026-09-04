@@ -1725,19 +1725,26 @@ var POG={n:150000,voz:2.2,guard:1,ptsz:1,drawn:0,snap:null,rot:1,variant:0};
    esticados ao longo do fluxo e tentaculos que avancam com a voz (pedido do dono, 04/09) */
 var POG_VARIANTS={poeira:0,simbionte:1};
 function poSetVariant(v){var k=typeof v==="string"?POG_VARIANTS[v]:+v;if(k===undefined||isNaN(k))k=0;POG.variant=k;return k;}
-var POGCOL=[[0x63/255,0x66/255,0xf1/255],[0xa8/255,0x55/255,0xf7/255],[0xec/255,0x48/255,0x99/255]];
+var POGCOL=null;
+function poLin(c){return c<=.04045?c/12.92:Math.pow((c+.055)/1.055,2.4);}
+/* fundo da composicao (sRGB, como a pagina): preto por padrao; a pagina clara manda '#fff' */
+var POGBG=[0,0,0];
+function poSetBackground(c){if(typeof c==="string"){var h=c.replace("#","");if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  var v=parseInt(h,16);if(!isNaN(v))POGBG=[((v>>16)&255)/255,((v>>8)&255)/255,(v&255)/255];}
+  else if(c&&c.length===3)POGBG=[+c[0],+c[1],+c[2]];return POGBG;}
 function poSetColors(arr){
   if(!arr||!arr.length)return POGCOL;
   var out=[];
   for(var i=0;i<3;i++){
     var c=arr[Math.min(i,arr.length-1)];
     if(typeof c==="string"){var h=c.replace("#","");if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
-      var v=parseInt(h,16);if(isNaN(v))continue;out.push([((v>>16)&255)/255,((v>>8)&255)/255,(v&255)/255]);}
-    else if(c&&c.length===3)out.push([+c[0],+c[1],+c[2]]);
+      var v=parseInt(h,16);if(isNaN(v))continue;out.push([poLin(((v>>16)&255)/255),poLin(((v>>8)&255)/255),poLin((v&255)/255)]);}
+    else if(c&&c.length===3)out.push([poLin(+c[0]),poLin(+c[1]),poLin(+c[2])]);
   }
   while(out.length<3)out.push(out[out.length-1]||POGCOL[out.length]);
   POGCOL=out;return POGCOL;
 }
+POGCOL=poSetColors(["#6366f1","#a855f7","#ec4899"]);
 var POG_NOISE=[
 "vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}",
 "vec4 mod289v(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}",
@@ -1870,15 +1877,19 @@ var POG_FS=[
 "  vec3 finalColor=vColor*vIntensity+vec3(1.0)*core*0.4*vIntensity;",
 "  o=vec4(finalColor,alpha);",
 "}"].join("\n");
+var POG_CVS=["#version 300 es","in vec2 a; out vec2 v; void main(){v=a*.5+.5;gl_Position=vec4(a,0.0,1.0);}"].join("\n");
+var POG_CFS=["#version 300 es","precision highp float;","in vec2 v; uniform sampler2D uTex; uniform vec3 uBg; out vec4 o;",
+"void main(){ vec4 t=texture(uTex,v); o=vec4(t.rgb+(1.0-t.a)*uBg,1.0); }"].join("\n");
 function makePoGL(cv){
-  var g=cv.getContext("webgl2",{antialias:false,alpha:false,premultipliedAlpha:false,depth:false,stencil:false,powerPreference:"high-performance"});
+  var g=cv.getContext("webgl2",{antialias:false,alpha:false,depth:false,stencil:false,powerPreference:"high-performance"});
   if(!g)return null;
   function sh(ty,src){var s=g.createShader(ty);g.shaderSource(s,src);g.compileShader(s);
     if(!g.getShaderParameter(s,g.COMPILE_STATUS)){console.warn("po-gl:",g.getShaderInfoLog(s));return null}return s}
-  var pr=g.createProgram(),a=sh(g.VERTEX_SHADER,POG_VS),b=sh(g.FRAGMENT_SHADER,POG_FS);
-  if(!a||!b)return null;
-  g.attachShader(pr,a);g.attachShader(pr,b);g.linkProgram(pr);
-  if(!g.getProgramParameter(pr,g.LINK_STATUS)){console.warn("po-gl:",g.getProgramInfoLog(pr));return null}
+  function prog(vs,fs){var p=g.createProgram(),a=sh(g.VERTEX_SHADER,vs),b=sh(g.FRAGMENT_SHADER,fs);
+    if(!a||!b)return null;g.attachShader(p,a);g.attachShader(p,b);g.linkProgram(p);
+    if(!g.getProgramParameter(p,g.LINK_STATUS)){console.warn("po-gl:",g.getProgramInfoLog(p));return null}return p}
+  var pr=prog(POG_VS,POG_FS),pc=prog(POG_CVS,POG_CFS);
+  if(!pr||!pc)return null;
   g.useProgram(pr);
   /* distribuicao identica ao original: 60% casca .95–1.10 · 30% interior .40–.95 · 10% halo 1.10–1.60 */
   var N=POG.n,P=new Float32Array(N*3),S=new Float32Array(N*2);
@@ -1893,12 +1904,16 @@ function makePoGL(cv){
   var lP=g.getAttribLocation(pr,"aP");g.enableVertexAttribArray(lP);g.vertexAttribPointer(lP,3,g.FLOAT,false,0,0);
   var bS=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bS);g.bufferData(g.ARRAY_BUFFER,S,g.STATIC_DRAW);
   var lS=g.getAttribLocation(pr,"aS");g.enableVertexAttribArray(lS);g.vertexAttribPointer(lS,2,g.FLOAT,false,0,0);
+  /* composicao: triangulo de tela inteira + FBO RGBA8 (recriado quando o canvas muda) */
+  var vaoC=g.createVertexArray();g.bindVertexArray(vaoC);
+  var bC=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,bC);g.bufferData(g.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),g.STATIC_DRAW);
+  var lC=g.getAttribLocation(pc,"a");g.enableVertexAttribArray(lC);g.vertexAttribPointer(lC,2,g.FLOAT,false,0,0);
   g.bindVertexArray(null);
-  g.disable(g.DEPTH_TEST);g.enable(g.BLEND);g.blendFunc(g.SRC_ALPHA,g.ONE);
-  g.clearColor(0,0,0,1);
+  var fbo=g.createFramebuffer(),tex=g.createTexture();
+  g.disable(g.DEPTH_TEST);
   function U(n){return g.getUniformLocation(pr,n)}
   POG.drawn=N;
-  return {g:g,pr:pr,vao:vao,N:N,
+  return {g:g,pr:pr,pc:pc,vao:vao,vaoC:vaoC,fbo:fbo,tex:tex,fw:0,fh:0,N:N,uTex:g.getUniformLocation(pc,"uTex"),uBg:g.getUniformLocation(pc,"uBg"),
     u:{res:U("uRes"),dpr:U("uDpr"),t:U("uT"),flow:U("uFlow"),int:U("uInt"),state:U("uState"),ptsz:U("uPtSz"),
        rot:U("uRot"),c1:U("uC1"),c2:U("uC2"),c3:U("uC3"),var_:U("uVar")},
     fps:{t:0,n:0,checked:0},t0:0,tprev:0,time:0,flow:0,inten:0,roty:0,rotx:0};
@@ -1939,12 +1954,23 @@ function drawPoGL(G,cv,t,E){
     else if(st===1)G.roty+=.003*k;
     else G.roty+=.0015*k;
   }
-  g.viewport(0,0,W,H);g.clear(g.COLOR_BUFFER_BIT);
+  if(G.fw!==W||G.fh!==H){
+    g.bindTexture(g.TEXTURE_2D,G.tex);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,W,H,0,g.RGBA,g.UNSIGNED_BYTE,null);
+    g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.NEAREST);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.NEAREST);
+    g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);
+    g.bindFramebuffer(g.FRAMEBUFFER,G.fbo);g.framebufferTexture2D(g.FRAMEBUFFER,g.COLOR_ATTACHMENT0,g.TEXTURE_2D,G.tex,0);
+    g.bindFramebuffer(g.FRAMEBUFFER,null);G.fw=W;G.fh=H;
+  }
+  /* 1 · particulas no FBO: clear transparente + aditivo (SRC_ALPHA, ONE) — igual ao three.js */
+  g.bindFramebuffer(g.FRAMEBUFFER,G.fbo);
+  g.viewport(0,0,W,H);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);
+  /* medido no original (getParameter no canvas do three.js): cor SRC_ALPHA,ONE · alfa ONE,ONE */
+  g.enable(g.BLEND);g.blendFuncSeparate(g.SRC_ALPHA,g.ONE,g.ONE,g.ONE);
   g.useProgram(G.pr);
   g.uniform2f(G.u.res,W,H);g.uniform1f(G.u.dpr,d);g.uniform1f(G.u.t,G.time);g.uniform1f(G.u.flow,G.flow);
   g.uniform1f(G.u.int,u);g.uniform1f(G.u.state,st);
-  /* o original desenha num canvas de ate 500 px; em canvas maior o grao escala junto */
-  g.uniform1f(G.u.ptsz,POG.ptsz*Math.min(2,Math.max(.6,M/500)));
+  /* tamanho do ponto em px FIXO, como no original (medido: escalar pelo canvas tirava 35% da luz) */
+  g.uniform1f(G.u.ptsz,POG.ptsz);
   g.uniform2f(G.u.rot,G.roty,G.rotx);g.uniform1f(G.u.var_,POG.variant);
   g.uniform3f(G.u.c1,POGCOL[0][0],POGCOL[0][1],POGCOL[0][2]);
   g.uniform3f(G.u.c2,POGCOL[1][0],POGCOL[1][1],POGCOL[1][2]);
@@ -1952,6 +1978,13 @@ function drawPoGL(G,cv,t,E){
   g.bindVertexArray(G.vao);
   g.drawArrays(g.POINTS,0,Math.min(G.N,POG.drawn));
   g.bindVertexArray(null);
+  /* 2 · composicao no canvas opaco: cor + (1 - alfa) * fundo — o que o navegador faz com o canvas
+     transparente do original sobre a pagina, agora sem depender do compositor */
+  g.bindFramebuffer(g.FRAMEBUFFER,null);
+  g.viewport(0,0,W,H);g.disable(g.BLEND);
+  g.useProgram(G.pc);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,G.tex);
+  g.uniform1i(G.uTex,0);g.uniform3f(G.uBg,POGBG[0],POGBG[1],POGBG[2]);
+  g.bindVertexArray(G.vaoC);g.drawArrays(g.TRIANGLES,0,3);g.bindVertexArray(null);
   if(POG.snap){var sc2=POG.snap;if(sc2.width!==W||sc2.height!==H){sc2.width=W;sc2.height=H;}
     sc2.getContext("2d").drawImage(cv,0,0);}
 }
@@ -2273,6 +2306,8 @@ var API = {
   setColors: function (a) { return poSetColors(a); },
   /* modo "po": estilo da nuvem — "poeira" (original) ou "simbionte" */
   setVariant: function (v) { return poSetVariant(v); },
+  /* modo "po": cor do fundo da composicao (a cor da pagina por tras: "#000" ou "#fff") */
+  setBackground: function (c) { return poSetBackground(c); },
   setPalette: function (p) { PAL = p; return API; },
   getBands: function () { return BANDS; }
 };

@@ -52,10 +52,62 @@ type Viz = {
   setColors?: (c: string[]) => unknown;
   /** modo "po": estilo da nuvem — "poeira" (original) ou "simbionte" */
   setVariant?: (v: string) => unknown;
+  /** modo "po": a cor da página por trás da nuvem ("#000" ou "#fff") — a composição é feita na lib */
+  setBackground?: (c: string) => unknown;
   list: () => unknown[];
 };
 
 type Estilo = "poeira" | "simbionte";
+type Tema = "escuro" | "claro";
+function temaInicial(): Tema {
+  try {
+    const q = new URLSearchParams(window.location.search).get("tema");
+    if (q === "claro" || q === "escuro") return q;
+    const g = window.localStorage.getItem("voz-tema");
+    if (g === "claro" || g === "escuro") return g;
+  } catch {
+    /* sem armazenamento */
+  }
+  return "escuro";
+}
+// Paleta por tema. O fundo claro existe porque a referência escolhida pelo dono
+// (Voice Orb) é sobre branco — e a nuvem aditiva lê diferente sobre cada fundo.
+const TEMAS: Record<Tema, Record<string, string>> = {
+  escuro: {
+    pagina: "bg-black text-[#f2f2f7]",
+    texto: "text-[#f2f2f7]",
+    mudo: "text-[#8e8e93]",
+    mudo2: "text-[#c7c7cc]",
+    apagado: "text-[#48484a]",
+    sublinha: "decoration-[#48484a]",
+    superficie: "bg-[#1c1c1e]",
+    superficieHover: "hover:bg-[#2c2c2e]",
+    trilho: "bg-[#2c2c2e]",
+    ativo: "bg-[#f2f2f7] text-black",
+    circulo: "bg-white text-black hover:bg-[#e8e8ed]",
+    mutado: "bg-[#3a3a3c] text-[#f2f2f7] hover:bg-[#48484a]",
+    placeholder: "placeholder:text-[#8e8e93]",
+    pontoOff: "bg-[#2c2c2e]",
+    pontoOn: "bg-white shadow-[0_0_12px_rgba(255,255,255,0.75)]",
+  },
+  claro: {
+    pagina: "bg-white text-[#111114]",
+    texto: "text-[#111114]",
+    mudo: "text-[#6e6e73]",
+    mudo2: "text-[#3a3a3c]",
+    apagado: "text-[#aeaeb2]",
+    sublinha: "decoration-[#c7c7cc]",
+    superficie: "bg-[#f2f2f7]",
+    superficieHover: "hover:bg-[#e5e5ea]",
+    trilho: "bg-[#e5e5ea]",
+    ativo: "bg-black text-white",
+    circulo: "bg-black text-white hover:bg-[#2c2c2e]",
+    mutado: "bg-[#d1d1d6] text-[#111114] hover:bg-[#c7c7cc]",
+    placeholder: "placeholder:text-[#8e8e93]",
+    pontoOff: "bg-[#d1d1d6]",
+    pontoOn: "bg-black shadow-[0_0_12px_rgba(0,0,0,0.35)]",
+  },
+};
 const CORES_SIMBIONTE: [string, string, string] = ["#2a2e3d", "#6e7386", "#f4f4ff"];
 function estiloInicial(): Estilo {
   try {
@@ -287,6 +339,19 @@ export default function VozPublica({
     // o simbionte pede base escura + veio claro; a poeira volta ao trio do original
     setCores(e === "simbionte" ? CORES_SIMBIONTE : CORES_PADRAO);
   };
+  // tema: escuro (padrão da página) ou claro (como a referência)
+  const [tema, setTema] = useState<Tema>(temaInicial);
+  const temaRef = useRef<Tema>(tema);
+  useEffect(() => {
+    temaRef.current = tema;
+    vizRef.current?.setBackground?.(tema === "claro" ? "#ffffff" : "#000000");
+    try {
+      window.localStorage.setItem("voz-tema", tema);
+    } catch {
+      /* sem armazenamento */
+    }
+  }, [tema]);
+  const T = TEMAS[tema];
 
   // ── a esfera ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -298,6 +363,7 @@ export default function VozPublica({
       v.simulate(false);
       v.setColors?.(coresRef.current);
       v.setVariant?.(estiloRef.current);
+      v.setBackground?.(temaRef.current === "claro" ? "#ffffff" : "#000000");
       inst = v.mount("#esfera-voz", "po");
       v.setLevel(0);
     });
@@ -1270,12 +1336,12 @@ export default function VozPublica({
   // ── UI ────────────────────────────────────────────────────────────────
   const corPonto =
     fase === "escutando" || fase === "falando"
-      ? "bg-white shadow-[0_0_12px_rgba(255,255,255,0.75)]"
+      ? T.pontoOn
       : fase === "pensando"
         ? "bg-[#8e8e93] animate-pulse"
         : fase === "sentinela"
           ? "bg-[#8e8e93]"
-          : "bg-[#2c2c2e]";
+          : T.pontoOff;
 
   // Estado do mic SEMPRE visível — e clicável quando é um convite à ação.
   // A página abre desarmada: a dica deixa ÓBVIO que um toque liga.
@@ -1297,7 +1363,7 @@ export default function VozPublica({
             : { texto: "respondendo…", acao: null };
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-black text-[#f2f2f7] select-none">
+    <div className={`fixed inset-0 flex flex-col ${T.pagina} select-none`}>
       <span
         className={`fixed top-[22px] left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full z-30 transition-all ${corPonto}`}
       />
@@ -1310,7 +1376,7 @@ export default function VozPublica({
         title="Cores da esfera"
         aria-label="Escolher as cores da esfera"
         aria-expanded={mostraCores}
-        className="fixed top-[14px] right-[14px] z-40 h-9 w-9 rounded-full grid place-items-center bg-[#1c1c1e] hover:bg-[#2c2c2e] transition-colors"
+        className={`fixed top-[14px] right-[14px] z-40 h-9 w-9 rounded-full grid place-items-center ${T.superficie} ${T.superficieHover} transition-colors`}
       >
         <span className="flex -space-x-1">
           {cores.map((c, i) => (
@@ -1319,24 +1385,36 @@ export default function VozPublica({
         </span>
       </button>
       {mostraCores ? (
-        <div className="fixed top-[56px] right-[14px] z-40 w-[260px] rounded-2xl bg-[#1c1c1e] p-4 text-[12px] text-[#c7c7cc] shadow-2xl">
-          <p className="mb-3 text-[11px] tracking-[0.14em] uppercase text-[#8e8e93]">Estilo</p>
-          <div className="mb-4 inline-flex w-full rounded-full bg-[#2c2c2e] p-0.5">
+        <div className={`fixed top-[56px] right-[14px] z-40 w-[260px] rounded-2xl ${T.superficie} p-4 text-[12px] ${T.mudo2} shadow-2xl`}>
+          <p className={`mb-3 text-[11px] tracking-[0.14em] uppercase ${T.mudo}`}>Fundo</p>
+          <div className={`mb-4 inline-flex w-full rounded-full ${T.trilho} p-0.5`}>
+            {(["escuro", "claro"] as const).map((e) => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => setTema(e)}
+                aria-pressed={tema === e}
+                className={`flex-1 rounded-full py-1.5 text-[12px] capitalize transition-colors ${tema === e ? T.ativo : T.mudo2}`}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+          <p className={`mb-3 text-[11px] tracking-[0.14em] uppercase ${T.mudo}`}>Estilo</p>
+          <div className={`mb-4 inline-flex w-full rounded-full ${T.trilho} p-0.5`}>
             {(["poeira", "simbionte"] as const).map((e) => (
               <button
                 key={e}
                 type="button"
                 onClick={() => escolherEstilo(e)}
                 aria-pressed={estilo === e}
-                className={`flex-1 rounded-full py-1.5 text-[12px] capitalize transition-colors ${
-                  estilo === e ? "bg-[#f2f2f7] text-black" : "text-[#c7c7cc] hover:text-[#f2f2f7]"
-                }`}
+                className={`flex-1 rounded-full py-1.5 text-[12px] capitalize transition-colors ${estilo === e ? T.ativo : T.mudo2}`}
               >
                 {e}
               </button>
             ))}
           </div>
-          <p className="mb-3 text-[11px] tracking-[0.14em] uppercase text-[#8e8e93]">Cores da esfera</p>
+          <p className={`mb-3 text-[11px] tracking-[0.14em] uppercase ${T.mudo}`}>Cores da esfera</p>
           <div className="grid grid-cols-3 gap-2 mb-3">
             {([0, 1, 2] as const).map((i) => (
               <label key={i} className="flex flex-col items-center gap-1.5 cursor-pointer">
@@ -1347,7 +1425,7 @@ export default function VozPublica({
                   aria-label={`Cor ${i + 1}`}
                   className="h-9 w-full rounded-lg border-0 bg-transparent p-0 cursor-pointer"
                 />
-                <span className="text-[10px] text-[#8e8e93]">{i === 0 ? "repouso" : i === 1 ? "voz média" : "voz alta"}</span>
+                <span className={`text-[10px] ${T.mudo}`}>{i === 0 ? "repouso" : i === 1 ? "voz média" : "voz alta"}</span>
               </label>
             ))}
           </div>
@@ -1357,14 +1435,14 @@ export default function VozPublica({
                 key={p.nome}
                 type="button"
                 onClick={() => setCores(p.cores)}
-                className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-[#2c2c2e] transition-colors"
+                className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left ${T.superficieHover} transition-colors`}
               >
                 <span className="flex -space-x-1 shrink-0">
                   {p.cores.map((c, i) => (
                     <span key={i} className="h-3.5 w-3.5 rounded-full ring-1 ring-black/60" style={{ background: c }} />
                   ))}
                 </span>
-                <span className="text-[#f2f2f7]">{p.nome}</span>
+                <span className={T.texto}>{p.nome}</span>
               </button>
             ))}
           </div>
@@ -1389,7 +1467,7 @@ export default function VozPublica({
       {linha.texto ? (
         <p
           className={`fixed left-0 right-0 bottom-[118px] text-center px-[7vw] z-30 font-light leading-[1.4] tracking-[-0.01em] max-h-[24vh] overflow-hidden text-[clamp(16px,2.1vw,24px)] ${
-            linha.cls === "parcial" ? "text-[#8e8e93]" : "text-[#f2f2f7]"
+            linha.cls === "parcial" ? T.mudo : T.texto
           }`}
         >
           {linha.texto}
@@ -1402,20 +1480,20 @@ export default function VozPublica({
         onClick={status.acao ?? undefined}
         disabled={!status.acao}
         className={`fixed left-1/2 -translate-x-1/2 bottom-[88px] z-30 text-[11px] tracking-[0.14em] uppercase transition-colors ${
-          status.acao ? "text-[#c7c7cc] underline underline-offset-4 decoration-[#48484a] cursor-pointer" : "text-[#48484a]"
+          status.acao ? `${T.mudo2} underline underline-offset-4 ${T.sublinha} cursor-pointer` : T.apagado
         }`}
       >
         {status.texto}
       </button>
 
       {/* barra: [+ conversa] [campo] [mic ditado] [círculo branco: escuta/enviar] */}
-      <div className="fixed left-1/2 -translate-x-1/2 bottom-[18px] z-40 w-[min(92vw,760px)] h-14 rounded-[28px] bg-[#1c1c1e] flex items-center gap-1.5 pl-2.5 pr-2">
+      <div className={`fixed left-1/2 -translate-x-1/2 bottom-[18px] z-40 w-[min(92vw,760px)] h-14 rounded-[28px] ${T.superficie} flex items-center gap-1.5 pl-2.5 pr-2`}>
         <button
           type="button"
           onClick={onVerConversa}
           title={`Ver a conversa — ${titulo}`}
           aria-label="Ver a conversa"
-          className="shrink-0 h-9 w-9 rounded-full grid place-items-center text-[#f2f2f7] hover:bg-[#2c2c2e] transition-colors"
+          className={`shrink-0 h-9 w-9 rounded-full grid place-items-center ${T.texto} ${T.superficieHover} transition-colors`}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
             <path d="M12 5v14M5 12h14" />
@@ -1431,7 +1509,7 @@ export default function VozPublica({
           placeholder={ditando ? "Pode falar — estou escrevendo…" : "Mensagem"}
           autoComplete="off"
           enterKeyHint="send"
-          className="flex-1 min-w-0 h-full bg-transparent border-0 outline-none text-[16px] text-[#f2f2f7] placeholder:text-[#8e8e93] px-1"
+          className={`flex-1 min-w-0 h-full bg-transparent border-0 outline-none text-[16px] ${T.texto} ${T.placeholder} px-1`}
         />
 
         {/* mic de DITADO: fala e o texto vai sendo escrito no campo */}
@@ -1441,7 +1519,7 @@ export default function VozPublica({
           title={ditando ? "Parar o ditado" : "Ditar por voz (escreve no campo)"}
           aria-label={ditando ? "Parar o ditado" : "Ditar por voz"}
           className={`shrink-0 h-9 w-9 rounded-full grid place-items-center transition-colors ${
-            ditando ? "text-[#ff453a] bg-[#2c2c2e] animate-pulse" : "text-[#f2f2f7] hover:bg-[#2c2c2e]"
+            ditando ? `text-[#ff453a] ${T.trilho} animate-pulse` : `${T.texto} ${T.superficieHover}`
           }`}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -1459,7 +1537,7 @@ export default function VozPublica({
             onClick={enviarTexto}
             title="Enviar"
             aria-label="Enviar"
-            className="shrink-0 h-9 w-9 rounded-full grid place-items-center bg-white text-black transition hover:bg-[#e8e8ed]"
+            className={`shrink-0 h-9 w-9 rounded-full grid place-items-center ${T.circulo} transition`}
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 19V5M6 11l6-6 6 6" />
@@ -1472,7 +1550,7 @@ export default function VozPublica({
             title={escutaLigada ? "Desligar o microfone" : "Conversar por voz"}
             aria-label={escutaLigada ? "Desligar o microfone" : "Conversar por voz"}
             className={`shrink-0 h-9 w-9 rounded-full grid place-items-center transition-colors ${
-              escutaLigada ? "bg-white text-black hover:bg-[#e8e8ed]" : "bg-[#3a3a3c] text-[#f2f2f7] hover:bg-[#48484a]"
+              escutaLigada ? T.circulo : T.mutado
             }`}
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
