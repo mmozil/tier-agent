@@ -649,6 +649,20 @@ async def followup_inactivity_job() -> None:
                             # A categoria do motivo mora no CARD, não na conversa —
                             # é ela que escolhe qual dos nove textos da origem 3 sai.
                             ctx = await _cascata_contexto(db, conv)
+                            # 🚨 Visita marcada NÃO é silêncio (08/09/2026). O Marcos
+                            # confirmou a visita para 09/09 às 10h e no dia seguinte
+                            # recebeu "vi que você demonstrou interesse, prefere que
+                            # eu te ligue?". Quem tem visita marcada recebe o lembrete
+                            # da visita (D-2, véspera), não a cascata. O CRM é quem
+                            # sabe: etapa de visita agendada, agendamento futuro ou
+                            # visita_em no futuro. Sem contexto (CRM fora), segue —
+                            # é o erro seguro do best-effort.
+                            if ctx.get("visita_marcada"):
+                                logger.info(
+                                    "followup: conv %s pulada — visita marcada (%s)",
+                                    conv.id, ctx.get("visita_em") or ctx.get("etapa"),
+                                )
+                                continue
                             passos_cascata = _cascatas.passos(
                                 origem, ctx.get("categoria_motivo")
                             )
