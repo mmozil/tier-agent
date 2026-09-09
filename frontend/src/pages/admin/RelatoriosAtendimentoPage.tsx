@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { BarChart3, RefreshCw, MessageSquare, Hand, Flame, Clock, Star } from "lucide-react";
+import { BarChart3, RefreshCw, MessageSquare, Hand, Flame, Clock, Star, Headphones, Megaphone, Timer, Hourglass } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, Row, HairCells, Button, EmptyHint, SKEL } from "@/components/ds/fc";
@@ -22,6 +22,27 @@ interface Report {
   csat: { respostas: number; media: number | null; distribuicao: Record<string, number> };
   por_etiqueta: Record<string, number>;
   por_atendente: Record<string, number>;
+  /** Etapa 4 do caminho A: por PESSOA (identidade) e por NÚMERO, com as definições do plano. */
+  metricas?: Metricas | null;
+}
+
+interface Estat { mediana_s: number | null; media_s: number | null; n: number }
+interface Metricas {
+  days: number;
+  totais: { conversas: number; conversas_hoje: number; atendimentos: number; abordagens: number; respondidas_por_humano: number; respondidas_pela_ia: number };
+  tempos: { primeira_resposta: Estat; primeira_resposta_ia: Estat; duracao: Estat };
+  por_pessoa: { member_id: number; nome: string; papel: string | null; origem: string | null; conversas: number; atendimentos: number; abordagens: number; mensagens: number; primeira_resposta: Estat }[];
+  por_numero: { connector_id: number; rotulo: string; modo: string | null; member_id: number | null; dona: string | null; conversas: number; atendimentos: number; abordagens: number; primeira_resposta: Estat }[];
+  por_dia: { dia: string; conversas: number; atendimentos: number; abordagens: number }[];
+  definicoes: Record<string, string>;
+}
+
+/** Segundos → "42s" · "3min" · "1,5h". */
+function fmtDur(s: number | null | undefined): string {
+  if (s == null) return "—";
+  if (s < 60) return `${Math.round(s)}s`;
+  if (s < 3600) return `${Math.round(s / 60)}min`;
+  return `${(s / 3600).toFixed(1).replace(".", ",")}h`;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -210,7 +231,21 @@ export default function RelatoriosAtendimentoPage() {
               </HairCells>
             </Row>
 
-            <Row last>
+            {data.metricas && (
+              <Row>
+                <HairCells cols={4}>
+                  <Kpi icon={Headphones} label="Atendimentos" value={data.metricas.totais.atendimentos} color="#003083" />
+                  <Kpi icon={Megaphone} label="Abordagens" value={data.metricas.totais.abordagens} color="#7c3aed" />
+                  <Kpi icon={Timer} label={`1ª resposta (mediana · ${data.metricas.tempos.primeira_resposta.n})`} value={fmtDur(data.metricas.tempos.primeira_resposta.mediana_s)} color="#0a8f5a" />
+                  <Kpi icon={Hourglass} label="Duração média" value={fmtDur(data.metricas.tempos.duracao.media_s)} color="#F5A300" />
+                </HairCells>
+                <p className={`px-5 pb-4 -mt-1 text-[11px] leading-snug ${FC.mut}`}>
+                  Atendimento = conversa com ao menos uma mensagem enviada por uma pessoa (painel ou celular). Abordagem = a primeira mensagem foi nossa, de uma pessoa. 1ª resposta = da primeira mensagem do contato até a primeira resposta de uma pessoa.
+                </p>
+              </Row>
+            )}
+
+            <Row>
               <HairCells cols={2} gridLines>
                 <SubCard title="Por status">
                   <div className="space-y-2">
@@ -264,21 +299,80 @@ export default function RelatoriosAtendimentoPage() {
                   )}
                 </SubCard>
 
-                <SubCard title="Por atendente">
-                  {Object.keys(data.por_atendente).length === 0 ? (
-                    <p className={`text-[12px] ${FC.sub}`}>Nenhuma conversa atribuída.</p>
+                <SubCard title="Por pessoa">
+                  {/* Pela identidade (member_id), nunca pelo nome — quem respondeu e quem é dona. */}
+                  {!data.metricas || data.metricas.por_pessoa.length === 0 ? (
+                    Object.keys(data.por_atendente).length === 0 ? (
+                      <p className={`text-[12px] ${FC.sub}`}>Nenhuma conversa atribuída.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {Object.entries(data.por_atendente).map(([a, v]) => (
+                          <div key={a} className="flex items-center justify-between text-[13px]">
+                            <span className={FC.sub}>{a}</span>
+                            <span className={`font-medium ${FC.ink}`}>{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
                   ) : (
-                    <div className="space-y-2">
-                      {Object.entries(data.por_atendente).map(([a, v]) => (
-                        <div key={a} className="flex items-center justify-between text-[13px]">
-                          <span className={FC.sub}>{a}</span>
-                          <span className={`font-medium ${FC.ink}`}>{v}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <table className="w-full text-[12.5px]">
+                      <thead>
+                        <tr className={`text-[11px] ${FC.mut}`}>
+                          <th className="text-left font-normal pb-1.5">Pessoa</th>
+                          <th className="text-right font-normal pb-1.5" title="conversas de que é dona">Conv.</th>
+                          <th className="text-right font-normal pb-1.5" title="conversas em que respondeu">Atend.</th>
+                          <th className="text-right font-normal pb-1.5" title="conversas que ela puxou">Abord.</th>
+                          <th className="text-right font-normal pb-1.5" title="mediana da 1ª resposta">1ª resp.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.metricas.por_pessoa.map((p) => (
+                          <tr key={p.member_id} className={`border-t ${FC.hair}`}>
+                            <td className={`py-1.5 pr-2 truncate max-w-[160px] ${FC.ink}`}>{p.nome}{p.origem === "erp" && <span className={`ml-1 text-[10px] ${FC.mut}`}>via ERP</span>}</td>
+                            <td className={`py-1.5 text-right tabular-nums ${FC.sub}`}>{p.conversas}</td>
+                            <td className={`py-1.5 text-right tabular-nums font-medium ${FC.ink}`}>{p.atendimentos}</td>
+                            <td className={`py-1.5 text-right tabular-nums ${FC.sub}`}>{p.abordagens}</td>
+                            <td className={`py-1.5 text-right tabular-nums ${FC.sub}`}>{fmtDur(p.primeira_resposta.mediana_s)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   )}
                 </SubCard>
               </HairCells>
+            </Row>
+
+            <Row last>
+              <SubCard title="Por número">
+                {!data.metricas || data.metricas.por_numero.length === 0 ? (
+                  <p className={`text-[12px] ${FC.sub}`}>Nenhuma conversa entrou por um número neste período.</p>
+                ) : (
+                  <table className="w-full text-[12.5px]">
+                    <thead>
+                      <tr className={`text-[11px] ${FC.mut}`}>
+                        <th className="text-left font-normal pb-1.5">Número</th>
+                        <th className="text-left font-normal pb-1.5">Dona</th>
+                        <th className="text-right font-normal pb-1.5">Conversas</th>
+                        <th className="text-right font-normal pb-1.5">Atendimentos</th>
+                        <th className="text-right font-normal pb-1.5">Abordagens</th>
+                        <th className="text-right font-normal pb-1.5" title="mediana da 1ª resposta humana">1ª resposta</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.metricas.por_numero.map((n) => (
+                        <tr key={n.connector_id} className={`border-t ${FC.hair}`}>
+                          <td className={`py-1.5 pr-2 tabular-nums ${FC.ink}`}>{n.rotulo}{n.modo === "registro" && <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">sem IA</span>}</td>
+                          <td className={`py-1.5 pr-2 ${FC.sub}`}>{n.dona || "—"}</td>
+                          <td className={`py-1.5 text-right tabular-nums ${FC.sub}`}>{n.conversas}</td>
+                          <td className={`py-1.5 text-right tabular-nums font-medium ${FC.ink}`}>{n.atendimentos}</td>
+                          <td className={`py-1.5 text-right tabular-nums ${FC.sub}`}>{n.abordagens}</td>
+                          <td className={`py-1.5 text-right tabular-nums ${FC.sub}`}>{fmtDur(n.primeira_resposta.mediana_s)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </SubCard>
             </Row>
           </>
         ) : null}

@@ -4,6 +4,7 @@ Métricas: volume de conversas, status, handoffs/leads/SLA, CSAT (média +
 distribuição), conversas por etiqueta e por atendente. Janela em dias.
 """
 
+import logging
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +16,7 @@ from core.db import get_db
 from models import TaAgent, TaConversation, TaMember, TaNotification
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+logger = logging.getLogger(__name__)
 
 # rótulos pt-BR por dia-da-semana (0=segunda, padrão datetime.weekday())
 _DOW_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -95,7 +97,7 @@ async def atendimento(
     _sem_humano = max(_total - handoff_conv_ids, 0)
     _taxa = round(_sem_humano / _total, 3) if _total else None
 
-    return {
+    out = {
         "days": days,
         "total_conversas": len(convs),
         "deflection": {
@@ -116,6 +118,16 @@ async def atendimento(
         "por_etiqueta": dict(sorted(by_tag.items(), key=lambda kv: -kv[1])),
         "por_atendente": dict(sorted(by_agent.items(), key=lambda kv: -kv[1])),
     }
+    # Etapa 4 do caminho A (09/09/2026): atendimento · abordagem · 1ª resposta, por PESSOA
+    # (member_id) e por NÚMERO (connector_id). O bloco novo não derruba o relatório antigo.
+    try:
+        from services import metricas_atendimento
+
+        out["metricas"] = await metricas_atendimento.calcular(db, user.tenant_id, days)
+    except Exception:  # noqa: BLE001
+        logger.exception("metricas de atendimento falharam tenant=%s", user.tenant_id)
+        out["metricas"] = None
+    return out
 
 
 @router.get("/overview-live", response_model=dict)

@@ -257,6 +257,23 @@ async def sso_mint(
 # Assim o QA de Ligações não sobe worker de STT novo nem paga API: reusa o que já roda.
 
 
+@router.get("/metricas-atendimento")
+async def metricas_atendimento(
+    agent_tenant_id: int,
+    days: int = 30,
+    x_tier_integration_secret: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Etapa 4 do caminho A (09/09/2026): as métricas de atendimento (por pessoa e por
+    número) para o Dashboard do ERP — definidas UMA vez, aqui, e lidas de lá.
+
+    🔒 O secret prova que é o ERP; `agent_tenant_id` diz de quem, e escopa tudo."""
+    _check_secret(x_tier_integration_secret)
+    from services import metricas_atendimento as svc
+
+    return await svc.calcular(db, agent_tenant_id, max(1, min(days, 365)))
+
+
 class TranscribeIn(BaseModel):
     audio_url: str
     language: str = "pt"
