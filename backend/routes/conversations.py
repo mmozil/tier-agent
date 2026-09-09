@@ -416,7 +416,12 @@ async def _get_owned_conversation(
 ) -> TaConversation:
     """A conversa é do tenant E esta pessoa a enxerga (mesma régua da lista).
     Todo detalhe/ação passa por aqui — não existe atalho por id."""
-    conv = await _get_owned_conversation(db, conversation_id, user)
+    conv = await db.get(TaConversation, conversation_id)
+    if not conv:
+        raise HTTPException(404, "Conversa não encontrada")
+    agent_ids = await _tenant_agent_ids(db, user.tenant_id)
+    if conv.agent_id not in agent_ids:
+        raise HTTPException(403, "Conversa de outro tenant")
     if not await visao.pode_ver_conversa(db, user, conv):
         raise HTTPException(403, "Esta conversa é de outro número/atendente")
     return conv
