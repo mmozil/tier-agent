@@ -23,7 +23,7 @@ from core.auth import create_token
 from core.config import get_settings
 from core.db import get_db
 from core.encryption import decrypt
-from models import TaAgent, TaConnector, TaTenant
+from models import TaAgent, TaConnector, TaMember, TaTenant
 from services.connectors import registry
 from services.connectors.base import ConnectorConfig
 
@@ -160,12 +160,59 @@ async def provision_tenant(
 class SsoIn(BaseModel):
     tenant_id: int
     email: str | None = None
+    # Etapa 3 do caminho A (09/09/2026): a PESSOA por trás da sessão do ERP.
+    # Sem `owner_id` o comportamento é o antigo (token de dono) — caller legado.
+    owner_id: str | None = None
+    nome: str | None = None
+    role: str | None = None  # admin | atendente (o ERP deriva do cargo)
 
 
 class SsoOut(BaseModel):
     access_token: str
     tenant_id: int
     expires_in_hours: int
+    member_id: int | None = None
+    role: str = "owner"
+
+
+async def _membro_do_erp(db: AsyncSession, tenant: TaTenant, payload: SsoIn) -> TaMember:
+    """Acha (ou cria) o membro que É esta pessoa do ERP. O ERP é a fonte de nome e
+    papel: a cada entrada os dois são reaplicados. O e-mail precisa ser único na
+    tabela inteira — a mesma pessoa pode estar em dois tenants (Marcos está na
+    conta de teste e na escola), então quando o e-mail real já pertence a outro
+    membro, este ganha um e-mail sintético; ele nunca faz login por senha mesmo."""
+    role = "admin" if (payload.role or "").strip() == "admin" else "atendente"
+    nome = (payload.nome or payload.email or "Membro do ERP").strip()[:120]
+    row = await db.execute(
+        select(TaMember).where(TaMember.tenant_id == tenant.id, TaMember.erp_owner_id == payload.owner_id)
+    )
+    member = row.scalars().first()
+    if member:
+        mudou = False
+        if member.nome != nome:
+            member.nome, mudou = nome, True
+        if member.role != role:
+            member.role, mudou = role, True
+        if member.status != "active":
+            member.status, mudou = "active", True
+        if mudou:
+            await db.commit()
+        return member
+    email = (payload.email or "").strip().lower()
+    if email:
+        dono_do_email = (await db.execute(select(TaMember).where(TaMember.email == email))).scalars().first()
+        if dono_do_email is not None:
+            email = ""
+    if not email:
+        email = f"sso-{tenant.id}-{str(payload.owner_id)[:8]}@erp.tier.finance"
+    member = TaMember(
+        tenant_id=tenant.id, nome=nome, email=email, password_hash=None, role=role, status="active",
+        erp_owner_id=payload.owner_id,
+    )
+    db.add(member)
+    await db.commit()
+    await db.refresh(member)
+    return member
 
 
 @router.post("/sso", response_model=SsoOut)
@@ -174,11 +221,28 @@ async def sso_mint(
     x_tier_integration_secret: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Emite um JWT de sessão (owner) pro tenant linkado. O ERP embute o inbox com este Bearer."""
+    """Emite um JWT de sessão pro tenant linkado. O ERP embute o inbox com este Bearer.
+
+    Com `owner_id` (Etapa 3): a sessão é da PESSOA — token de membro, com o papel
+    que o ERP mandou. Sem: token de dono, como sempre foi.
+    """
     _check_secret(x_tier_integration_secret)
     tenant = await db.get(TaTenant, payload.tenant_id)
     if not tenant or tenant.status != "active":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant não encontrado ou inativo")
+    if payload.owner_id:
+        member = await _membro_do_erp(db, tenant, payload)
+        token = create_token(
+            str(tenant.id),
+            {
+                "tenant_id": tenant.id, "email": member.email, "role": member.role,
+                "member_id": member.id, "member_name": member.nome,
+            },
+        )
+        return SsoOut(
+            access_token=token, tenant_id=tenant.id, expires_in_hours=settings.jwt_ttl_hours,
+            member_id=member.id, role=member.role,
+        )
     token = create_token(
         str(tenant.id),
         {"tenant_id": tenant.id, "email": payload.email or tenant.email, "role": "owner"},

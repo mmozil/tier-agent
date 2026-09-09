@@ -123,6 +123,9 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS modo VARCHAR(16) NOT NULL DEFAULT 'agente'",
                 "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS connector_id INTEGER",
                 "CREATE INDEX IF NOT EXISTS ix_ta_conversation_connector_id ON ta_conversation (connector_id)",
+                # Etapa 3: membro vindo do ERP (pessoa federada) — chave = owner_id do ERP
+                "ALTER TABLE ta_member ADD COLUMN IF NOT EXISTS erp_owner_id VARCHAR(64)",
+                "CREATE INDEX IF NOT EXISTS ix_ta_member_erp_owner_id ON ta_member (erp_owner_id)",
             ):
                 await db.execute(_sql_text(ddl))
             # Macros (paridade Chatwoot) — tabela criada em runtime (sem Alembic)

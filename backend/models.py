@@ -621,6 +621,10 @@ class TaMember(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(16), default="atendente", nullable=False)
     # role: admin | atendente  (owner é o TaTenant, fora desta tabela)
+    # Etapa 3 do caminho A (09/09/2026): a pessoa do ERP (te_account_owner.id) que
+    # este membro É. Membro criado pelo SSO do ERP não tem senha aqui — a identidade
+    # e o papel vêm do ERP a cada entrada. Runtime DDL em main.py.
+    erp_owner_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
     # status: active | disabled
     online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
