@@ -16,6 +16,7 @@ from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt
 from models import TaAgent, TaConnector, TaConversation, TaMessageLog
+from services import visao_conversas as visao
 from services.connectors import registry
 from services.connectors.base import ConnectorConfig, OutboundMessage
 
@@ -70,6 +71,7 @@ class MessageOut(BaseModel):
     model_used: str | None = None
     created_at: datetime
     attachments_json: list | None = None  # [{kind, url, mime}] — mídia da mensagem (R2)
+    member_id: int | None = None  # Etapa 2: qual pessoa mandou (mensagem humana)
 
     model_config = {"from_attributes": True}
 
@@ -98,6 +100,9 @@ async def list_conversations(
         return []
 
     stmt = select(TaConversation).where(TaConversation.agent_id.in_(agent_ids))
+    # Etapa 2 do caminho A (09/09/2026): atendente só vê as conversas dos SEUS números e
+    # as atribuídas a ela; dono/admin veem todas. O filtro é do servidor, não do cliente.
+    stmt = stmt.where(await visao.filtro_para(db, user))
     if agent_id is not None:
         if agent_id not in agent_ids:
             raise HTTPException(403, "Agente de outro tenant")
@@ -249,12 +254,7 @@ async def conversation_detail(
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
 
-    conv = await db.get(TaConversation, conversation_id)
-    if not conv:
-        raise HTTPException(404, "Conversa não encontrada")
-    agent_ids = await _tenant_agent_ids(db, user.tenant_id)
-    if conv.agent_id not in agent_ids:
-        raise HTTPException(403, "Conversa de outro tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user)
 
     msgs = (
         await db.execute(
@@ -318,12 +318,7 @@ async def enviar_para_crm(
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
 
-    conv = await db.get(TaConversation, conversation_id)
-    if not conv:
-        raise HTTPException(404, "Conversa não encontrada")
-    agent_ids = await _tenant_agent_ids(db, user.tenant_id)
-    if conv.agent_id not in agent_ids:
-        raise HTTPException(403, "Conversa de outro tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user)
 
     from services import erp_crm_client
 
@@ -372,12 +367,7 @@ async def message_debug(
     Útil pra diagnosticar persona/comportamento sem query crua no banco. Escopado por tenant."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await db.get(TaConversation, conversation_id)
-    if not conv:
-        raise HTTPException(404, "Conversa não encontrada")
-    agent_ids = await _tenant_agent_ids(db, user.tenant_id)
-    if conv.agent_id not in agent_ids:
-        raise HTTPException(403, "Conversa de outro tenant")
+    await _get_owned_conversation(db, conversation_id, user)  # só a posse/visão; a mensagem é lida abaixo
     msg = await db.get(TaMessageLog, message_id)
     if not msg or msg.conversation_id != conversation_id:
         raise HTTPException(404, "Mensagem não encontrada")
@@ -409,7 +399,7 @@ async def set_tags(
     """Define as etiquetas da conversa (substitui a lista)."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     # normaliza: trim, sem vazios, sem duplicatas, minúsculas, max 8
     seen: list[str] = []
     for t in body.tags or []:
@@ -422,14 +412,13 @@ async def set_tags(
 
 
 async def _get_owned_conversation(
-    db: AsyncSession, conversation_id: int, tenant_id: int
+    db: AsyncSession, conversation_id: int, user: CurrentUser
 ) -> TaConversation:
-    conv = await db.get(TaConversation, conversation_id)
-    if not conv:
-        raise HTTPException(404, "Conversa não encontrada")
-    agent_ids = await _tenant_agent_ids(db, tenant_id)
-    if conv.agent_id not in agent_ids:
-        raise HTTPException(403, "Conversa de outro tenant")
+    """A conversa é do tenant E esta pessoa a enxerga (mesma régua da lista).
+    Todo detalhe/ação passa por aqui — não existe atalho por id."""
+    conv = await _get_owned_conversation(db, conversation_id, user)
+    if not await visao.pode_ver_conversa(db, user, conv):
+        raise HTTPException(403, "Esta conversa é de outro número/atendente")
     return conv
 
 
@@ -464,7 +453,7 @@ async def take_over(
     """Assumir manualmente: pausa a IA — o humano passa a conduzir a conversa."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     conv.status = "handed_off"
     # quem assume manualmente vira o responsável (se for atendente)
     if user.member_id:
@@ -483,7 +472,7 @@ async def resume_ai(
     """Devolver pra IA: o bot volta a responder automaticamente."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     conv.status = "active"
     await db.commit()
     return {"status": "active", "conversation_id": conv.id}
@@ -500,7 +489,7 @@ async def resolve(
     (CSAT) no canal — a próxima resposta numérica do cliente vira a nota."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     conv.status = "closed"
 
     csat_sent = False
@@ -539,7 +528,7 @@ async def add_note(
     content = (body.content or "").strip()
     if not content:
         raise HTTPException(422, "Nota vazia")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     note = TaMessageLog(conversation_id=conv.id, role="note", content=content[:8000])
     db.add(note)
 
@@ -586,7 +575,7 @@ async def snooze(
         raise HTTPException(403, "Sem tenant")
     from datetime import timedelta
 
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     mins = max(1, min(body.minutes or 60, 60 * 24 * 30))
     conv.snoozed_until = datetime.utcnow() + timedelta(minutes=mins)
     await db.commit()
@@ -601,7 +590,7 @@ async def unsnooze(
 ):
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     conv.snoozed_until = None
     await db.commit()
     return {"conversation_id": conv.id, "snoozed_until": None}
@@ -621,7 +610,7 @@ async def assign(
     """Atribui a conversa a um atendente (member_id) ou desatribui (null)."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     if body.member_id is None:
         conv.assigned_member_id = None
         conv.assigned_to = None
@@ -654,7 +643,7 @@ async def set_priority(
     """Define a prioridade da conversa (none/low/medium/high/urgent)."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     p = (body.priority or "none").lower()
     if p not in _VALID_PRIORITIES:
         raise HTTPException(400, "Prioridade inválida")
@@ -677,7 +666,7 @@ async def set_team(
     """Atribui a conversa a um Time (team_id) ou desatribui (null)."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
     if body.team_id is None:
         conv.team_id = None
     else:
@@ -713,7 +702,7 @@ async def reply_manual(
     if not content:
         raise HTTPException(422, "Mensagem vazia")
 
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    conv = await _get_owned_conversation(db, conversation_id, user)
 
     # Conector do agente pra este canal
     conn = (
@@ -741,9 +730,13 @@ async def reply_manual(
         logger.exception("reply manual falhou conv=%s", conversation_id)
         raise HTTPException(502, f"Falha ao enviar: {e}")
 
-    # Grava a mensagem do atendente + pausa a IA
-    msg = TaMessageLog(conversation_id=conv.id, role="agent", content=content[:8000])
+    # Grava a mensagem do atendente (com QUEM respondeu) + pausa a IA. Se ninguém
+    # tinha a conversa, quem responde fica com ela (base das métricas por pessoa).
+    msg = TaMessageLog(conversation_id=conv.id, role="agent", content=content[:8000], member_id=user.member_id)
     db.add(msg)
+    if user.member_id and not conv.assigned_member_id:
+        conv.assigned_member_id = user.member_id
+        conv.assigned_to = user.member_name
     conv.status = "handed_off"
     conv.last_message_at = datetime.utcnow()
     conv.msg_count += 1
@@ -786,7 +779,8 @@ async def delete_conversation(
     """Exclui uma conversa e todo o histórico dela. Irreversível."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    conv = await _get_owned_conversation(db, conversation_id, user.tenant_id)
+    visao.exigir_gestor(user, "apagar conversas")
+    conv = await _get_owned_conversation(db, conversation_id, user)
     await _purge_conversations(db, [conv.id])
     await db.commit()
     return {"deleted": [conv.id], "count": 1}
@@ -809,6 +803,7 @@ async def bulk_delete(
     por `ids`, por `status` (ex: só resolvidas), ou `all=true` (todas). Irreversível."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
+    visao.exigir_gestor(user, "apagar conversas")
     agent_ids = await _tenant_agent_ids(db, user.tenant_id)
     if not agent_ids:
         return {"deleted": [], "count": 0}

@@ -350,6 +350,26 @@ async def resolve_connector_by_instance(
     return None
 
 
+async def _atribuir_pelo_numero(db: AsyncSession, conv: TaConversation, connector_id: int | None) -> None:
+    """Etapa 2 do caminho A (09/09/2026): o número tem dona (`ta_connector.member_id`)?
+    Então a conversa que entra por ele é dela — atribuída na hora, sem fila. Só preenche
+    quando ainda não há atendente (não rouba conversa já atribuída). Vale para todo
+    canal que passa por `ensure_conversation` — um ponto só."""
+    if not connector_id or conv.assigned_member_id:
+        return
+    conn = await db.get(TaConnector, connector_id)
+    member_id = getattr(conn, "member_id", None) if conn else None
+    if not member_id:
+        return
+    from models import TaMember
+
+    m = await db.get(TaMember, member_id)
+    if not m or m.status == "disabled":
+        return
+    conv.assigned_member_id = m.id
+    conv.assigned_to = m.nome
+
+
 async def ensure_conversation(
     db: AsyncSession,
     agent_id: int,
@@ -379,6 +399,7 @@ async def ensure_conversation(
             conv.snoozed_until = None  # cliente voltou — tira do snooze
         if connector_id and not getattr(conv, "connector_id", None):
             conv.connector_id = connector_id  # conversa antiga aprende de qual número é
+        await _atribuir_pelo_numero(db, conv, connector_id)
         await db.commit()
         return conv
 
@@ -390,6 +411,7 @@ async def ensure_conversation(
         msg_count=1,
         connector_id=connector_id,
     )
+    await _atribuir_pelo_numero(db, conv, connector_id)
     db.add(conv)
     await db.commit()
     await db.refresh(conv)
@@ -414,6 +436,7 @@ async def log_message(
     system_prompt_sent: str | None = None,
     memory_block: str | None = None,
     rag_block: str | None = None,
+    member_id: int | None = None,
 ) -> None:
     log = TaMessageLog(
         conversation_id=conversation_id,
@@ -430,6 +453,7 @@ async def log_message(
         system_prompt_sent=(system_prompt_sent or None),
         memory_block=(memory_block or None),
         rag_block=(rag_block or None),
+        member_id=member_id,
     )
     db.add(log)
 
@@ -553,6 +577,8 @@ async def registrar_mensagem_sem_ia(
     await log_message(
         db, conversation_id=conv.id, tenant_id=agent.tenant_id, role=role, tokens_in=0,
         content=text_content, attachments_json=_att or None,
+        # a consultora falou pelo celular: a mensagem é da dona do número
+        member_id=(getattr(connector, "member_id", None) if role == "agent" else None),
     )
     try:
         connector.last_event_at = datetime.utcnow()

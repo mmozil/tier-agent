@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from models import TaMember, TaTeam, TaTenant
+from services import numeros as numeros_svc
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/team", tags=["team"])
@@ -32,6 +33,10 @@ class MemberOut(BaseModel):
     online: bool
     max_conversas: int
     invite_token: str | None = None
+    # Etapa 2/3 do caminho A (09/09/2026): quem veio do ERP tem nome e papel definidos lá
+    erp_owner_id: str | None = None
+    origem: str = "agent"  # agent | erp
+    numeros: list[dict] = []  # [{id, rotulo, modo, status}] — os números desta pessoa
 
     model_config = {"from_attributes": True}
 
@@ -71,6 +76,8 @@ async def whoami(user: CurrentUser = Depends(get_current_user)):
         "is_owner": user.is_owner,
         "member_id": user.member_id,
         "member_name": user.member_name,
+        # Etapa 2: dono/admin veem todas as conversas; atendente só as dela (filtro no servidor)
+        "ve_tudo": user.role in ("owner", "admin"),
     }
 
 
@@ -86,7 +93,21 @@ async def list_members(
             select(TaMember).where(TaMember.tenant_id == user.tenant_id).order_by(TaMember.nome.asc())
         )
     ).scalars().all()
-    return rows
+    por_membro: dict[int, list[dict]] = {}
+    for n in await numeros_svc.numeros_do_tenant(db, user.tenant_id):
+        if n.get("member_id"):
+            por_membro.setdefault(n["member_id"], []).append(
+                {"id": n["id"], "rotulo": n["rotulo"], "modo": n["modo"], "status": n["status"]}
+            )
+    return [
+        MemberOut(
+            id=m.id, nome=m.nome, email=m.email, role=m.role, status=m.status, online=m.online,
+            max_conversas=m.max_conversas, invite_token=m.invite_token,
+            erp_owner_id=m.erp_owner_id, origem=("erp" if m.erp_owner_id else "agent"),
+            numeros=por_membro.get(m.id, []),
+        )
+        for m in rows
+    ]
 
 
 @router.post("/members", response_model=MemberOut, status_code=201)
@@ -148,6 +169,8 @@ async def update_member(
     m = await db.get(TaMember, member_id)
     if not m or m.tenant_id != user.tenant_id:
         raise HTTPException(404, "Membro não encontrado")
+    if m.erp_owner_id and (body.nome is not None or body.role is not None):
+        raise HTTPException(422, "Nome e papel desta pessoa vêm do ERP (cargo) — altere lá.")
     if body.nome is not None:
         m.nome = body.nome.strip()
     if body.role in ("admin", "atendente"):

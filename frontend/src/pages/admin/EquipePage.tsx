@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Users, Plus, Trash2, RefreshCw, X, Shield, Headphones, Link2 } from "lucide-react";
+import { Users, Plus, Trash2, RefreshCw, X, Shield, Headphones, Link2, Smartphone } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SKEL, iconBtn } from "@/components/ds/fc";
@@ -14,6 +14,20 @@ interface Member {
   online: boolean;
   max_conversas: number;
   invite_token: string | null;
+  /** Etapa 2/3 do caminho A: quem veio do ERP tem nome e papel definidos lá (cargo). */
+  origem?: "agent" | "erp";
+  erp_owner_id?: string | null;
+  /** Os números (conectores de WhatsApp) desta pessoa. */
+  numeros?: { id: number; rotulo: string; modo: string; status?: string }[];
+}
+
+/** Um número do tenant, como o /connectors devolve (só o que a Equipe precisa). */
+interface Numero {
+  id: number;
+  kind: string;
+  modo?: "agente" | "registro";
+  member_id?: number | null;
+  config_summary?: { phone?: string; status?: string };
 }
 
 interface Team {
@@ -35,20 +49,53 @@ export default function EquipePage() {
   const [saving, setSaving] = useState(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [newTeam, setNewTeam] = useState("");
+  const [numeros, setNumeros] = useState<Numero[]>([]);
+  const [me, setMe] = useState<{ role: string } | null>(null);
 
   async function load() {
     setLoading(true);
     try {
-      const [mRes, tRes] = await Promise.all([
+      const [mRes, tRes, nRes, meRes] = await Promise.all([
         api.get<Member[]>("/team/members"),
         api.get<Team[]>("/team/teams"),
+        api.get<Numero[]>("/connectors").catch(() => ({ data: [] as Numero[] })),
+        api.get<{ role: string }>("/team/me").catch(() => ({ data: null })),
       ]);
       setMembers(mRes.data);
       setTeams(tRes.data);
+      setNumeros((nRes.data || []).filter((n) => n.kind === "whatsapp" || n.kind === "whatsapp_cloud"));
+      setMe(meRes.data);
     } catch {
       toast.error("Falha ao carregar equipe");
     } finally {
       setLoading(false);
+    }
+  }
+
+  const gestor = !me || me.role === "owner" || me.role === "admin";
+  // Números ainda sem dona — só eles entram no «+ número».
+  const numerosLivres = numeros.filter((n) => !n.member_id);
+  const rotuloNumero = (n: Numero) => n.config_summary?.phone && n.config_summary.phone !== "—" ? n.config_summary.phone : `#${n.id}`;
+
+  // Etapa 2 do caminho A: diz de QUEM é o número. A conversa que entrar por ele
+  // nasce atribuída à pessoa, e só ela (e dono/admin) a vê.
+  async function vincularNumero(m: Member, connectorId: number | null) {
+    if (!connectorId) return;
+    try {
+      await api.put(`/connectors/${connectorId}/member`, { member_id: m.id });
+      toast.success(`Número vinculado a ${m.nome}`);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao vincular número");
+    }
+  }
+
+  async function desvincularNumero(connectorId: number) {
+    try {
+      await api.put(`/connectors/${connectorId}/member`, { member_id: null });
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao desvincular número");
     }
   }
 
@@ -177,7 +224,7 @@ export default function EquipePage() {
       <PageFrame>
         <PageHero
           title="Equipe"
-          subtitle="Atendentes com login próprio. Entram pela mesma tela de login e veem só este workspace."
+          subtitle="Quem atende, com que papel e por quais números. Dono e admin veem todas as conversas; atendente vê as dos seus números e as atribuídas a ela. Quem entra pelo ERP tem nome e papel definidos lá."
           right={
             <div className="flex items-center gap-2 shrink-0">
               <Button variant="ghost" onClick={load}><RefreshCw className="w-3.5 h-3.5" /> Atualizar</Button>
@@ -239,17 +286,45 @@ export default function EquipePage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className={`text-[14px] font-medium ${m.status === "disabled" ? `${FC.mut} line-through` : FC.ink}`}>{m.nome}</span>
+                      {m.origem === "erp" && (
+                        <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#8ab4ff]" title="Esta pessoa entra pelo ERP: nome e papel vêm do cargo de lá.">via ERP</span>
+                      )}
                       {m.status === "disabled" && <span className="text-[11px] text-[#E5484D]">desativado</span>}
                       {m.status === "invited" && <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[#F5A300]/[0.12] text-[#9a6700]">convite pendente</span>}
                     </div>
                     <p className={`text-[12px] truncate ${FC.sub}`}>{m.email}</p>
+                    {/* Os números desta pessoa (Etapa 2 do caminho A) */}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      {(m.numeros || []).map((n) => (
+                        <span key={n.id} className={`inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[12px] tabular-nums ${FC.ink}`} title={n.modo === "registro" ? "Número em modo registro (sem IA)" : "Número com agente"}>
+                          <Smartphone className="w-3 h-3 opacity-60" /> {n.rotulo}
+                          {n.modo === "registro" && <span className="text-[9px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">sem IA</span>}
+                          {gestor && (
+                            <button onClick={() => desvincularNumero(n.id)} className="ml-0.5 text-[#262626]/40 dark:text-[#6b7280] hover:text-[#c0362c] dark:hover:text-[#ff6b5e]" title="Desvincular número">
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                      {gestor && numerosLivres.length > 0 && (
+                        <select value="" onChange={(e) => vincularNumero(m, Number(e.target.value) || null)} className={`h-6 px-1.5 text-[12px] rounded-full bg-transparent border ${FC.hair} outline-none ${FC.sub}`} title="Vincular um número a esta pessoa">
+                          <option value="">+ número</option>
+                          {numerosLivres.map((n) => (
+                            <option key={n.id} value={n.id}>{rotuloNumero(n)}{n.modo === "registro" ? " · sem IA" : ""}</option>
+                          ))}
+                        </select>
+                      )}
+                      {(m.numeros || []).length === 0 && numerosLivres.length === 0 && (
+                        <span className={`text-[11px] ${FC.mut}`}>sem número próprio</span>
+                      )}
+                    </div>
                   </div>
                   {m.status === "invited" && m.invite_token && (
                     <Button variant="secondary" size="sm" onClick={() => copyInvite(m)}>
                       <Link2 className="w-3.5 h-3.5" /> Copiar link
                     </Button>
                   )}
-                  <select value={m.role} onChange={(e) => updateRole(m, e.target.value)} className={miniSelect}>
+                  <select value={m.role} onChange={(e) => updateRole(m, e.target.value)} className={miniSelect} disabled={m.origem === "erp"} title={m.origem === "erp" ? "Definido pelo cargo no ERP" : undefined}>
                     <option value="atendente">{ROLE_LABEL.atendente}</option>
                     <option value="admin">{ROLE_LABEL.admin}</option>
                   </select>

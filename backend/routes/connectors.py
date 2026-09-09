@@ -120,6 +120,7 @@ def _serialize(c: TaConnector) -> dict:
         "config_summary": _summary(c.kind, cfg),
         "last_event_at": c.last_event_at.isoformat() if c.last_event_at else None,
         "modo": getattr(c, "modo", None) or "agente",
+        "member_id": getattr(c, "member_id", None),  # Etapa 2: de quem é o número
     }
 
 
@@ -543,6 +544,39 @@ async def disconnect(
     conn.enabled = False
     await db.commit()
     return {"status": "disconnected"}
+
+
+class ConnectorMemberIn(BaseModel):
+    member_id: int | None = None  # null = desvincula
+
+
+@router.put("/{connector_id}/member")
+async def set_connector_member(
+    connector_id: int,
+    body: ConnectorMemberIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Etapa 2 do caminho A (09/09/2026): diz de QUEM é este número. A partir daí a
+    conversa que entra por ele nasce atribuída à pessoa e só ela (e dono/admin) a vê."""
+    if user.role not in ("owner", "admin"):
+        raise HTTPException(403, "Apenas dono/admin pode vincular números")
+    c = await db.get(TaConnector, connector_id)
+    if not c:
+        raise HTTPException(404, "Conector não encontrado")
+    await _ensure_agent_owned(db, c.agent_id, user)
+    if body.member_id is None:
+        c.member_id = None
+    else:
+        from models import TaMember
+
+        m = await db.get(TaMember, body.member_id)
+        if not m or m.tenant_id != user.tenant_id:
+            raise HTTPException(404, "Membro não encontrado")
+        c.member_id = m.id
+    await db.commit()
+    await db.refresh(c)
+    return _serialize(c)
 
 
 class WhatsAppCloudOnboardIn(BaseModel):

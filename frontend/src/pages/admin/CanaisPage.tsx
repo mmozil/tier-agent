@@ -32,6 +32,8 @@ interface Connector {
   enabled: boolean;
   /** agente = a IA responde · registro = só grava a conversa (número da consultora) */
   modo?: "agente" | "registro";
+  /** Etapa 2 do caminho A: de quem é o número (ta_member.id). */
+  member_id?: number | null;
   config_summary: {
     instance_id?: string;
     phone?: string;
@@ -186,6 +188,7 @@ function ChannelCard({
 export default function CanaisPage() {
   const [conns, setConns] = useState<Connector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [members, setMembers] = useState<{ id: number; nome: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [showProvision, setShowProvision] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null);
@@ -214,9 +217,14 @@ export default function CanaisPage() {
   async function load() {
     setLoading(true);
     try {
-      const [c, a] = await Promise.all([api.get<Connector[]>("/connectors"), api.get<Agent[]>("/agents")]);
+      const [c, a, m] = await Promise.all([
+        api.get<Connector[]>("/connectors"),
+        api.get<Agent[]>("/agents"),
+        api.get<{ id: number; nome: string }[]>("/team/members").catch(() => ({ data: [] })),
+      ]);
       setConns(c.data);
       setAgents(a.data);
+      setMembers(m.data || []);
       if (!selectedAgent && a.data.length > 0) setSelectedAgent(a.data[0].id);
     } catch (e) {
       console.error(e);
@@ -458,6 +466,7 @@ export default function CanaisPage() {
   }
 
   const agentName = (id: number) => agents.find((a) => a.id === id)?.nome || `Agente #${id}`;
+  const memberName = (id: number) => members.find((m) => m.id === id)?.nome || `#${id}`;
   const inputCls = `w-full h-9 px-3 text-[14px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
 
   return (
@@ -879,6 +888,9 @@ export default function CanaisPage() {
                       </div>
                       <div className={`flex items-center gap-2 mt-0.5 text-[13px] ${FC.sub}`}>
                         <span className="tabular-nums truncate">{secondary}</span>
+                        {c.member_id && (
+                          <span className="truncate" title="Dona do número — as conversas dele nascem atribuídas a ela (vincule em Equipe)">· de {memberName(c.member_id)}</span>
+                        )}
                       </div>
                     </div>
 

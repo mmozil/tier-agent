@@ -172,6 +172,8 @@ interface Message {
   model_used: string | null;
   created_at: string;
   attachments_json?: Attachment[] | null;
+  /** Etapa 2 do caminho A: qual pessoa mandou a mensagem humana (painel ou celular). */
+  member_id?: number | null;
 }
 
 type NavFilter =
@@ -388,7 +390,7 @@ export default function ConversasPage() {
   const [noteMode, setNoteMode] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
-  const [me, setMe] = useState<{ role: string; member_id: number | null } | null>(null);
+  const [me, setMe] = useState<{ role: string; member_id: number | null; ve_tudo?: boolean } | null>(null);
   const [scope, setScope] = useState<"todas" | "mine" | "unassigned" | "snoozed">("todas");
   const [mentions, setMentions] = useState<number[]>([]);
   const [cleanMenu, setCleanMenu] = useState(false);
@@ -482,7 +484,7 @@ export default function ConversasPage() {
     load();
     api.get<Member[]>("/team/members").then(({ data }) => setMembers(data)).catch(() => {});
     api.get<Team[]>("/team/teams").then(({ data }) => setTeams(data)).catch(() => {});
-    api.get<{ role: string; member_id: number | null }>("/team/me").then(({ data }) => setMe(data)).catch(() => {});
+    api.get<{ role: string; member_id: number | null; ve_tudo?: boolean }>("/team/me").then(({ data }) => setMe(data)).catch(() => {});
     api.get<{ id: number; name: string }[]>("/macros").then(({ data }) => setMacros(data)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -960,6 +962,9 @@ export default function ConversasPage() {
               </button>
             ))}
           </div>
+          {me && me.ve_tudo === false && (
+            <p className={`mt-1.5 px-1 text-[11px] leading-snug ${FC.mut}`}>Você vê as conversas dos seus números e as atribuídas a você.</p>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto sidebar-scroll min-h-0">
@@ -1234,7 +1239,7 @@ export default function ConversasPage() {
                       })()}
                     </div>
                     <span className={`text-[10px] mt-1 px-1 flex items-center gap-1 ${FC.mut}`}>
-                      {isAgent ? <><User className="w-2.5 h-2.5" /> Você</> : isUser ? null : <><Bot className="w-2.5 h-2.5" /> IA</>}
+                      {isAgent ? <><User className="w-2.5 h-2.5" /> {(m.member_id && m.member_id !== me?.member_id && members.find((x) => x.id === m.member_id)?.nome) || "Você"}</> : isUser ? null : <><Bot className="w-2.5 h-2.5" /> IA</>}
                       {fmtTime(m.created_at) && <span>{isUser ? "" : "· "}{fmtTime(m.created_at)}</span>}
                       {!isUser && !isAgent && (
                         <>

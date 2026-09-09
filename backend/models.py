@@ -229,6 +229,9 @@ class TaConnector(Base):
     # `registro` = o número só REGISTRA a conversa (os dois lados), sem LLM. É o
     # número da consultora: entra no inbox, vira métrica, ninguém responde por ela.
     modo: Mapped[str] = mapped_column(String(16), default="agente", server_default="agente", nullable=False)
+    # Etapa 2 do caminho A (09/09/2026): de QUEM é este número (ta_member.id, FK lógica).
+    # Conversa que entra por ele nasce atribuída à pessoa; atendente só vê os seus. Runtime DDL.
+    member_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     last_event_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -335,6 +338,9 @@ class TaMessageLog(Base):
     # (ambas via ensure_message_content_column() — runtime DDL, nullable, retrocompatível).
     attachments_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # anexos da mensagem [{kind, url, mime}] — mídia WhatsApp (R2) persistida (runtime DDL)
+    # Etapa 2 do caminho A: qual PESSOA (ta_member.id) mandou esta mensagem humana — resposta
+    # pelo painel ou pelo celular da consultora (fromMe do número dela). Base das métricas. Runtime DDL.
+    member_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Observabilidade do prompt (debug "ver o que foi enviado ao LLM") — gravado só na msg
     # assistant, atrás do flag TA_LOG_PROMPTS. Colunas via runtime DDL, nullable.
     system_prompt_sent: Mapped[str | None] = mapped_column(Text, nullable=True)
