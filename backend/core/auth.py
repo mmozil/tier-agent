@@ -85,6 +85,16 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autenticado")
 
     payload = decode_token(token)
+    # Membro desativado ou removido (na Equipe daqui ou no ERP) não continua com a
+    # sessão viva até o token vencer: uma busca por chave a cada requisição e a
+    # sessão morre na hora. Dono (sem member_id) não passa por aqui.
+    _mid = payload.get("member_id")
+    if _mid:
+        from models import TaMember
+
+        _m = await db.get(TaMember, int(_mid))
+        if _m is None or _m.status != "active" or (payload.get("tenant_id") and _m.tenant_id != payload.get("tenant_id")):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessão encerrada: este usuário foi desativado ou removido")
     return CurrentUser(
         user_id=int(payload["sub"]),
         email=payload.get("email", ""),

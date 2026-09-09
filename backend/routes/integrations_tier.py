@@ -187,8 +187,22 @@ async def _membro_do_erp(db: AsyncSession, tenant: TaTenant, payload: SsoIn) -> 
         select(TaMember).where(TaMember.tenant_id == tenant.id, TaMember.erp_owner_id == payload.owner_id)
     )
     member = row.scalars().first()
+    reatado = False
+    email_erp = (payload.email or "").strip().lower()
+    if member is None and email_erp:
+        # A mesma pessoa, apagada e criada de novo no ERP (owner_id novo, e-mail igual):
+        # é o MESMO membro aqui — reatado ao owner novo e reativado, com o histórico
+        # dela. Só vale para membro que já veio do ERP; membro nativo (senha) não é tocado.
+        row = await db.execute(
+            select(TaMember).where(
+                TaMember.tenant_id == tenant.id, TaMember.email == email_erp, TaMember.erp_owner_id.isnot(None)
+            )
+        )
+        member = row.scalars().first()
+        if member is not None:
+            member.erp_owner_id, reatado = payload.owner_id, True
     if member:
-        mudou = False
+        mudou = reatado
         if member.nome != nome:
             member.nome, mudou = nome, True
         if member.role != role:
@@ -255,6 +269,36 @@ async def sso_mint(
 #   /transcribe   → faster-whisper self-host (grátis, sem tenant — motor global)
 #   /llm-complete → LLM DO TENANT (provider por cliente) rodando 1 prompt → texto
 # Assim o QA de Ligações não sobe worker de STT novo nem paga API: reusa o que já roda.
+
+
+class DesligarMembroIn(BaseModel):
+    tenant_id: int
+    owner_id: str
+
+
+@router.post("/members/desligar")
+async def desligar_membro(
+    payload: DesligarMembroIn,
+    x_tier_integration_secret: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """O ERP removeu a pessoa da equipe: aqui ela é desativada e os números dela
+    ficam sem dona (o próximo a atender por eles é outra pessoa). A sessão dela
+    morre na próxima requisição (checagem de status no auth). O histórico fica."""
+    _check_secret(x_tier_integration_secret)
+    row = await db.execute(
+        select(TaMember).where(TaMember.tenant_id == payload.tenant_id, TaMember.erp_owner_id == payload.owner_id)
+    )
+    member = row.scalars().first()
+    if member is None:
+        return {"ok": True, "member_id": None, "numeros_desvinculados": 0}
+    member.status = "disabled"
+    member.online = False
+    conns = (await db.execute(select(TaConnector).where(TaConnector.member_id == member.id))).scalars().all()
+    for c in conns:
+        c.member_id = None
+    await db.commit()
+    return {"ok": True, "member_id": member.id, "numeros_desvinculados": len(conns)}
 
 
 @router.get("/metricas-atendimento")
