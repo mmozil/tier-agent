@@ -356,6 +356,7 @@ async def ensure_conversation(
     connector_kind: str,
     external_id: str,
     contact_name: str | None = None,
+    connector_id: int | None = None,
 ) -> TaConversation:
     result = await db.execute(
         select(TaConversation)
@@ -376,6 +377,8 @@ async def ensure_conversation(
         conv.msg_count += 1
         if conv.snoozed_until is not None:
             conv.snoozed_until = None  # cliente voltou — tira do snooze
+        if connector_id and not getattr(conv, "connector_id", None):
+            conv.connector_id = connector_id  # conversa antiga aprende de qual número é
         await db.commit()
         return conv
 
@@ -385,6 +388,7 @@ async def ensure_conversation(
         external_id=external_id,
         contact_name=contact_name,
         msg_count=1,
+        connector_id=connector_id,
     )
     db.add(conv)
     await db.commit()
@@ -513,6 +517,51 @@ async def _log_deterministic_turn(db, agent, connector_kind, external_id, contac
         logger.exception("log de turno determinístico falhou agent=%s", agent_id)
 
 
+async def registrar_mensagem_sem_ia(
+    db: AsyncSession,
+    connector: TaConnector,
+    *,
+    connector_kind: str,
+    external_chat_id: str,
+    sender_name: str | None,
+    text_content: str,
+    attachments: list | None,
+    role: str,
+) -> dict:
+    """Etapa 1 do caminho A (09/09/2026) — número em modo registro.
+
+    `role="user"` = a família escreveu; `role="agent"` = a consultora respondeu
+    pelo celular (evento `fromMe` do Engine). Nada é respondido: o registro
+    existe para o inbox e para as métricas (atendimento, abordagem, 1ª resposta).
+    """
+    agent = await db.get(TaAgent, connector.agent_id)
+    if not agent:
+        return {"status": "no_agent", "connector_id": connector.id}
+    conv = await ensure_conversation(
+        db,
+        agent_id=agent.id,
+        connector_kind=connector_kind,
+        external_id=external_chat_id,
+        contact_name=sender_name if role == "user" else None,
+        connector_id=connector.id,
+    )
+    _att = [
+        {"kind": getattr(a, "kind", "file"), "url": getattr(a, "url", None), "mime": getattr(a, "mime", None)}
+        for a in (attachments or [])
+        if getattr(a, "url", None)
+    ]
+    await log_message(
+        db, conversation_id=conv.id, tenant_id=agent.tenant_id, role=role, tokens_in=0,
+        content=text_content, attachments_json=_att or None,
+    )
+    try:
+        connector.last_event_at = datetime.utcnow()
+        await db.commit()
+    except Exception:  # noqa: BLE001 — carimbo é luxo
+        await db.rollback()
+    return {"status": "registro", "agent_id": agent.id, "conversation_id": conv.id, "role": role}
+
+
 async def handle_inbound_message(
     db: AsyncSession,
     *,
@@ -535,6 +584,15 @@ async def handle_inbound_message(
     connector = await resolve_connector_by_instance(db, connector_kind, instance_id)
     if not connector:
         return {"status": "no_connector", "instance_id": instance_id}
+
+    # 🚨 Modo REGISTRO (Etapa 1 do caminho A, 09/09/2026): o número não tem IA.
+    # Grava a mensagem e para — sem gate de agente ativo (que descartava antes
+    # de gravar), sem STT, sem moderação, sem LLM, sem «digitando».
+    if (getattr(connector, "modo", None) or "agente") == "registro":
+        return await registrar_mensagem_sem_ia(
+            db, connector, connector_kind=connector_kind, external_chat_id=external_chat_id,
+            sender_name=sender_name, text_content=text_content, attachments=attachments, role="user",
+        )
 
     agent = await db.get(TaAgent, connector.agent_id)
     if not agent or not agent.active:
@@ -760,6 +818,7 @@ async def handle_inbound_message(
         connector_kind=connector_kind,
         external_id=external_chat_id,
         contact_name=sender_name,
+        connector_id=connector.id,
     )
 
     # Log mensagem do user (com mídia, se houver — pra aparecer em Anexos/inline)

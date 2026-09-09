@@ -119,6 +119,10 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_notification ADD COLUMN IF NOT EXISTS target_member_id INTEGER",
                 "ALTER TABLE ta_llm_provider ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 100",
                 "ALTER TABLE ta_agent ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+                # Etapa 1 do caminho A (09/09/2026): número em modo registro + de qual número veio a conversa
+                "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS modo VARCHAR(16) NOT NULL DEFAULT 'agente'",
+                "ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS connector_id INTEGER",
+                "CREATE INDEX IF NOT EXISTS ix_ta_conversation_connector_id ON ta_conversation (connector_id)",
             ):
                 await db.execute(_sql_text(ddl))
             # Macros (paridade Chatwoot) — tabela criada em runtime (sem Alembic)

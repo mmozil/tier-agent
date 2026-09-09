@@ -30,6 +30,8 @@ interface Connector {
   agent_id: number;
   kind: string;
   enabled: boolean;
+  /** agente = a IA responde · registro = só grava a conversa (número da consultora) */
+  modo?: "agente" | "registro";
   config_summary: {
     instance_id?: string;
     phone?: string;
@@ -229,14 +231,20 @@ export default function CanaisPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Etapa 1 do caminho A (09/09/2026): um número pode existir SEM IA — só registra.
+  const [provisionModo, setProvisionModo] = useState<"agente" | "registro">("agente");
+
   async function provisionWhatsApp() {
-    if (!selectedAgent) {
+    if (provisionModo === "agente" && !selectedAgent) {
       toast.error("Escolha um agente");
       return;
     }
     setProvisioning(true);
     try {
-      const { data } = await api.post<Connector>("/connectors/whatsapp/provision", { agent_id: selectedAgent });
+      const { data } = await api.post<Connector>("/connectors/whatsapp/provision", {
+        agent_id: provisionModo === "agente" ? selectedAgent : null,
+        modo: provisionModo,
+      });
       toast.success("Instância criada — escaneie o QR");
       setShowProvision(false);
       await openQR(data.id);
@@ -478,17 +486,40 @@ export default function CanaisPage() {
           <Row>
             <div className="p-6 space-y-4 max-w-[560px]">
               <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar WhatsApp (Baileys)</h3>
-              <label className="block">
-                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
-                <Select
-                  value={selectedAgent}
-                  onChange={(v) => setSelectedAgent(v)}
-                  options={agents.map((a) => ({ value: a.id, label: a.nome }))}
-                  placeholder="Escolha um agente"
-                />
-              </label>
+              {/* O modo decide o que o número faz: a IA responde, ou só registra. */}
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ["agente", "Com agente", "A IA responde por este número."],
+                  ["registro", "Somente registro", "Ninguém responde. As mensagens dos dois lados ficam no inbox e viram métrica — é o número da consultora."],
+                ] as const).map(([v, titulo, desc]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setProvisionModo(v)}
+                    className={`text-left rounded-lg border p-3 transition-colors ${provisionModo === v ? "border-[#003083] dark:border-[#5b9bff]" : `${FC.hair} hover:border-[#003083]/50`}`}
+                  >
+                    <div className={`text-[13px] font-medium ${FC.ink}`}>{titulo}</div>
+                    <div className={`text-[11px] mt-0.5 leading-snug ${FC.sub}`}>{desc}</div>
+                  </button>
+                ))}
+              </div>
+              {provisionModo === "agente" ? (
+                <label className="block">
+                  <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
+                  <Select
+                    value={selectedAgent}
+                    onChange={(v) => setSelectedAgent(v)}
+                    options={agents.map((a) => ({ value: a.id, label: a.nome }))}
+                    placeholder="Escolha um agente"
+                  />
+                </label>
+              ) : (
+                <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
+                  Sem agente. O número fica sob «Registro (sem IA)», que nunca responde. Cada número em registro é uma instância própria.
+                </p>
+              )}
               <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
-                Cria uma instância isolada do WhatsApp pra esse agente. Você vai escanear um QR code com seu celular pra parear.
+                Cria uma instância isolada do WhatsApp. Você vai escanear um QR code com o celular do número pra parear.
               </p>
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={() => setShowProvision(false)}>Cancelar</Button>
@@ -834,7 +865,10 @@ export default function CanaisPage() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{agentName(c.agent_id)}</span>
+                        <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{c.modo === "registro" ? "Somente registro" : agentName(c.agent_id)}</span>
+                        {c.modo === "registro" && (
+                          <span className="shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-violet-500/10 text-violet-600 dark:text-violet-400 uppercase tracking-wide">Sem IA</span>
+                        )}
                         {isCloud ? (
                           <span className="shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-[#003083]/[0.08] text-[#003083] dark:text-[#5b9bff] uppercase tracking-wide">Oficial</span>
                         ) : (

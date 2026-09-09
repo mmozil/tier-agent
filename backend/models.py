@@ -225,6 +225,10 @@ class TaConnector(Base):
     # Fernet-encrypted JSON com tokens/keys/etc
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Etapa 1 do caminho A (09/09/2026): `agente` = a IA responde (o de sempre);
+    # `registro` = o número só REGISTRA a conversa (os dois lados), sem LLM. É o
+    # número da consultora: entra no inbox, vira métrica, ninguém responde por ela.
+    modo: Mapped[str] = mapped_column(String(16), default="agente", server_default="agente", nullable=False)
     last_event_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -303,6 +307,9 @@ class TaConversation(Base):
     crm_opportunity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # "Enviar para CRM": id da oportunidade criada no ERP (Tier Empresas) a partir
     # desta conversa. Marcador "já enviado" (idempotente). Runtime DDL em main.py.
+    connector_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # FK lógica pra ta_connector.id — por QUAL número a conversa entrou. Antes só
+    # havia `connector_kind` ("whatsapp" para todas as instâncias). Runtime DDL.
 
 
 class TaMessageLog(Base):

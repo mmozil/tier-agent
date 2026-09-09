@@ -30,6 +30,7 @@ class ConnectorOut(BaseModel):
     enabled: bool
     config_summary: dict
     last_event_at: str | None = None
+    modo: str = "agente"
 
     model_config = {"from_attributes": True}
 
@@ -118,6 +119,7 @@ def _serialize(c: TaConnector) -> dict:
         "enabled": c.enabled,
         "config_summary": _summary(c.kind, cfg),
         "last_event_at": c.last_event_at.isoformat() if c.last_event_at else None,
+        "modo": getattr(c, "modo", None) or "agente",
     }
 
 
@@ -296,8 +298,33 @@ async def create_connector(
 
 
 class WhatsAppProvisionIn(BaseModel):
-    agent_id: int
+    # `agent_id` só é obrigatório no modo `agente`. No modo `registro` o número
+    # não tem IA: fica sob o agente-sistema «Registro (sem IA)» do tenant.
+    agent_id: int | None = None
     label: str | None = None
+    modo: str = "agente"  # agente | registro
+
+
+NOME_AGENTE_REGISTRO = "Registro (sem IA)"
+
+
+async def agente_registro_do_tenant(db: AsyncSession, tenant_id: int) -> TaAgent:
+    """Etapa 1 do caminho A (09/09/2026): o agente-sistema que segura os números em
+    modo registro. Existe porque ~20 pontos do código assumem `connector.agent_id`
+    → agente → tenant; em vez de tornar a coluna nula em todos, o número sem IA
+    fica sob este agente, que nunca responde (o motor desvia ANTES da LLM pelo
+    `modo` do conector). Um por tenant, criado na primeira vez."""
+    row = await db.execute(
+        select(TaAgent).where(TaAgent.tenant_id == tenant_id, TaAgent.template_kind == "registro")
+    )
+    agent = row.scalars().first()
+    if agent:
+        return agent
+    agent = TaAgent(tenant_id=tenant_id, nome=NOME_AGENTE_REGISTRO, template_kind="registro", active=True)
+    db.add(agent)
+    await db.commit()
+    await db.refresh(agent)
+    return agent
 
 
 @router.post("/whatsapp/provision")
@@ -307,7 +334,17 @@ async def provision_whatsapp(
     db: AsyncSession = Depends(get_db),
 ):
     """Cria instância WhatsApp na Engine + grava TaConnector."""
-    agent = await _ensure_agent_owned(db, payload.agent_id, user)
+    modo = (payload.modo or "agente").strip()
+    if modo not in ("agente", "registro"):
+        raise HTTPException(422, "modo deve ser 'agente' ou 'registro'")
+    if modo == "registro":
+        if not user.tenant_id:
+            raise HTTPException(403, "Sem tenant")
+        agent = await agente_registro_do_tenant(db, user.tenant_id)
+    else:
+        if payload.agent_id is None:
+            raise HTTPException(422, "agent_id é obrigatório no modo agente")
+        agent = await _ensure_agent_owned(db, payload.agent_id, user)
     label = payload.label or f"tier-agent-{agent.tenant_id}-{agent.id}"
 
     try:
@@ -328,19 +365,24 @@ async def provision_whatsapp(
         "status": "pending",
     }
 
-    # Upsert connector
-    existing = await db.execute(
-        select(TaConnector).where(
-            TaConnector.agent_id == agent.id, TaConnector.kind == "whatsapp"
+    # Upsert connector — só no modo agente (1 número por agente de IA). No modo
+    # registro cada número é um conector próprio: N consultoras, N números, todos
+    # sob o mesmo agente-sistema — o upsert por (agent, kind) engoliria o anterior.
+    conn = None
+    if modo == "agente":
+        existing = await db.execute(
+            select(TaConnector).where(
+                TaConnector.agent_id == agent.id, TaConnector.kind == "whatsapp"
+            )
         )
-    )
-    conn = existing.scalar_one_or_none()
+        conn = existing.scalars().first()
     if conn:
         conn.config_json_enc = encrypt(json.dumps(cfg))
         conn.enabled = True
+        conn.modo = modo
     else:
         conn = TaConnector(
-            agent_id=agent.id, kind="whatsapp", config_json_enc=encrypt(json.dumps(cfg)), enabled=True
+            agent_id=agent.id, kind="whatsapp", config_json_enc=encrypt(json.dumps(cfg)), enabled=True, modo=modo
         )
         db.add(conn)
     await db.commit()

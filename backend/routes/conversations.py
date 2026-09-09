@@ -44,6 +44,10 @@ class ConversationOut(BaseModel):
     priority: str = "none"
     team_id: int | None = None
     crm_opportunity_id: int | None = None  # "Enviar para CRM": op criada no ERP (marcador "já enviado")
+    # Etapa 1 do caminho A (09/09/2026): por qual NÚMERO a conversa entrou.
+    connector_id: int | None = None
+    canal_rotulo: str | None = None  # telefone ou rótulo do número; None = conversa antiga sem número
+    canal_modo: str | None = None  # agente | registro
 
     model_config = {"from_attributes": True}
 
@@ -147,6 +151,24 @@ async def list_conversations(
     ).all()
     agent_names = {aid: nome for aid, nome in _ag_rows}
 
+    # Rótulo do número por conector (telefone ou label) — um decrypt por conector,
+    # uma vez por listagem, só para os conectores do tenant.
+    canal_por_conector: dict[int, tuple[str | None, str]] = {}
+    try:
+        from core.encryption import decrypt as _dec
+        from models import TaConnector as _TaConnector
+
+        _cx = (await db.execute(select(_TaConnector).where(_TaConnector.agent_id.in_(agent_ids)))).scalars().all()
+        for _c in _cx:
+            try:
+                _cfg = json.loads(_dec(_c.config_json_enc))
+            except Exception:  # noqa: BLE001
+                _cfg = {}
+            _rot = _cfg.get("phone") or _cfg.get("display_phone") or _cfg.get("label") or f"#{_c.id}"
+            canal_por_conector[_c.id] = (str(_rot), getattr(_c, "modo", None) or "agente")
+    except Exception:  # noqa: BLE001 — rótulo é luxo; a lista sai sem ele
+        canal_por_conector = {}
+
     out: list[ConversationOut] = []
     for c in convs:
         ctags = c.tags or []
@@ -183,6 +205,9 @@ async def list_conversations(
                 priority=c.priority,
                 team_id=c.team_id,
                 crm_opportunity_id=c.crm_opportunity_id,
+                connector_id=getattr(c, "connector_id", None),
+                canal_rotulo=(canal_por_conector.get(getattr(c, "connector_id", None) or -1) or (None, None))[0],
+                canal_modo=(canal_por_conector.get(getattr(c, "connector_id", None) or -1) or (None, None))[1],
             )
         )
     return out

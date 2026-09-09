@@ -165,10 +165,13 @@ async def whatsapp_engine_webhook(
         logger.debug("ignorando event %s", event)
         return {"status": "ignored", "event": event}
 
-    # Ignora mensagens enviadas POR NÓS (fromMe=true) — só processa inbound
+    # Mensagens enviadas POR NÓS (fromMe=true): no modo `agente` são o eco das
+    # respostas da IA (já gravadas) e continuam ignoradas; no modo `registro`
+    # são a CONSULTORA respondendo pelo celular — e isso é a abordagem que o
+    # registro existe para guardar (Etapa 1 do caminho A, 09/09/2026). A decisão
+    # fica no processamento em background, que sabe o modo do conector.
     key = payload.get("key") or {}
-    if key.get("fromMe"):
-        return {"status": "ignored", "reason": "from_me"}
+    from_me = bool(key.get("fromMe"))
 
     # Só DM 1:1 de cliente deve chegar ao agente. Status do WhatsApp (status@broadcast),
     # canais (@newsletter), listas de transmissão (@broadcast) e grupos (@g.us) NÃO são
@@ -272,6 +275,17 @@ async def whatsapp_engine_webhook(
     # "aguardando mensagem". A idempotência (acima) já protege contra reprocessar.
     import asyncio as _asyncio
 
+    if from_me:
+        _asyncio.create_task(
+            _process_engine_from_me(
+                instance_id=instance_id,
+                external_chat_id=external_chat_id,
+                text_content=text_content,
+                attachments=attachments,
+            )
+        )
+        return {"status": "accepted", "from_me": True}
+
     _asyncio.create_task(
         _process_engine_message(
             instance_id=instance_id,
@@ -283,6 +297,33 @@ async def whatsapp_engine_webhook(
     )
     logger.info("webhook WhatsApp Engine aceito chat=%s attachments=%s", external_chat_id, len(attachments))
     return {"status": "accepted"}
+
+
+async def _process_engine_from_me(
+    *,
+    instance_id: str | None,
+    external_chat_id: str,
+    text_content: str,
+    attachments: list,
+) -> None:
+    """Mensagem que SAIU pelo número (fromMe). Só interessa no modo registro: é a
+    consultora falando pelo celular. Em número com IA é o eco da resposta do
+    agente, já gravada em `ta_message_log` — ignorar, senão duplica."""
+    from core.db import db_context
+    from services import agent_runtime
+
+    try:
+        async with db_context() as db:
+            conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)
+            if not conn or (getattr(conn, "modo", None) or "agente") != "registro":
+                return
+            result = await agent_runtime.registrar_mensagem_sem_ia(
+                db, conn, connector_kind="whatsapp", external_chat_id=external_chat_id,
+                sender_name=None, text_content=text_content, attachments=attachments, role="agent",
+            )
+            logger.info("registro fromMe gravado conv=%s", result.get("conversation_id"))
+    except Exception:
+        logger.exception("registro fromMe falhou chat=%s", external_chat_id)
 
 
 async def _process_engine_message(

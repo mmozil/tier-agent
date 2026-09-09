@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, Search, Zap,
-  Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus,
+  Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -140,6 +140,10 @@ interface Conversation {
   priority: string;
   team_id: number | null;
   crm_opportunity_id?: number | null;
+  /** Etapa 1 do caminho A: por qual número a conversa entrou. */
+  connector_id?: number | null;
+  canal_rotulo?: string | null;
+  canal_modo?: "agente" | "registro" | null;
 }
 
 interface Team {
@@ -176,6 +180,7 @@ type NavFilter =
   | { type: "mentions" }
   | { type: "participants" }
   | { type: "channel"; value: string }
+  | { type: "numero"; value: string }
   | { type: "agent"; value: string }
   | { type: "tag"; value: string }
   | { type: "team"; value: number };
@@ -731,9 +736,12 @@ export default function ConversasPage() {
   const allTags = Array.from(new Set(convs.flatMap((c) => c.tags || []))).sort();
   const channels = Array.from(new Set(convs.map((c) => c.connector_kind || "outro")));
   const agentsList = Array.from(new Set(convs.map((c) => c.agent_nome).filter(Boolean) as string[])).sort();
+  // Números (um por conector): só vale a pena listar quando há mais de um.
+  const numerosList = Array.from(new Set(convs.map((c) => c.canal_rotulo).filter(Boolean) as string[])).sort();
 
   const filteredConvs = convs.filter((c) => {
     if (navFilter.type === "channel" && (c.connector_kind || "outro") !== navFilter.value) return false;
+    if (navFilter.type === "numero" && c.canal_rotulo !== navFilter.value) return false;
     if (navFilter.type === "agent" && c.agent_nome !== navFilter.value) return false;
     if (navFilter.type === "tag" && !(c.tags || []).includes(navFilter.value)) return false;
     if (navFilter.type === "team" && c.team_id !== navFilter.value) return false;
@@ -819,6 +827,20 @@ export default function ConversasPage() {
               count={convs.filter((c) => (c.connector_kind || "outro") === ch).length}
               active={navFilter.type === "channel" && navFilter.value === ch}
               onClick={() => selectNav({ type: "channel", value: ch })}
+            />
+          ))}
+        </SubNavGroup>
+      )}
+      {numerosList.length > 1 && (
+        <SubNavGroup title="Números" icon={Smartphone}>
+          {numerosList.map((n) => (
+            <SubNavItem
+              key={n}
+              icon={Smartphone}
+              label={n}
+              count={convs.filter((c) => c.canal_rotulo === n).length}
+              active={navFilter.type === "numero" && navFilter.value === n}
+              onClick={() => selectNav({ type: "numero", value: n })}
             />
           ))}
         </SubNavGroup>
@@ -999,9 +1021,17 @@ export default function ConversasPage() {
                       <p className={`mt-0.5 truncate text-[12.5px] ${FC.sub}`}>
                         {c.last_preview || <span className="italic text-[#262626]/30 dark:text-white/30">Sem prévia</span>}
                       </p>
-                      {(c.agent_nome || (c.tags || []).length > 0 || c.assigned_member_id) && (
+                      {(c.agent_nome || c.canal_rotulo || (c.tags || []).length > 0 || c.assigned_member_id) && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          {c.agent_nome && (
+                          {c.canal_rotulo && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab] tabular-nums"
+                              title={c.canal_modo === "registro" ? "Número em modo registro (sem IA)" : "Número por onde a conversa entrou"}
+                            >
+                              <Smartphone className="w-2.5 h-2.5" /> {c.canal_rotulo}
+                            </span>
+                          )}
+                          {c.agent_nome && c.canal_modo !== "registro" && (
                             <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.16] dark:text-[#5b9bff]">
                               <Bot className="w-2.5 h-2.5" /> {c.agent_nome}
                             </span>
@@ -1471,6 +1501,9 @@ export default function ConversasPage() {
                 <div className="flex items-center justify-between"><dt className={FC.sub}>Mensagens</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb] font-medium">{openConv.msg_count}</dd></div>
                 <div className="flex items-center justify-between"><dt className={FC.sub}>Última mensagem</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb]">{fmtDate(openConv.last_message_at)}</dd></div>
                 <div className="flex items-center justify-between"><dt className={FC.sub}>Canal</dt><dd className="text-[#262626] dark:text-[#e6e8eb]">{channelLabel(openConv.connector_kind)}</dd></div>
+                {openConv.canal_rotulo && (
+                  <div className="flex items-center justify-between"><dt className={FC.sub}>Número</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb]">{openConv.canal_rotulo}{openConv.canal_modo === "registro" ? " · sem IA" : ""}</dd></div>
+                )}
                 {openConv.csat_state === "done" && openConv.csat_score != null && (
                   <div className="flex items-center justify-between"><dt className={FC.sub}>CSAT</dt><dd className="text-amber-600 dark:text-amber-400 font-medium">⭐ {openConv.csat_score}/5</dd></div>
                 )}

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
@@ -47,8 +47,12 @@ async def list_agents(
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = await _ensure_tenant(user)
+    # O agente-sistema «Registro (sem IA)» (Etapa 1 do caminho A) não é um agente
+    # que alguém edita: fica fora da lista e do seletor de canais.
     result = await db.execute(
-        select(TaAgent).where(TaAgent.tenant_id == tenant_id).order_by(TaAgent.id.desc())
+        select(TaAgent)
+        .where(TaAgent.tenant_id == tenant_id, or_(TaAgent.template_kind.is_(None), TaAgent.template_kind != "registro"))
+        .order_by(TaAgent.id.desc())
     )
     return list(result.scalars().all())
 
