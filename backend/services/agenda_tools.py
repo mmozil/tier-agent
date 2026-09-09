@@ -274,7 +274,9 @@ def summarize_slots(slots_payload: dict, data_pedida: str) -> dict:
         lst = dias.setdefault(dia, [])
         if len(lst) >= _MAX_SLOTS_POR_DIA:
             continue
-        lst.append({"hora": s.get("hora"), "inicio": s.get("inicio")})
+        # Item 8 do CCDA (09/09/2026) — no rodízio cada horário já diz quem
+        # atende; a Nathalia pode dizer "às 8h com a Jaqueline" sem inventar.
+        lst.append({"hora": s.get("hora"), "inicio": s.get("inicio"), **({"com": s["atendente"]} if s.get("atendente") else {})})
     total = sum(len(v) for v in dias.values())
     if not total:
         return {
