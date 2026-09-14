@@ -18,6 +18,10 @@ const STATUS_META: Record<string, { color: string; label: string; tip: string }>
   unknown: { color: "bg-[#262626]/25", label: "Desconhecido", tip: "Sem resposta da plataforma" },
 };
 
+/** Valor-sentinela da opção «Criar agente…» dentro da lista. Id de agente é
+ *  sempre positivo, então -1 nunca colide com um de verdade. */
+const CRIAR_AGENTE = -1;
+
 /** «Vincular ao agente» — o campo, COM saída para quem ainda não tem nenhum.
  *
  *  🚨 Mandar a pessoa para outra tela e esperar que ela volte é onde o cadastro
@@ -39,7 +43,6 @@ function CampoAgente({
   const [nome, setNome] = useState("");
   const [salvando, setSalvando] = useState(false);
   const semAgente = agents.length === 0;
-  const aberto = semAgente || criando;
 
   async function criar() {
     const n = nome.trim();
@@ -62,45 +65,44 @@ function CampoAgente({
   return (
     <>
       <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
-      {!semAgente && (
-        <Select
-          value={value}
-          onChange={(v) => onChange(v)}
-          options={agents.map((a) => ({ value: a.id, label: a.nome }))}
-          placeholder="Escolha um agente"
-        />
-      )}
-      {aberto ? (
-        <div className={`${semAgente ? "" : "mt-2"} flex items-center gap-2`}>
+      {/* 🚨 VINCULAR É ESCOLHER, NUNCA DIGITAR. O campo é sempre a lista do que
+          existe — nome digitado à mão não vincula nada e ainda convida ao erro
+          de grafia. Criar é uma opção DENTRO da lista: quem quer um agente novo
+          pede, e só então aparece a caixa de texto. */}
+      <Select
+        value={criando ? CRIAR_AGENTE : value}
+        onChange={(v) => {
+          if (v === CRIAR_AGENTE) { setCriando(true); return; }
+          setCriando(false);
+          onChange(v);
+        }}
+        options={[
+          ...agents.map((a) => ({ value: a.id, label: a.nome })),
+          { value: CRIAR_AGENTE, label: <span className="text-[#003083] dark:text-[#5b9bff]">+ Criar agente…</span> },
+        ]}
+        placeholder={semAgente ? "Nenhum agente ainda" : "Escolha um agente"}
+      />
+      {criando && (
+        <div className="mt-2 flex items-center gap-2">
           <input
             value={nome}
             onChange={(e) => setNome(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void criar(); } }}
             placeholder="Nome do agente — ex.: SDR / Pré-vendas"
             maxLength={60}
-            autoFocus={criando}
+            autoFocus
             className={`flex-1 min-w-0 h-9 px-3 text-[13px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`}
           />
           <Button variant="primary" onClick={criar} disabled={!nome.trim() || salvando}>
             {salvando ? "Criando..." : "Criar"}
           </Button>
-          {!semAgente && (
-            <Button variant="ghost" onClick={() => { setCriando(false); setNome(""); }}>Cancelar</Button>
-          )}
+          <Button variant="ghost" onClick={() => { setCriando(false); setNome(""); }}>Cancelar</Button>
         </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setCriando(true)}
-          className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline"
-        >
-          <Plus className="w-3 h-3" /> Criar agente
-        </button>
       )}
-      {semAgente && (
+      {semAgente && !criando && (
         <p className={`mt-1.5 text-[12px] leading-relaxed ${FC.sub}`}>
-          Você ainda não tem agente. Dê um nome e ele nasce aqui mesmo — persona e
-          modelo se ajustam depois, na tela de Agentes.
+          Esta conta ainda não tem agente. Escolha «Criar agente» na lista — ou use
+          «Somente registro», que liga o número sem agente nenhum.
         </p>
       )}
     </>
@@ -332,14 +334,16 @@ export default function CanaisPage() {
 
   // Etapa 1 do caminho A (09/09/2026): um número pode existir SEM IA — só registra.
   const [provisionModo, setProvisionModo] = useState<"agente" | "registro">("agente");
-  // Quem não tem agente nenhum não pode abrir o formulário num modo que exige
-  // um. Roda uma vez, quando a lista chega — depois a escolha é da pessoa.
-  const [modoJaAjustado, setModoJaAjustado] = useState(false);
-  useEffect(() => {
-    if (modoJaAjustado || loading) return;
-    if (agents.length === 0) setProvisionModo("registro");
-    setModoJaAjustado(true);
-  }, [agents.length, loading, modoJaAjustado]);
+  /** Abre o formulário do WhatsApp já no modo que faz sentido para esta conta.
+   *
+   *  🚨 Era um `useEffect` de montagem, e ele decidia ANTES de `load()` trazer os
+   *  agentes: no primeiro render a lista está vazia para todo mundo, então a
+   *  conta COM agente também caía em «registro» — e a trava de uma-vez-só
+   *  impedia a correção depois. Decidir na abertura é determinístico. */
+  function abrirProvisionWhatsApp() {
+    setProvisionModo(agents.length > 0 ? "agente" : "registro");
+    setShowProvision(true);
+  }
 
   /** Agente recém-criado entra na lista e já fica escolhido — quem acabou de
    *  criar quer usar agora, não procurar o próprio nome num select. */
@@ -1125,7 +1129,7 @@ export default function CanaisPage() {
                     name={CHANNEL_META.whatsapp.name}
                     desc={CHANNEL_META.whatsapp.short}
                     badge="QR"
-                    onClick={() => pickChannel(() => setShowProvision(true))}
+                    onClick={() => pickChannel(abrirProvisionWhatsApp)}
                   />
                   <ChannelCard
                     icon={CHANNEL_META.slack.Icon}
