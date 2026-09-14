@@ -934,20 +934,12 @@ export default function CanaisPage() {
               ))}
             </div>
           ) : conns.length === 0 ? (
-            agents.length === 0 ? (
-              // Sem agente NÃO é impedimento: o número entra em «Registro
-              // (sem IA)» e guarda as conversas. O agente é para quem quer
-              // RESPOSTA automática — e isso é uma escolha, não um pré-requisito.
-              <EmptyHint
-                icon={Smartphone}
-                text='Nenhum canal conectado. Dá para ligar um número agora mesmo — sem agente ele só registra as conversas. Crie um agente quando quiser que alguém responda sozinho.'
-                ctaLabel="Criar agente"
-                ctaTo="/admin/agentes"
-                className="py-16"
-              />
-            ) : (
-              <EmptyHint icon={Smartphone} text='Nenhum canal conectado. Clique em "Conectar canal" — o link de demonstração fica pronto na hora, sem cadastro nenhum.' className="py-16" />
-            )
+            // 🚨 UMA TELA SÓ, para todo mundo. Havia um ramo por `agents.length`
+            // e ele fazia duas contas verem textos diferentes no mesmo lugar —
+            // quem não tinha agente lia um aviso de «crie um agente primeiro»
+            // que nem verdade era (o modo «Registro (sem IA)» dispensa agente).
+            // Estado vazio não se divide por configuração da conta.
+            <EmptyHint icon={Smartphone} text='Nenhum canal conectado. Clique em "Conectar canal" — o link de demonstração fica pronto na hora, sem cadastro nenhum.' className="py-16" />
           ) : (
             <div className={`divide-y ${FC.hair}`}>
               {conns.map((c) => {
