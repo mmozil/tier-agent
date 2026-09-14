@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Trash2, Loader2, Zap, X, CheckCircle2, XCircle, Check, Plug, Bot } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, PageHero, Row, Button, HairCells, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button, HairCells, EmptyHint, SkeletonBar, iconBtn, Input, Select } from "@/components/ds/fc";
 
 // Integrações (MCP) — catálogo de plataformas que o agente pode consultar/agir via
 // tool-use. Padrão "página de integrações": cards conhecidos (Conectar com URL
@@ -278,7 +278,9 @@ export default function FontesDadosPage() {
     }
   }
 
-  const inputCls = `mt-1 w-full h-8 px-3 text-[14px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
+  // 🚨 `Input` do DS, não um campo recriado aqui: era `rounded-lg` e `14px`
+  // onde o padrão é `rounded-[10px]` e `13px`. Mesmo formulário, dois desenhos.
+  const inputCls = "mt-1 w-full";
   const colLabel = `text-[11px] uppercase tracking-[0.06em] ${FC.sub}`;
   const COLS = "grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_88px_56px_72px] items-center gap-4";
 
@@ -300,7 +302,7 @@ export default function FontesDadosPage() {
     const initials = preset?.initials || nome.slice(0, 2).toUpperCase();
     return (
       <span
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold text-white"
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[11px] font-semibold text-white"
         style={{ backgroundColor: color }}
       >
         {initials}
@@ -324,15 +326,13 @@ export default function FontesDadosPage() {
             agents.length > 0 ? (
               <label className="block">
                 <span className={`block text-[11px] mb-1 ${FC.sub}`}>Agente</span>
-                <select
-                  value={agentId ?? ""}
-                  onChange={(e) => setAgentId(Number(e.target.value))}
-                  className={`h-7 px-3 text-[13px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`}
-                >
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>{a.nome}</option>
-                  ))}
-                </select>
+                <Select
+                  value={agentId}
+                  onChange={(v) => setAgentId(Number(v))}
+                  options={agents.map((a) => ({ value: a.id, label: a.nome }))}
+                  placeholder="Escolha um agente"
+                  className="w-[200px]"
+                />
               </label>
             ) : undefined
           }
@@ -405,11 +405,11 @@ export default function FontesDadosPage() {
               <div className="grid grid-cols-2 gap-4">
                 <label className="block">
                   <span className={`text-[12px] ${FC.sub}`}>Nome</span>
-                  <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="ex: Tier Empresas ERP" className={inputCls} required />
+                  <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="ex: Tier Empresas ERP" className={inputCls} required />
                 </label>
                 <label className="block">
                   <span className={`text-[12px] ${FC.sub}`}>URL do MCP server</span>
-                  <input
+                  <Input
                     value={form.mcp_server_url}
                     onChange={(e) => setForm({ ...form, mcp_server_url: e.target.value })}
                     placeholder="https://..."
@@ -424,7 +424,7 @@ export default function FontesDadosPage() {
               </div>
               <label className="block">
                 <span className={`text-[12px] ${FC.sub}`}>Token (Bearer)</span>
-                <input type="password" value={form.bearer} onChange={(e) => setForm({ ...form, bearer: e.target.value })} placeholder={formPreset.key === "custom" ? "opcional" : "cole o token aqui"} className={`${inputCls} font-mono`} />
+                <Input type="password" value={form.bearer} onChange={(e) => setForm({ ...form, bearer: e.target.value })} placeholder={formPreset.key === "custom" ? "opcional" : "cole o token aqui"} className={`${inputCls} font-mono`} />
                 <span className={`text-[11px] mt-1 block ${FC.mut}`}>
                   {formPreset.tokenHelp} Guardado encriptado — nunca é exibido de novo.
                 </span>
@@ -453,7 +453,7 @@ export default function FontesDadosPage() {
             {[0, 1, 2].map((i) => (
               <div key={i} className={`${COLS} px-6 py-3 border-b ${FC.hair}`}>
                 <div className="flex items-center gap-2.5">
-                  <SkeletonBar className="h-8 w-8 rounded-lg" />
+                  <SkeletonBar className="h-8 w-8 rounded-[10px]" />
                   <SkeletonBar className="h-3.5 w-28" />
                 </div>
                 <SkeletonBar className="h-3 w-48" />
@@ -554,7 +554,7 @@ export default function FontesDadosPage() {
 
             <div className="p-5 space-y-5">
               {/* O que o agente pode fazer */}
-              <div className={`rounded-lg border ${FC.hair} p-3.5`}>
+              <div className={`rounded-[10px] border ${FC.hair} p-3.5`}>
                 <div className="flex items-center justify-between gap-3 mb-1">
                   <div className={`text-[13px] font-medium ${FC.ink}`}>O que o agente pode fazer com esta integração</div>
                   <Button variant="secondary" size="sm" onClick={() => testProvider(detail)} disabled={testing === detail.id}>

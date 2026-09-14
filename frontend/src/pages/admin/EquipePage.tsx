@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Users, Plus, Trash2, RefreshCw, X, Shield, Headphones, Link2, Smartphone } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SKEL, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Button, EmptyHint, SKEL, iconBtn, Input, Select } from "@/components/ds/fc";
 
 interface Member {
   id: number;
@@ -195,8 +195,10 @@ export default function EquipePage() {
     }
   }
 
-  const inputCls = `h-8 px-3 text-[13px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
-  const miniSelect = `h-7 px-2 text-[12px] rounded-lg bg-white dark:bg-[#14171c] border ${FC.hair} outline-none`;
+  // 🚨 Campo e lista vêm do DS (`Input`/`Select` do fc.tsx). Esta tela recriava
+  // os dois à mão, com `rounded-lg` onde o padrão é `rounded-[10px]`, e usava
+  // `<select>` NATIVO — que abre a lista do sistema operacional: cinza, sem dark
+  // mode, altura fora da nossa. Um campo desenhado duas vezes diverge sempre.
 
   // TeamSkeleton — carregando, ecoa a lista de membros (avatar + nome/email + controles).
   function TeamSkeleton() {
@@ -243,13 +245,17 @@ export default function EquipePage() {
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Nome" className={inputCls} />
-                <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="E-mail (login)" className={inputCls} />
-                <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Senha (vazio = enviar convite por link)" className={inputCls} />
-                <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputCls}>
-                  <option value="atendente">Atendente</option>
-                  <option value="admin">Admin (gerencia equipe)</option>
-                </select>
+                <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Nome" />
+                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="E-mail (login)" />
+                <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Senha (vazio = enviar convite por link)" />
+                <Select
+                  value={form.role}
+                  onChange={(v) => setForm({ ...form, role: v })}
+                  options={[
+                    { value: "atendente", label: "Atendente" },
+                    { value: "admin", label: "Admin (gerencia equipe)" },
+                  ]}
+                />
               </div>
               <div className="flex items-center gap-2 mt-3">
                 <Button variant="primary" onClick={create} disabled={saving}>{saving ? "Criando..." : "Criar atendente"}</Button>
@@ -307,12 +313,16 @@ export default function EquipePage() {
                         </span>
                       ))}
                       {gestor && numerosLivres.length > 0 && (
-                        <select value="" onChange={(e) => vincularNumero(m, Number(e.target.value) || null)} className={`h-6 px-1.5 text-[12px] rounded-full bg-transparent border ${FC.hair} outline-none ${FC.sub}`} title="Vincular um número a esta pessoa">
-                          <option value="">+ número</option>
-                          {numerosLivres.map((n) => (
-                            <option key={n.id} value={n.id}>{rotuloNumero(n)}{n.modo === "registro" ? " · sem IA" : ""}</option>
-                          ))}
-                        </select>
+                        <Select
+                          value={null}
+                          onChange={(v) => vincularNumero(m, Number(v) || null)}
+                          options={numerosLivres.map((num) => ({
+                            value: num.id,
+                            label: `${rotuloNumero(num)}${num.modo === "registro" ? " · sem IA" : ""}`,
+                          }))}
+                          placeholder="+ número"
+                          className="w-[150px]"
+                        />
                       )}
                       {(m.numeros || []).length === 0 && numerosLivres.length === 0 && (
                         <span className={`text-[11px] ${FC.mut}`}>sem número próprio</span>
@@ -324,10 +334,19 @@ export default function EquipePage() {
                       <Link2 className="w-3.5 h-3.5" /> Copiar link
                     </Button>
                   )}
-                  <select value={m.role} onChange={(e) => updateRole(m, e.target.value)} className={miniSelect} disabled={m.origem === "erp"} title={m.origem === "erp" ? "Definido pelo cargo no ERP" : undefined}>
-                    <option value="atendente">{ROLE_LABEL.atendente}</option>
-                    <option value="admin">{ROLE_LABEL.admin}</option>
-                  </select>
+                  {/* Papel de quem veio do ERP é só leitura: quem manda é o cargo lá. */}
+                  <span title={m.origem === "erp" ? "Definido pelo cargo no ERP" : undefined}>
+                    <Select
+                      value={m.role}
+                      onChange={(v) => updateRole(m, v)}
+                      options={[
+                        { value: "atendente", label: ROLE_LABEL.atendente },
+                        { value: "admin", label: ROLE_LABEL.admin },
+                      ]}
+                      disabled={m.origem === "erp"}
+                      className="w-[132px]"
+                    />
+                  </span>
                   {m.status !== "invited" && (
                     <Button variant="secondary" size="sm" onClick={() => toggleStatus(m)}>
                       {m.status === "active" ? "Desativar" : "Ativar"}
@@ -358,12 +377,12 @@ export default function EquipePage() {
                   </button>
                 </span>
               ))}
-              <input
+              <Input
                 value={newTeam}
                 onChange={(e) => setNewTeam(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTeam(); } }}
                 placeholder="+ novo time"
-                className={`${inputCls} w-36`}
+                className="w-36"
               />
               <Button variant="secondary" size="sm" onClick={addTeam}><Plus className="w-3.5 h-3.5" /> Adicionar</Button>
             </div>
