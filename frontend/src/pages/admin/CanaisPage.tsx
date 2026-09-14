@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Bot, Copy, ChevronRight } from "lucide-react";
+import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Copy, ChevronRight } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/phone";
@@ -17,6 +17,95 @@ const STATUS_META: Record<string, { color: string; label: string; tip: string }>
   disconnected: { color: "bg-[#262626]/25", label: "Desconectado", tip: "Conexão encerrada" },
   unknown: { color: "bg-[#262626]/25", label: "Desconhecido", tip: "Sem resposta da plataforma" },
 };
+
+/** «Vincular ao agente» — o campo, COM saída para quem ainda não tem nenhum.
+ *
+ *  🚨 Mandar a pessoa para outra tela e esperar que ela volte é onde o cadastro
+ *  morre. O nome é a única coisa obrigatória para criar um agente (persona e
+ *  modelo se ajustam depois), então cabe aqui numa linha.
+ */
+function CampoAgente({
+  agents,
+  value,
+  onChange,
+  onCriado,
+}: {
+  agents: Agent[];
+  value: number | null;
+  onChange: (v: number | null) => void;
+  onCriado: (a: Agent) => void;
+}) {
+  const [criando, setCriando] = useState(false);
+  const [nome, setNome] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const semAgente = agents.length === 0;
+  const aberto = semAgente || criando;
+
+  async function criar() {
+    const n = nome.trim();
+    if (!n || salvando) return;
+    setSalvando(true);
+    try {
+      const { data } = await api.post<Agent>("/agents", { nome: n, persona: "", template_kind: "" });
+      onCriado(data);
+      setNome("");
+      setCriando(false);
+      toast.success(`Agente "${data.nome}" criado`);
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Não consegui criar o agente");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <>
+      <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
+      {!semAgente && (
+        <Select
+          value={value}
+          onChange={(v) => onChange(v)}
+          options={agents.map((a) => ({ value: a.id, label: a.nome }))}
+          placeholder="Escolha um agente"
+        />
+      )}
+      {aberto ? (
+        <div className={`${semAgente ? "" : "mt-2"} flex items-center gap-2`}>
+          <input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void criar(); } }}
+            placeholder="Nome do agente — ex.: SDR / Pré-vendas"
+            maxLength={60}
+            autoFocus={criando}
+            className={`flex-1 min-w-0 h-9 px-3 text-[13px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`}
+          />
+          <Button variant="primary" onClick={criar} disabled={!nome.trim() || salvando}>
+            {salvando ? "Criando..." : "Criar"}
+          </Button>
+          {!semAgente && (
+            <Button variant="ghost" onClick={() => { setCriando(false); setNome(""); }}>Cancelar</Button>
+          )}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setCriando(true)}
+          className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline"
+        >
+          <Plus className="w-3 h-3" /> Criar agente
+        </button>
+      )}
+      {semAgente && (
+        <p className={`mt-1.5 text-[12px] leading-relaxed ${FC.sub}`}>
+          Você ainda não tem agente. Dê um nome e ele nasce aqui mesmo — persona e
+          modelo se ajustam depois, na tela de Agentes.
+        </p>
+      )}
+    </>
+  );
+}
 
 interface Agent {
   id: number;
@@ -241,6 +330,21 @@ export default function CanaisPage() {
 
   // Etapa 1 do caminho A (09/09/2026): um número pode existir SEM IA — só registra.
   const [provisionModo, setProvisionModo] = useState<"agente" | "registro">("agente");
+  // Quem não tem agente nenhum não pode abrir o formulário num modo que exige
+  // um. Roda uma vez, quando a lista chega — depois a escolha é da pessoa.
+  const [modoJaAjustado, setModoJaAjustado] = useState(false);
+  useEffect(() => {
+    if (modoJaAjustado || loading) return;
+    if (agents.length === 0) setProvisionModo("registro");
+    setModoJaAjustado(true);
+  }, [agents.length, loading, modoJaAjustado]);
+
+  /** Agente recém-criado entra na lista e já fica escolhido — quem acabou de
+   *  criar quer usar agora, não procurar o próprio nome num select. */
+  function aoCriarAgente(a: Agent) {
+    setAgents((lista) => [...lista, a]);
+    setSelectedAgent(a.id);
+  }
 
   async function provisionWhatsApp() {
     if (provisionModo === "agente" && !selectedAgent) {
@@ -479,10 +583,10 @@ export default function CanaisPage() {
             <Button
               variant="primary"
               onClick={() => {
-                if (agents.length === 0) {
-                  toast.error("Crie um agente primeiro para conectar um canal.");
-                  return;
-                }
+                // 🚨 NÃO recusar por falta de agente. Número em «Registro (sem
+                // IA)» não precisa de nenhum — e era justamente esse caminho que
+                // a trava bloqueava. Medido em 14/09: 10 dos 18 tenants estão
+                // sem agente, ou seja, a maioria batia aqui e parava.
                 setShowPicker(true);
               }}
             >
@@ -514,13 +618,7 @@ export default function CanaisPage() {
               </div>
               {provisionModo === "agente" ? (
                 <label className="block">
-                  <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
-                  <Select
-                    value={selectedAgent}
-                    onChange={(v) => setSelectedAgent(v)}
-                    options={agents.map((a) => ({ value: a.id, label: a.nome }))}
-                    placeholder="Escolha um agente"
-                  />
+                  <CampoAgente agents={agents} value={selectedAgent} onChange={setSelectedAgent} onCriado={aoCriarAgente} />
                 </label>
               ) : (
                 <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
@@ -543,8 +641,7 @@ export default function CanaisPage() {
             <div className="p-6 space-y-4 max-w-[620px]">
               <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar Instagram</h3>
               <label className="block">
-                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
-                <Select value={selectedAgent} onChange={(v) => setSelectedAgent(v)} options={agents.map((a) => ({ value: a.id, label: a.nome }))} placeholder="Escolha um agente" />
+                <CampoAgente agents={agents} value={selectedAgent} onChange={setSelectedAgent} onCriado={aoCriarAgente} />
               </label>
               <label className="block">
                 <span className={`text-[12px] block mb-1 ${FC.sub}`}>Token de acesso da página</span>
@@ -590,8 +687,7 @@ export default function CanaisPage() {
             <div className="p-6 space-y-4 max-w-[620px]">
               <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar Slack</h3>
               <label className="block">
-                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
-                <Select value={selectedAgent} onChange={(v) => setSelectedAgent(v)} options={agents.map((a) => ({ value: a.id, label: a.nome }))} placeholder="Escolha um agente" />
+                <CampoAgente agents={agents} value={selectedAgent} onChange={setSelectedAgent} onCriado={aoCriarAgente} />
               </label>
               <label className="block">
                 <span className={`text-[12px] block mb-1 ${FC.sub}`}>Bot Token</span>
@@ -631,8 +727,7 @@ export default function CanaisPage() {
             <div className="p-6 space-y-4 max-w-[620px]">
               <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>Conectar Discord</h3>
               <label className="block">
-                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
-                <Select value={selectedAgent} onChange={(v) => setSelectedAgent(v)} options={agents.map((a) => ({ value: a.id, label: a.nome }))} placeholder="Escolha um agente" />
+                <CampoAgente agents={agents} value={selectedAgent} onChange={setSelectedAgent} onCriado={aoCriarAgente} />
               </label>
               <label className="block">
                 <span className={`text-[12px] block mb-1 ${FC.sub}`}>Bot Token</span>
@@ -676,8 +771,7 @@ export default function CanaisPage() {
               </p>
 
               <label className="block">
-                <span className={`text-[12px] block mb-1 ${FC.sub}`}>Vincular ao agente</span>
-                <Select value={selectedAgent} onChange={(v) => setSelectedAgent(v)} options={agents.map((a) => ({ value: a.id, label: a.nome }))} placeholder="Escolha um agente" />
+                <CampoAgente agents={agents} value={selectedAgent} onChange={setSelectedAgent} onCriado={aoCriarAgente} />
               </label>
 
               <label className="block">
@@ -841,7 +935,16 @@ export default function CanaisPage() {
             </div>
           ) : conns.length === 0 ? (
             agents.length === 0 ? (
-              <EmptyHint icon={Bot} text="Crie um agente primeiro para conectar um canal." ctaLabel="Criar agente" ctaTo="/admin/agentes" className="py-16" />
+              // Sem agente NÃO é impedimento: o número entra em «Registro
+              // (sem IA)» e guarda as conversas. O agente é para quem quer
+              // RESPOSTA automática — e isso é uma escolha, não um pré-requisito.
+              <EmptyHint
+                icon={Smartphone}
+                text='Nenhum canal conectado. Dá para ligar um número agora mesmo — sem agente ele só registra as conversas. Crie um agente quando quiser que alguém responda sozinho.'
+                ctaLabel="Criar agente"
+                ctaTo="/admin/agentes"
+                className="py-16"
+              />
             ) : (
               <EmptyHint icon={Smartphone} text='Nenhum canal conectado. Clique em "Conectar canal" — o link de demonstração fica pronto na hora, sem cadastro nenhum.' className="py-16" />
             )
@@ -952,13 +1055,7 @@ export default function CanaisPage() {
             </div>
             <div className="px-7 py-6 space-y-6">
               <label className="block">
-                <span className={`text-[12px] block mb-1.5 ${FC.sub}`}>Vincular ao agente</span>
-                <Select
-                  value={selectedAgent}
-                  onChange={(v) => setSelectedAgent(v)}
-                  options={agents.map((a) => ({ value: a.id, label: a.nome }))}
-                  placeholder="Escolha um agente"
-                />
+                <CampoAgente agents={agents} value={selectedAgent} onChange={setSelectedAgent} onCriado={aoCriarAgente} />
               </label>
 
               <div>
