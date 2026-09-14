@@ -297,6 +297,8 @@ export default function CanaisPage() {
   const [instagramConnecting, setInstagramConnecting] = useState(false);
   const [instagramResult, setInstagramResult] = useState<{ webhook_url?: string } | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  // Etapa curta só para o WhatsApp Oficial, que precisa do agente na abertura.
+  const [pedeAgenteCloud, setPedeAgenteCloud] = useState(false);
   const [showWebchat, setShowWebchat] = useState(false);
   const [webchatForm, setWebchatForm] = useState<WebchatForm>({ ...WEBCHAT_VAZIO });
   const [webchatSaving, setWebchatSaving] = useState(false);
@@ -487,12 +489,16 @@ export default function CanaisPage() {
   // Abre o formulário do link de demonstração. Se o agente já tem um link,
   // carrega a config pra editar; senão sugere um endereço a partir do nome.
   async function abrirWebchat() {
-    if (!selectedAgent) {
-      toast.error("Escolha um agente");
-      return;
-    }
     setShowPicker(false);
     setWebchatUrl(null);
+    // Sem agente ainda: abre o formulário vazio. O campo de agente está lá
+    // dentro, com a criação na própria linha, e `salvarWebchat` é quem cobra.
+    if (!selectedAgent) {
+      setWebchatForm({ ...WEBCHAT_VAZIO });
+      setWebchatJaExiste(false);
+      setShowWebchat(true);
+      return;
+    }
     const nome = agents.find((a) => a.id === selectedAgent)?.nome || "";
     try {
       const { data } = await api.get<{ configurado: boolean; config?: Partial<WebchatForm> }>(
@@ -559,12 +565,13 @@ export default function CanaisPage() {
     }
   }
 
-  // Abre o fluxo de um canal a partir do seletor (fecha o modal, valida agente).
+  /** Abre o fluxo de um canal a partir do seletor.
+   *
+   *  🚨 NÃO valida agente. Todo formulário de canal já traz o campo (com a
+   *  criação na própria linha), e o WhatsApp por QR em «Registro (sem IA)»
+   *  dispensa agente. Recusar aqui devolvia a pessoa ao começo sem dizer o que
+   *  fazer — e ainda sugeria que o agente fosse obrigatório, o que é falso. */
   function pickChannel(open: () => void) {
-    if (!selectedAgent) {
-      toast.error("Escolha um agente");
-      return;
-    }
     setShowPicker(false);
     open();
   }
@@ -1035,21 +1042,53 @@ export default function CanaisPage() {
       </PageFrame>
 
       {/* Seletor de canais */}
+      {pedeAgenteCloud && (
+        <Row>
+          <div className="p-6 space-y-4 max-w-[560px]">
+            <h3 className={`text-[20px] font-[500] leading-7 fc-crisp tracking-[-0.1px] ${FC.ink}`}>WhatsApp Oficial</h3>
+            <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
+              Este é o canal da API oficial da Meta: o número nasce ligado a um agente,
+              que responde sozinho. Escolha qual — ou crie agora.
+            </p>
+            <label className="block">
+              <CampoAgente agents={agents} value={selectedAgent} onChange={setSelectedAgent} onCriado={aoCriarAgente} />
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setPedeAgenteCloud(false)}>Cancelar</Button>
+              <ConnectWhatsAppCloud
+                agentId={selectedAgent ?? 0}
+                onConnected={() => { setPedeAgenteCloud(false); load(); }}
+                render={({ connect, loading }) => (
+                  <Button
+                    variant="primary"
+                    disabled={!selectedAgent || loading}
+                    onClick={() => { setPedeAgenteCloud(false); connect(); }}
+                  >
+                    {loading ? "Abrindo..." : "Continuar"}
+                  </Button>
+                )}
+              />
+            </div>
+          </div>
+        </Row>
+      )}
+
       {showPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setShowPicker(false)}>
           <div className={`w-full max-w-[640px] max-h-[88vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#0c0e12] shadow-2xl border ${FC.hair}`} onClick={(e) => e.stopPropagation()}>
             <div className={`flex items-center gap-3 border-b ${FC.hair} px-7 py-5`}>
               <div className="flex-1 min-w-0">
                 <h2 className={`text-[16px] font-medium leading-tight ${FC.ink}`}>Conectar um canal</h2>
-                <p className={`text-[12px] mt-0.5 ${FC.sub}`}>Escolha por onde o agente vai conversar</p>
+                <p className={`text-[12px] mt-0.5 ${FC.sub}`}>Escolha por onde as conversas vão entrar</p>
               </div>
               <button onClick={() => setShowPicker(false)} className={iconBtn}><X className="h-4 w-4" /></button>
             </div>
+            {/* 🚨 O AGENTE NÃO PERGUNTA AQUI. Este campo abria o seletor, antes
+                de escolher canal — e quem só queria parear um número por QR lia
+                aquilo como pré-requisito («tenho que criar um agente?»). O canal
+                vem primeiro; cada formulário pede o agente quando precisa dele,
+                e o de WhatsApp em «Registro (sem IA)» não precisa de nenhum. */}
             <div className="px-7 py-6 space-y-6">
-              <label className="block">
-                <CampoAgente agents={agents} value={selectedAgent} onChange={setSelectedAgent} onCriado={aoCriarAgente} />
-              </label>
-
               <div>
                 <div className={`text-[11px] uppercase tracking-[0.06em] font-semibold mb-2.5 ${FC.mut}`}>Disponíveis</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1071,7 +1110,10 @@ export default function CanaisPage() {
                         badge="Meta"
                         loading={loading}
                         onClick={() => {
-                          if (!selectedAgent) { toast.error("Escolha um agente"); return; }
+                          // A API oficial da Meta amarra o número a um agente na
+                          // própria abertura, então aqui ele é mesmo necessário —
+                          // mas isso vira uma ETAPA, não um «não».
+                          if (!selectedAgent) { setShowPicker(false); setPedeAgenteCloud(true); return; }
                           setShowPicker(false);
                           connect();
                         }}
