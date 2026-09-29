@@ -6,245 +6,360 @@
 <meta name="robots" content="noindex">
 <title>Calculadora WhatsApp API · Tier Agent</title>
 <link rel="icon" href="/favicon.svg">
-<meta name="description" content="Quanto custa o WhatsApp oficial a partir de 1º de outubro de 2026: a franquia de 1.000 mensagens de serviço por número, em que dia ela acaba e o que entra na fatura.">
+<meta name="description" content="Em que dia do mês a sua franquia de 1.000 mensagens de serviço acaba, e quanto entra na fatura a partir de 1º de outubro de 2026.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap">
 <style>
-  /* ───────────────────────────────────────────────────────────────
-     Design system Tier Agent — "Calm Precision".
-     Doc canonica: design-system-tier-agent.md
-     Fundo #F9F9F9 (nunca branco puro) · hairline #EDEDED (unica borda)
-     Tinta #262626 com opacidades · acento #003083 SO em acao/marca
-     Numeros em font-mono tabular-nums (assinatura Tier)
-     Titulos nunca font-bold — peso 450/500
-     ─────────────────────────────────────────────────────────────── */
-  :root{
-    --ink:#262626;
-    --sub:rgba(38,38,38,.56);
-    --dim:rgba(38,38,38,.72);
-    --mut:rgba(38,38,38,.40);
-    --hair:#EDEDED;
-    --base:#F9F9F9;
-    --card:#FFFFFF;
-    --pill:#F1F3F5;
-    --acento:#003083;
-    --acento-veu:rgba(0,48,131,.06);
-    --pos:#0a8f5a;
-    --pos-veu:rgba(10,143,90,.08);
-    --aten:#F5A300;
-    --aten-veu:rgba(245,163,0,.08);
-    --neg:#E5484D;
-    --neg-veu:rgba(229,72,77,.07);
-  }
-  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-    --ink:#e7eaef;
-    --sub:rgba(231,234,239,.56);
-    --dim:rgba(231,234,239,.72);
-    --mut:rgba(231,234,239,.40);
-    --hair:#23272e;
-    --base:#0c0e12;
-    --card:#11141a;
-    --pill:#181c23;
-    --acento:#5b9bff;
-    --acento-veu:rgba(91,155,255,.10);
-    --pos:#34d399;
-    --pos-veu:rgba(52,211,153,.10);
-    --aten:#fbbf24;
-    --aten-veu:rgba(251,191,36,.10);
-    --neg:#ff6b5e;
-    --neg-veu:rgba(255,107,94,.10);
-  }}
-  :root[data-theme="dark"]{
-    --ink:#e7eaef; --sub:rgba(231,234,239,.56); --dim:rgba(231,234,239,.72);
-    --mut:rgba(231,234,239,.40); --hair:#23272e; --base:#0c0e12; --card:#11141a;
-    --pill:#181c23; --acento:#5b9bff; --acento-veu:rgba(91,155,255,.10);
-    --pos:#34d399; --pos-veu:rgba(52,211,153,.10); --aten:#fbbf24;
-    --aten-veu:rgba(251,191,36,.10); --neg:#ff6b5e; --neg-veu:rgba(255,107,94,.10);
-  }
+/* ══════════════════════════════════════════════════════════════════════
+   Design system: animate-ui / shadcn tema "neutral".
+   Tokens copiados de frontend/src/components/animate-ui/animate-ui.css
+   (tier-finance) — mesmos valores oklch, sem par #hex/dark: à mão.
+   Fonte Outfit · card rounded-xl flat · foco NEUTRO (nunca azul)
+   Azul Tier só como acento pontual. Cor com função: coberto × cobrado.
+   ══════════════════════════════════════════════════════════════════════ */
+:root{
+  --aui-background:oklch(1 0 0);
+  --aui-foreground:oklch(0.145 0 0);
+  --aui-card:oklch(1 0 0);
+  --aui-card-foreground:oklch(0.145 0 0);
+  --aui-primary:oklch(0.145 0 0);
+  --aui-primary-foreground:oklch(0.985 0 0);
+  --aui-secondary:oklch(0.97 0 0);
+  --aui-secondary-foreground:oklch(0.205 0 0);
+  --aui-muted:oklch(0.97 0 0);
+  --aui-muted-foreground:oklch(0.556 0 0);
+  --aui-accent:oklch(0.97 0 0);
+  --aui-destructive:oklch(0.577 0.245 27.325);
+  --aui-border:oklch(0.922 0 0);
+  --aui-input:oklch(0.922 0 0);
+  --aui-ring:oklch(0.708 0 0);
+  /* cor de conteúdo (só onde carrega significado) */
+  --ok:oklch(0.55 0.13 158);
+  --warn:oklch(0.72 0.16 76);
+  --tier:oklch(0.35 0.16 264);
+  --raio:12px;
+  --raio-sm:8px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --aui-background:oklch(0.145 0 0);
+  --aui-foreground:oklch(0.985 0 0);
+  --aui-card:oklch(0.205 0 0);
+  --aui-card-foreground:oklch(0.985 0 0);
+  --aui-primary:oklch(0.985 0 0);
+  --aui-primary-foreground:oklch(0.145 0 0);
+  --aui-secondary:oklch(0.269 0 0);
+  --aui-secondary-foreground:oklch(0.985 0 0);
+  --aui-muted:oklch(0.269 0 0);
+  --aui-muted-foreground:oklch(0.708 0 0);
+  --aui-accent:oklch(0.269 0 0);
+  --aui-destructive:oklch(0.704 0.191 22.216);
+  --aui-border:oklch(1 0 0 / 10%);
+  --aui-input:oklch(1 0 0 / 15%);
+  --aui-ring:oklch(0.556 0 0);
+  --ok:oklch(0.72 0.15 162);
+  --warn:oklch(0.82 0.15 82);
+  --tier:oklch(0.72 0.14 258);
+}}
+:root[data-theme="dark"],.dark{
+  --aui-background:oklch(0.145 0 0); --aui-foreground:oklch(0.985 0 0);
+  --aui-card:oklch(0.205 0 0); --aui-card-foreground:oklch(0.985 0 0);
+  --aui-primary:oklch(0.985 0 0); --aui-primary-foreground:oklch(0.145 0 0);
+  --aui-secondary:oklch(0.269 0 0); --aui-secondary-foreground:oklch(0.985 0 0);
+  --aui-muted:oklch(0.269 0 0); --aui-muted-foreground:oklch(0.708 0 0);
+  --aui-accent:oklch(0.269 0 0); --aui-destructive:oklch(0.704 0.191 22.216);
+  --aui-border:oklch(1 0 0 / 10%); --aui-input:oklch(1 0 0 / 15%);
+  --aui-ring:oklch(0.556 0 0);
+  --ok:oklch(0.72 0.15 162); --warn:oklch(0.82 0.15 82); --tier:oklch(0.72 0.14 258);
+}
 
-  *{box-sizing:border-box}
-  html,body{margin:0}
-  body{
-    background:var(--base); color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased;
-    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
-  }
-  .num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
-  img{max-width:100%}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--aui-background); color:var(--aui-foreground);
+  font-family:Outfit,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  font-size:14px; line-height:1.5; font-weight:400;
+  -webkit-font-smoothing:antialiased;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+.tnum{font-variant-numeric:tabular-nums}
+img{max-width:100%}
+:focus-visible{outline:2px solid var(--aui-ring);outline-offset:2px}
 
-  .quadro{max-width:920px;margin:0 auto;padding:34px 16px 64px}
+.wrap{max-width:1000px;margin:0 auto;padding:30px 16px 72px}
 
-  .marca{display:flex;align-items:center;gap:9px;margin-bottom:26px}
-  .marca img{height:20px;width:auto}
-  .marca span{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--mut);font-weight:500}
+/* ── topo ─────────────────────────────────────────────────────── */
+.topo{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:26px}
+.topo .id{display:flex;align-items:center;gap:9px;min-width:0}
+.topo img{height:19px;width:auto}
+.chip-t{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--aui-muted-foreground);
+  border:1px solid var(--aui-border);border-radius:999px;padding:3px 9px;white-space:nowrap}
 
-  h1{font-size:26px;line-height:1.22;font-weight:500;letter-spacing:-.018em;margin:0 0 10px;text-wrap:balance}
-  .lead{font-size:15px;color:var(--sub);margin:0;max-width:66ch}
-  .lead strong{color:var(--dim);font-weight:500}
+h1{font-size:28px;line-height:1.18;font-weight:500;letter-spacing:-.02em;margin:0 0 9px;text-wrap:balance}
+.lead{font-size:15px;color:var(--aui-muted-foreground);margin:0;max-width:66ch;font-weight:300}
+.lead strong{color:var(--aui-foreground);font-weight:500}
 
-  h2{font-size:15px;font-weight:500;letter-spacing:-.005em;margin:36px 0 3px}
-  .dica-s{font-size:12.5px;color:var(--mut);margin:0 0 14px;max-width:64ch}
+h2{font-size:14px;font-weight:500;letter-spacing:-.005em;margin:0 0 3px}
+.h2wrap{margin:38px 0 14px}
+.h2sub{font-size:12.5px;color:var(--aui-muted-foreground);margin:0;max-width:66ch;font-weight:300}
 
-  .card{background:var(--card);border:1px solid var(--hair);border-radius:10px;padding:18px}
-  .card.nu{padding:0;overflow:hidden}
+/* ── card base (animate-ui: rounded-xl, borda 1px, FLAT) ──────── */
+.card{background:var(--aui-card);color:var(--aui-card-foreground);
+  border:1px solid var(--aui-border);border-radius:var(--raio)}
+.card.p{padding:18px}
+.card.nu{overflow:hidden}
 
-  /* controles */
-  .ctrl{display:grid;gap:17px}
-  .ctrl .campo label{display:block;font-size:13px;font-weight:500;margin-bottom:1px}
-  .ctrl .campo .exp{font-size:12px;color:var(--mut);margin-bottom:8px}
-  .linha{display:flex;align-items:center;gap:12px}
-  input[type=range]{flex:1;min-width:0;accent-color:var(--acento);height:18px}
-  .out{font-size:19px;font-weight:500;min-width:3.6em;text-align:right}
+/* ── VEREDITO — o resultado vem PRIMEIRO ─────────────────────── */
+.veredito{margin-top:22px;display:grid;grid-template-columns:1.15fr 1fr;gap:0;
+  border:1px solid var(--aui-border);border-radius:var(--raio);overflow:hidden;background:var(--aui-card)}
+.vd-a{padding:22px 24px;border-right:1px solid var(--aui-border)}
+.vd-b{padding:22px 24px;background:var(--aui-muted)}
+.vd-rot{font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--aui-muted-foreground);font-weight:500}
+.vd-num{font-size:52px;line-height:1;font-weight:500;letter-spacing:-.035em;margin:8px 0 0;
+  transition:color .25s ease}
+.vd-num small{font-size:17px;font-weight:400;color:var(--aui-muted-foreground);letter-spacing:0}
+.vd-num.paga{color:var(--aui-destructive)}
+.vd-num.livre{color:var(--ok)}
+.vd-frase{font-size:13.5px;color:var(--aui-muted-foreground);margin:11px 0 0;font-weight:300}
+.vd-frase b{color:var(--aui-foreground);font-weight:500}
+.vd-linha{display:flex;justify-content:space-between;align-items:baseline;
+  padding:7px 0;border-bottom:1px solid var(--aui-border)}
+.vd-linha:last-child{border-bottom:0}
+.vd-linha span{font-size:12.5px;color:var(--aui-muted-foreground);font-weight:300}
+.vd-linha b{font-size:15px;font-weight:500}
+.vd-linha b.neg{color:var(--aui-destructive)}
+.vd-linha b.pos{color:var(--ok)}
 
-  /* kpis */
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
-    border-top:1px solid var(--hair);margin-top:18px}
-  .kpi{padding:13px 14px 12px;border-right:1px solid var(--hair)}
-  .kpi:last-child{border-right:0}
-  .kpi .rot{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);font-weight:500}
-  .kpi .val{font-size:24px;font-weight:500;letter-spacing:-.015em;margin-top:2px}
-  .kpi .val em{font-style:normal;font-size:12px;color:var(--mut)}
-  .kpi.pos .val{color:var(--pos)}
-  .kpi.neg .val{color:var(--neg)}
+/* ── régua do mês ────────────────────────────────────────────── */
+.regua{padding:16px 18px 14px;border-top:1px solid var(--aui-border);grid-column:1/-1;background:var(--aui-card)}
+.regua-t{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
+.regua-t .tt{font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--aui-muted-foreground);font-weight:500}
+.regua-t .leg{display:flex;gap:13px;font-size:11.5px;color:var(--aui-muted-foreground);font-weight:300}
+.regua-t .leg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.dias{display:flex;gap:2px;align-items:flex-end;height:40px}
+.dias div{flex:1;min-width:0;border-radius:2px 2px 0 0;transition:height .3s ease,background-color .2s ease}
+.d-livre{background:var(--ok);height:52%}
+.d-pago{background:var(--aui-destructive);height:100%}
+.d-virada{outline:1px solid var(--aui-foreground);outline-offset:1px}
+.dias-eixo{display:flex;justify-content:space-between;font-size:10.5px;
+  color:var(--aui-muted-foreground);margin-top:6px;font-weight:300}
 
-  /* medidor de dias */
-  .medidor{margin-top:20px;padding-top:18px;border-top:1px solid var(--hair)}
-  .barras{display:flex;gap:2px;align-items:flex-end;height:46px}
-  .barras div{flex:1;min-width:0;border-radius:1.5px 1.5px 0 0}
-  .bl{background:var(--pos)}
-  .bp{background:var(--neg)}
-  .eixo{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);margin-top:5px}
-  .leg{display:flex;gap:15px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin-top:9px}
-  .leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
-  .frase{margin-top:13px;padding:11px 13px;border-radius:8px;background:var(--acento-veu);font-size:13.5px;color:var(--dim)}
-  .frase b{font-weight:500;color:var(--ink)}
+/* ── controles ───────────────────────────────────────────────── */
+.presets{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px}
+.preset{font-family:inherit;font-size:12.5px;font-weight:400;cursor:pointer;
+  padding:5px 12px;border-radius:999px;border:1px solid var(--aui-border);
+  background:var(--aui-card);color:var(--aui-foreground);
+  transition:background-color .15s ease,border-color .15s ease}
+.preset:hover{background:var(--aui-accent)}
+.preset[aria-pressed="true"]{background:var(--aui-primary);color:var(--aui-primary-foreground);
+  border-color:var(--aui-primary)}
 
-  /* comparativo */
-  .comp{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .comp .l{background:var(--card);border:1px solid var(--hair);border-radius:10px;padding:15px}
-  .comp .l.ok{background:var(--pos-veu)}
-  .comp .l .t{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);font-weight:500}
-  .comp .l .n{font-size:23px;font-weight:500;letter-spacing:-.015em;margin:3px 0 1px}
-  .comp .l .d{font-size:12.5px;color:var(--sub)}
-  .econ{margin-top:10px;padding:13px 15px;border-radius:10px;background:var(--pos-veu);
-    border:1px solid var(--hair);font-size:13.5px;color:var(--dim)}
-  .econ b{font-weight:500;color:var(--ink)}
+.ctrls{display:grid;grid-template-columns:1fr 1fr;gap:18px 26px}
+.campo .lab{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:2px}
+.campo .lab label{font-size:13px;font-weight:500}
+.campo .exp{font-size:11.5px;color:var(--aui-muted-foreground);margin-bottom:9px;font-weight:300;line-height:1.45}
+.campo .fila{display:flex;align-items:center;gap:11px}
+input[type=range]{flex:1;min-width:0;height:18px;accent-color:var(--aui-primary);cursor:pointer}
+input[type=number]{
+  width:5.1em;font-family:inherit;font-size:14px;font-weight:500;text-align:right;
+  padding:5px 8px;border-radius:var(--raio-sm);
+  border:1px solid var(--aui-input);background:var(--aui-background);color:var(--aui-foreground);
+  font-variant-numeric:tabular-nums}
+input[type=number]:focus-visible{outline:2px solid var(--aui-ring);outline-offset:1px;border-color:var(--aui-ring)}
 
-  /* tabelas e listas */
-  table{width:100%;border-collapse:collapse}
-  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--hair);font-size:13.5px;vertical-align:top}
-  th{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);font-weight:500}
-  tr:last-child td{border-bottom:0}
-  td b{font-weight:500}
-  .marca-sim{color:var(--pos);font-weight:500;white-space:nowrap}
-  .marca-nao{color:var(--neg);font-weight:500;white-space:nowrap}
+/* ── ganho de enxugar ────────────────────────────────────────── */
+.ganho{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:0;
+  border:1px solid var(--aui-border);border-radius:var(--raio);overflow:hidden;background:var(--aui-card)}
+.g-lado{padding:17px 19px}
+.g-seta{display:flex;align-items:center;justify-content:center;padding:0 14px;
+  border-left:1px solid var(--aui-border);border-right:1px solid var(--aui-border);
+  background:var(--aui-muted);color:var(--aui-muted-foreground);font-size:15px}
+.g-rot{font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--aui-muted-foreground);font-weight:500}
+.g-num{font-size:27px;font-weight:500;letter-spacing:-.025em;margin:5px 0 1px}
+.g-det{font-size:12.5px;color:var(--aui-muted-foreground);font-weight:300}
+.g-lado.melhor .g-num{color:var(--ok)}
+.corte{margin-top:12px;padding:15px 18px;border:1px solid var(--aui-border);
+  border-radius:var(--raio);background:var(--aui-card)}
+.corte .fila{display:flex;align-items:center;gap:12px;margin-top:8px}
+.econ{margin-top:12px;font-size:14px;color:var(--aui-muted-foreground);font-weight:300}
+.econ b{color:var(--aui-foreground);font-weight:500}
+.econ .v{color:var(--ok);font-weight:500}
 
-  ol.lista,ul.lista{margin:0;padding-left:19px;font-size:13.5px;color:var(--dim)}
-  ol.lista li,ul.lista li{margin-bottom:6px}
-  ol.lista b,ul.lista b{font-weight:500;color:var(--ink)}
+/* ── tabela ──────────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:10px 16px;border-bottom:1px solid var(--aui-border);font-size:13.5px;vertical-align:top}
+th{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--aui-muted-foreground);font-weight:500;background:var(--aui-muted)}
+tr:last-child td{border-bottom:0}
+td b{font-weight:500}
+td .m-sim{color:var(--ok);font-weight:500;white-space:nowrap}
+td .m-nao{color:var(--aui-destructive);font-weight:500;white-space:nowrap}
+td .m-neutro{color:var(--aui-muted-foreground);font-weight:500;white-space:nowrap}
 
-  .alerta{background:var(--aten-veu);border:1px solid var(--hair);border-left:2px solid var(--aten);
-    border-radius:8px;padding:14px 15px;margin-top:13px}
-  .alerta b{display:block;font-size:13.5px;font-weight:500;margin-bottom:4px}
-  .alerta p{margin:0 0 6px;font-size:13px;color:var(--dim)}
-  .alerta p:last-child{margin-bottom:0}
+/* ── listas e alerta ─────────────────────────────────────────── */
+ol.li,ul.li{margin:0;padding-left:19px;font-size:13.5px;color:var(--aui-muted-foreground);font-weight:300}
+ol.li li,ul.li li{margin-bottom:7px}
+ol.li b,ul.li b{color:var(--aui-foreground);font-weight:500}
 
-  .pe{margin-top:32px;padding-top:14px;border-top:1px solid var(--hair);font-size:11.5px;color:var(--mut)}
-  .pe a{color:var(--acento);text-decoration:none}
-  .pe a:hover{text-decoration:underline}
+.alerta{border:1px solid var(--aui-border);border-left:2px solid var(--warn);
+  border-radius:var(--raio);padding:16px 18px;background:var(--aui-card)}
+.alerta .tt{font-size:13.5px;font-weight:500;margin-bottom:6px;display:block}
+.alerta p{margin:0 0 7px;font-size:13px;color:var(--aui-muted-foreground);font-weight:300}
+.alerta p:last-child{margin-bottom:0}
+.alerta b{color:var(--aui-foreground);font-weight:500}
 
-  @media (max-width:560px){
-    h1{font-size:22px}
-    .comp{grid-template-columns:1fr}
-    .kpi{border-right:0;border-bottom:1px solid var(--hair)}
-    .kpi:last-child{border-bottom:0}
-  }
+.pe{margin-top:34px;padding-top:15px;border-top:1px solid var(--aui-border);
+  font-size:11.5px;color:var(--aui-muted-foreground);font-weight:300;line-height:1.6}
+.pe a{color:var(--tier);text-decoration:none}
+.pe a:hover{text-decoration:underline}
+
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+
+@media (max-width:760px){
+  h1{font-size:23px}
+  .veredito{grid-template-columns:1fr}
+  .vd-a{border-right:0;border-bottom:1px solid var(--aui-border)}
+  .ctrls{grid-template-columns:1fr}
+  .ganho{grid-template-columns:1fr}
+  .g-seta{border-left:0;border-right:0;border-top:1px solid var(--aui-border);
+    border-bottom:1px solid var(--aui-border);padding:7px;transform:rotate(90deg) scale(.9)}
+  .vd-num{font-size:44px}
+  .dias{height:32px}
+}
 </style>
 </head>
 <body>
 
-<div class="quadro">
+<div class="wrap">
 
-  <div class="marca">
-    <img src="/tier-agent-claro.png" alt="Tier Agent" id="logo">
-    <span>Calculadora · WhatsApp oficial</span>
+  <div class="topo">
+    <div class="id">
+      <img src="/tier-agent-claro.png" alt="Tier Agent" id="logo">
+    </div>
+    <span class="chip-t">Vigência 01·10·2026</span>
   </div>
 
-  <h1>Quanto vai custar o seu WhatsApp a partir de outubro</h1>
+  <h1>Em que dia do mês o seu WhatsApp começa a custar</h1>
   <p class="lead">
-    Em <strong>1º de outubro de 2026</strong> a Meta passa a cobrar a mensagem de serviço — a resposta
-    livre dentro da janela de 24 horas, hoje gratuita. Cada número conectado ganha
-    <strong>1.000 por mês de franquia</strong>, que não acumula. Ajuste os controles e veja em que dia
-    a sua franquia acaba.
+    A partir de <strong>1º de outubro de 2026</strong> a Meta cobra a mensagem de serviço — a resposta
+    livre dentro da janela de 24 horas, hoje gratuita. Cada número recebe
+    <strong>1.000 por mês</strong>, que não acumulam. Comece por um perfil e ajuste.
   </p>
 
-  <h2>A sua operação</h2>
-  <p class="dica-s">O número que vira dinheiro é <b>mensagens por atendimento</b>, não conversas por dia.</p>
-
-  <div class="card">
-    <div class="ctrl">
-      <div class="campo">
-        <label for="mpa">Mensagens enviadas por atendimento</label>
-        <div class="exp">Conte cada balão: saudação, menu, resposta, despedida. Operações que juram enviar três costumam enviar de 6 a 10.</div>
-        <div class="linha"><input type="range" id="mpa" min="1" max="20" value="8"><span class="out num" id="o-mpa">8</span></div>
-      </div>
-      <div class="campo">
-        <label for="apd">Atendimentos por dia</label>
-        <div class="exp">Conversas distintas que você responde num dia.</div>
-        <div class="linha"><input type="range" id="apd" min="1" max="500" value="30"><span class="out num" id="o-apd">30</span></div>
-      </div>
-      <div class="campo">
-        <label for="num">Números conectados</label>
-        <div class="exp">Cada número tem a própria franquia de 1.000 — mas só se o movimento estiver realmente dividido entre eles.</div>
-        <div class="linha"><input type="range" id="num" min="1" max="10" value="1"><span class="out num" id="o-num">1</span></div>
-      </div>
-      <div class="campo">
-        <label for="tar">Tarifa por mensagem cobrada</label>
-        <div class="exp">No Brasil, R$ 0,0350 — a mesma de utility e autenticação. Ajuste se a conta for de outro mercado.</div>
-        <div class="linha"><input type="range" id="tar" min="1" max="200" value="35"><span class="out num" id="o-tar">0,0350</span></div>
-      </div>
+  <!-- ░░ VEREDITO — a resposta antes do trabalho ░░ -->
+  <div class="veredito">
+    <div class="vd-a">
+      <div class="vd-rot">A franquia acaba em</div>
+      <div class="vd-num tnum" id="v-dia">dia 5</div>
+      <p class="vd-frase" id="v-frase"></p>
     </div>
-
-    <div class="kpis">
-      <div class="kpi"><div class="rot">Por dia</div><div class="val num" id="k-dia">240</div></div>
-      <div class="kpi"><div class="rot">No mês</div><div class="val num" id="k-mes">7.200</div></div>
-      <div class="kpi pos"><div class="rot">Franquia</div><div class="val num" id="k-fra">1.000</div></div>
-      <div class="kpi neg"><div class="rot">Cobradas</div><div class="val num" id="k-cob">6.200</div></div>
-      <div class="kpi neg"><div class="rot">Por mês</div><div class="val num" id="k-rs"><em>R$</em> 217,00</div></div>
-      <div class="kpi neg"><div class="rot">Por ano</div><div class="val num" id="k-ano"><em>R$</em> 2.604,00</div></div>
+    <div class="vd-b">
+      <div class="vd-linha"><span>Enviadas no mês</span><b class="tnum" id="v-mes">7.200</b></div>
+      <div class="vd-linha"><span>Cobertas pela franquia</span><b class="tnum pos" id="v-cob">1.000</b></div>
+      <div class="vd-linha"><span>Cobradas</span><b class="tnum neg" id="v-pag">6.200</b></div>
+      <div class="vd-linha"><span>Custo no mês</span><b class="tnum neg" id="v-mrs">R$ 217,00</b></div>
+      <div class="vd-linha"><span>No ano</span><b class="tnum neg" id="v-ars">R$ 2.604,00</b></div>
     </div>
-
-    <div class="medidor">
-      <div class="barras" id="barras"></div>
-      <div class="eixo"><span class="num">dia 1</span><span class="num">dia 15</span><span class="num">dia 30</span></div>
-      <div class="leg">
-        <span><i style="background:var(--pos)"></i>dentro da franquia</span>
-        <span><i style="background:var(--neg)"></i>mensagem cobrada</span>
+    <div class="regua">
+      <div class="regua-t">
+        <span class="tt">Os 30 dias do mês</span>
+        <span class="leg">
+          <span><i style="background:var(--ok)"></i>franquia</span>
+          <span><i style="background:var(--aui-destructive)"></i>cobrado</span>
+        </span>
       </div>
-      <div class="frase" id="frase"></div>
+      <div class="dias" id="dias"></div>
+      <div class="dias-eixo tnum"><span>1</span><span>10</span><span>20</span><span>30</span></div>
     </div>
   </div>
 
-  <h2>Enxugar o fluxo muda mais que negociar tarifa</h2>
-  <p class="dica-s">A mesma informação em menos balões estica a franquia. Abaixo, o efeito de enviar dois balões a menos por atendimento.</p>
+  <!-- ░░ CONTROLES — depois do veredito ░░ -->
+  <div class="h2wrap">
+    <h2>A sua operação</h2>
+    <p class="h2sub">Se não souber os números, comece por um perfil. O que mais pesa é
+      <b>mensagens por atendimento</b> — não conversas por dia.</p>
+  </div>
 
-  <div class="comp">
-    <div class="l">
-      <div class="t">Fluxo atual</div>
-      <div class="n num" id="c1-n">8 msg</div>
-      <div class="d" id="c1-d"></div>
-    </div>
-    <div class="l ok">
-      <div class="t">Com 2 balões a menos</div>
-      <div class="n num" id="c2-n">6 msg</div>
-      <div class="d" id="c2-d"></div>
+  <div class="card p">
+    <div class="presets" id="presets" role="group" aria-label="Perfis de operação"></div>
+
+    <div class="ctrls">
+      <div class="campo">
+        <div class="lab"><label for="mpa">Mensagens por atendimento</label></div>
+        <div class="exp">Cada balão conta: saudação, menu, resposta, despedida. Quem jura enviar três costuma enviar de 6 a 10.</div>
+        <div class="fila">
+          <input type="range" id="mpa" min="1" max="20" value="8" aria-describedby="mpa-n">
+          <input type="number" id="mpa-n" min="1" max="20" value="8" class="tnum" aria-label="Mensagens por atendimento">
+        </div>
+      </div>
+      <div class="campo">
+        <div class="lab"><label for="apd">Atendimentos por dia</label></div>
+        <div class="exp">Conversas distintas que você responde num dia comum.</div>
+        <div class="fila">
+          <input type="range" id="apd" min="1" max="500" value="30" aria-describedby="apd-n">
+          <input type="number" id="apd-n" min="1" max="9999" value="30" class="tnum" aria-label="Atendimentos por dia">
+        </div>
+      </div>
+      <div class="campo">
+        <div class="lab"><label for="num">Números conectados</label></div>
+        <div class="exp">Cada número tem 1.000 próprias — mas só rende se o movimento estiver dividido entre eles.</div>
+        <div class="fila">
+          <input type="range" id="num" min="1" max="10" value="1" aria-describedby="num-n">
+          <input type="number" id="num-n" min="1" max="50" value="1" class="tnum" aria-label="Números conectados">
+        </div>
+      </div>
+      <div class="campo">
+        <div class="lab"><label for="tar">Tarifa por mensagem (R$)</label></div>
+        <div class="exp">Brasil: 0,0350 — a mesma de utility e autenticação. Mude se a conta for de outro mercado.</div>
+        <div class="fila">
+          <input type="range" id="tar" min="1" max="200" value="35" aria-describedby="tar-n">
+          <input type="number" id="tar-n" min="0.001" max="1" step="0.0001" value="0.0350" class="tnum" aria-label="Tarifa por mensagem">
+        </div>
+      </div>
     </div>
   </div>
-  <div class="econ" id="econ"></div>
 
-  <h2>Onde a operação queima franquia sem perceber</h2>
-  <p class="dica-s">Nenhum destes é defeito — são hábitos de fluxo que ninguém precisava contar, e que a partir de outubro têm preço.</p>
-  <div class="card">
-    <ol class="lista">
+  <!-- ░░ O GANHO ░░ -->
+  <div class="h2wrap">
+    <h2>Enxugar o fluxo rende mais que negociar tarifa</h2>
+    <p class="h2sub">A mesma informação em menos balões estica a franquia. Escolha quantos você
+      consegue cortar por atendimento.</p>
+  </div>
+
+  <div class="ganho">
+    <div class="g-lado">
+      <div class="g-rot">Hoje</div>
+      <div class="g-num tnum" id="g1-n">8 mensagens</div>
+      <div class="g-det" id="g1-d"></div>
+    </div>
+    <div class="g-seta" aria-hidden="true">&rarr;</div>
+    <div class="g-lado melhor">
+      <div class="g-rot">Enxugado</div>
+      <div class="g-num tnum" id="g2-n">6 mensagens</div>
+      <div class="g-det" id="g2-d"></div>
+    </div>
+  </div>
+
+  <div class="corte">
+    <div class="lab"><label for="cut" style="font-size:13px;font-weight:500">Balões que consigo cortar por atendimento</label></div>
+    <div class="fila">
+      <input type="range" id="cut" min="1" max="8" value="2">
+      <input type="number" id="cut-n" min="1" max="19" value="2" class="tnum" aria-label="Balões cortados">
+    </div>
+    <div class="econ" id="econ"></div>
+  </div>
+
+  <!-- ░░ ONDE QUEIMA ░░ -->
+  <div class="h2wrap">
+    <h2>Onde a operação queima franquia sem perceber</h2>
+    <p class="h2sub">Nenhum destes é defeito — são hábitos de fluxo que ninguém precisava contar,
+      e que a partir de outubro têm preço.</p>
+  </div>
+  <div class="card p">
+    <ol class="li">
       <li><b>Saudação em três balões</b> — "Olá!", "sou o assistente", "como posso ajudar?": três cobranças antes de o cliente falar.</li>
       <li><b>"Você ainda está aí?"</b> — o lembrete de inatividade dispara sozinho e cobra igual, com o cliente já fora.</li>
       <li><b>Posição na fila a cada atualização</b> — "você é o 4º", "o 3º", "o 2º": três mensagens para uma informação só.</li>
@@ -254,144 +369,254 @@
     </ol>
   </div>
 
-  <h2>O que a franquia cobre — e o que ela não cobre</h2>
-  <p class="dica-s">As 1.000 protegem um tipo de mensagem. Todo template segue a regra antiga.</p>
+  <!-- ░░ ESCOPO ░░ -->
+  <div class="h2wrap">
+    <h2>O que a franquia cobre — e o que não cobre</h2>
+    <p class="h2sub">As 1.000 protegem um tipo de mensagem. Todo template segue a regra antiga.</p>
+  </div>
   <div class="card nu">
     <table>
-      <thead><tr><th>Tipo de mensagem</th><th>Entra na franquia?</th><th>Observação</th></tr></thead>
+      <thead><tr><th>Tipo de mensagem</th><th>Na franquia?</th><th>Observação</th></tr></thead>
       <tbody>
-        <tr><td><b>Serviço</b> — resposta livre na janela de 24h</td><td class="marca-sim">SIM</td><td>é só para isto que as 1.000 valem</td></tr>
-        <tr><td><b>Template de utilidade</b> — confirmação, aviso de entrega</td><td class="marca-nao">NÃO</td><td>era grátis na janela até 30/09; agora paga desde a primeira</td></tr>
-        <tr><td><b>Marketing</b></td><td class="marca-nao">NÃO</td><td>sempre foi pago; mantém desconto por volume</td></tr>
-        <tr><td><b>Autenticação</b> — código de acesso</td><td class="marca-nao">NÃO</td><td>sempre foi pago; mantém desconto por volume</td></tr>
-        <tr><td><b>Meta Business Agent</b> — a IA da Meta</td><td class="marca-nao">NÃO</td><td>medidor próprio, US$ 2 por 1M de tokens; cobra até nas janelas gratuitas</td></tr>
-        <tr><td><b>Recebida do cliente</b></td><td class="marca-sim">NÃO CUSTA</td><td>não é cobrada e não consome franquia</td></tr>
-        <tr><td><b>Free entry point</b> — 72h de anúncio Click to WhatsApp</td><td class="marca-sim">NÃO CUSTA</td><td>entrega gratuita, sem gastar franquia</td></tr>
+        <tr><td><b>Serviço</b> — resposta livre na janela de 24h</td><td><span class="m-sim">SIM</span></td><td>é só para isto que as 1.000 valem</td></tr>
+        <tr><td><b>Template de utilidade</b> — confirmação, aviso de entrega</td><td><span class="m-nao">NÃO</span></td><td>era grátis na janela até 30/09; agora paga desde a primeira</td></tr>
+        <tr><td><b>Marketing</b></td><td><span class="m-nao">NÃO</span></td><td>sempre foi pago; mantém desconto por volume</td></tr>
+        <tr><td><b>Autenticação</b> — código de acesso</td><td><span class="m-nao">NÃO</span></td><td>sempre foi pago; mantém desconto por volume</td></tr>
+        <tr><td><b>Meta Business Agent</b> — a IA da Meta</td><td><span class="m-nao">NÃO</span></td><td>medidor próprio, US$ 2 por 1M de tokens; cobra até nas janelas gratuitas</td></tr>
+        <tr><td><b>Recebida do cliente</b></td><td><span class="m-neutro">NÃO CUSTA</span></td><td>não é cobrada e não consome franquia</td></tr>
+        <tr><td><b>Free entry point</b> — 72h de anúncio Click to WhatsApp</td><td><span class="m-neutro">NÃO CUSTA</span></td><td>entrega gratuita, sem gastar franquia</td></tr>
       </tbody>
     </table>
   </div>
 
+  <!-- ░░ PRAZO ░░ -->
+  <div class="h2wrap"><h2>O prazo que não aceita dúvida</h2></div>
   <div class="alerta">
-    <b>30 de setembro — o prazo do meio de pagamento, com divergência de fonte</b>
-    <p><b>Documentação da Meta:</b> conta sem forma de pagamento continua entregando as mensagens dentro da franquia, e para depois que ela acaba.</p>
+    <span class="tt">30 de setembro — meio de pagamento, com divergência de fonte</span>
+    <p><b>Documentação da Meta:</b> conta sem forma de pagamento continua entregando dentro da franquia, e para depois que ela acaba.</p>
     <p><b>Aviso de vários provedores:</b> sem forma de pagamento em 30/09, a entrega de mensagem de serviço para no dia 1º, mesmo dentro das 1.000.</p>
-    <p>A diferença entre as duas leituras é atender ou não atender. <b>Não se testa isso em produção:</b> cadastre a forma de pagamento antes do dia 30.</p>
+    <p>A diferença entre as duas leituras é atender ou não atender. <b>Não se testa isso em produção</b> — cadastre antes do dia 30.</p>
   </div>
 
-  <h2>O que fazer antes de 1º de outubro</h2>
-  <div class="card">
-    <ol class="lista">
-      <li><b>Confirmar o meio de pagamento</b> na conta WhatsApp Business. É o passo que não aceita dúvida.</li>
-      <li><b>Contar os números conectados</b> — cada um tem 1.000 próprias; concentrar tudo num só desperdiça a dos outros.</li>
-      <li><b>Medir mensagens por atendimento</b> — é este número que vira dinheiro, não o de conversas.</li>
-      <li><b>Juntar os balões</b> — saudação e menu numa mensagem só; resposta completa em vez de parcelada.</li>
-      <li><b>Revisar os automáticos</b> — inatividade, posição na fila, pesquisa e despedida: decidir quais valem o custo.</li>
+  <!-- ░░ AÇÕES ░░ -->
+  <div class="h2wrap"><h2>O que fazer antes de 1º de outubro</h2></div>
+  <div class="card p">
+    <ol class="li">
+      <li><b>Confirmar o meio de pagamento</b> na conta WhatsApp Business.</li>
+      <li><b>Contar os números conectados</b> — concentrar tudo num só desperdiça a franquia dos outros.</li>
+      <li><b>Medir mensagens por atendimento</b> — é este número que vira dinheiro.</li>
+      <li><b>Juntar os balões</b> — saudação e menu numa mensagem; resposta completa em vez de parcelada.</li>
+      <li><b>Revisar os automáticos</b> — inatividade, posição na fila, pesquisa e despedida.</li>
       <li><b>Rever o preço de quem revende atendimento</b> — repassar ou absorver, antes da primeira fatura.</li>
     </ol>
   </div>
 
   <div class="pe">
-    Regras e valores conferidos na documentação oficial da Meta para desenvolvedores em 28/09/2026
+    Regras e valores conferidos na documentação oficial da Meta em 28/09/2026
     (<a href="https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing">pricing</a> ·
     <a href="https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/non-template-messages">non-template-messages</a>).
     A Meta define as tarifas e pode alterá-las. O cálculo considera mês de 30 dias e movimento
-    distribuído igualmente entre os números conectados. Esta página não envia dados — a conta roda no
-    seu navegador.
+    distribuído igualmente entre os números. A conta roda no seu navegador — esta página não envia dados.
   </div>
 
 </div>
 
 <script>
 (function(){
+  'use strict';
   var DIAS = 30, POR_NUMERO = 1000;
   var $ = function(id){ return document.getElementById(id); };
-  var nf = function(n){ return n.toLocaleString('pt-BR'); };
-  var brl = function(n){ return n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var nf  = function(n){ return n.toLocaleString('pt-BR'); };
+  var brl = function(n){ return 'R$ ' + n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var tar4 = function(n){ return n.toLocaleString('pt-BR',{minimumFractionDigits:4,maximumFractionDigits:4}); };
 
-  // logo segue o tema (o app tem as duas versoes em /public)
+  /* logo acompanha o tema — o app já traz as duas versões em /public */
   function tema(){
-    var escuro = document.documentElement.getAttribute('data-theme') === 'dark' ||
-      (!document.documentElement.getAttribute('data-theme') &&
-        window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var raiz = document.documentElement;
+    var escuro = raiz.getAttribute('data-theme') === 'dark' || raiz.classList.contains('dark') ||
+      (!raiz.getAttribute('data-theme') && window.matchMedia &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches);
     $('logo').src = escuro ? '/tier-agent-escuro.png' : '/tier-agent-claro.png';
   }
 
+  /* ── perfis: resolvem "não sei os meus números" ─────────────── */
+  var PERFIS = [
+    { n:'Pequena',     mpa:5,  apd:12,  num:1, dica:'loja de bairro, 1 pessoa atendendo' },
+    { n:'Média',       mpa:8,  apd:30,  num:1, dica:'e-commerce com 1 número' },
+    { n:'Grande',      mpa:8,  apd:120, num:3, dica:'operação com equipe e 3 números' },
+    { n:'Alto volume', mpa:10, apd:400, num:5, dica:'central de atendimento' }
+  ];
+
+  /* ── o cálculo (mesmo modelo validado contra 3 exemplos) ────── */
   function conta(mpa, apd, num, tarifa){
     var dia = mpa * apd;
     var mes = dia * DIAS;
     var franquia = POR_NUMERO * num;
     var cobertas = Math.min(mes, franquia);
     var cobradas = Math.max(0, mes - franquia);
+    // dia em que a franquia acaba; null = nao acaba dentro do mes
     var acaba = dia > 0 ? Math.ceil(franquia / dia) : null;
-    if (acaba === null || acaba > DIAS) acaba = null;   // nao acaba dentro do mes
+    if (acaba === null || acaba > DIAS) acaba = null;
     return { dia:dia, mes:mes, franquia:franquia, cobertas:cobertas,
              cobradas:cobradas, custo:cobradas * tarifa, acaba:acaba };
   }
 
-  function barras(r){
-    var c = $('barras'); c.innerHTML = '';
-    for (var d = 1; d <= DIAS; d++){
-      var b = document.createElement('div');
-      var pago = r.acaba !== null && d > r.acaba;
-      b.className = pago ? 'bp' : 'bl';
-      b.style.height = pago ? '100%' : '58%';
-      b.title = 'dia ' + d + (pago ? ' — cobrado' : ' — dentro da franquia');
-      c.appendChild(b);
+  /* ── número que conta (vocabulário animate-ui: CountingNumber) ─ */
+  var animados = {};
+  function conta_ate(id, alvo, fmt){
+    var atual = animados[id];
+    if (atual === undefined || Math.abs(alvo - atual) < 1e-9){
+      animados[id] = alvo; $(id).textContent = fmt(alvo); return;
     }
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      animados[id] = alvo; $(id).textContent = fmt(alvo); return;
+    }
+    var de = atual, t0 = null, dur = 260;
+    function passo(t){
+      if (t0 === null) t0 = t;
+      var p = Math.min(1, (t - t0) / dur);
+      var e = 1 - Math.pow(1 - p, 3);              // easeOutCubic
+      var v = de + (alvo - de) * e;
+      $(id).textContent = fmt(v);
+      if (p < 1) requestAnimationFrame(passo); else animados[id] = alvo;
+    }
+    requestAnimationFrame(passo);
+  }
+
+  function regua(r){
+    var c = $('dias');
+    if (!c.children.length){
+      for (var i = 0; i < DIAS; i++) c.appendChild(document.createElement('div'));
+    }
+    for (var d = 1; d <= DIAS; d++){
+      var b = c.children[d-1];
+      var pago = r.acaba !== null && d > r.acaba;
+      b.className = pago ? 'd-pago' : 'd-livre';
+      if (r.acaba === d) b.className += ' d-virada';
+      b.title = 'dia ' + d + (pago ? ' — cobrado' : ' — dentro da franquia');
+    }
+  }
+
+  function leitura(){
+    return {
+      mpa: +$('mpa').value, apd: +$('apd').value,
+      num: +$('num').value, tarifa: +$('tar').value / 1000
+    };
   }
 
   function pinta(){
-    var mpa = +$('mpa').value, apd = +$('apd').value;
-    var num = +$('num').value, tarifa = +$('tar').value / 1000;
+    var e = leitura();
+    var r = conta(e.mpa, e.apd, e.num, e.tarifa);
 
-    $('o-mpa').textContent = mpa;
-    $('o-apd').textContent = apd;
-    $('o-num').textContent = num;
-    $('o-tar').textContent = tarifa.toLocaleString('pt-BR',{minimumFractionDigits:4,maximumFractionDigits:4});
+    // veredito — o número dominante
+    var vd = $('v-dia');
+    if (r.acaba === null){
+      vd.className = 'vd-num tnum livre';
+      vd.innerHTML = 'não acaba';
+      $('v-frase').innerHTML = 'Com esse volume as <b>' + nf(r.franquia) + '</b> cobrem o mês inteiro. ' +
+        'Nenhuma cobrança de mensagem de serviço — e a franquia renova no mês seguinte.';
+    } else {
+      vd.className = 'vd-num tnum paga';
+      vd.innerHTML = 'dia ' + r.acaba + ' <small>de 30</small>';
+      var pct = r.mes > 0 ? Math.round(100 * r.cobertas / r.mes) : 100;
+      $('v-frase').innerHTML = 'Restam <b>' + (DIAS - r.acaba) + ' dias pagos</b> no mês. A franquia cobre <b>' +
+        pct + '%</b> do que você envia; o resto entra na fatura <b>sem desconto por volume</b>.';
+    }
 
-    var r = conta(mpa, apd, num, tarifa);
-    $('k-dia').textContent = nf(r.dia);
-    $('k-mes').textContent = nf(r.mes);
-    $('k-fra').textContent = nf(r.franquia);
-    $('k-cob').textContent = nf(r.cobradas);
-    $('k-rs').innerHTML  = '<em>R$</em> ' + brl(r.custo);
-    $('k-ano').innerHTML = '<em>R$</em> ' + brl(r.custo * 12);
+    conta_ate('v-mes', r.mes, function(v){ return nf(Math.round(v)); });
+    conta_ate('v-cob', r.cobertas, function(v){ return nf(Math.round(v)); });
+    conta_ate('v-pag', r.cobradas, function(v){ return nf(Math.round(v)); });
+    conta_ate('v-mrs', r.custo, brl);
+    conta_ate('v-ars', r.custo * 12, brl);
+    regua(r);
 
-    barras(r);
-
-    var pct = r.mes > 0 ? Math.round(100 * r.cobertas / r.mes) : 100;
-    $('frase').innerHTML = r.acaba === null
-      ? '<b>A franquia cobre o mês inteiro.</b> Com esse volume não há cobrança de mensagem de ' +
-        'serviço — as ' + nf(r.franquia) + ' bastam, e renovam no mês seguinte.'
-      : '<b>A franquia acaba no dia ' + r.acaba + '.</b> Restam ' + (DIAS - r.acaba) +
-        ' dias pagos no mês. Ela cobre <b>' + pct + '%</b> do que você envia; o resto entra na ' +
-        'fatura sem desconto por volume.';
-
-    var mpa2 = Math.max(1, mpa - 2);
-    var r2 = conta(mpa2, apd, num, tarifa);
-    $('c1-n').textContent = mpa + ' msg';
-    $('c2-n').textContent = mpa2 + ' msg';
+    // ganho de enxugar
+    var corte = Math.min(+$('cut').value, e.mpa - 1);
+    var mpa2 = Math.max(1, e.mpa - corte);
+    var r2 = conta(mpa2, e.apd, e.num, e.tarifa);
+    $('g1-n').textContent = e.mpa + (e.mpa === 1 ? ' mensagem' : ' mensagens');
+    $('g2-n').textContent = mpa2 + (mpa2 === 1 ? ' mensagem' : ' mensagens');
     var det = function(x){
-      return x.acaba === null ? 'franquia cobre o mês inteiro · R$ 0,00'
-        : 'franquia acaba no dia ' + x.acaba + ' · R$ ' + brl(x.custo) + '/mês';
+      return x.acaba === null ? 'a franquia cobre o mês · ' + brl(0)
+        : 'franquia até o dia ' + x.acaba + ' · ' + brl(x.custo) + '/mês';
     };
-    $('c1-d').textContent = det(r);
-    $('c2-d').textContent = det(r2);
+    $('g1-d').textContent = det(r);
+    $('g2-d').textContent = det(r2);
 
     var poupa = r.custo - r2.custo;
-    if (mpa2 === mpa){
-      $('econ').innerHTML = 'Já está no mínimo de uma mensagem por atendimento.';
+    if (e.mpa <= 1){
+      $('econ').innerHTML = 'Já está no mínimo de uma mensagem por atendimento — não há o que cortar.';
     } else if (poupa <= 0){
-      $('econ').innerHTML = 'Nesse volume os dois cenários cabem na franquia — enxugar o fluxo não ' +
-        'muda a fatura hoje, mas dá folga para crescer sem pagar.';
+      $('econ').innerHTML = 'Nos dois cenários o mês cabe na franquia: enxugar não muda a fatura hoje, ' +
+        'mas <b>dá folga para crescer sem pagar</b>.';
     } else {
-      $('econ').innerHTML = 'Cortar <b>2 balões</b> por atendimento economiza <b>R$ ' + brl(poupa) +
-        ' por mês</b> — <b>R$ ' + brl(poupa * 12) + ' por ano</b>. Mesma informação, menos mensagens.';
+      $('econ').innerHTML = 'Cortar <b>' + corte + (corte === 1 ? ' balão' : ' balões') +
+        '</b> economiza <span class="v">' + brl(poupa) + ' por mês</span> — ' +
+        '<span class="v">' + brl(poupa * 12) + ' por ano</span>. Mesma informação, menos mensagens.';
+    }
+
+    marca_perfil(e);
+  }
+
+  /* ── par slider + campo numérico (o número é editável) ──────── */
+  function liga(idR, idN, fator){
+    var R = $(idR), N = $(idN);
+    fator = fator || 1;
+    R.addEventListener('input', function(){
+      N.value = fator === 1 ? R.value : tar4(+R.value / 1000);
+      pinta();
+    });
+    N.addEventListener('input', function(){
+      var v = parseFloat(String(N.value).replace(',', '.'));
+      if (isNaN(v)) return;
+      var bruto = fator === 1 ? v : Math.round(v * 1000);
+      R.value = Math.max(+R.min, Math.min(+R.max, bruto));
+      pinta();
+    });
+    N.addEventListener('blur', function(){
+      N.value = fator === 1 ? R.value : tar4(+R.value / 1000);
+      pinta();
+    });
+  }
+
+  /* ── perfis ────────────────────────────────────────────────── */
+  function monta_perfis(){
+    var caixa = $('presets');
+    PERFIS.forEach(function(p, i){
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'preset'; b.textContent = p.n;
+      b.title = p.dica; b.setAttribute('aria-pressed', 'false');
+      b.dataset.i = i;
+      b.addEventListener('click', function(){
+        $('mpa').value = p.mpa; $('mpa-n').value = p.mpa;
+        $('apd').value = p.apd; $('apd-n').value = p.apd;
+        $('num').value = p.num; $('num-n').value = p.num;
+        pinta();
+      });
+      caixa.appendChild(b);
+    });
+  }
+  function marca_perfil(e){
+    var filhos = $('presets').children;
+    for (var i = 0; i < filhos.length; i++){
+      var p = PERFIS[+filhos[i].dataset.i];
+      var bate = p.mpa === e.mpa && p.apd === e.apd && p.num === e.num;
+      filhos[i].setAttribute('aria-pressed', bate ? 'true' : 'false');
     }
   }
 
-  ['mpa','apd','num','tar'].forEach(function(id){ $(id).addEventListener('input', pinta); });
-  if (window.matchMedia) {
+  monta_perfis();
+  liga('mpa','mpa-n');
+  liga('apd','apd-n');
+  liga('num','num-n');
+  liga('tar','tar-n', 1000);
+  $('cut').addEventListener('input', function(){ $('cut-n').value = $('cut').value; pinta(); });
+  $('cut-n').addEventListener('input', function(){
+    var v = parseInt($('cut-n').value, 10);
+    if (!isNaN(v)) { $('cut').value = Math.max(1, Math.min(8, v)); pinta(); }
+  });
+
+  if (window.matchMedia){
     try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', tema); } catch(e){}
   }
   tema();
