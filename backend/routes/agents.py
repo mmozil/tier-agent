@@ -519,7 +519,8 @@ async def agent_playground(
     limpo = agent_runtime._sanitize_reply(reply.text)
     if kind in ("whatsapp", "whatsapp_cloud"):
         limpo = agent_runtime._format_for_whatsapp(limpo)
-    bolhas = agent_runtime._split_into_bubbles(limpo)
+    # Mesma regra de balões da produção — no canal cobrado por mensagem, um só.
+    bolhas = agent_runtime._baloes_do_canal(limpo, kind)
 
     return {
         # `text` mantido pra compatibilidade; o painel novo lê `bubbles`.

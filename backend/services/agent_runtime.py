@@ -180,6 +180,19 @@ def build_base_directives(agent, *, connector_kind: str, extra_block: str = "") 
             "- Emoji com parcimônia (no máximo 1 por mensagem, e nunca como marcador de lista).\n"
             "- Mensagens curtas e escaneáveis; evite blocos longos de texto."
         )
+    if connector_kind in _CANAIS_COBRADOS_POR_MENSAGEM:
+        # Cada mensagem entregue é cobrada (ver _baloes_do_canal). O envio já junta a
+        # resposta num balão; isto evita as idas e vindas que viram mensagens a mais.
+        base += (
+            "\n\n# Cada mensagem é cobrada neste canal\n"
+            "- Responda numa mensagem só, completa. Nada de saudação separada, nada de mensagem só "
+            "para perguntar se ficou alguma dúvida, nada de despedida à parte.\n"
+            "- Resolva na primeira resposta: entregue a informação inteira de uma vez (por exemplo, o "
+            "preço E o que está incluído), em vez de esperar a próxima pergunta.\n"
+            "- No máximo UMA pergunta por resposta, e só quando ela for necessária para avançar.\n"
+            "- Termine na informação ou na pergunta. Sem frase de encerramento padrão como "
+            "'Se precisar de mais informações, é só avisar'."
+        )
     return base
 
 
@@ -289,6 +302,46 @@ def _split_into_bubbles(text: str, max_len: int = 700) -> list[str]:
     if cur:
         bubbles.append(cur)
     return bubbles[:4]
+
+
+# Canais em que CADA balão é uma mensagem cobrada pela Meta. Desde 1º/out/2026 a
+# resposta livre (mensagem de serviço) no WhatsApp oficial custa R$ 0,0350 por
+# mensagem entregue, fora a franquia de 1.000/mês por número — e a rajada acima
+# fazia uma resposta custar até 4. Nesses canais a resposta vai num balão só; os
+# parágrafos continuam separados por linha em branco DENTRO dele. O WhatsApp
+# não-oficial (`whatsapp`, Baileys) não paga a Meta e segue com a rajada de 18/08.
+_CANAIS_COBRADOS_POR_MENSAGEM = {"whatsapp_cloud"}
+# Teto do texto na Cloud API é 4.096 caracteres; folga para a formatação.
+_LIMITE_TEXTO_CLOUD = 4000
+
+
+def _baloes_do_canal(text: str, connector_kind: str) -> list[str]:
+    """Balões que o canal vai receber. Nos canais cobrados por mensagem, um só —
+    e só passa disso se o texto estourar o limite da API, cortando por parágrafo."""
+    if connector_kind not in _CANAIS_COBRADOS_POR_MENSAGEM:
+        return _split_into_bubbles(text)
+    text = (text or "").strip()
+    if not text:
+        return []
+    if len(text) <= _LIMITE_TEXTO_CLOUD:
+        return [text]
+    partes: list[str] = []
+    cur = ""
+    for b in [p.strip() for p in text.split("\n\n") if p.strip()]:
+        while len(b) > _LIMITE_TEXTO_CLOUD:  # parágrafo maior que o limite: corte seco
+            if cur:
+                partes.append(cur)
+                cur = ""
+            partes.append(b[:_LIMITE_TEXTO_CLOUD])
+            b = b[_LIMITE_TEXTO_CLOUD:]
+        if cur and len(cur) + 2 + len(b) > _LIMITE_TEXTO_CLOUD:
+            partes.append(cur)
+            cur = b
+        else:
+            cur = f"{cur}\n\n{b}" if cur else b
+    if cur:
+        partes.append(cur)
+    return partes
 
 
 async def resolve_connector_by_instance(
@@ -1136,7 +1189,7 @@ async def handle_inbound_message(
         _clean = _sem_travessao(_sanitize_reply(reply.text))
         if connector_kind in ("whatsapp", "whatsapp_cloud"):
             _clean = _format_for_whatsapp(_clean)
-        _bubbles = _split_into_bubbles(_clean)
+        _bubbles = _baloes_do_canal(_clean, connector_kind)
         # Sem delay aditivo aqui: o timing humano (pausa de leitura + '…digitando'
         # enquanto o LLM gera) é feito no handler do webhook, antes desta etapa.
         if connector_kind == "webchat" or len(_bubbles) <= 1:
