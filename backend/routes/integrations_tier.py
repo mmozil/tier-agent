@@ -406,49 +406,117 @@ async def conversa_mensagens(
     x_tier_integration_secret: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Transcrição de uma conversa, para o card do CRM mostrar o histórico.
+    """Histórico do CONTATO desta conversa, para o card do CRM.
 
-    O ERP guarda só o ponteiro da conversa; as mensagens vivem aqui e continuam
+    O ERP guarda só o ponteiro de uma conversa; as mensagens vivem aqui e continuam
     chegando depois que o card nasce — por isso ele lê ao vivo em vez de receber
     uma cópia no momento do envio.
+
+    07/10/2026 — o ponteiro é a PORTA, não o limite: a mesma família fala com o
+    número da IA e com o celular de cada consultora (modo registro), e cada número
+    é uma conversa. Devolve as mensagens de TODAS as conversas do mesmo contato no
+    tenant, em ordem, com o número por onde cada uma andou e quem falou do nosso
+    lado. As `limite` mais RECENTES — num card, o que importa é onde a conversa está.
+    Os campos de antes continuam iguais; os novos só se somam.
 
     🔒 `agent_tenant_id` não é enfeite: sem conferir que a conversa pertence ao
     tenant que pediu, o shared secret viraria chave-mestra para ler a conversa de
     qualquer cliente pelo id. O secret prova que é o ERP; o tenant prova de quem.
+    E a busca pelo contato fica DENTRO do tenant.
     """
     _check_secret(x_tier_integration_secret)
 
+    from datetime import datetime
+
+    from sqlalchemy import or_
+
     from models import TaConversation, TaMessageLog
+    from services import historico_contato as hc
+    from services import numeros as numeros_svc
 
     conv = await db.get(TaConversation, conversa_id)
     if not conv:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversa não encontrada")
 
-    agent_ids = [
-        r[0] for r in (await db.execute(select(TaAgent.id).where(TaAgent.tenant_id == agent_tenant_id))).all()
-    ]
-    if conv.agent_id not in agent_ids:
+    agentes = {
+        a.id: a.nome
+        for a in (await db.execute(select(TaAgent).where(TaAgent.tenant_id == agent_tenant_id))).scalars().all()
+    }
+    if conv.agent_id not in agentes:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Conversa de outro tenant")
 
-    msgs = (
-        await db.execute(
-            select(TaMessageLog)
-            .where(TaMessageLog.conversation_id == conversa_id)
-            .order_by(TaMessageLog.id.asc())
-            .limit(max(1, min(limite, 500)))
-        )
+    # Todas as conversas do mesmo contato, por qualquer número do tenant.
+    chave = hc.chave_do_contato(conv.external_id, conv.connector_kind)
+    cond = TaConversation.id == conv.id
+    if chave:
+        cond = or_(cond, TaConversation.external_id == conv.external_id, TaConversation.external_id.like(f"{chave}%"))
+    candidatas = (
+        await db.execute(select(TaConversation).where(TaConversation.agent_id.in_(list(agentes)), cond))
     ).scalars().all()
+    conversas = [
+        c for c in candidatas
+        if c.id == conv.id or hc.mesmo_contato(conv.external_id, conv.connector_kind, c.external_id, c.connector_kind)
+    ]
+    ids = [c.id for c in conversas]
 
+    n = max(1, min(limite, 500))
+    msgs = list(
+        reversed(
+            (
+                await db.execute(
+                    select(TaMessageLog)
+                    .where(TaMessageLog.conversation_id.in_(ids))
+                    .order_by(TaMessageLog.created_at.desc(), TaMessageLog.id.desc())
+                    .limit(n)
+                )
+            ).scalars().all()
+        )
+    )
+
+    # Rótulo do número e nome das pessoas — um decrypt por conector, uma busca de membros.
+    numeros = {x["id"]: x for x in await numeros_svc.numeros_do_tenant(db, agent_tenant_id)}
+    membro_ids = {m.member_id for m in msgs if m.member_id} | {
+        numeros[c.connector_id]["member_id"] for c in conversas
+        if c.connector_id in numeros and numeros[c.connector_id].get("member_id")
+    }
+    nomes = (
+        {
+            r[0]: r[1]
+            for r in (
+                await db.execute(select(TaMember.id, TaMember.nome).where(TaMember.id.in_(membro_ids)))
+            ).all()
+        }
+        if membro_ids
+        else {}
+    )
+    por_id = {c.id: c for c in conversas}
+
+    def _numero(c) -> dict:
+        return (numeros.get(c.connector_id) or {}) if c.connector_id else {}
+
+    ultima = max((c.last_message_at for c in conversas if c.last_message_at), default=None)
     return {
         "conversa": {
             "id": conv.id,
             "canal": conv.connector_kind,
-            "contato_nome": conv.contact_name,
+            "contato_nome": conv.contact_name or next((c.contact_name for c in conversas if c.contact_name), None),
             "contato_externo": conv.external_id,
             "status": conv.status,
-            "total_mensagens": conv.msg_count,
-            "ultima_mensagem_em": conv.last_message_at.isoformat() if conv.last_message_at else None,
+            "total_mensagens": sum(c.msg_count or 0 for c in conversas),
+            "ultima_mensagem_em": ultima.isoformat() if ultima else None,
         },
+        "conversas": [
+            {
+                "id": c.id,
+                "numero": _numero(c).get("rotulo"),
+                "modo": _numero(c).get("modo"),
+                "dona": nomes.get(_numero(c).get("member_id")),
+                "status": c.status,
+                "total_mensagens": c.msg_count,
+                "ultima_mensagem_em": c.last_message_at.isoformat() if c.last_message_at else None,
+            }
+            for c in sorted(conversas, key=lambda c: (c.started_at or datetime.min, c.id))
+        ],
         "mensagens": [
             {
                 "id": m.id,
@@ -456,6 +524,9 @@ async def conversa_mensagens(
                 "texto": m.content,
                 "em": m.created_at.isoformat() if m.created_at else None,
                 "anexos": m.attachments_json or [],
+                "conversa_id": m.conversation_id,
+                "numero": _numero(por_id[m.conversation_id]).get("rotulo"),
+                "quem": hc.quem_falou(m.role, nomes.get(m.member_id), agentes.get(por_id[m.conversation_id].agent_id)),
             }
             for m in msgs
         ],

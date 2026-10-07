@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt
-from models import TaAgent, TaConnector, TaConversation, TaMessageLog
+from models import TaAgent, TaConversation, TaMessageLog
 from services import visao_conversas as visao
 from services.connectors import registry
 from services.connectors.base import ConnectorConfig, OutboundMessage
@@ -430,15 +430,11 @@ async def _get_owned_conversation(
 async def _send_via_channel(db: AsyncSession, conv: TaConversation, content: str) -> None:
     """Envia uma mensagem pro cliente no canal da conversa. Levanta HTTPException
     em caso de erro (caller decide tratar)."""
-    conn = (
-        await db.execute(
-            select(TaConnector).where(
-                TaConnector.agent_id == conv.agent_id,
-                TaConnector.kind == conv.connector_kind,
-                TaConnector.enabled.is_(True),
-            )
-        )
-    ).scalars().first()
+    from services.proactive import conector_da_conversa
+
+    # Pelo número DA CONVERSA, não pelo agente: no registro vários números dividem
+    # o mesmo agente, e pelo agente a mensagem saía do celular de outra pessoa.
+    conn = await conector_da_conversa(db, conv)
     if not conn:
         raise HTTPException(409, f"Sem canal {conv.connector_kind} ativo pra enviar")
     out = content
@@ -498,6 +494,12 @@ async def resolve(
     conv.status = "closed"
 
     csat_sent = False
+    # Número em registro: o sistema não fala por ele — nem a pesquisa de
+    # satisfação, que sairia do celular da consultora como se fosse ela.
+    from services.proactive import conversa_e_registro
+
+    if csat and await conversa_e_registro(db, conv):
+        csat = False
     if csat and conv.csat_state != "done":
         from services import csat as csat_svc
 
@@ -709,42 +711,63 @@ async def reply_manual(
 
     conv = await _get_owned_conversation(db, conversation_id, user)
 
-    # Conector do agente pra este canal
-    conn = (
-        await db.execute(
-            select(TaConnector).where(
-                TaConnector.agent_id == conv.agent_id,
-                TaConnector.kind == conv.connector_kind,
-                TaConnector.enabled.is_(True),
-            )
-        )
-    ).scalars().first()
+    from services.proactive import conector_da_conversa, conversa_e_registro, marcar_eco_do_envio
+
+    # Pelo número DA CONVERSA (07/10/2026): no registro vários números dividem o
+    # mesmo agente, e a busca pelo agente mandava do celular de outra consultora.
+    conn = await conector_da_conversa(db, conv)
     if not conn:
         raise HTTPException(409, f"Sem canal {conv.connector_kind} ativo pra enviar")
+    registro = await conversa_e_registro(db, conv)
 
     # Email: 1ª linha vira assunto (padrão do adapter)
     out_content = content
     if conv.connector_kind == "email" and not content.lower().startswith("subject:"):
         out_content = f"Subject: Resposta do atendimento\n\n{content}"
 
+    enviado_em = datetime.utcnow()
     try:
         impl = registry.get(conv.connector_kind)
         cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
-        await impl.send(cfg, OutboundMessage(external_chat_id=conv.external_id, content=out_content))
+        resultado = await impl.send(cfg, OutboundMessage(external_chat_id=conv.external_id, content=out_content))
     except Exception as e:
         logger.exception("reply manual falhou conv=%s", conversation_id)
         raise HTTPException(502, f"Falha ao enviar: {e}")
+    await marcar_eco_do_envio(db, conn, resultado)
 
-    # Grava a mensagem do atendente (com QUEM respondeu) + pausa a IA. Se ninguém
-    # tinha a conversa, quem responde fica com ela (base das métricas por pessoa).
-    msg = TaMessageLog(conversation_id=conv.id, role="agent", content=content[:8000], member_id=user.member_id)
-    db.add(msg)
+    # O eco do celular chegou ANTES desta gravação (corrida rara): a mensagem já
+    # está no histórico com a dona do número — só passa a ser de quem respondeu.
+    msg = None
+    if registro:
+        msg = (
+            await db.execute(
+                select(TaMessageLog)
+                .where(
+                    TaMessageLog.conversation_id == conv.id,
+                    TaMessageLog.role == "agent",
+                    TaMessageLog.content == content[:8000],
+                    TaMessageLog.created_at >= enviado_em,
+                )
+                .order_by(TaMessageLog.id.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if msg is not None:
+            msg.member_id = user.member_id or msg.member_id
+    if msg is None:
+        # Grava a mensagem do atendente (com QUEM respondeu). Se ninguém tinha a
+        # conversa, quem responde fica com ela (base das métricas por pessoa).
+        msg = TaMessageLog(conversation_id=conv.id, role="agent", content=content[:8000], member_id=user.member_id)
+        db.add(msg)
+        conv.msg_count += 1
     if user.member_id and not conv.assigned_member_id:
         conv.assigned_member_id = user.member_id
         conv.assigned_to = user.member_name
-    conv.status = "handed_off"
+    # Pausar a IA só existe onde há IA. No registro, `handed_off` partiria a
+    # conversa em duas: a próxima mensagem da família procura a conversa ATIVA.
+    if not registro:
+        conv.status = "handed_off"
     conv.last_message_at = datetime.utcnow()
-    conv.msg_count += 1
     await db.commit()
     await db.refresh(msg)
     return msg

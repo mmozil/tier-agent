@@ -413,13 +413,33 @@ async def _send_proactive(db, conv: TaConversation, text_content: str) -> bool:
     """Envia uma mensagem proativa (follow-up) pro contato da conversa, via connector.
 
     Mecânica extraída pra `services.proactive` (reusada pelo endpoint interno
-    /internal/proactive-whatsapp) — comportamento idêntico ao original."""
+    /internal/proactive-whatsapp)."""
     from services import proactive
 
-    conn = await proactive.find_agent_connector(db, conv.agent_id, conv.connector_kind)
+    # 🚨 Segunda trava (07/10/2026): número em registro é da consultora — o
+    # sistema não fala por ele. A primeira trava é a seleção (`_agentes_que_falam`).
+    if await proactive.conversa_e_registro(db, conv):
+        logger.warning("followup: conversa %s e de numero em registro — envio barrado", conv.id)
+        return False
+    # Pelo número DA CONVERSA, não pelo primeiro número do agente.
+    conn = await proactive.conector_da_conversa(db, conv)
     if not conn:
         return False
     return await proactive.send_text_via_connector(conn, conv.external_id, text_content)
+
+
+def _agentes_que_falam(tenant_id: int):
+    """Agentes do tenant que PODEM mandar follow-up — todos, menos o «Registro (sem IA)».
+
+    🚨 07/10/2026: o follow-up selecionava conversa por «qualquer agente do
+    tenant», e o agente-sistema que segura os números das consultoras entrava
+    junto. Com `followup_enabled` ligado (o caso do CCDA), a família que parasse
+    de responder à consultora receberia a cascata inteira pelo celular dela.
+    """
+    return select(TaAgent.id).where(
+        TaAgent.tenant_id == tenant_id,
+        or_(TaAgent.template_kind.is_(None), TaAgent.template_kind != "registro"),
+    )
 
 
 def _sem_atendimento_humano(now):
@@ -620,7 +640,7 @@ async def followup_inactivity_job() -> None:
                             select(TaConversation)
                             .where(
                                 TaConversation.agent_id.in_(
-                                    select(TaAgent.id).where(TaAgent.tenant_id == tid)
+                                    _agentes_que_falam(tid)
                                 ),
                                 TaConversation.status == "active",
                                 TaConversation.last_message_at < threshold,
@@ -739,7 +759,7 @@ async def followup_inactivity_job() -> None:
                         select(TaConversation)
                         .where(
                             TaConversation.agent_id.in_(
-                                select(TaAgent.id).where(TaAgent.tenant_id == tid)
+                                _agentes_que_falam(tid)
                             ),
                             TaConversation.status == "active",
                             TaConversation.last_message_at < threshold,

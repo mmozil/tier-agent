@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt
-from models import TaAgent, TaConnector, TaConversation, TaMacro
+from models import TaAgent, TaConversation, TaMacro
 from services.connectors import registry
 from services.connectors.base import ConnectorConfig, OutboundMessage
 
@@ -126,6 +126,13 @@ async def apply_macro(
     agent = await db.get(TaAgent, conv.agent_id)
     if not agent or agent.tenant_id != user.tenant_id:
         raise HTTPException(403, "Conversa de outro tenant")
+    # Mesma régua do inbox: atendente só age nas conversas dos números dela e nas
+    # atribuídas a ela. Sem isto, macro com «responder» mandava pelo celular de
+    # outra consultora, a partir do id da conversa.
+    from services import visao_conversas as visao
+
+    if not await visao.pode_ver_conversa(db, user, conv):
+        raise HTTPException(403, "Esta conversa é de outro número/atendente")
 
     executed: list[str] = []
     for act in macro.actions or []:
@@ -151,15 +158,12 @@ async def apply_macro(
             elif t == "reply":
                 content = str(act.get("content") or "").strip()
                 if content:
-                    conn = (
-                        await db.execute(
-                            select(TaConnector).where(
-                                TaConnector.agent_id == conv.agent_id,
-                                TaConnector.kind == conv.connector_kind,
-                                TaConnector.enabled.is_(True),
-                            )
-                        )
-                    ).scalars().first()
+                    from services.proactive import conector_da_conversa
+
+                    # Pelo número DA CONVERSA: no registro vários números dividem o
+                    # agente. O eco NÃO é carimbado aqui — a macro não grava a
+                    # resposta, e no registro é o eco do celular que a põe no histórico.
+                    conn = await conector_da_conversa(db, conv)
                     if conn:
                         impl = registry.get(conv.connector_kind)
                         cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))

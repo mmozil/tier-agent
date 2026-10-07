@@ -430,15 +430,26 @@ async def ensure_conversation(
     external_id: str,
     contact_name: str | None = None,
     connector_id: int | None = None,
+    por_numero: bool = False,
 ) -> TaConversation:
+    """Acha a conversa ATIVA deste contato (ou abre uma).
+
+    `por_numero=True` (números em registro, 07/10/2026): a conversa é de UM número.
+    Todos os números das consultoras ficam sob o mesmo agente-sistema; procurar só
+    por (agente, contato) juntava numa conversa só a família que falou com a Débora
+    e com a Karolaine — ficava com a primeira dona e as métricas por número mentiam.
+    """
+    filtros = [
+        TaConversation.agent_id == agent_id,
+        TaConversation.connector_kind == connector_kind,
+        TaConversation.external_id == external_id,
+        TaConversation.status == "active",
+    ]
+    if por_numero and connector_id:
+        filtros.append(TaConversation.connector_id == connector_id)
     result = await db.execute(
         select(TaConversation)
-        .where(
-            TaConversation.agent_id == agent_id,
-            TaConversation.connector_kind == connector_kind,
-            TaConversation.external_id == external_id,
-            TaConversation.status == "active",
-        )
+        .where(*filtros)
         # .first() (não scalar_one_or_none): tolera conversas ativas duplicadas
         # (race de 2 mensagens quase simultâneas) sem quebrar o atendimento.
         .order_by(TaConversation.id.desc())
@@ -614,6 +625,33 @@ async def registrar_mensagem_sem_ia(
     agent = await db.get(TaAgent, connector.agent_id)
     if not agent:
         return {"status": "no_agent", "connector_id": connector.id}
+
+    # 🚨 Eco do PAINEL (07/10/2026). Resposta dada pelo inbox sai pelo número e o
+    # Baileys a devolve como `fromMe` — que aqui é gravado. O painel já gravou a
+    # mensagem (com quem respondeu) e pré-carimba o id do envio para o webhook
+    # descartar o eco; esta é a segunda trava, por conteúdo, para quando o
+    # carimbo não existir. Janela curta: a mesma frase dita de novo pelo celular
+    # minutos depois é outra mensagem e entra.
+    if role == "agent" and (text_content or "").strip():
+        from datetime import timedelta as _td
+
+        ja = (
+            await db.execute(
+                select(TaMessageLog.id)
+                .join(TaConversation, TaConversation.id == TaMessageLog.conversation_id)
+                .where(
+                    TaConversation.connector_id == connector.id,
+                    TaConversation.external_id == external_chat_id,
+                    TaMessageLog.role == "agent",
+                    TaMessageLog.content == text_content[:8000],
+                    TaMessageLog.created_at >= datetime.utcnow() - _td(minutes=2),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if ja:
+            return {"status": "eco_do_painel", "message_id": ja, "connector_id": connector.id}
+
     conv = await ensure_conversation(
         db,
         agent_id=agent.id,
@@ -621,6 +659,7 @@ async def registrar_mensagem_sem_ia(
         external_id=external_chat_id,
         contact_name=sender_name if role == "user" else None,
         connector_id=connector.id,
+        por_numero=True,
     )
     _att = [
         {"kind": getattr(a, "kind", "file"), "url": getattr(a, "url", None), "mime": getattr(a, "mime", None)}

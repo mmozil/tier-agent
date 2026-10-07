@@ -70,6 +70,81 @@ async def find_agent_connector(db, agent_id: int, kind: str):
     )
 
 
+async def conector_da_conversa(db, conv):
+    """O número por onde ESTA conversa anda — é por ele que a resposta tem de sair.
+
+    🚨 Escolher pelo agente (`find_agent_connector`) só acerta quando o agente tem
+    um número. Os números em modo registro (07/10/2026) ficam TODOS sob o mesmo
+    agente-sistema «Registro (sem IA)»: pelo agente, a resposta à família da
+    Débora saía do celular da Karolaine. A conversa sabe de qual número veio
+    (`connector_id`); o agente fica só como reserva para conversa antiga, de antes
+    da coluna existir.
+    """
+    from models import TaAgent, TaConnector
+
+    cid = getattr(conv, "connector_id", None)
+    if cid:
+        conn = await db.get(TaConnector, cid)
+        if conn is not None and conn.enabled and conn.kind == conv.connector_kind:
+            return conn
+    # O número da conversa sumiu ou foi desligado. Num agente de IA, o número
+    # novo dele é a continuação natural. No agente de registro, «outro número do
+    # mesmo agente» é o celular de outra consultora — então não manda.
+    agent = await db.get(TaAgent, conv.agent_id)
+    if agent is not None and agent.template_kind == "registro":
+        return None
+    return await find_agent_connector(db, conv.agent_id, conv.connector_kind)
+
+
+async def conversa_e_registro(db, conv) -> bool:
+    """A conversa anda por um número em modo registro (o da consultora)?
+
+    Nesse número NINGUÉM fala pelo sistema: nem IA, nem follow-up, nem pesquisa
+    de satisfação. Só a pessoa — pelo celular ou pelo painel.
+    """
+    from models import TaAgent, TaConnector
+
+    cid = getattr(conv, "connector_id", None)
+    if cid:
+        conn = await db.get(TaConnector, cid)
+        if conn is not None:
+            return (getattr(conn, "modo", None) or "agente") == "registro"
+    agent = await db.get(TaAgent, conv.agent_id)
+    return agent is not None and agent.template_kind == "registro"
+
+
+async def marcar_eco_do_envio(db, conn, resultado) -> None:
+    """Pré-carimba o id da mensagem que ACABAMOS de mandar por um número em registro.
+
+    🚨 O Baileys devolve o próprio envio como `messages.upsert` com `fromMe`, e no
+    registro o `fromMe` é gravado (é a consultora falando pelo celular). Sem isto,
+    toda resposta dada pelo PAINEL entraria duas vezes no histórico — uma pelo
+    painel, outra pelo eco. O webhook já descarta evento repetido por
+    `{instance_id}:{key.id}`; gravar esse mesmo par aqui faz o eco cair como
+    duplicata. Sessão PRÓPRIA (um `rollback` na do chamador expiraria a conversa
+    que ele ainda vai usar) e nunca levanta: perder o carimbo só deixa a segunda
+    trava (conteúdo igual em 2 min) agir.
+    """
+    if conn is None or conn.kind != "whatsapp" or (getattr(conn, "modo", None) or "agente") != "registro":
+        return
+    wid = resultado.get("waMessageId") if isinstance(resultado, dict) else None
+    if not wid:
+        return
+    from core.db import db_context
+    from core.encryption import decrypt
+    from models import TaWebhookEvent
+
+    try:
+        inst = json.loads(decrypt(conn.config_json_enc)).get("instance_id")
+        if not inst:
+            return
+        async with db_context() as s:
+            s.add(TaWebhookEvent(source="whatsapp-engine", event_id=f"{inst}:{wid}", payload_json={"eco_do_painel": True}))
+            await s.commit()
+    except Exception:  # noqa: BLE001 — o eco já chegou (único violado) ou o banco falhou: a 2ª trava cobre
+        logger.info("eco do painel nao carimbado connector=%s wid=%s", getattr(conn, "id", None), wid)
+
+
 async def find_tenant_whatsapp_connector(db, tenant_id: int):
     """Connector `whatsapp` (Baileys) habilitado de um agente ATIVO do tenant.
 
