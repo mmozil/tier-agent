@@ -23,11 +23,12 @@ import base64
 import contextlib
 import io
 import ipaddress
+import json
 import logging
 import re
 import socket
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 
@@ -35,7 +36,8 @@ logger = logging.getLogger(__name__)
 
 URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\"']+")
 _PONTA = ".,;:!?)]}'\"»"
-_MAX_HTML = 512 * 1024
+# 2 MB: no YouTube o <title> está depois de 700 KB de script (medido 07/10/2026)
+_MAX_HTML = 2 * 1024 * 1024
 _MAX_IMAGEM = 3 * 1024 * 1024
 _MAX_MINIATURA_B64 = 90_000  # ~65 KB de jpeg; a do WhatsApp tem 3–6 KB
 _LARGURA_MINIATURA = 192  # a mesma do Baileys
@@ -95,10 +97,15 @@ async def _host_publico(host: str | None) -> bool:
         return ip.is_global
     except ValueError:
         pass
-    try:
-        infos = await asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM)
-    except OSError:
-        return False
+    infos = None
+    for tentativa in range(2):  # o DNS do container falha de vez em quando (medido 07/10/2026)
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM)
+            break
+        except OSError:
+            if tentativa:
+                return False
+            await asyncio.sleep(0.4)
     if not infos:
         return False
     return all(ipaddress.ip_address(i[4][0]).is_global for i in infos)
@@ -116,12 +123,26 @@ async def _url_permitida(url: str) -> bool:
     return await _host_publico(partes.hostname)
 
 
+# 🚨 O servidor fica na Alemanha: sem consentimento aceito, YouTube e Google
+# redirecionam para consent.* e a capinha sai «Bevor Sie zu YouTube weitergehen»
+# (medido 07/10/2026). `SOCS=CAI` é o cookie de consentimento que o navegador já
+# tem; `CONSENT=YES+cb` (o antigo) não basta mais. Só para os domínios do Google.
+_DOMINIOS_CONSENTIMENTO = ("youtube.com", "youtu.be", "google.com", "google.com.br")
+
+
+def _cabecalhos_do_host(url: str) -> dict[str, str]:
+    host = (urlsplit(url).hostname or "").lower()
+    if any(host == d or host.endswith("." + d) for d in _DOMINIOS_CONSENTIMENTO):
+        return {"Cookie": "SOCS=CAI"}
+    return {}
+
+
 async def _baixar(cli: httpx.AsyncClient, url: str, limite: int) -> tuple[str, str, bytes] | None:
     """GET seguindo até 4 redirecionamentos, conferindo cada destino. Devolve (url final, content-type, corpo)."""
     for _ in range(5):
         if not await _url_permitida(url):
             return None
-        async with cli.stream("GET", url) as r:
+        async with cli.stream("GET", url, headers=_cabecalhos_do_host(url)) as r:
             if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
                 url = urljoin(url, r.headers["location"])
                 continue
@@ -136,12 +157,18 @@ async def _baixar(cli: httpx.AsyncClient, url: str, limite: int) -> tuple[str, s
     return None
 
 
+def _lado(sizes: str) -> int:
+    m = re.search(r"(\d+)\s*x\s*\d+", sizes or "")
+    return int(m.group(1)) if m else 0
+
+
 class _LeitorMeta(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.meta: dict[str, str] = {}
         self.titulo: str = ""
         self._no_title = False
+        self.icones: list[tuple[int, str]] = []  # (prioridade, href) — reserva para a miniatura
 
     def handle_starttag(self, tag, attrs):
         if tag == "meta":
@@ -149,6 +176,17 @@ class _LeitorMeta(HTMLParser):
             chave = (a.get("property") or a.get("name") or "").lower()
             if chave and a.get("content") and chave not in self.meta:
                 self.meta[chave] = a["content"]
+        elif tag == "link":
+            a = {k.lower(): (v or "") for k, v in attrs}
+            rel, href = a.get("rel", "").lower(), a.get("href", "").strip()
+            if not href:
+                return
+            if "image_src" in rel:
+                self.icones.append((10_000, href))
+            elif "apple-touch-icon" in rel:
+                self.icones.append((5_000 + _lado(a.get("sizes", "")), href))
+            elif "icon" in rel.split() and _lado(a.get("sizes", "")) >= 64:
+                self.icones.append((_lado(a.get("sizes", "")), href))
         elif tag == "title":
             self._no_title = True
 
@@ -193,12 +231,55 @@ def _miniatura(dados: bytes) -> str | None:
         return None
 
 
+async def _miniatura_de(cli: httpx.AsyncClient, url_imagem: str | None) -> str | None:
+    if not url_imagem:
+        return None
+    img = await _baixar(cli, url_imagem, _MAX_IMAGEM)
+    if img and img[1].lower().startswith("image/"):
+        return await asyncio.to_thread(_miniatura, img[2])
+    return None
+
+
+def _e_youtube(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").lower()
+    return host in ("youtu.be", "youtube.com") or host.endswith(".youtube.com")
+
+
+async def _montar_youtube(cli: httpx.AsyncClient, url: str) -> dict | None:
+    """YouTube pelo oEmbed — o JSON que o próprio YouTube publica para isso. A página
+    do vídeo tem 1,4 MB e o título só aparece depois de 700 KB de script."""
+    r = await _baixar(cli, f"https://www.youtube.com/oembed?format=json&url={quote(url, safe='')}", 64 * 1024)
+    if not r:
+        return None
+    try:
+        dados = json.loads(r[2])
+    except ValueError:
+        return None
+    titulo = _limpar(dados.get("title"), 300)
+    if not titulo:
+        return None
+    previa = {"kind": "link", "url": url, "title": titulo}
+    autor = _limpar(dados.get("author_name"), 200)
+    if autor:
+        previa["description"] = autor
+    thumb = await _miniatura_de(cli, dados.get("thumbnail_url"))
+    if thumb:
+        previa["thumb"] = thumb
+    return previa
+
+
 async def _montar(url: str) -> dict | None:
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(4.0, connect=3.0),
+        timeout=httpx.Timeout(5.0, connect=3.0),
         follow_redirects=False,
-        headers={"User-Agent": _UA, "Accept": "text/html,application/xhtml+xml"},
+        transport=httpx.AsyncHTTPTransport(retries=1),
+        headers={"User-Agent": _UA, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "pt-BR,pt;q=0.9"},
     ) as cli:
+        if _e_youtube(url):
+            previa = await _montar_youtube(cli, url)
+            if previa:
+                return previa
+            # oEmbed só cobre vídeo; canal e playlist seguem pela página
         pagina = await _baixar(cli, url, _MAX_HTML)
         if not pagina:
             return None
@@ -214,17 +295,17 @@ async def _montar(url: str) -> dict | None:
         descricao = _limpar(m.get("og:description") or m.get("twitter:description") or m.get("description"), 500)
         if descricao:
             previa["description"] = descricao
+        # Imagem da página; sem ela, o ícone do site — o WhatsApp também cai no ícone.
         imagem = m.get("og:image") or m.get("og:image:url") or m.get("twitter:image")
-        if imagem:
-            img = await _baixar(cli, urljoin(final, imagem.strip()), _MAX_IMAGEM)
-            if img and img[1].lower().startswith("image/"):
-                thumb = await asyncio.to_thread(_miniatura, img[2])
-                if thumb:
-                    previa["thumb"] = thumb
+        if not imagem and meta.icones:
+            imagem = max(meta.icones)[1]
+        thumb = await _miniatura_de(cli, urljoin(final, imagem.strip()) if imagem else None)
+        if thumb:
+            previa["thumb"] = thumb
         return previa
 
 
-async def montar_previa(texto: str | None, *, prazo: float = 8.0) -> dict | None:
+async def montar_previa(texto: str | None, *, prazo: float = 15.0) -> dict | None:
     """Capinha do primeiro link do texto. Nunca levanta: sem capinha é o normal."""
     url = primeira_url(texto)
     if not url:

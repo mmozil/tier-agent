@@ -119,3 +119,31 @@ def test_eco_assinado_volta_ao_texto_gravado():
     assert tirar_assinatura(com_assinatura("Ellaine", "Boa tarde")) == "Boa tarde"
     # negrito no meio do texto não é assinatura
     assert tirar_assinatura("Confirma *sexta*:\nok") == "Confirma *sexta*:\nok"
+
+
+# ─── servidor na Alemanha: consentimento do Google ─────────────────────────
+
+
+def test_cookie_de_consentimento_so_no_google():
+    from services.previa_link import _cabecalhos_do_host
+
+    assert _cabecalhos_do_host("https://www.youtube.com/@ccda") == {"Cookie": "SOCS=CAI"}
+    assert _cabecalhos_do_host("https://youtu.be/abc") == {"Cookie": "SOCS=CAI"}
+    assert _cabecalhos_do_host("https://www.google.com.br/maps") == {"Cookie": "SOCS=CAI"}
+    assert _cabecalhos_do_host("https://www.ccda.com.br") == {}
+    assert _cabecalhos_do_host("https://youtube.com.golpe.net/x") == {}  # sufixo falso não leva o cookie
+
+
+def test_sem_og_image_usa_o_icone_maior_do_site():
+    from services.previa_link import _ler_html
+
+    html = (
+        b'<html><head><title>CCDA</title>'
+        b'<link rel="icon" href="/p.png" sizes="32x32">'
+        b'<link rel="icon" href="/g.png" sizes="192x192">'
+        b'<link rel="apple-touch-icon" href="/apple.png" sizes="180x180">'
+        b"</head></html>"
+    )
+    leitor = _ler_html(html, "text/html; charset=utf-8")
+    assert leitor.titulo == "CCDA"
+    assert max(leitor.icones)[1] == "/apple.png"  # apple-touch-icon vence; ícone de 32 px nem entra
