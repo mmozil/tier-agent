@@ -35,8 +35,11 @@ class WhatsAppConnector:
         # Se tiver áudio anexo, envia áudio (com texto vai no caption se Engine suportar)
         audio = next((a for a in msg.attachments if a.kind == "audio"), None)
         image = next((a for a in msg.attachments if a.kind == "image"), None)
+        # Documento (07/10/2026, clipe do inbox). O Engine não tem rota de vídeo:
+        # vídeo vai como documento — chega como arquivo, não como vídeo na conversa.
+        documento = next((a for a in msg.attachments if a.kind in ("document", "video") and a.url), None)
 
-        async with httpx.AsyncClient(timeout=30) as cli:
+        async with httpx.AsyncClient(timeout=60) as cli:
             if audio and audio.url:
                 # Mesmo contrato da imagem: o Engine valida `{to, mediaUrl}` e
                 # NÃO aceita base64 neste endpoint (`audio_base64`/`audio_url`/
@@ -55,6 +58,18 @@ class WhatsAppConnector:
                     "caption": msg.content,
                 }
                 r = await cli.post(f"{base}/image", json=body, headers=headers)
+            elif documento:
+                # Contrato: POST /messages/document {to, mediaUrl, fileName, mimeType?}.
+                # SEM legenda — quem envia texto junto manda em seguida (ver
+                # routes/conversations.py, resposta com anexo).
+                body = {
+                    "to": msg.external_chat_id,
+                    "mediaUrl": documento.url,
+                    "fileName": documento.name or "arquivo",
+                }
+                if documento.mime:
+                    body["mimeType"] = documento.mime
+                r = await cli.post(f"{base}/document", json=body, headers=headers)
             else:
                 body = {"to": msg.external_chat_id, "text": msg.content}
                 r = await cli.post(f"{base}/text", json=body, headers=headers)

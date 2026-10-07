@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Copy, ChevronRight } from "lucide-react";
+import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Copy, ChevronRight, PenLine } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/phone";
@@ -125,6 +125,8 @@ interface Connector {
   modo?: "agente" | "registro";
   /** Etapa 2 do caminho A: de quem é o número (ta_member.id). */
   member_id?: number | null;
+  /** Resposta do painel sai com «*Nome:*» na frente — número usado por várias pessoas. */
+  assinar_nome?: boolean;
   config_summary: {
     instance_id?: string;
     phone?: string;
@@ -1008,6 +1010,29 @@ export default function CanaisPage() {
 
                     {/* Ações */}
                     <div className="flex items-center justify-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {(c.kind === "whatsapp" || c.kind === "whatsapp_cloud") && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="whitespace-nowrap"
+                          title={
+                            c.assinar_nome
+                              ? "Ligado: a resposta dada pelo painel chega ao cliente com o nome de quem respondeu na frente («*Ellaine:*»). Clique para desligar."
+                              : "Para número usado por várias pessoas: a resposta dada pelo painel chega ao cliente com o nome de quem respondeu na frente («*Ellaine:*»)."
+                          }
+                          onClick={async () => {
+                            try {
+                              await api.put(`/connectors/${c.id}/assinatura`, { ativo: !c.assinar_nome });
+                              toast.success(c.assinar_nome ? "Respostas sem o nome" : "Respostas com o nome de quem respondeu");
+                              load();
+                            } catch {
+                              toast.error("Não foi possível mudar a assinatura");
+                            }
+                          }}
+                        >
+                          <PenLine className="w-3 h-3 shrink-0" /> {c.assinar_nome ? "Assina com o nome ✓" : "Assinar com o nome"}
+                        </Button>
+                      )}
                       {c.kind === "whatsapp" && status !== "connected" && (
                         <Button variant="primary" size="sm" onClick={() => openQR(c.id)} className="whitespace-nowrap">
                           <QrCode className="w-3 h-3 shrink-0" /> Escanear QR

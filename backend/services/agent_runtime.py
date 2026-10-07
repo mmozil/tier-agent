@@ -23,6 +23,7 @@ from models import TaAgent, TaConnector, TaConversation, TaMessageLog, TaUsageDa
 from services import tier_engine, playbook_executor, playbook_router, templates as _templates
 from services.connectors import registry
 from services.connectors.base import ConnectorConfig, OutboundMessage
+from services.previa_link import anexos_para_log
 
 logger = logging.getLogger(__name__)
 
@@ -635,6 +636,10 @@ async def registrar_mensagem_sem_ia(
     if role == "agent" and (text_content or "").strip():
         from datetime import timedelta as _td
 
+        from services.assinatura import tirar_assinatura
+
+        # O painel grava SEM o «*Nome:*» que a família vê (ver services/assinatura.py).
+        _iguais = {text_content[:8000], tirar_assinatura(text_content)[:8000]}
         ja = (
             await db.execute(
                 select(TaMessageLog.id)
@@ -643,7 +648,7 @@ async def registrar_mensagem_sem_ia(
                     TaConversation.connector_id == connector.id,
                     TaConversation.external_id == external_chat_id,
                     TaMessageLog.role == "agent",
-                    TaMessageLog.content == text_content[:8000],
+                    TaMessageLog.content.in_(_iguais),
                     TaMessageLog.created_at >= datetime.utcnow() - _td(minutes=2),
                 )
                 .limit(1)
@@ -661,11 +666,7 @@ async def registrar_mensagem_sem_ia(
         connector_id=connector.id,
         por_numero=True,
     )
-    _att = [
-        {"kind": getattr(a, "kind", "file"), "url": getattr(a, "url", None), "mime": getattr(a, "mime", None)}
-        for a in (attachments or [])
-        if getattr(a, "url", None)
-    ]
+    _att = anexos_para_log(attachments)
     await log_message(
         db, conversation_id=conv.id, tenant_id=agent.tenant_id, role=role, tokens_in=0,
         content=text_content, attachments_json=_att or None,
@@ -940,11 +941,7 @@ async def handle_inbound_message(
     )
 
     # Log mensagem do user (com mídia, se houver — pra aparecer em Anexos/inline)
-    _att = [
-        {"kind": getattr(a, "kind", "file"), "url": getattr(a, "url", None), "mime": getattr(a, "mime", None)}
-        for a in (attachments or [])
-        if getattr(a, "url", None)
-    ]
+    _att = anexos_para_log(attachments)
     await log_message(
         db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", tokens_in=0,
         content=text_content, attachments_json=_att or None,

@@ -3,13 +3,19 @@
 Permite assumir (pausar a IA), devolver pra IA e resolver uma conversa.
 """
 
+import asyncio
 import json
 import logging
+import mimetypes
+import os
+import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, field_validator
-from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import or_, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
@@ -18,7 +24,7 @@ from core.encryption import decrypt
 from models import TaAgent, TaConversation, TaMessageLog
 from services import visao_conversas as visao
 from services.connectors import registry
-from services.connectors.base import ConnectorConfig, OutboundMessage
+from services.connectors.base import ConnectorAttachment, ConnectorConfig, OutboundMessage
 
 logger = logging.getLogger(__name__)
 
@@ -691,52 +697,47 @@ class ReplyIn(BaseModel):
     content: str
 
 
-@router.post("/{conversation_id}/reply", response_model=MessageOut)
-async def reply_manual(
-    conversation_id: int,
-    body: ReplyIn,
-    user: CurrentUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Atendente responde pelo painel — envia no canal do cliente e pausa a IA.
-
-    A mensagem vai pelo mesmo conector do agente (WhatsApp/Telegram/e-mail) e é
-    gravada com role='agent' (humano). Assumir = a IA não responde mais sozinha
-    até "Devolver para a IA" (resume)."""
+async def _canal_da_resposta(db: AsyncSession, conversation_id: int, user: CurrentUser):
+    """Conversa + número por onde a resposta sai + se é número de registro."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    content = (body.content or "").strip()
-    if not content:
-        raise HTTPException(422, "Mensagem vazia")
-
     conv = await _get_owned_conversation(db, conversation_id, user)
 
-    from services.proactive import conector_da_conversa, conversa_e_registro, marcar_eco_do_envio
+    from services.proactive import conector_da_conversa, conversa_e_registro
 
     # Pelo número DA CONVERSA (07/10/2026): no registro vários números dividem o
     # mesmo agente, e a busca pelo agente mandava do celular de outra consultora.
     conn = await conector_da_conversa(db, conv)
     if not conn:
         raise HTTPException(409, f"Sem canal {conv.connector_kind} ativo pra enviar")
-    registro = await conversa_e_registro(db, conv)
+    return conv, conn, await conversa_e_registro(db, conv)
 
-    # Email: 1ª linha vira assunto (padrão do adapter)
-    out_content = content
-    if conv.connector_kind == "email" and not content.lower().startswith("subject:"):
-        out_content = f"Subject: Resposta do atendimento\n\n{content}"
 
-    enviado_em = datetime.utcnow()
-    try:
-        impl = registry.get(conv.connector_kind)
-        cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
-        resultado = await impl.send(cfg, OutboundMessage(external_chat_id=conv.external_id, content=out_content))
-    except Exception as e:
-        logger.exception("reply manual falhou conv=%s", conversation_id)
-        raise HTTPException(502, f"Falha ao enviar: {e}")
-    await marcar_eco_do_envio(db, conn, resultado)
+def _assina(conn, user: CurrentUser, texto: str) -> str:
+    """«*Nome:*» na frente quando o número pede (número dividido — a família vê quem fala)."""
+    if texto and getattr(conn, "assinar_nome", False) and conn.kind in ("whatsapp", "whatsapp_cloud"):
+        from services.assinatura import com_assinatura
 
-    # O eco do celular chegou ANTES desta gravação (corrida rara): a mensagem já
-    # está no histórico com a dona do número — só passa a ser de quem respondeu.
+        return com_assinatura(user.member_name, texto)
+    return texto
+
+
+async def _gravar_resposta(
+    db: AsyncSession,
+    conv: TaConversation,
+    user: CurrentUser,
+    *,
+    registro: bool,
+    content: str,
+    enviado: set[str],
+    enviado_em: datetime,
+    anexos: list | None = None,
+) -> TaMessageLog:
+    """Grava a resposta humana (com QUEM respondeu) e atualiza a conversa.
+
+    `enviado` = os textos que de fato saíram (com e sem a assinatura): o eco do
+    celular pode ter chegado ANTES desta gravação (corrida rara) e já estar no
+    histórico com a dona do número — aí ele só passa a ser de quem respondeu."""
     msg = None
     if registro:
         msg = (
@@ -745,7 +746,7 @@ async def reply_manual(
                 .where(
                     TaMessageLog.conversation_id == conv.id,
                     TaMessageLog.role == "agent",
-                    TaMessageLog.content == content[:8000],
+                    TaMessageLog.content.in_({t[:8000] for t in enviado if t}),
                     TaMessageLog.created_at >= enviado_em,
                 )
                 .order_by(TaMessageLog.id.desc())
@@ -754,10 +755,15 @@ async def reply_manual(
         ).scalars().first()
         if msg is not None:
             msg.member_id = user.member_id or msg.member_id
+            msg.content = content[:8000]  # sem o «*Nome:*»: quem respondeu aparece embaixo do balão
+            if anexos and not msg.attachments_json:
+                msg.attachments_json = anexos
     if msg is None:
-        # Grava a mensagem do atendente (com QUEM respondeu). Se ninguém tinha a
-        # conversa, quem responde fica com ela (base das métricas por pessoa).
-        msg = TaMessageLog(conversation_id=conv.id, role="agent", content=content[:8000], member_id=user.member_id)
+        # Se ninguém tinha a conversa, quem responde fica com ela (base das métricas por pessoa).
+        msg = TaMessageLog(
+            conversation_id=conv.id, role="agent", content=content[:8000],
+            member_id=user.member_id, attachments_json=anexos or None,
+        )
         db.add(msg)
         conv.msg_count += 1
     if user.member_id and not conv.assigned_member_id:
@@ -770,6 +776,198 @@ async def reply_manual(
     conv.last_message_at = datetime.utcnow()
     await db.commit()
     await db.refresh(msg)
+    return msg
+
+
+_CAPINHAS_EM_ANDAMENTO: set = set()  # referência forte: task solta pode ser coletada no meio
+
+
+async def _anexar_capinha(message_id: int, texto: str) -> None:
+    """Monta a capinha do link que o PAINEL enviou e pendura na mensagem gravada.
+
+    Quem monta a capinha que a família vê é o Engine; o eco dela é descartado (senão
+    a resposta entraria duas vezes). Então o inbox monta a sua — como o WhatsApp Web."""
+    from core.db import db_context
+    from services.previa_link import montar_previa
+
+    previa = await montar_previa(texto)
+    if not previa:
+        return
+    try:
+        async with db_context() as s:
+            m = await s.get(TaMessageLog, message_id)
+            if m is None or any((a or {}).get("kind") == "link" for a in (m.attachments_json or [])):
+                return
+            m.attachments_json = [*(m.attachments_json or []), previa]
+            await s.commit()
+    except Exception:  # noqa: BLE001 — capinha é enfeite; a mensagem já foi
+        logger.info("capinha nao gravada msg=%s", message_id)
+
+
+def _agendar_capinha(message_id: int, texto: str) -> None:
+    from services.previa_link import primeira_url
+
+    if not primeira_url(texto):
+        return
+    t = asyncio.create_task(_anexar_capinha(message_id, texto))
+    _CAPINHAS_EM_ANDAMENTO.add(t)
+    t.add_done_callback(_CAPINHAS_EM_ANDAMENTO.discard)
+
+
+@router.post("/{conversation_id}/reply", response_model=MessageOut)
+async def reply_manual(
+    conversation_id: int,
+    body: ReplyIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atendente responde pelo painel — envia no canal do cliente e pausa a IA.
+
+    A mensagem vai pelo mesmo conector do agente (WhatsApp/Telegram/e-mail) e é
+    gravada com role='agent' (humano). Assumir = a IA não responde mais sozinha
+    até "Devolver para a IA" (resume)."""
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(422, "Mensagem vazia")
+    conv, conn, registro = await _canal_da_resposta(db, conversation_id, user)
+
+    from services.proactive import marcar_eco_do_envio
+
+    # Email: 1ª linha vira assunto (padrão do adapter)
+    out_content = _assina(conn, user, content)
+    if conv.connector_kind == "email" and not content.lower().startswith("subject:"):
+        out_content = f"Subject: Resposta do atendimento\n\n{content}"
+
+    enviado_em = datetime.utcnow()
+    try:
+        impl = registry.get(conv.connector_kind)
+        cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
+        resultado = await impl.send(cfg, OutboundMessage(external_chat_id=conv.external_id, content=out_content))
+    except Exception as e:
+        logger.exception("reply manual falhou conv=%s", conversation_id)
+        raise HTTPException(502, f"Falha ao enviar: {e}") from e
+    await marcar_eco_do_envio(db, conn, resultado)
+
+    msg = await _gravar_resposta(
+        db, conv, user, registro=registro, content=content,
+        enviado={content, out_content}, enviado_em=enviado_em,
+    )
+    _agendar_capinha(msg.id, content)
+    return msg
+
+
+_LIMITE_ANEXO = 25 * 1024 * 1024  # o Engine aceita mais (doc 100 MB), mas aqui o arquivo passa pela memória
+_LIMITE_IMAGEM = 16 * 1024 * 1024  # imagem do WhatsApp; acima disso vai como documento
+_IMAGENS = ("image/jpeg", "image/png", "image/webp")
+
+
+def _nome_seguro(nome: str | None) -> str:
+    base = os.path.basename((nome or "").replace("\\", "/")).strip()
+    base = re.sub(r"[\x00-\x1f\x7f]", "", base)[:120]
+    return base or "arquivo"
+
+
+@router.post("/{conversation_id}/reply-anexo", response_model=MessageOut)
+async def reply_anexo(
+    conversation_id: int,
+    arquivo: UploadFile = File(...),
+    content: str = Form(""),
+    voz: bool = Form(False),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resposta do painel com ANEXO — o clipe e o microfone do inbox (07/10/2026).
+
+    Foto vai como foto (com a legenda), áudio gravado vira MENSAGEM DE VOZ
+    (ogg/opus — o navegador grava webm ou mp4), o resto vai como documento. A
+    legenda de documento e de áudio sai numa mensagem logo depois: o Engine não
+    aceita legenda nesses dois."""
+    conv, conn, registro = await _canal_da_resposta(db, conversation_id, user)
+    if conn.kind != "whatsapp":
+        raise HTTPException(422, "Anexo pelo painel só existe, por enquanto, no WhatsApp conectado por QR")
+
+    dados = await arquivo.read(_LIMITE_ANEXO + 1)
+    if not dados:
+        raise HTTPException(422, "Arquivo vazio")
+    if len(dados) > _LIMITE_ANEXO:
+        raise HTTPException(413, "Arquivo maior que 25 MB")
+    nome = _nome_seguro(arquivo.filename)
+    mime = (arquivo.content_type or "").split(";")[0].strip().lower()
+    if not mime or mime == "application/octet-stream":
+        mime = (mimetypes.guess_type(nome)[0] or "application/octet-stream").lower()
+
+    if voz or mime.startswith("audio/"):
+        from services.audio_whatsapp import AudioInvalido, para_ogg_opus
+
+        try:
+            dados = await asyncio.to_thread(para_ogg_opus, dados)
+        except AudioInvalido as e:
+            raise HTTPException(422, f"Áudio inválido: {e}") from e
+        kind, mime, nome = "audio", "audio/ogg", "voz.ogg"
+    elif mime in _IMAGENS and len(dados) <= _LIMITE_IMAGEM:
+        kind = "image"
+    elif mime.startswith("video/"):
+        kind = "video"
+    else:
+        kind = "document"
+
+    from services.storage_service import storage
+
+    subido = await asyncio.to_thread(
+        storage.upload, dados, folder=f"inbox/{user.tenant_id}", filename=nome, content_type=mime
+    )
+    if subido.get("storage") != "r2":
+        # O Engine baixa o arquivo pelo link público — sem o armazenamento não há como enviar.
+        raise HTTPException(503, "Armazenamento de arquivos indisponível")
+    anexo = ConnectorAttachment(
+        kind=kind, url=subido["url"], mime=mime, name=nome if kind in ("document", "video") else None,
+        size_bytes=len(dados),
+    )
+
+    from services.previa_link import anexos_para_log
+    from services.proactive import marcar_eco_do_envio
+
+    legenda = (content or "").strip()
+    legenda_canal = _assina(conn, user, legenda) if legenda else ""
+    if kind == "image" and not legenda and getattr(conn, "assinar_nome", False):
+        from services.assinatura import primeiro_nome
+
+        quem = primeiro_nome(user.member_name)
+        legenda_canal = f"*{quem}*" if quem else ""
+
+    enviado_em = datetime.utcnow()
+    impl = registry.get("whatsapp")
+    cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
+    try:
+        resultado = await impl.send(
+            cfg,
+            OutboundMessage(
+                external_chat_id=conv.external_id,
+                content=legenda_canal if kind == "image" else "",
+                attachments=[anexo],
+            ),
+        )
+    except Exception as e:
+        logger.exception("resposta com anexo falhou conv=%s kind=%s", conversation_id, kind)
+        raise HTTPException(502, f"Falha ao enviar: {e}") from e
+    await marcar_eco_do_envio(db, conn, resultado)
+
+    if legenda and kind != "image":
+        try:
+            resultado2 = await impl.send(
+                cfg, OutboundMessage(external_chat_id=conv.external_id, content=legenda_canal)
+            )
+            await marcar_eco_do_envio(db, conn, resultado2)
+        except Exception:  # noqa: BLE001 — o arquivo já foi; a legenda falhar não desfaz isso
+            logger.exception("legenda do anexo nao enviada conv=%s", conversation_id)
+
+    texto = legenda or f"[{kind}]"
+    msg = await _gravar_resposta(
+        db, conv, user, registro=registro, content=texto,
+        enviado={texto, legenda_canal}, enviado_em=enviado_em, anexos=anexos_para_log([anexo]),
+    )
+    if legenda:
+        _agendar_capinha(msg.id, legenda)
     return msg
 
 

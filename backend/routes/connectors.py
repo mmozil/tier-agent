@@ -121,6 +121,7 @@ def _serialize(c: TaConnector) -> dict:
         "last_event_at": c.last_event_at.isoformat() if c.last_event_at else None,
         "modo": getattr(c, "modo", None) or "agente",
         "member_id": getattr(c, "member_id", None),  # Etapa 2: de quem é o número
+        "assinar_nome": bool(getattr(c, "assinar_nome", False)),  # «*Nome:*» na resposta do painel
     }
 
 
@@ -574,6 +575,34 @@ async def set_connector_member(
         if not m or m.tenant_id != user.tenant_id:
             raise HTTPException(404, "Membro não encontrado")
         c.member_id = m.id
+    await db.commit()
+    await db.refresh(c)
+    return _serialize(c)
+
+
+class ConnectorAssinaturaIn(BaseModel):
+    ativo: bool
+
+
+@router.put("/{connector_id}/assinatura")
+async def set_connector_assinatura(
+    connector_id: int,
+    body: ConnectorAssinaturaIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Liga/desliga o «*Nome:*» na frente das respostas dadas pelo painel por este
+    número (07/10/2026). Serve ao número DIVIDIDO por várias pessoas — a família vê
+    no WhatsApp quem está falando. Só WhatsApp: é a formatação de negrito dele."""
+    if user.role not in ("owner", "admin"):
+        raise HTTPException(403, "Apenas dono/admin pode mudar a assinatura do número")
+    c = await db.get(TaConnector, connector_id)
+    if not c:
+        raise HTTPException(404, "Conector não encontrado")
+    await _ensure_agent_owned(db, c.agent_id, user)
+    if c.kind not in ("whatsapp", "whatsapp_cloud"):
+        raise HTTPException(422, "Assinatura com o nome só existe para WhatsApp")
+    c.assinar_nome = bool(body.ativo)
     await db.commit()
     await db.refresh(c)
     return _serialize(c)

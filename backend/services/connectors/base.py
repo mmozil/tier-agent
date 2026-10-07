@@ -11,11 +11,18 @@ from typing import Protocol, runtime_checkable
 
 @dataclass
 class ConnectorAttachment:
-    kind: str  # 'image' | 'audio' | 'video' | 'document'
+    kind: str  # 'image' | 'audio' | 'video' | 'document' | 'link' (capinha do link)
     url: str | None = None  # URL pública (R2) ou caminho local
     mime: str | None = None
     size_bytes: int | None = None
     raw_bytes: bytes | None = None  # quando inline
+    name: str | None = None  # nome do arquivo (documento)
+    # capinha do link (kind='link'): o que o WhatsApp desenha em cima do texto
+    title: str | None = None
+    description: str | None = None
+    thumb: str | None = None  # miniatura em data URI (jpeg base64)
+    # mídia que chegou mas NÃO baixou: entra assim mesmo, para não sumir sem rastro
+    erro: str | None = None
 
 
 @dataclass

@@ -232,6 +232,9 @@ class TaConnector(Base):
     # Etapa 2 do caminho A (09/09/2026): de QUEM é este número (ta_member.id, FK lógica).
     # Conversa que entra por ele nasce atribuída à pessoa; atendente só vê os seus. Runtime DDL.
     member_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 07/10/2026: resposta do painel sai com «*Nome:*» na frente (número dividido por
+    # várias pessoas — a família vê quem fala). Runtime DDL. Ver services/assinatura.py.
+    assinar_nome: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     last_event_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

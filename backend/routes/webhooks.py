@@ -193,39 +193,53 @@ async def whatsapp_engine_webhook(
     msg = _desembrulhar_mensagem(payload.get("message") or {})
     media_url = payload.get("mediaUrl")  # URL R2 pública (pre-uploaded pelo Engine)
 
+    def _midia(kind: str, bloco: dict, mime_padrao: str | None = None) -> ConnectorAttachment:
+        # 🚨 Sem `mediaUrl` o Engine não conseguiu guardar o arquivo (07/10/2026: a
+        # chave do armazenamento dele estava morta desde 11/06 e TODA foto, áudio e
+        # documento sumia sem rastro). A mídia entra assim mesmo, marcada — o inbox
+        # mostra «não foi possível baixar» em vez de fingir que nada chegou.
+        return ConnectorAttachment(
+            kind=kind,
+            url=media_url or None,
+            mime=bloco.get("mimetype") or mime_padrao,
+            name=(bloco.get("fileName") or None) if kind == "document" else None,
+            erro=None if media_url else "nao_baixada",
+        )
+
     # Texto puro (conversation) ou caption de mídia
     if isinstance(msg, dict):
         if msg.get("conversation"):
             text_content = msg["conversation"]
         elif msg.get("extendedTextMessage"):
             text_content = msg["extendedTextMessage"].get("text") or ""
-        elif msg.get("imageMessage"):
-            text_content = msg["imageMessage"].get("caption") or ""
-            if media_url:
+            # A capinha do link vem PRONTA (quem enviou montou) — igual no WhatsApp.
+            from services.previa_link import previa_do_whatsapp
+
+            previa = previa_do_whatsapp(msg)
+            if previa:
                 attachments.append(
                     ConnectorAttachment(
-                        kind="image",
-                        url=media_url,
-                        mime=msg["imageMessage"].get("mimetype") or "image/jpeg",
+                        kind="link",
+                        url=previa["url"],
+                        title=previa.get("title"),
+                        description=previa.get("description"),
+                        thumb=previa.get("thumb"),
                     )
                 )
+        elif msg.get("imageMessage"):
+            text_content = msg["imageMessage"].get("caption") or ""
+            attachments.append(_midia("image", msg["imageMessage"], "image/jpeg"))
         elif msg.get("videoMessage"):
             text_content = msg["videoMessage"].get("caption") or ""
-            if media_url:
-                attachments.append(
-                    ConnectorAttachment(kind="video", url=media_url, mime=msg["videoMessage"].get("mimetype"))
-                )
+            attachments.append(_midia("video", msg["videoMessage"]))
         elif msg.get("audioMessage"):
-            if media_url:
-                attachments.append(
-                    ConnectorAttachment(kind="audio", url=media_url, mime=msg["audioMessage"].get("mimetype"))
-                )
+            attachments.append(_midia("audio", msg["audioMessage"]))
         elif msg.get("documentMessage"):
             text_content = msg["documentMessage"].get("caption") or ""
-            if media_url:
-                attachments.append(
-                    ConnectorAttachment(kind="document", url=media_url, mime=msg["documentMessage"].get("mimetype"))
-                )
+            attachments.append(_midia("document", msg["documentMessage"]))
+        elif msg.get("stickerMessage"):
+            # Figurinha: no WhatsApp é uma imagem solta, sem balão — aqui também.
+            attachments.append(_midia("sticker", msg["stickerMessage"], "image/webp"))
 
     # Resposta de botão/lista conta como fala do cliente
     if not text_content and isinstance(msg, dict):

@@ -130,6 +130,8 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS member_id INTEGER",
                 "CREATE INDEX IF NOT EXISTS ix_ta_connector_member_id ON ta_connector (member_id)",
                 "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS member_id INTEGER",
+                # 07/10/2026: «*Nome:*» na frente da resposta do painel (número dividido)
+                "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS assinar_nome BOOLEAN NOT NULL DEFAULT FALSE",
             ):
                 await db.execute(_sql_text(ddl))
             # Macros (paridade Chatwoot) — tabela criada em runtime (sem Alembic)

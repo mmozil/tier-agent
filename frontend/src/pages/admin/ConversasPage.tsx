@@ -5,11 +5,13 @@ import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, Search, Zap,
-  Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone,
+  Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone, Mic, FileText,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
+import MidiaDaMensagem, { linkificar, type Anexo } from "@/components/inbox/MidiaDaMensagem";
+import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { label: string; cls: string; dot: string }> = {
@@ -159,11 +161,7 @@ interface Member {
   status: string;
 }
 
-interface Attachment {
-  kind: string;
-  url: string;
-  mime?: string | null;
-}
+type Attachment = Anexo;
 
 interface Message {
   id: number;
@@ -230,7 +228,7 @@ function renderRich(text: string): ReactNode[] {
   let m: RegExpExecArray | null;
   let k = 0;
   while ((m = re.exec(text)) !== null) {
-    if (m.index > last) nodes.push(text.slice(last, m.index));
+    if (m.index > last) nodes.push(...linkificar(text.slice(last, m.index), `t${k++}`));
     const tok = m[0];
     const inner = tok.slice(1, -1);
     if (tok[0] === "*") nodes.push(<strong key={k++} className="font-semibold">{inner}</strong>);
@@ -239,7 +237,7 @@ function renderRich(text: string): ReactNode[] {
     else nodes.push(<code key={k++} className="font-mono text-[12px] px-1 py-0.5 rounded bg-black/[0.06] dark:bg-white/[0.10]">{inner}</code>);
     last = m.index + tok.length;
   }
-  if (last < text.length) nodes.push(text.slice(last));
+  if (last < text.length) nodes.push(...linkificar(text.slice(last), `t${k++}`));
   return nodes;
 }
 
@@ -388,6 +386,11 @@ export default function ConversasPage() {
   const [sending, setSending] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [noteMode, setNoteMode] = useState(false);
+  // Clipe e microfone da caixa de resposta (07/10/2026) — o mesmo que a atendente tem no WhatsApp.
+  const [anexo, setAnexo] = useState<File | null>(null);
+  const [anexoPrevia, setAnexoPrevia] = useState<string | null>(null);
+  const anexoInputRef = useRef<HTMLInputElement | null>(null);
+  const gravador = useGravadorVoz();
   const [members, setMembers] = useState<Member[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [me, setMe] = useState<{ role: string; member_id: number | null; ve_tudo?: boolean } | null>(null);
@@ -480,6 +483,23 @@ export default function ConversasPage() {
     if (taRef.current) autoGrowTextarea(taRef.current);
   }, [replyText, openId, noteMode]);
 
+  // Trocou de conversa: arquivo escolhido e gravação em curso não vão junto.
+  useEffect(() => {
+    setAnexo(null);
+    gravador.cancelar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId]);
+
+  useEffect(() => {
+    if (!anexo || !anexo.type.startsWith("image/")) {
+      setAnexoPrevia(null);
+      return;
+    }
+    const u = URL.createObjectURL(anexo);
+    setAnexoPrevia(u);
+    return () => URL.revokeObjectURL(u);
+  }, [anexo]);
+
   useEffect(() => {
     load();
     api.get<Member[]>("/team/members").then(({ data }) => setMembers(data)).catch(() => {});
@@ -496,7 +516,8 @@ export default function ConversasPage() {
         api.get<{ messages: Message[] }>(`/conversations/${openId}`)
           .then(({ data }) => {
             const next = data.messages || [];
-            setMsgs((prev) => (next.length > prev.length ? next : prev));
+            // `>=`: a capinha do link chega segundos DEPOIS, na mesma mensagem (sem mudar a contagem)
+            setMsgs((prev) => (next.length >= prev.length ? next : prev));
           })
           .catch(() => {});
       }
@@ -598,9 +619,88 @@ export default function ConversasPage() {
     }
   }
 
+  /** Emoji entra onde está o cursor, como no WhatsApp. */
+  function inserirNoCursor(trecho: string) {
+    const ta = taRef.current;
+    if (!ta) {
+      setReplyText((prev) => prev + trecho);
+      return;
+    }
+    const ini = ta.selectionStart ?? replyText.length;
+    const fim = ta.selectionEnd ?? replyText.length;
+    const novo = replyText.slice(0, ini) + trecho + replyText.slice(fim);
+    setReplyText(novo);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(ini + trecho.length, ini + trecho.length);
+    });
+  }
+
+  function marcarRespondida(convId: number) {
+    setOpenConv((prev) => (prev ? { ...prev, status: "handed_off" } : prev));
+    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, status: "handed_off" } : c)));
+  }
+
+  /** A capinha do link é montada no servidor depois do envio — busca de novo para ela aparecer. */
+  function buscarCapinha(convId: number, texto: string) {
+    if (!/(https?:\/\/|www\.)\S/i.test(texto)) return;
+    window.setTimeout(() => {
+      api.get<{ messages: Message[] }>(`/conversations/${convId}`)
+        .then(({ data }) => setMsgs((prev) => ((data.messages || []).length >= prev.length ? data.messages : prev)))
+        .catch(() => {});
+    }, 6000);
+  }
+
+  async function enviarAnexo(arquivo: Blob, nome: string, legenda: string, voz: boolean) {
+    if (!openConv || sending) return;
+    const convId = openConv.id;
+    setSending(true);
+    try {
+      const fd = new FormData();
+      fd.append("arquivo", arquivo, nome);
+      fd.append("content", legenda);
+      fd.append("voz", voz ? "true" : "false");
+      const { data } = await api.post<Message>(`/conversations/${convId}/reply-anexo`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 120000,
+      });
+      setMsgs((prev) => [...prev, data]);
+      if (!voz) {
+        setReplyText("");
+        setAnexo(null);
+      }
+      marcarRespondida(convId);
+      buscarCapinha(convId, legenda);
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : voz ? "Não foi possível enviar o áudio" : "Não foi possível enviar o arquivo");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function iniciarGravacao() {
+    const erro = await gravador.iniciar();
+    if (erro) toast.error(erro);
+  }
+
+  async function enviarGravacao() {
+    const g = await gravador.parar();
+    if (!g) {
+      toast.error("Nada foi gravado");
+      return;
+    }
+    await enviarAnexo(g.blob, g.nome, "", true);
+  }
+
   async function sendReply() {
     const text = replyText.trim();
-    if (!text || !openConv || sending) return;
+    if (!openConv || sending) return;
+    if (anexo && !noteMode) {
+      await enviarAnexo(anexo, anexo.name, text, false);
+      return;
+    }
+    if (!text) return;
     setSending(true);
     try {
       if (noteMode) {
@@ -612,8 +712,8 @@ export default function ConversasPage() {
         const { data } = await api.post<Message>(`/conversations/${openConv.id}/reply`, { content: text });
         setMsgs((prev) => [...prev, data]);
         setReplyText("");
-        setOpenConv((prev) => (prev ? { ...prev, status: "handed_off" } : prev));
-        setConvs((prev) => prev.map((c) => (c.id === openConv.id ? { ...c, status: "handed_off" } : c)));
+        marcarRespondida(openConv.id);
+        buscarCapinha(openConv.id, text);
       }
     } catch {
       toast.error("Não foi possível enviar");
@@ -786,7 +886,7 @@ export default function ConversasPage() {
         if (!a.url || seen.has(a.url)) continue;
         seen.add(a.url);
         const tail = a.url.split("?")[0].split("/").filter(Boolean).pop() || a.kind || "arquivo";
-        attachments.push({ url: a.url, kind: a.kind || "file", label: label40(tail) });
+        attachments.push({ url: a.url, kind: a.kind || "file", label: label40(a.name || a.title || tail) });
       }
       for (const u of (m.content || "").match(/https?:\/\/[^\s)<>"']+/g) || []) {
         if (seen.has(u)) continue;
@@ -1222,17 +1322,7 @@ export default function ConversasPage() {
                         const showText = m.content && !(placeholder && media.length > 0);
                         return (
                           <>
-                            {media.map((a, i) =>
-                              a.kind === "image" ? (
-                                <img key={i} src={a.url} alt="" loading="lazy" onClick={() => window.open(a.url, "_blank")} className="rounded-lg max-w-full max-h-60 object-cover mb-1 cursor-pointer" />
-                              ) : a.kind === "audio" ? (
-                                <audio key={i} controls src={a.url} className="max-w-full mb-1" />
-                              ) : (
-                                <a key={i} href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 underline text-[12.5px] mb-1">
-                                  <Paperclip className="w-3.5 h-3.5 shrink-0" /> {a.kind === "video" ? "Vídeo" : "Documento"}
-                                </a>
-                              ),
-                            )}
+                            <MidiaDaMensagem midia={media} escuro={isAgent} />
                             {showText ? renderRich(m.content!) : !m.content && media.length === 0 ? <span className="opacity-60 italic">[sem texto]</span> : null}
                           </>
                         );
@@ -1363,6 +1453,26 @@ export default function ConversasPage() {
                   </div>
                 )}
                 <div className={`rounded-2xl border transition-shadow ${noteMode ? "border-amber-200 dark:border-amber-700/50 bg-amber-50/40 dark:bg-amber-900/10 focus-within:shadow-[0_0_0_2px_#f59e0b]" : `${FC.hair} bg-white dark:bg-[#14171c] focus-within:shadow-[0_0_0_2px_#003083] dark:focus-within:shadow-[0_0_0_2px_#5b9bff]`}`}>
+                  {anexo && !noteMode && (
+                    <div className="flex items-center gap-2.5 mx-3 mt-3 p-2 rounded-xl bg-[#262626]/[0.04] dark:bg-white/[0.05]">
+                      {anexoPrevia ? (
+                        <img src={anexoPrevia} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
+                      ) : (
+                        <span className="w-12 h-12 rounded-lg shrink-0 inline-flex items-center justify-center bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]">
+                          <FileText className="w-5 h-5" />
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className={`block text-[12.5px] font-medium truncate ${FC.ink}`}>{anexo.name}</span>
+                        <span className={`block text-[11px] ${FC.mut}`}>
+                          {(anexo.size / 1024 / 1024).toFixed(anexo.size < 1024 * 1024 ? 2 : 1)} MB · o texto abaixo vai junto
+                        </span>
+                      </span>
+                      <button type="button" onClick={() => setAnexo(null)} className={iconBtn} title="Tirar o arquivo">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                   <textarea
                     ref={taRef}
                     value={replyText}
@@ -1372,12 +1482,59 @@ export default function ConversasPage() {
                     placeholder={noteMode ? "Nota visível só pra equipe (não vai pro cliente)…" : "Responder ao cliente… (Enter envia, Shift+Enter quebra linha)"}
                     className="block w-full resize-none overflow-y-auto px-4 pt-3.5 pb-1 text-[13px] leading-relaxed bg-transparent outline-none text-[#262626] dark:text-[#e6e8eb] placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280]"
                   />
-                  <div className="flex items-center justify-between px-2.5 pb-2.5 pt-1">
-                    <div className="flex items-center gap-0.5">{!noteMode && <CannedPicker onInsert={(c) => setReplyText((prev) => (prev ? prev + "\n" + c : c))} />}</div>
-                    <button onClick={sendReply} disabled={sending || !replyText.trim()} className={`h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-full text-white transition-all active:scale-[0.92] disabled:opacity-40 disabled:pointer-events-none ${noteMode ? "bg-amber-500 hover:bg-amber-600" : "bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff]"}`} title="Enviar">
-                      <ArrowUp className="w-4 h-4" />
-                    </button>
-                  </div>
+                  {gravador.gravando ? (
+                    // Gravando: a barra vira a do WhatsApp — descartar · tempo · enviar
+                    <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5 pt-1">
+                      <button type="button" onClick={() => gravador.cancelar()} className={`${BOTAO_COMPOSITOR} hover:!text-[#E5484D]`} title="Descartar o áudio">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <span className={`flex items-center gap-2 text-[13px] tabular-nums ${FC.ink}`}>
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#E5484D] animate-pulse" /> Gravando {tempo(gravador.segundos)}
+                      </span>
+                      <button onClick={enviarGravacao} disabled={sending} className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-full text-white transition-all active:scale-[0.92] disabled:opacity-40 bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff]" title="Enviar o áudio">
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between px-2.5 pb-2.5 pt-1">
+                      <div className="flex items-center gap-1">
+                        <EmojiBotao onEscolher={inserirNoCursor} />
+                        {!noteMode && (
+                          <>
+                            <button type="button" onClick={() => anexoInputRef.current?.click()} className={BOTAO_COMPOSITOR} title="Anexar foto, documento ou vídeo" disabled={sending}>
+                              <Paperclip className="w-4 h-4" />
+                            </button>
+                            <input
+                              ref={anexoInputRef}
+                              type="file"
+                              className="hidden"
+                              accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0] || null;
+                                e.target.value = "";
+                                if (f && f.size > 25 * 1024 * 1024) {
+                                  toast.error("Arquivo maior que 25 MB");
+                                  return;
+                                }
+                                setAnexo(f);
+                                taRef.current?.focus();
+                              }}
+                            />
+                            <CannedPicker onInsert={(c) => setReplyText((prev) => (prev ? prev + "\n" + c : c))} />
+                          </>
+                        )}
+                      </div>
+                      {noteMode || replyText.trim() || anexo ? (
+                        <button onClick={sendReply} disabled={sending || (!replyText.trim() && !(anexo && !noteMode))} className={`h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-full text-white transition-all active:scale-[0.92] disabled:opacity-40 disabled:pointer-events-none ${noteMode ? "bg-amber-500 hover:bg-amber-600" : "bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff]"}`} title="Enviar">
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button onClick={iniciarGravacao} disabled={sending} className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-full text-white transition-all active:scale-[0.92] disabled:opacity-40 bg-[#003083] hover:bg-[#002266] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff]" title="Gravar áudio">
+                          <Mic className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <p className={`text-[11px] ${FC.mut} mt-1.5`}>{noteMode ? "A nota fica registrada na conversa, visível só pra equipe." : "Ao responder, você assume a conversa e a IA fica pausada."}</p>
               </div>
