@@ -301,6 +301,35 @@ async def desligar_membro(
     return {"ok": True, "member_id": member.id, "numeros_desvinculados": len(conns)}
 
 
+@router.get("/numeros-whatsapp")
+async def numeros_whatsapp(
+    agent_tenant_id: int,
+    x_tier_integration_secret: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Os números de WhatsApp (QR) do tenant, para o ERP escolher por qual sai a
+    mensagem da automação «enviar WhatsApp» (07/10/2026). Só os conectados por QR:
+    a API oficial só fala fora da janela de 24 h por modelo aprovado pela Meta."""
+    _check_secret(x_tier_integration_secret)
+    from services import numeros as numeros_svc
+
+    nomes = {
+        m.id: m.nome
+        for m in (await db.execute(select(TaMember).where(TaMember.tenant_id == agent_tenant_id))).scalars().all()
+    }
+    return [
+        {
+            "id": n["id"],
+            "rotulo": n["rotulo"],
+            "modo": n["modo"],
+            "dona": nomes.get(n["member_id"]),
+            "status": n["status"],
+        }
+        for n in await numeros_svc.numeros_do_tenant(db, agent_tenant_id)
+        if n["kind"] == "whatsapp"
+    ]
+
+
 @router.get("/metricas-atendimento")
 async def metricas_atendimento(
     agent_tenant_id: int,
