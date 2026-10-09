@@ -159,14 +159,16 @@ export default function Precos() {
                     </li>
                   ))}
                 </ul>
-                <Link
-                  to="/signup"
+                {/* 🚨 Sem cadastro aberto pelo site (decisão do dono, 09/10/2026):
+                    o plano leva à conversa, não a uma conta que ninguém cobra ainda. */}
+                <a
+                  href={`mailto:contato@tier.finance?subject=${encodeURIComponent(`Quero o Tier Agent ${p.name}`)}`}
                   className={`mt-6 h-10 inline-flex items-center justify-center rounded-md text-[14px] font-medium transition-colors ${
                     p.highlight ? "bg-cta hover:bg-cta-hover text-white" : "border border-line hover:bg-surface-muted text-ink"
                   }`}
                 >
-                  {PRECOS_DISPONIVEIS ? p.cta : "Começar grátis"}
-                </Link>
+                  Falar com vendas
+                </a>
               </div>
             ))}
           </div>

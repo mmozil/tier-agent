@@ -177,7 +177,7 @@ const PLATFORM_MENU: FlyoutMenuModel = {
   railTitle: "COMEÇAR",
   railLinks: [
     { label: "Ver a plataforma", href: "/plataforma" },
-    { label: "Falar com especialista", href: "/signup" },
+    { label: "Falar com vendas", href: "mailto:contato@tier.finance?subject=Quero%20o%20Tier%20Agent" },
   ],
   sections: [
     {
@@ -338,7 +338,6 @@ const FOOTER_COLS = [
       { l: "Plataforma", to: "/plataforma" },
       { l: "Recursos", to: "/recursos" },
       { l: "Preços", to: "/precos" },
-      { l: "Entrar", to: "/login" },
     ],
   },
   {
@@ -355,7 +354,6 @@ const FOOTER_COLS = [
     links: [
       { l: "Tier Finance", to: "https://tier.finance", ext: true },
       { l: "Tier Empresas", to: "https://erp.tier.finance", ext: true },
-      { l: "Começar agora", to: "/signup" },
     ],
   },
   {
@@ -474,18 +472,14 @@ export function MarketingNav() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <Link
-              to="/login"
-              className="hidden h-10 items-center rounded-[12px] border border-line bg-white px-4 text-[14px] font-medium text-ink shadow-sm hover:border-line-strong hover:bg-surface-subtle transition-colors sm:inline-flex"
+            {/* 🚨 Sem «Entrar» e sem «Começar agora» (decisão do dono, 09/10/2026):
+                o cadastro não está aberto pelo site. A única ação é falar com vendas. */}
+            <a
+              href="mailto:contato@tier.finance?subject=Quero%20o%20Tier%20Agent"
+              className="inline-flex h-10 items-center rounded-[12px] border border-line bg-white px-4 text-[14px] font-medium text-ink shadow-sm hover:border-line-strong hover:bg-surface-subtle transition-colors"
             >
-              Entrar
-            </Link>
-            <Link
-              to="/signup"
-              className="inline-flex h-10 items-center rounded-[12px] bg-cta px-4 text-[14px] font-semibold text-white shadow-[0_1px_2px_rgba(13,15,17,.18)] hover:bg-cta-hover transition-colors"
-            >
-              Começar agora
-            </Link>
+              Falar com vendas
+            </a>
             <button
               className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-line text-[#3A3F47] md:hidden"
               onClick={() => setMobile((value) => !value)}
@@ -504,7 +498,6 @@ export function MarketingNav() {
                 { label: "Recursos", to: "/recursos" },
                 { label: "Clientes", to: "/#prova" },
                 { label: "Preços", to: "/precos" },
-                { label: "Entrar", to: "/login" },
               ].map((item) => (
                 <Link
                   key={item.label}
@@ -555,12 +548,12 @@ export function FinalCTA({
           </h2>
           <p className="mt-3 max-w-[560px] text-[15px] leading-relaxed text-[#6A7385]">{subtitle}</p>
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Link
-              to="/signup"
+            <a
+              href="mailto:contato@tier.finance?subject=Quero%20o%20Tier%20Agent"
               className="inline-flex h-11 items-center rounded-[12px] bg-cta px-5 text-[14px] font-semibold text-white hover:bg-cta-hover transition-colors"
             >
-              Começar agora
-            </Link>
+              Falar com vendas
+            </a>
             <Link
               to="/plataforma"
               className="inline-flex h-11 items-center rounded-[12px] border border-line bg-white px-5 text-[14px] font-medium text-ink hover:bg-surface-subtle transition-colors"

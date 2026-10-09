@@ -137,3 +137,36 @@
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Site público do Tier Agent — mesmo padrão do Tier Emissor e do Tier Empresas:
+   tema escuro escopado no container da página e fonte Hellix. Escopado em
+   `.agent-outfit` para NÃO vazar para o painel (que segue em Inter).
+   ─────────────────────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Hellix';
+  src: url('/fonts/HellixVAR.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+.agent-outfit,
+.agent-outfit * {
+  font-family: 'Hellix', 'Outfit', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+/* Código volta para monospace — inclui os descendentes de pre/code, senão o
+   '.agent-outfit *' vence por especificidade e o código sai em Hellix. */
+.agent-outfit .font-mono,
+.agent-outfit [class*='font-mono'],
+.agent-outfit code,
+.agent-outfit code *,
+.agent-outfit pre,
+.agent-outfit pre *,
+.agent-outfit kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace !important;
+}
+.agent-outfit {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
