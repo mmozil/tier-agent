@@ -351,7 +351,7 @@ export default function Landing() {
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.06] bg-[#0a0a0a]/80 backdrop-blur-xl">
         <div className="max-w-[1180px] mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/" className="shrink-0">
-            <img src="/tier-agent-claro.png" alt="Tier Agent" style={{ height: 26, width: 'auto' }} draggable={false} />
+            <img src="/tier-agent-site.png" alt="Tier Agent" style={{ height: 32, width: 'auto' }} draggable={false} />
           </Link>
           <nav className="hidden md:flex items-center gap-7">
             {NAV.map((n) => (
@@ -631,7 +631,7 @@ export default function Landing() {
       <footer className="border-t border-white/[0.06]">
         <div className="max-w-[1180px] mx-auto px-6 py-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div>
-            <img src="/tier-agent-claro.png" alt="Tier Agent" style={{ height: 22, width: 'auto' }} draggable={false} />
+            <img src="/tier-agent-site.png" alt="Tier Agent" style={{ height: 26, width: 'auto' }} draggable={false} />
             <p className="mt-3 text-[12px] text-neutral-500 max-w-[360px]">
               Agente de atendimento com WhatsApp oficial, playbooks e dados do seu sistema. Parte do ecossistema Tier.
             </p>
