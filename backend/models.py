@@ -732,6 +732,9 @@ class TaToolProvider(Base):
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=100, nullable=False)  # MENOR = primeiro
+    # Quem pode acionar as ferramentas desta fonte (09/10/2026): "todos" = qualquer canal,
+    # inclusive cliente no WhatsApp; "equipe" = só o teste do painel (dado interno, ex.: Emissor).
+    publico: Mapped[str] = mapped_column(String(16), default="todos", server_default="todos", nullable=False)
 
     last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

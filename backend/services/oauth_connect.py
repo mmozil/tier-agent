@@ -42,6 +42,20 @@ PRESETS: dict[str, dict] = {
         "client_id": "tier-agent",
         "secret_env": "TIER_OAUTH_CLIENT_SECRET",
     },
+    "tier-emissor": {
+        "nome": "Tier Emissor (notas fiscais)",
+        # Autoriza no próprio Emissor (a tela de consentimento fala do Emissor nesse host) e usa
+        # um servidor MCP SEPARADO do ERP: a conexão é guardada por agente+URL, e dividir a URL
+        # faria uma sobrescrever a outra. Lá a empresa liga/desliga o que o agente consulta.
+        "authorize_url": "https://emissor.tier.finance/oauth/authorize",
+        "token_url": "https://api.tier.finance/api/oauth/token",
+        "mcp_url": "https://api.tier.finance/api/mcp/emissor/server",
+        "scope": "nfe:read",
+        "client_id": "tier-agent",
+        "secret_env": "TIER_OAUTH_CLIENT_SECRET",
+        # Dado fiscal da empresa: nasce SÓ para a equipe (painel). Cliente no WhatsApp não aciona.
+        "publico": "equipe",
+    },
     "hovio-pet": {
         "nome": "Hovio Pet",
         # O Pet é servidor OAuth próprio (separado do Tier) — authorize/token no pet.hovio.com.br
@@ -170,6 +184,8 @@ async def complete_connect(
             tenant_id=tenant_id,
             nome=preset["nome"],
             mcp_server_url=preset["mcp_url"],
+            # Só na criação: reconectar não desfaz a escolha que a empresa fez depois.
+            publico=preset.get("publico", "todos"),
         )
         db.add(row)
     row.bearer_enc = encrypt(tokens["access_token"])

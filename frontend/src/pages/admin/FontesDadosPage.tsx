@@ -24,6 +24,8 @@ interface ToolProvider {
   mcp_server_url: string;
   enabled: boolean;
   priority: number;
+  /** "equipe" = só o teste do painel aciona; "todos" = qualquer canal, cliente incluso. */
+  publico: "todos" | "equipe";
   has_bearer: boolean;
   last_test_at: string | null;
   last_test_ok: boolean | null;
@@ -69,6 +71,22 @@ const PRESETS: Preset[] = [
     tokenHelp: "",
     urlLocked: true,
     connectVia: "oauth", // Conectar → janela de autorização do ERP → pronto (sem token)
+  },
+  {
+    // Tier Emissor (09/10/2026): as notas fiscais da empresa. Nasce «só a equipe» — cliente no
+    // WhatsApp não consulta nota de ninguém. No Emissor, Configurações › Tier Agent decide o que
+    // o agente vê e mostra as últimas consultas.
+    key: "tier-emissor",
+    nome: "Tier Emissor (notas fiscais)",
+    desc: "Notas da empresa: NF-e e NFS-e emitidas, rejeições e motivo, certificado A1 e produtos salvos. Só a equipe consulta, aqui no painel.",
+    url: "https://api.tier.finance/api/mcp/emissor/server",
+    badge: "Somente leitura",
+    available: true,
+    color: "#1F42E4",
+    initials: "EM",
+    tokenHelp: "",
+    urlLocked: true,
+    connectVia: "oauth",
   },
   {
     key: "hovio-pet",
@@ -264,6 +282,20 @@ export default function FontesDadosPage() {
       loadProviders(agentId);
     } catch {
       toast.error("Erro ao desconectar");
+    }
+  }
+
+  // Quem pode acionar as ferramentas da fonte. «Só a equipe» tira a fonte de todo canal de
+  // cliente (WhatsApp, chat do site, link público) — ela só existe no teste do painel.
+  async function setPublico(p: ToolProvider, publico: ToolProvider["publico"]) {
+    if (agentId === null || p.publico === publico) return;
+    try {
+      await api.patch(`/agents/${agentId}/tool-providers/${p.id}`, { publico });
+      toast.success(publico === "equipe" ? "Só a equipe usa esta integração" : "Clientes também podem acionar esta integração");
+      setDetail((d) => (d && d.id === p.id ? { ...d, publico } : d));
+      loadProviders(agentId);
+    } catch {
+      toast.error("Erro ao alterar quem pode usar");
     }
   }
 
@@ -506,6 +538,9 @@ export default function FontesDadosPage() {
                   <div className="min-w-0 flex items-center gap-2.5">
                     <Avatar preset={pr} nome={p.nome} />
                     <span className={`text-[14px] font-medium truncate ${FC.ink}`}>{p.nome}</span>
+                    {p.publico === "equipe" && (
+                      <span className={`shrink-0 rounded-full border ${FC.hair} px-2 py-px text-[11px] ${FC.sub}`}>Só equipe</span>
+                    )}
                   </div>
                   <span className={`text-[12px] font-mono truncate ${FC.sub}`}>{p.mcp_server_url}</span>
                   <span className={`text-[12px] ${p.last_tools_count > 0 ? FC.sub : FC.mut}`}>
@@ -581,6 +616,40 @@ export default function FontesDadosPage() {
                     {detail.last_tools_count > 0
                       ? `${detail.last_tools_count} ferramentas no último teste — clique em "Atualizar" pra ver a lista.`
                       : 'Clique em "Atualizar" pra descobrir as ferramentas.'}
+                  </div>
+                )}
+              </div>
+
+              {/* Quem pode usar — o cliente que conversa com o agente aciona ou não esta fonte */}
+              <div className={`rounded-[10px] border ${FC.hair} p-3.5`}>
+                <div className={`text-[13px] font-medium ${FC.ink}`}>Quem pode usar</div>
+                <div className="mt-2.5 grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ["equipe", "Só a equipe", "Funciona no teste do painel. Cliente no WhatsApp, no chat do site ou pelo link não aciona."],
+                      ["todos", "Equipe e clientes", "Qualquer pessoa que converse com o agente pode acionar estas ferramentas."],
+                    ] as const
+                  ).map(([valor, titulo, ajuda]) => {
+                    const ativo = detail.publico === valor;
+                    return (
+                      <button
+                        key={valor}
+                        type="button"
+                        onClick={() => setPublico(detail, valor)}
+                        aria-pressed={ativo}
+                        className={`text-left rounded-[10px] border p-3 transition-colors ${
+                          ativo ? "border-[#003083] bg-[#003083]/[0.04] dark:border-[#5b9bff] dark:bg-[#5b9bff]/[0.08]" : `${FC.hair} ${FC.hover}`
+                        }`}
+                      >
+                        <div className={`text-[13px] font-medium ${FC.ink}`}>{titulo}</div>
+                        <div className={`mt-0.5 text-[12px] leading-snug ${FC.sub}`}>{ajuda}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+                {detail.publico === "todos" && presetFor(detail)?.key === "tier-emissor" && (
+                  <div className="mt-2.5 rounded-md p-2.5 text-[12px] bg-[#E5484D]/[0.08] text-[#E5484D]">
+                    Atenção: assim um cliente pode perguntar sobre as notas fiscais da empresa e receber a resposta.
                   </div>
                 )}
               </div>

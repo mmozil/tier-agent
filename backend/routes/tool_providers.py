@@ -32,6 +32,7 @@ class ToolProviderCreate(BaseModel):
     bearer: str | None = None  # token cru — criptografado no servidor, nunca volta
     priority: int = 100
     enabled: bool = True
+    publico: str = "todos"
 
 
 class ToolProviderUpdate(BaseModel):
@@ -42,6 +43,8 @@ class ToolProviderUpdate(BaseModel):
     bearer: str | None = None
     priority: int | None = None
     enabled: bool | None = None
+    # "todos" = qualquer canal (cliente incluso) · "equipe" = só o teste do painel
+    publico: str | None = None
 
 
 class ToolProviderOut(BaseModel):
@@ -52,10 +55,20 @@ class ToolProviderOut(BaseModel):
     mcp_server_url: str
     enabled: bool
     priority: int
+    publico: str
     has_bearer: bool
     last_test_at: datetime | None
     last_test_ok: bool | None
     last_tools_count: int
+
+
+PUBLICOS = ("todos", "equipe")
+
+
+def _publico_valido(valor: str) -> str:
+    if valor not in PUBLICOS:
+        raise HTTPException(400, "publico deve ser 'todos' ou 'equipe'")
+    return valor
 
 
 def _to_out(p: TaToolProvider) -> ToolProviderOut:
@@ -67,6 +80,7 @@ def _to_out(p: TaToolProvider) -> ToolProviderOut:
         mcp_server_url=p.mcp_server_url,
         enabled=p.enabled,
         priority=p.priority,
+        publico=p.publico or "todos",
         has_bearer=bool(p.bearer_enc),
         last_test_at=p.last_test_at,
         last_test_ok=p.last_test_ok,
@@ -130,6 +144,7 @@ async def create_provider(
         bearer_enc=encrypt(payload.bearer) if payload.bearer else None,
         priority=payload.priority,
         enabled=payload.enabled,
+        publico=_publico_valido(payload.publico),
     )
     db.add(p)
     await db.commit()
@@ -156,6 +171,8 @@ async def update_provider(
         p.priority = data["priority"]
     if "enabled" in data and data["enabled"] is not None:
         p.enabled = data["enabled"]
+    if data.get("publico") is not None:
+        p.publico = _publico_valido(data["publico"])
     if "bearer" in data:  # presente → troca a credencial ("" remove)
         bearer = data["bearer"]
         p.bearer_enc = encrypt(bearer) if bearer else None

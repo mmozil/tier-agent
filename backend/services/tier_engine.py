@@ -613,6 +613,19 @@ async def _complete_with_fallback(p: TaLlmProvider, messages: list[dict], tools:
     raise RuntimeError(f"tier_engine: todos os modelos falharam. Último erro: {last_err}")
 
 
+def _restaurar_pii(valor, mapping):
+    """Devolve os dados reais no lugar dos marcadores do `pii_redactor`, em qualquer profundidade."""
+    from services import pii_redactor
+
+    if isinstance(valor, str):
+        return pii_redactor.restore(valor, mapping)
+    if isinstance(valor, dict):
+        return {k: _restaurar_pii(v, mapping) for k, v in valor.items()}
+    if isinstance(valor, list):
+        return [_restaurar_pii(v, mapping) for v in valor]
+    return valor
+
+
 async def send_message(
     tenant_id: int,
     user_content: str,
@@ -626,6 +639,7 @@ async def send_message(
     tools: list[dict] | None = None,
     history: list[dict] | None = None,
     customer_phone: str | None = None,
+    audiencia: str = "cliente",
 ) -> EngineReply:
     """Gera a resposta do agente in-process (drop-in do antigo engine_proxy.send_message).
 
@@ -633,6 +647,8 @@ async def send_message(
     se `tools` vier (ou houver tools registradas), roda o loop de function calling.
     `history`: turnos anteriores [{role, content}] pra o modelo manter contexto da
     conversa (senão "nao"/"sim" viram saudação genérica — agente "esquece" o cliente).
+    `audiencia`: quem está do outro lado. "cliente" (padrão, todo canal) NÃO recebe as
+    fontes marcadas `publico="equipe"`; só o teste do painel passa "equipe".
     """
     has_attachments = bool(attachments)
     has_history = bool(history)
@@ -699,7 +715,7 @@ async def send_message(
 
             _t_disc = time.perf_counter()
             remote_schemas, remote_handlers = await tool_provider_service.discover_agent_tools(
-                db, agent_id, customer_phone=customer_phone
+                db, agent_id, customer_phone=customer_phone, audiencia=audiencia
             )
             _d_disc = time.perf_counter() - _t_disc
             if _d_disc >= 0.05:
@@ -785,7 +801,10 @@ async def send_message(
                 handler = _TOOL_REGISTRY.get(name) or remote_handlers.get(name)
                 if handler:
                     try:
-                        result = await handler(args)
+                        # O modelo viu o CNPJ/CPF mascarado ({CNPJ_1}) e repete o marcador no
+                        # argumento: a ferramenta (sistema da própria empresa) recebe o número de
+                        # verdade. O log abaixo segue com o argumento mascarado.
+                        result = await handler(_restaurar_pii(args, pii_mapping) if pii_mapping else args)
                     except Exception as e:  # noqa: BLE001 — falha de tool NUNCA mata a resposta
                         logger.exception("tier_engine: ferramenta %s falhou", name)
                         result = f"[erro ao executar {name}: {e}]"
@@ -939,6 +958,10 @@ async def send_message(
     # gateados na presença das tools pet (antes disparavam pra qualquer agente com tools).
     _has_agenda_tools = "agendar_visita" in remote_handlers
     _has_pet_tools = any("pet_" in n for n in remote_handlers)
+    # Os freios de AGENDAMENTO só fazem sentido para quem agenda (Pet ou agenda de visita).
+    # Sem esta trava disparavam para qualquer agente com ferramenta: com o Tier Emissor ligado
+    # (09/10/2026), «a nota 15 foi confirmada?» mandava o modelo consultar a agenda do pet.
+    _agenda_ou_pet = _has_pet_tools or _has_agenda_tools
 
     _discipline_msg = None
     _brake = None
@@ -975,7 +998,7 @@ async def send_message(
             "mensagem clara: o(s) serviço(s), a data e a hora, e o valor total."
         )
     elif (
-        active_tools and text and _CONFIRMS_BOOKING.search(user_content or "")
+        active_tools and text and _agenda_ou_pet and _CONFIRMS_BOOKING.search(user_content or "")
         and not _BOOKING_OK  # nenhum agendamento criado com sucesso (mesmo que tenha tentado e falhado)
         and not _BOOKED_OK.search(text)
     ):
@@ -998,7 +1021,7 @@ async def send_message(
                 "(YYYY-MM-DDTHH:MM:SS, São Paulo). NÃO re-pergunte nem re-liste horário. Depois de criar, confirme "
                 "ao cliente com o resumo (serviços, data/hora, valor total)."
             )
-    elif active_tools and text and _HORARIOS_OK and _DENIES_SLOTS.search(text):
+    elif active_tools and text and _agenda_ou_pet and _HORARIOS_OK and _DENIES_SLOTS.search(text):
         # A ferramenta de horários RETORNOU disponibilidade, mas o agente respondeu "não tem".
         # Força ele a relatar os horários REAIS que a ferramenta devolveu (a equipe toda).
         _brake = "denies_slots"
@@ -1011,7 +1034,7 @@ async def send_message(
             "NÃO trouxe horário pra ELE. Refaça a resposta com a disponibilidade real; se o cliente já "
             "escolheu um horário da lista, AGENDE."
         )
-    elif active_tools and text and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
+    elif active_tools and text and _agenda_ou_pet and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
         "horario", "disponiv"
     ):
         _brake = "offers_slot_no_check"
@@ -1062,7 +1085,7 @@ async def send_message(
             "número pra cadastrar/buscar o cliente e siga (se não houver cadastro, cadastre AGORA com o nome "
             "do WhatsApp + esse número, sem ficar perguntando)."
         )
-    elif active_tools and text and _USER_ASKS_BOOKING.search(user_content or "") and not _called("agenda", "historico"):
+    elif active_tools and text and _agenda_ou_pet and _USER_ASKS_BOOKING.search(user_content or "") and not _called("agenda", "historico"):
         _brake = "booking_exists_query"
         _discipline_msg = (
             "(sistema) O cliente perguntou sobre um agendamento EXISTENTE (se está confirmado / qual o horário). "
@@ -1070,7 +1093,7 @@ async def send_message(
             "pet_historico_pet do pet) e responda SÓ com o que existir de verdade. Se não houver agendamento "
             "pra esse pet, diga que não encontrou e ofereça agendar — nunca confirme um horário/valor que você não verificou."
         )
-    elif active_tools and text and _USER_ASKS_HOURS.search(user_content or "") and not _called("profission"):
+    elif active_tools and text and _agenda_ou_pet and _USER_ASKS_HOURS.search(user_content or "") and not _called("profission"):
         _brake = "prof_hours"
         _discipline_msg = (
             "(sistema) O cliente perguntou o HORÁRIO/expediente de um profissional (até que horas atende hoje) "

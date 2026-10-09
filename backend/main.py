@@ -292,6 +292,8 @@ async def _ensure_tool_provider_table():
                 "ALTER TABLE ta_tool_provider ADD COLUMN IF NOT EXISTS refresh_enc TEXT",
                 "ALTER TABLE ta_tool_provider ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMP",
                 "ALTER TABLE ta_tool_provider ADD COLUMN IF NOT EXISTS token_url TEXT",
+                # Quem pode acionar (09/10/2026): 'todos' mantém o que já existia; 'equipe' = só painel
+                "ALTER TABLE ta_tool_provider ADD COLUMN IF NOT EXISTS publico VARCHAR(16) NOT NULL DEFAULT 'todos'",
             ):
                 await db.execute(_sql_text(ddl))
             await db.commit()

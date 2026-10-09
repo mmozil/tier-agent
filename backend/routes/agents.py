@@ -492,6 +492,31 @@ async def agent_playground(
     )
     system += "\n\n" + agent_runtime.build_base_directives(agent, connector_kind=kind)
 
+    # Fontes «só da equipe» (ex.: notas do Tier Emissor) existem APENAS aqui no painel — todo
+    # canal de cliente chama o motor com audiencia="cliente" e não as recebe. O aviso diz que
+    # são internas sem dizer quem escreve, para o teste do atendimento ao cliente continuar valendo.
+    from models import TaToolProvider
+
+    tem_interna = (
+        await db.execute(
+            select(TaToolProvider.id)
+            .where(
+                TaToolProvider.agent_id == agent.id,
+                TaToolProvider.enabled.is_(True),
+                TaToolProvider.publico == "equipe",
+            )
+            .limit(1)
+        )
+    ).first()
+    if tem_interna:
+        system += (
+            "\n\n# Ferramentas internas (só neste painel)\n"
+            "Algumas ferramentas consultam sistemas internos da empresa (ex.: as notas fiscais do Tier "
+            "Emissor). Elas só existem aqui, no painel da equipe — o cliente no WhatsApp não as tem. Use-as "
+            "quando a pergunta for sobre os dados da própria empresa (notas, certificado, produtos cadastrados) "
+            "e responda só com o que a ferramenta devolver."
+        )
+
     history = [
         {"role": h.get("role"), "content": h.get("content")}
         for h in (payload.history or [])
@@ -508,6 +533,7 @@ async def agent_playground(
             history=history or None,
             use_cache=False,
             session_id=f"playground-{agent.id}",
+            audiencia="equipe",  # o painel é a equipe: recebe também as fontes internas
         )
     except Exception as e:  # noqa: BLE001 — inclui ProvidersAllDisabled
         raise HTTPException(502, f"O agente não respondeu: {e}") from e

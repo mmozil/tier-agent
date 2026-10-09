@@ -132,22 +132,30 @@ def _make_handler(
     return _handler
 
 
+def consulta_fontes(agent_id: int, audiencia: str = "cliente"):
+    """As fontes ativas do agente que `audiencia` pode acionar. Qualquer valor que não seja
+    exatamente "equipe" é tratado como cliente — na dúvida, a fonte interna fica de fora."""
+    q = select(TaToolProvider).where(TaToolProvider.agent_id == agent_id, TaToolProvider.enabled.is_(True))
+    if audiencia != "equipe":
+        q = q.where(TaToolProvider.publico != "equipe")
+    return q.order_by(TaToolProvider.priority.asc(), TaToolProvider.id.asc())
+
+
 async def discover_agent_tools(
-    db: AsyncSession, agent_id: int, customer_phone: str | None = None
+    db: AsyncSession, agent_id: int, customer_phone: str | None = None, audiencia: str = "cliente"
 ) -> tuple[list[dict], dict[str, Callable[[dict], Awaitable[str]]]]:
     """Descobre as tools MCP de todos os providers ativos do agente.
 
     Retorna `(schemas OpenAI-function, mapa nome->handler)`. O nome de cada tool é
     prefixado com o id do provider (`mN_<tool>`) pra evitar colisão entre servidores.
     Falha de um provider degrada com log — não derruba os demais nem a resposta.
+
+    🔒 `audiencia`: fonte com `publico="equipe"` (dado interno da empresa, ex.: as notas do
+    Tier Emissor) só entra quando quem fala é a equipe no painel. Todo canal — WhatsApp,
+    chat do site, link público `/c/<slug>` — chama com "cliente" (o padrão) e não a recebe.
+    Antes de 09/10/2026 toda ferramenta ligada ficava ao alcance de qualquer cliente.
     """
-    rows = (
-        await db.execute(
-            select(TaToolProvider)
-            .where(TaToolProvider.agent_id == agent_id, TaToolProvider.enabled.is_(True))
-            .order_by(TaToolProvider.priority.asc(), TaToolProvider.id.asc())
-        )
-    ).scalars().all()
+    rows = (await db.execute(consulta_fontes(agent_id, audiencia))).scalars().all()
 
     schemas: list[dict] = []
     handlers: dict[str, Callable[[dict], Awaitable[str]]] = {}
