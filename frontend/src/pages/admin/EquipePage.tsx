@@ -17,6 +17,8 @@ interface Member {
   /** Etapa 2/3 do caminho A: quem veio do ERP tem nome e papel definidos lá (cargo). */
   origem?: "agent" | "erp";
   erp_owner_id?: string | null;
+  /** Nome do cargo no ERP («Consultor», «Secretaria»). */
+  cargo?: string | null;
   /** Os números (conectores de WhatsApp) desta pessoa. */
   numeros?: { id: number; rotulo: string; modo: string; status?: string }[];
 }
@@ -334,19 +336,30 @@ export default function EquipePage() {
                       <Link2 className="w-3.5 h-3.5" /> Copiar link
                     </Button>
                   )}
-                  {/* Papel de quem veio do ERP é só leitura: quem manda é o cargo lá. */}
-                  <span title={m.origem === "erp" ? "Definido pelo cargo no ERP" : undefined}>
-                    <Select
-                      value={m.role}
-                      onChange={(v) => updateRole(m, v)}
-                      options={[
-                        { value: "atendente", label: ROLE_LABEL.atendente },
-                        { value: "admin", label: ROLE_LABEL.admin },
-                      ]}
-                      disabled={m.origem === "erp"}
-                      className="w-[132px]"
-                    />
-                  </span>
+                  {/* Papel de quem veio do ERP é só leitura: quem manda é o cargo lá — e
+                      a tela mostra o NOME do cargo («Consultor», «Secretaria»), que é a
+                      língua da equipe (14/10/2026). Sem cargo, cai no papel. */}
+                  {m.origem === "erp" && m.cargo ? (
+                    <span
+                      title={`Cargo no ERP · ${m.role === "admin" ? "vê todas as conversas" : "vê só as conversas dela"}`}
+                      className={`inline-flex items-center h-8 px-3 rounded-[8px] border ${FC.hair} text-[12.5px] ${FC.dim} w-[132px] truncate`}
+                    >
+                      {m.cargo}
+                    </span>
+                  ) : (
+                    <span title={m.origem === "erp" ? "Definido pelo cargo no ERP" : undefined}>
+                      <Select
+                        value={m.role}
+                        onChange={(v) => updateRole(m, v)}
+                        options={[
+                          { value: "atendente", label: ROLE_LABEL.atendente },
+                          { value: "admin", label: ROLE_LABEL.admin },
+                        ]}
+                        disabled={m.origem === "erp"}
+                        className="w-[132px]"
+                      />
+                    </span>
+                  )}
                   {m.status !== "invited" && (
                     <Button variant="secondary" size="sm" onClick={() => toggleStatus(m)}>
                       {m.status === "active" ? "Desativar" : "Ativar"}

@@ -165,6 +165,11 @@ class SsoIn(BaseModel):
     owner_id: str | None = None
     nome: str | None = None
     role: str | None = None  # admin | atendente (o ERP deriva do cargo)
+    # 14/10/2026 — o NOME do cargo no ERP («Consultor», «Secretaria»), para a tela
+    # falar a língua da equipe, e se esse cargo atribui conversas. Só mexe no
+    # membro quando o ERP manda o campo (ERP antigo não apaga o que já existe).
+    cargo: str | None = None
+    pode_atribuir: bool | None = None
 
 
 class SsoOut(BaseModel):
@@ -209,6 +214,12 @@ async def _membro_do_erp(db: AsyncSession, tenant: TaTenant, payload: SsoIn) -> 
             member.role, mudou = role, True
         if member.status != "active":
             member.status, mudou = "active", True
+        enviados = payload.model_fields_set
+        cargo = (payload.cargo or "").strip()[:80] or None
+        if "cargo" in enviados and member.cargo != cargo:
+            member.cargo, mudou = cargo, True
+        if "pode_atribuir" in enviados and member.pode_atribuir != payload.pode_atribuir:
+            member.pode_atribuir, mudou = payload.pode_atribuir, True
         if mudou:
             await db.commit()
         return member
@@ -222,6 +233,8 @@ async def _membro_do_erp(db: AsyncSession, tenant: TaTenant, payload: SsoIn) -> 
     member = TaMember(
         tenant_id=tenant.id, nome=nome, email=email, password_hash=None, role=role, status="active",
         erp_owner_id=payload.owner_id,
+        cargo=(payload.cargo or "").strip()[:80] or None,
+        pode_atribuir=payload.pode_atribuir,
     )
     db.add(member)
     await db.commit()

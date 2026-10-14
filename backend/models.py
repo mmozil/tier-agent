@@ -634,6 +634,12 @@ class TaMember(Base):
     # este membro É. Membro criado pelo SSO do ERP não tem senha aqui — a identidade
     # e o papel vêm do ERP a cada entrada. Runtime DDL em main.py.
     erp_owner_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Cargo da pessoa no ERP (ex.: «Consultor», «Secretaria») — o nome que a
+    # equipe usa. O `role` continua sendo o que decide visão (admin|atendente).
+    cargo: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # False = o cargo dela no ERP não atribui conversas (sem «Ações da conversa»).
+    # None = sem regra vinda do ERP: vale o comportamento de sempre.
+    pode_atribuir: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
     # status: active | disabled
     online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

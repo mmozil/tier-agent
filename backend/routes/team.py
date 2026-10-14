@@ -36,6 +36,7 @@ class MemberOut(BaseModel):
     # Etapa 2/3 do caminho A (09/09/2026): quem veio do ERP tem nome e papel definidos lá
     erp_owner_id: str | None = None
     origem: str = "agent"  # agent | erp
+    cargo: str | None = None  # nome do cargo no ERP (só leitura aqui)
     numeros: list[dict] = []  # [{id, rotulo, modo, status}] — os números desta pessoa
 
     model_config = {"from_attributes": True}
@@ -67,8 +68,17 @@ def _require_manager(user: CurrentUser) -> None:
 
 
 @router.get("/me", response_model=dict)
-async def whoami(user: CurrentUser = Depends(get_current_user)):
+async def whoami(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Quem sou eu — usado pelo frontend pra saber papel/permissões."""
+    cargo, pode_atribuir = None, True
+    if user.member_id:
+        m = await db.get(TaMember, user.member_id)
+        if m is not None:
+            cargo = m.cargo
+            pode_atribuir = m.pode_atribuir is not False
     return {
         "tenant_id": user.tenant_id,
         "email": user.email,
@@ -78,6 +88,10 @@ async def whoami(user: CurrentUser = Depends(get_current_user)):
         "member_name": user.member_name,
         # Etapa 2: dono/admin veem todas as conversas; atendente só as dela (filtro no servidor)
         "ve_tudo": user.role in ("owner", "admin"),
+        # 14/10/2026: o cargo do ERP e se ele atribui conversas (a tela some com
+        # «Ações da conversa» quando não; a rota recusa do mesmo jeito).
+        "cargo": cargo,
+        "pode_atribuir": pode_atribuir,
     }
 
 
@@ -104,7 +118,7 @@ async def list_members(
             id=m.id, nome=m.nome, email=m.email, role=m.role, status=m.status, online=m.online,
             max_conversas=m.max_conversas, invite_token=m.invite_token,
             erp_owner_id=m.erp_owner_id, origem=("erp" if m.erp_owner_id else "agent"),
-            numeros=por_membro.get(m.id, []),
+            numeros=por_membro.get(m.id, []), cargo=m.cargo,
         )
         for m in rows
     ]

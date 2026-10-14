@@ -609,6 +609,20 @@ async def unsnooze(
     return {"conversation_id": conv.id, "snoozed_until": None}
 
 
+async def _exige_pode_atribuir(db: AsyncSession, user: CurrentUser) -> None:
+    """Atribuir pessoa, time e prioridade é das «Ações da conversa». Quem o
+    cargo no ERP não deixa atribuir (ex.: a Consultora do CCDA, 14/10/2026 — o
+    Ganho dela já passa o card para a Secretaria) leva 403 aqui, não só some o
+    painel na tela."""
+    if not user.member_id:
+        return
+    from models import TaMember
+
+    m = await db.get(TaMember, user.member_id)
+    if m is not None and m.pode_atribuir is False:
+        raise HTTPException(403, "Seu cargo não atribui conversas.")
+
+
 class AssignIn(BaseModel):
     member_id: int | None = None  # null = desatribuir
 
@@ -623,6 +637,7 @@ async def assign(
     """Atribui a conversa a um atendente (member_id) ou desatribui (null)."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
+    await _exige_pode_atribuir(db, user)
     conv = await _get_owned_conversation(db, conversation_id, user)
     if body.member_id is None:
         conv.assigned_member_id = None
@@ -656,6 +671,7 @@ async def set_priority(
     """Define a prioridade da conversa (none/low/medium/high/urgent)."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
+    await _exige_pode_atribuir(db, user)
     conv = await _get_owned_conversation(db, conversation_id, user)
     p = (body.priority or "none").lower()
     if p not in _VALID_PRIORITIES:
@@ -679,6 +695,7 @@ async def set_team(
     """Atribui a conversa a um Time (team_id) ou desatribui (null)."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
+    await _exige_pode_atribuir(db, user)
     conv = await _get_owned_conversation(db, conversation_id, user)
     if body.team_id is None:
         conv.team_id = None

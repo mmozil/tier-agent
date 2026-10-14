@@ -393,7 +393,7 @@ export default function ConversasPage() {
   const gravador = useGravadorVoz();
   const [members, setMembers] = useState<Member[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
-  const [me, setMe] = useState<{ role: string; member_id: number | null; ve_tudo?: boolean } | null>(null);
+  const [me, setMe] = useState<{ role: string; member_id: number | null; ve_tudo?: boolean; pode_atribuir?: boolean } | null>(null);
   const [scope, setScope] = useState<"todas" | "mine" | "unassigned" | "snoozed">("todas");
   const [mentions, setMentions] = useState<number[]>([]);
   const [cleanMenu, setCleanMenu] = useState(false);
@@ -504,7 +504,7 @@ export default function ConversasPage() {
     load();
     api.get<Member[]>("/team/members").then(({ data }) => setMembers(data)).catch(() => {});
     api.get<Team[]>("/team/teams").then(({ data }) => setTeams(data)).catch(() => {});
-    api.get<{ role: string; member_id: number | null; ve_tudo?: boolean }>("/team/me").then(({ data }) => setMe(data)).catch(() => {});
+    api.get<{ role: string; member_id: number | null; ve_tudo?: boolean; pode_atribuir?: boolean }>("/team/me").then(({ data }) => setMe(data)).catch(() => {});
     api.get<{ id: number; name: string }[]>("/macros").then(({ data }) => setMacros(data)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1575,6 +1575,11 @@ export default function ConversasPage() {
               <div className="mt-3"><StatusBadge status={openConv.status} /></div>
             </div>
 
+            {/* 14/10/2026: cargo do ERP que não atribui conversas (ex.: Consultora do
+                CCDA — o Ganho dela já passa o card para a Secretaria) não vê esta
+                seção. A rota recusa do mesmo jeito (403); isto é para a tela não
+                oferecer o que o servidor nega. */}
+            {me?.pode_atribuir !== false && (
             <AccordionSection title="Ações da conversa">
               <div className="space-y-3">
                 <div>
@@ -1626,6 +1631,7 @@ export default function ConversasPage() {
                 </div>
               </div>
             </AccordionSection>
+            )}
 
             <AccordionSection title="Etiquetas da conversa">
               <div className="flex flex-wrap items-center gap-1.5">

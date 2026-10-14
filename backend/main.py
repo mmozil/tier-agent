@@ -125,6 +125,9 @@ async def _ensure_message_content_column():
                 "CREATE INDEX IF NOT EXISTS ix_ta_conversation_connector_id ON ta_conversation (connector_id)",
                 # Etapa 3: membro vindo do ERP (pessoa federada) — chave = owner_id do ERP
                 "ALTER TABLE ta_member ADD COLUMN IF NOT EXISTS erp_owner_id VARCHAR(64)",
+                # 14/10/2026: cargo do ERP e se o cargo atribui conversas
+                "ALTER TABLE ta_member ADD COLUMN IF NOT EXISTS cargo VARCHAR(80)",
+                "ALTER TABLE ta_member ADD COLUMN IF NOT EXISTS pode_atribuir BOOLEAN",
                 "CREATE INDEX IF NOT EXISTS ix_ta_member_erp_owner_id ON ta_member (erp_owner_id)",
                 # Etapa 2: de quem é o número + quem mandou a mensagem humana
                 "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS member_id INTEGER",
