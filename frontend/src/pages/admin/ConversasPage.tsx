@@ -11,6 +11,7 @@ import {
 import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
 import MidiaDaMensagem, { linkificar, type Anexo } from "@/components/inbox/MidiaDaMensagem";
+import TarefasCrm from "@/components/inbox/TarefasCrm";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
 
@@ -525,6 +526,30 @@ export default function ConversasPage() {
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, openId]);
+
+  // M7-257 (15/10/2026) — `?telefone=55…`: o WhatsApp do contato no CRM abre aqui a
+  // conversa desse número. Busca no servidor (a lista só tem as 200 mais recentes) e
+  // respeita quem pode ver: sem conversa visível, avisa em vez de abrir outra coisa.
+  const telefoneAlvo = useRef(new URLSearchParams(window.location.search).get("telefone"));
+  useEffect(() => {
+    const tel = telefoneAlvo.current;
+    if (!tel) return;
+    telefoneAlvo.current = null;
+    (async () => {
+      try {
+        const { data } = await api.get<{ id: number }>("/conversations/por-telefone", { params: { telefone: tel } });
+        const det = await api.get<{ conversation?: Conversation }>(`/conversations/${data.id}`);
+        if (det.data.conversation) await openConversation(det.data.conversation);
+      } catch (e: any) {
+        if (e?.response?.status === 404) {
+          toast(`Ainda não há conversa com ${fmtPhone(tel)} neste WhatsApp.`, { duration: 7000 });
+        } else {
+          toast.error("Não consegui abrir a conversa deste número");
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const openParam = new URLSearchParams(window.location.search).get("open");
@@ -1574,6 +1599,11 @@ export default function ConversasPage() {
               )}
               <div className="mt-3"><StatusBadge status={openConv.status} /></div>
             </div>
+
+            {/* M7-258 (15/10/2026) — tarefa do card no CRM, de dentro da conversa. */}
+            <AccordionSection title="Tarefas no CRM">
+              <TarefasCrm key={openConv.id} conversaId={openConv.id} crmOpportunityId={openConv.crm_opportunity_id ?? null} />
+            </AccordionSection>
 
             {/* 14/10/2026: cargo do ERP que não atribui conversas (ex.: Consultora do
                 CCDA — o Ganho dela já passa o card para a Secretaria) não vê esta

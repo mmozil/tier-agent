@@ -251,6 +251,57 @@ async def crm_funis(user: CurrentUser = Depends(get_current_user)):
         return {"funis": []}
 
 
+def _variantes_do_numero(digitos: str) -> list[str]:
+    """O número como o WhatsApp pode ter gravado: com e sem o 9 do celular (55 + DDD +
+    9 + 8). O ERP guarda «(11) 94082-8393»; conversa antiga pode estar sem o 9."""
+    v = {digitos}
+    if not digitos.startswith("55") and len(digitos) in (10, 11):
+        digitos = "55" + digitos
+        v.add(digitos)
+    if digitos.startswith("55") and len(digitos) == 13 and digitos[4] == "9":
+        v.add(digitos[:4] + digitos[5:])
+    elif digitos.startswith("55") and len(digitos) == 12:
+        v.add(digitos[:4] + "9" + digitos[4:])
+    return sorted(v)
+
+
+@router.get("/por-telefone", response_model=dict)
+async def conversa_por_telefone(
+    telefone: str = Query(..., min_length=8, max_length=40),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """A conversa mais recente com este número, entre as que ESTA pessoa enxerga
+    (15/10/2026, M7-257 — o WhatsApp do contato no CRM abre aqui dentro).
+
+    Mesma régua da lista (`visao.filtro_para`): quem não vê a conversa recebe 404,
+    não a conversa. Declarada ANTES de `/{conversation_id}` — senão «por-telefone»
+    cairia na rota do id e daria 422."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    digitos = re.sub(r"\D", "", telefone)
+    if len(digitos) < 10:
+        raise HTTPException(422, "Telefone inválido")
+    agent_ids = await _tenant_agent_ids(db, user.tenant_id)
+    if not agent_ids:
+        raise HTTPException(404, "Ainda não há conversa com este número.")
+    variantes = _variantes_do_numero(digitos)
+    casa = or_(
+        *[TaConversation.external_id == v for v in variantes],
+        *[TaConversation.external_id.like(f"{v}@%") for v in variantes],
+    )
+    stmt = (
+        select(TaConversation.id)
+        .where(TaConversation.agent_id.in_(agent_ids), casa, await visao.filtro_para(db, user))
+        .order_by(TaConversation.last_message_at.desc().nulls_last(), TaConversation.id.desc())
+        .limit(1)
+    )
+    cid = (await db.execute(stmt)).scalar()
+    if not cid:
+        raise HTTPException(404, "Ainda não há conversa com este número.")
+    return {"id": int(cid)}
+
+
 @router.get("/{conversation_id}", response_model=dict)
 async def conversation_detail(
     conversation_id: int,
@@ -1067,3 +1118,81 @@ async def bulk_delete(
     count = await _purge_conversations(db, ids)
     await db.commit()
     return {"deleted": ids, "count": count}
+
+
+# ── Tarefas do card no CRM, de dentro da conversa (15/10/2026, M7-258) ────────
+# O ERP acha os cards do contato (DDD + 8 últimos do número + o ponteiro da
+# conversa) e recusa card que não seja dele. Aqui só passa quem enxerga a conversa.
+
+
+class TarefaCrmIn(BaseModel):
+    oportunidade_id: int
+    tipo: str = "TAREFA"
+    titulo: str
+    descricao: str | None = None
+    # ISO com fuso (a tela manda `…Z`); o ERP grava em UTC.
+    data_agendada: str | None = None
+    duracao_minutos: int | None = None
+
+
+def _telefone_da_conversa(conv: TaConversation) -> str | None:
+    from services.historico_contato import chave_do_contato
+
+    return chave_do_contato(conv.external_id, conv.connector_kind) or None
+
+
+@router.get("/{conversation_id}/crm/tarefas", response_model=dict)
+async def tarefas_do_crm(
+    conversation_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cards do contato no CRM (abertos primeiro) com as tarefas pendentes."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user)
+    from services import erp_crm_client
+
+    if not erp_crm_client.integracao_ativa():
+        return {"disponivel": False, "cards": []}
+    try:
+        cards = await erp_crm_client.tarefas_do_contato(
+            agent_tenant_id=user.tenant_id,
+            conversa_externa_id=str(conv.id),
+            telefone=_telefone_da_conversa(conv),
+        )
+    except erp_crm_client.ErpCrmError as e:
+        raise HTTPException(502, str(e)) from e
+    return {"disponivel": True, "cards": cards}
+
+
+@router.post("/{conversation_id}/crm/tarefas", response_model=dict)
+async def criar_tarefa_no_crm(
+    conversation_id: int,
+    body: TarefaCrmIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cria a tarefa no card escolhido. Quem criou vai pelo e-mail: o ERP casa com a
+    pessoa da equipe e o histórico do card mostra o nome dela."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user)
+    from services import erp_crm_client
+
+    if not erp_crm_client.integracao_ativa():
+        raise HTTPException(503, "Integração com o CRM (Tier Empresas) não está configurada.")
+    if not body.titulo.strip():
+        raise HTTPException(422, "Escreva o que é a tarefa.")
+    corpo = {
+        **body.model_dump(),
+        "titulo": body.titulo.strip()[:200],
+        "autor_email": user.email,
+        "autor_nome": getattr(user, "member_name", None) or user.email,
+        "conversa_externa_id": str(conv.id),
+        "telefone": _telefone_da_conversa(conv),
+    }
+    try:
+        return await erp_crm_client.criar_tarefa(agent_tenant_id=user.tenant_id, corpo=corpo)
+    except erp_crm_client.ErpCrmError as e:
+        raise HTTPException(502, str(e)) from e

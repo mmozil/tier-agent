@@ -189,3 +189,59 @@ async def listar_funis(*, agent_tenant_id: int) -> list[dict]:
         raise ErpCrmError(str(detail or f"ERP retornou {r.status_code}"))
 
     return r.json().get("funis") or []
+
+
+# ── Tarefa do card dentro da conversa (15/10/2026, M7-258) ────────────────────
+# Pedido do dono: criar tarefa de dentro do Atendimento, ligada ao card do contato.
+# O ERP acha os cards pelo NÚMERO (DDD + 8 últimos) e pelo ponteiro da conversa, e
+# recusa card que não seja do contato.
+
+
+def _base_e_headers() -> tuple[str, dict]:
+    settings = get_settings()
+    secret = (settings.tier_erp_integration_secret or "").strip()
+    if not secret:
+        raise ErpCrmError("Integração ERP não configurada (TIER_ERP_INTEGRATION_SECRET).")
+    base = (settings.tier_erp_api_url or "https://api.tier.finance").rstrip("/")
+    return base, {"X-Tier-Integration-Secret": secret, "X-Sync-Source": "tier-agent"}
+
+
+def _erro_do_erp(r: httpx.Response) -> ErpCrmError:
+    try:
+        detail = r.json().get("detail")
+    except Exception:  # noqa: BLE001 — corpo não-JSON
+        detail = (r.text or "")[:200]
+    return ErpCrmError(str(detail or f"ERP retornou {r.status_code}"))
+
+
+async def tarefas_do_contato(*, agent_tenant_id: int, conversa_externa_id: str, telefone: str | None) -> list[dict]:
+    """Cards do contato (abertos primeiro) com as tarefas pendentes de cada um."""
+    base, headers = _base_e_headers()
+    params = {"agent_tenant_id": agent_tenant_id, "conversa_externa_id": conversa_externa_id}
+    if telefone:
+        params["telefone"] = telefone
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as cli:
+            r = await cli.get(f"{base}/api/tier-empresas/vendas/crm/agent/tarefas-do-contato", params=params, headers=headers)
+    except httpx.HTTPError as e:
+        raise ErpCrmError(f"Falha de rede ao ler os cards do CRM: {e}") from e
+    if r.status_code >= 400:
+        raise _erro_do_erp(r)
+    return r.json().get("cards") or []
+
+
+async def criar_tarefa(*, agent_tenant_id: int, corpo: dict) -> dict:
+    """Cria a tarefa no card. `corpo` = campos da TarefaDoAgentIn do ERP."""
+    base, headers = _base_e_headers()
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as cli:
+            r = await cli.post(
+                f"{base}/api/tier-empresas/vendas/crm/agent/tarefas",
+                json={**corpo, "agent_tenant_id": agent_tenant_id},
+                headers=headers,
+            )
+    except httpx.HTTPError as e:
+        raise ErpCrmError(f"Falha de rede ao criar a tarefa no CRM: {e}") from e
+    if r.status_code >= 400:
+        raise _erro_do_erp(r)
+    return r.json()
