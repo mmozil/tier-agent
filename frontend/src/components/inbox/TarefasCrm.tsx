@@ -154,7 +154,9 @@ export default function TarefasCrm({ conversaId, crmOpportunityId }: { conversaI
   }
 
   return (
-    <div className="space-y-3">
+    // `pt-1`: a sanfona corta o que encosta no topo (overflow hidden) — sem o respiro,
+    // a borda do card selecionado sumia em cima.
+    <div className="space-y-3 pt-1">
       {/* O card — mais de um, escolhe; um só, mostra. */}
       <div className="space-y-1.5">
         {cards.map((c) => {
