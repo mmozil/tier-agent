@@ -11,7 +11,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
@@ -108,10 +108,28 @@ async def list_members(
         )
     ).scalars().all()
     por_membro: dict[int, list[dict]] = {}
-    for n in await numeros_svc.numeros_do_tenant(db, user.tenant_id):
+    numeros = await numeros_svc.numeros_do_tenant(db, user.tenant_id)
+    for n in numeros:
         if n.get("member_id"):
             por_membro.setdefault(n["member_id"], []).append(
                 {"id": n["id"], "rotulo": n["rotulo"], "modo": n["modo"], "status": n["status"]}
+            )
+    # Números que a pessoa DIVIDE com a responsável (16/10/2026, `ta_connector_membro`).
+    por_id = {n["id"]: n for n in numeros}
+    for cid, mid in (
+        await db.execute(
+            text(
+                "SELECT cm.connector_id, cm.member_id FROM ta_connector_membro cm"
+                " JOIN ta_member m ON m.id = cm.member_id WHERE m.tenant_id = :t"
+            ),
+            {"t": user.tenant_id},
+        )
+    ).all():
+        n = por_id.get(cid)
+        if n:
+            por_membro.setdefault(mid, []).append(
+                {"id": n["id"], "rotulo": n["rotulo"], "modo": n["modo"], "status": n["status"],
+                 "compartilhado": True}
             )
     return [
         MemberOut(

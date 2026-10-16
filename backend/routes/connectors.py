@@ -7,7 +7,7 @@ import secrets as _secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
@@ -578,6 +578,63 @@ async def set_connector_member(
     await db.commit()
     await db.refresh(c)
     return _serialize(c)
+
+
+async def _numero_e_membro_do_tenant(db: AsyncSession, connector_id: int, member_id: int, user: CurrentUser):
+    if user.role not in ("owner", "admin"):
+        raise HTTPException(403, "Apenas dono/admin pode mudar quem vê o número")
+    c = await db.get(TaConnector, connector_id)
+    if not c:
+        raise HTTPException(404, "Conector não encontrado")
+    await _ensure_agent_owned(db, c.agent_id, user)
+    from models import TaMember
+
+    m = await db.get(TaMember, member_id)
+    if not m or m.tenant_id != user.tenant_id:
+        raise HTTPException(404, "Membro não encontrado")
+    return c, m
+
+
+@router.post("/{connector_id}/membros/{member_id}")
+async def adicionar_pessoa_ao_numero(
+    connector_id: int,
+    member_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mais uma pessoa que VÊ as conversas deste número (16/10/2026).
+
+    Padrão Chatwoot/Zendesk: o número é da EQUIPE (o da Secretaria é das quatro
+    pessoas da Secretaria), não de uma pessoa só. O `member_id` do conector segue
+    sendo a responsável; estas são as outras. Quem vê o quê: `visao_conversas`."""
+    c, m = await _numero_e_membro_do_tenant(db, connector_id, member_id, user)
+    if c.member_id != m.id:
+        await db.execute(
+            text(
+                "INSERT INTO ta_connector_membro (connector_id, member_id) VALUES (:c, :m)"
+                " ON CONFLICT DO NOTHING"
+            ),
+            {"c": c.id, "m": m.id},
+        )
+        await db.commit()
+    return {"connector_id": c.id, "member_id": m.id, "compartilhado": c.member_id != m.id}
+
+
+@router.delete("/{connector_id}/membros/{member_id}")
+async def tirar_pessoa_do_numero(
+    connector_id: int,
+    member_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tira a pessoa da lista de quem vê este número (não mexe na responsável)."""
+    c, m = await _numero_e_membro_do_tenant(db, connector_id, member_id, user)
+    await db.execute(
+        text("DELETE FROM ta_connector_membro WHERE connector_id = :c AND member_id = :m"),
+        {"c": c.id, "m": m.id},
+    )
+    await db.commit()
+    return {"connector_id": c.id, "member_id": m.id, "removido": True}
 
 
 class ConnectorAssinaturaIn(BaseModel):

@@ -19,8 +19,9 @@ interface Member {
   erp_owner_id?: string | null;
   /** Nome do cargo no ERP («Consultor», «Secretaria»). */
   cargo?: string | null;
-  /** Os números (conectores de WhatsApp) desta pessoa. */
-  numeros?: { id: number; rotulo: string; modo: string; status?: string }[];
+  /** Os números (conectores de WhatsApp) desta pessoa. `compartilhado` = ela não é a
+   *  responsável, divide o número com outras (16/10/2026, padrão Chatwoot). */
+  numeros?: { id: number; rotulo: string; modo: string; status?: string; compartilhado?: boolean }[];
 }
 
 /** Um número do tenant, como o /connectors devolve (só o que a Equipe precisa). */
@@ -75,26 +76,41 @@ export default function EquipePage() {
   }
 
   const gestor = !me || me.role === "owner" || me.role === "admin";
-  // Números ainda sem dona — só eles entram no «+ número».
-  const numerosLivres = numeros.filter((n) => !n.member_id);
+  // «+ número» oferece todo número que a pessoa ainda não tem. Sem responsável, ela vira
+  // a responsável; com responsável, ela passa a DIVIDIR o número (16/10/2026 — padrão
+  // Chatwoot/Zendesk: o número da Secretaria é da equipe, não de uma pessoa só).
+  const numerosParaAdicionar = (m: Member) => {
+    const ja = new Set((m.numeros || []).map((n) => n.id));
+    return numeros.filter((n) => !ja.has(n.id));
+  };
   const rotuloNumero = (n: Numero) => n.config_summary?.phone && n.config_summary.phone !== "—" ? n.config_summary.phone : `#${n.id}`;
 
   // Etapa 2 do caminho A: diz de QUEM é o número. A conversa que entrar por ele
   // nasce atribuída à pessoa, e só ela (e dono/admin) a vê.
   async function vincularNumero(m: Member, connectorId: number | null) {
     if (!connectorId) return;
+    const num = numeros.find((n) => n.id === connectorId);
     try {
-      await api.put(`/connectors/${connectorId}/member`, { member_id: m.id });
-      toast.success(`Número vinculado a ${m.nome}`);
+      if (num?.member_id && num.member_id !== m.id) {
+        await api.post(`/connectors/${connectorId}/membros/${m.id}`);
+        toast.success(`${m.nome} também vê este número`);
+      } else {
+        await api.put(`/connectors/${connectorId}/member`, { member_id: m.id });
+        toast.success(`Número vinculado a ${m.nome}`);
+      }
       load();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || "Erro ao vincular número");
     }
   }
 
-  async function desvincularNumero(connectorId: number) {
+  async function desvincularNumero(connectorId: number, m?: Member, compartilhado?: boolean) {
     try {
-      await api.put(`/connectors/${connectorId}/member`, { member_id: null });
+      if (compartilhado && m) {
+        await api.delete(`/connectors/${connectorId}/membros/${m.id}`);
+      } else {
+        await api.put(`/connectors/${connectorId}/member`, { member_id: null });
+      }
       load();
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || "Erro ao desvincular número");
@@ -304,29 +320,30 @@ export default function EquipePage() {
                     {/* Os números desta pessoa (Etapa 2 do caminho A) */}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       {(m.numeros || []).map((n) => (
-                        <span key={n.id} className={`inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[12px] tabular-nums ${FC.ink}`} title={n.modo === "registro" ? "Número em modo registro (sem IA)" : "Número com agente"}>
+                        <span key={n.id} className={`inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[12px] tabular-nums ${FC.ink}`} title={`${n.compartilhado ? "Divide este número com a equipe · " : "Responsável pelo número · "}${n.modo === "registro" ? "modo registro (sem IA)" : "com agente"}`}>
                           <Smartphone className="w-3 h-3 opacity-60" /> {n.rotulo}
+                          {n.compartilhado && <span className={`text-[9px] font-semibold uppercase tracking-wide ${FC.mut}`}>equipe</span>}
                           {n.modo === "registro" && <span className="text-[9px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">sem IA</span>}
                           {gestor && (
-                            <button onClick={() => desvincularNumero(n.id)} className="ml-0.5 text-[#262626]/40 dark:text-[#6b7280] hover:text-[#c0362c] dark:hover:text-[#ff6b5e]" title="Desvincular número">
+                            <button onClick={() => desvincularNumero(n.id, m, n.compartilhado)} className="ml-0.5 text-[#262626]/40 dark:text-[#6b7280] hover:text-[#c0362c] dark:hover:text-[#ff6b5e]" title={n.compartilhado ? "Tirar desta pessoa" : "Desvincular número"}>
                               <X className="w-3 h-3" />
                             </button>
                           )}
                         </span>
                       ))}
-                      {gestor && numerosLivres.length > 0 && (
+                      {gestor && numerosParaAdicionar(m).length > 0 && (
                         <Select
                           value={null}
                           onChange={(v) => vincularNumero(m, Number(v) || null)}
-                          options={numerosLivres.map((num) => ({
+                          options={numerosParaAdicionar(m).map((num) => ({
                             value: num.id,
-                            label: `${rotuloNumero(num)}${num.modo === "registro" ? " · sem IA" : ""}`,
+                            label: `${rotuloNumero(num)}${num.member_id ? " · equipe" : ""}${num.modo === "registro" ? " · sem IA" : ""}`,
                           }))}
                           placeholder="+ número"
                           className="w-[150px]"
                         />
                       )}
-                      {(m.numeros || []).length === 0 && numerosLivres.length === 0 && (
+                      {(m.numeros || []).length === 0 && numerosParaAdicionar(m).length === 0 && (
                         <span className={`text-[11px] ${FC.mut}`}>sem número próprio</span>
                       )}
                     </div>

@@ -135,6 +135,14 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS member_id INTEGER",
                 # 07/10/2026: «*Nome:*» na frente da resposta do painel (número dividido)
                 "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS assinar_nome BOOLEAN NOT NULL DEFAULT FALSE",
+                # 16/10/2026: número com VÁRIAS pessoas (padrão Chatwoot/Zendesk) — o
+                # `member_id` segue sendo o responsável; aqui ficam as outras que também veem.
+                "CREATE TABLE IF NOT EXISTS ta_connector_membro ("
+                " connector_id INTEGER NOT NULL REFERENCES ta_connector(id) ON DELETE CASCADE,"
+                " member_id INTEGER NOT NULL REFERENCES ta_member(id) ON DELETE CASCADE,"
+                " created_at TIMESTAMP DEFAULT now(),"
+                " PRIMARY KEY (connector_id, member_id))",
+                "CREATE INDEX IF NOT EXISTS ix_ta_connector_membro_member ON ta_connector_membro (member_id)",
             ):
                 await db.execute(_sql_text(ddl))
             # Macros (paridade Chatwoot) — tabela criada em runtime (sem Alembic)

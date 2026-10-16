@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select, true
+from sqlalchemy import or_, select, text, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import TaAgent, TaConnector, TaConversation
@@ -50,7 +50,10 @@ def exigir_gestor(user: CurrentUser, acao: str = "fazer isto") -> None:
 
 
 async def conectores_do_membro(db: AsyncSession, tenant_id: int, member_id: int | None) -> list[int]:
-    """Os números (ta_connector.id) que pertencem a esta pessoa, dentro do tenant."""
+    """Os números (ta_connector.id) desta pessoa dentro do tenant: os que ela é a
+    RESPONSÁVEL (`ta_connector.member_id`) e os que divide com outras pessoas
+    (`ta_connector_membro`, 16/10/2026 — padrão Chatwoot/Zendesk: o número da
+    Secretaria é da equipe inteira, não de uma pessoa só)."""
     if not member_id:
         return []
     rows = (
@@ -60,7 +63,20 @@ async def conectores_do_membro(db: AsyncSession, tenant_id: int, member_id: int 
             .where(TaAgent.tenant_id == tenant_id, TaConnector.member_id == member_id)
         )
     ).all()
-    return [r[0] for r in rows]
+    ids = {r[0] for r in rows}
+    compartilhados = (
+        await db.execute(
+            text(
+                "SELECT cm.connector_id FROM ta_connector_membro cm"
+                " JOIN ta_connector k ON k.id = cm.connector_id"
+                " JOIN ta_agent a ON a.id = k.agent_id"
+                " WHERE a.tenant_id = :t AND cm.member_id = :m"
+            ),
+            {"t": tenant_id, "m": member_id},
+        )
+    ).all()
+    ids.update(r[0] for r in compartilhados)
+    return sorted(ids)
 
 
 async def filtro_para(db: AsyncSession, user: CurrentUser):
