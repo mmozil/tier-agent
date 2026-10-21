@@ -193,6 +193,25 @@ async def whatsapp_engine_webhook(
     msg = _desembrulhar_mensagem(payload.get("message") or {})
     media_url = payload.get("mediaUrl")  # URL R2 pública (pre-uploaded pelo Engine)
 
+    # A chave desta mensagem no WhatsApp — sem ela não se reage depois (21/10/2026).
+    chave_wa = {"id": key.get("id"), "remote_jid": key.get("remoteJid"), "from_me": from_me}
+
+    # Reação (emoji embaixo de um balão): não é fala, é marca na mensagem-alvo.
+    # Antes caía como «mensagem vazia» e sumia.
+    if isinstance(msg, dict) and msg.get("reactionMessage"):
+        import asyncio as _asyncio_r
+
+        rm = msg["reactionMessage"] or {}
+        _asyncio_r.create_task(
+            _registrar_reacao(
+                instance_id=instance_id,
+                alvo_id=(rm.get("key") or {}).get("id"),
+                emoji=rm.get("text") or "",
+                from_me=from_me,
+            )
+        )
+        return {"status": "reaction"}
+
     def _midia(kind: str, bloco: dict, mime_padrao: str | None = None) -> ConnectorAttachment:
         # 🚨 Sem `mediaUrl` o Engine não conseguiu guardar o arquivo (07/10/2026: a
         # chave do armazenamento dele estava morta desde 11/06 e TODA foto, áudio e
@@ -296,6 +315,7 @@ async def whatsapp_engine_webhook(
                 external_chat_id=external_chat_id,
                 text_content=text_content,
                 attachments=attachments,
+                chave_wa=chave_wa,
             )
         )
         return {"status": "accepted", "from_me": True}
@@ -307,10 +327,52 @@ async def whatsapp_engine_webhook(
             sender_name=sender_name,
             text_content=text_content,
             attachments=attachments,
+            chave_wa=chave_wa,
         )
     )
     logger.info("webhook WhatsApp Engine aceito chat=%s attachments=%s", external_chat_id, len(attachments))
     return {"status": "accepted"}
+
+
+async def _registrar_reacao(*, instance_id: str | None, alvo_id: str | None, emoji: str, from_me: bool) -> None:
+    """Reação recebida — do contato (`from_me=False`) ou do celular da consultora —
+    gravada na mensagem-alvo, achada pela chave do WhatsApp. Emoji vazio = tirou.
+    Mensagem anterior às reações não tem chave: a reação dela só existe no celular."""
+    from core.db import db_context
+    from models import TaConversation, TaMessageLog
+    from services import agent_runtime
+
+    if not alvo_id:
+        return
+    try:
+        async with db_context() as db:
+            conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)
+            if not conn:
+                return
+            alvo = (
+                await db.execute(
+                    select(TaMessageLog)
+                    .join(TaConversation, TaConversation.id == TaMessageLog.conversation_id)
+                    .where(TaConversation.connector_id == conn.id, TaMessageLog.wa_message_id == alvo_id)
+                    .order_by(TaMessageLog.id.desc())
+                    .limit(1)
+                )
+            ).scalars().first()
+            if alvo is None:
+                return
+            reacoes = dict(alvo.reacoes_json or {})
+            lado = "nosso" if from_me else "contato"
+            atual = (reacoes.get(lado) or {}).get("emoji")
+            if from_me and atual == emoji:
+                return  # eco da reação que o PAINEL acabou de mandar: já está gravada, com quem reagiu
+            if emoji:
+                reacoes[lado] = {"emoji": emoji, "em": datetime.utcnow().isoformat(), **({"pelo_celular": True} if from_me else {})}
+            else:
+                reacoes.pop(lado, None)
+            alvo.reacoes_json = reacoes or None
+            await db.commit()
+    except Exception:
+        logger.exception("reação não gravada alvo=%s", alvo_id)
 
 
 async def _process_engine_from_me(
@@ -319,13 +381,15 @@ async def _process_engine_from_me(
     external_chat_id: str,
     text_content: str,
     attachments: list,
+    chave_wa: dict | None = None,
 ) -> None:
     """Mensagem que SAIU pelo número (fromMe). Só interessa no modo registro: é a
     consultora falando pelo celular. Em número com IA é o eco da resposta do
     agente, já gravada em `ta_message_log` — ignorar, senão duplica."""
     from core.db import db_context
-    from services import agent_runtime
+    from services import agent_runtime, wa_chave
 
+    wa_chave.definir(chave_wa, "agent")
     try:
         async with db_context() as db:
             conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)
@@ -347,6 +411,7 @@ async def _process_engine_message(
     sender_name: str | None,
     text_content: str,
     attachments: list,
+    chave_wa: dict | None = None,
 ) -> None:
     """Processa 1 mensagem inbound do Tier WhatsApp Engine em background, com sessão de
     DB própria — não segura o 200 do webhook (evita timeout/retry do Engine).
@@ -360,10 +425,11 @@ async def _process_engine_message(
 
     from core.db import db_context
     from core.encryption import decrypt
-    from services import agent_runtime
+    from services import agent_runtime, wa_chave
     from services.connectors.base import ConnectorConfig
     from services.connectors.registry import registry as _reg
 
+    wa_chave.definir(chave_wa, "user")
     try:
         # 1. pausa curta de "leitura" ANTES do "…digitando" — dá um respiro humano
         #    (a msg ser "lida" antes dos 3 pontinhos) sem atrasar a resposta. A latência

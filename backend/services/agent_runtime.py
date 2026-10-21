@@ -503,6 +503,9 @@ async def log_message(
     rag_block: str | None = None,
     member_id: int | None = None,
 ) -> None:
+    from services import wa_chave
+
+    chave = wa_chave.consumir(role)  # a chave do WhatsApp, quando o webhook a deixou (reação)
     log = TaMessageLog(
         conversation_id=conversation_id,
         role=role,
@@ -519,6 +522,9 @@ async def log_message(
         memory_block=(memory_block or None),
         rag_block=(rag_block or None),
         member_id=member_id,
+        wa_message_id=(chave or {}).get("id"),
+        wa_remote_jid=(chave or {}).get("remote_jid"),
+        wa_from_me=bool(chave.get("from_me")) if chave else None,
     )
     db.add(log)
 

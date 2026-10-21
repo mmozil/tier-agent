@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
 import MidiaDaMensagem, { linkificar, type Anexo } from "@/components/inbox/MidiaDaMensagem";
 import TarefasCrm from "@/components/inbox/TarefasCrm";
+import { BarraDeReacao, ChipsDeReacao, type Reacoes } from "@/components/inbox/Reacoes";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
 
@@ -173,6 +174,9 @@ interface Message {
   attachments_json?: Attachment[] | null;
   /** Etapa 2 do caminho A: qual pessoa mandou a mensagem humana (painel ou celular). */
   member_id?: number | null;
+  /** 21/10/2026 — com chave do WhatsApp dá para reagir; reações já feitas. */
+  wa_message_id?: string | null;
+  reacoes_json?: Reacoes;
 }
 
 type NavFilter =
@@ -1330,10 +1334,11 @@ export default function ConversasPage() {
                     </div>
                   );
                 }
+                const lado = isUser ? "esquerda" : "direita";
                 return (
                   <div key={m.id} className={`flex flex-col ${isUser ? "items-start" : "items-end"}`}>
                     <div
-                      className={`max-w-[78%] px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words shadow-[0_1px_1px_rgba(0,0,0,0.04)] ${
+                      className={`group relative max-w-[78%] px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words shadow-[0_1px_1px_rgba(0,0,0,0.04)] ${
                         isUser
                           ? `rounded-2xl rounded-tl-md bg-white dark:bg-[#16191f] border ${FC.hair} ${FC.ink}`
                           : isAgent
@@ -1352,7 +1357,26 @@ export default function ConversasPage() {
                           </>
                         );
                       })()}
+                      {m.wa_message_id && openConv && (
+                        <BarraDeReacao
+                          lado={lado}
+                          atual={m.reacoes_json?.nosso?.emoji}
+                          onReagir={async (emoji) => {
+                            try {
+                              const { data } = await api.post<{ reacoes: Reacoes }>(
+                                `/conversations/${openConv.id}/mensagens/${m.id}/reacao`,
+                                { emoji },
+                              );
+                              setMsgs((prev) => prev.map((x) => (x.id === m.id ? { ...x, reacoes_json: data.reacoes } : x)));
+                            } catch (e: any) {
+                              const d = e?.response?.data?.detail;
+                              toast.error(typeof d === "string" ? d : "Não consegui reagir");
+                            }
+                          }}
+                        />
+                      )}
                     </div>
+                    <ChipsDeReacao reacoes={m.reacoes_json ?? null} lado={lado} />
                     <span className={`text-[10px] mt-1 px-1 flex items-center gap-1 ${FC.mut}`}>
                       {isAgent ? <><User className="w-2.5 h-2.5" /> {(m.member_id && m.member_id !== me?.member_id && members.find((x) => x.id === m.member_id)?.nome) || "Você"}</> : isUser ? null : <><Bot className="w-2.5 h-2.5" /> IA</>}
                       {fmtTime(m.created_at) && <span>{isUser ? "" : "· "}{fmtTime(m.created_at)}</span>}

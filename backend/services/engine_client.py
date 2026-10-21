@@ -82,6 +82,18 @@ async def connect_instance(instance_id: str, api_key: str) -> dict:
     return r.json()
 
 
+async def send_reaction(instance_id: str, api_key: str, *, chave: dict, emoji: str) -> None:
+    """Reage (emoji embaixo do balão, no WhatsApp do contato) — vazio tira a reação.
+
+    `chave` = {id, remoteJid, fromMe} da mensagem, como o WhatsApp a conhece."""
+    url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/messages/reaction"
+    corpo = {"to": chave["remoteJid"], "messageKey": chave, "emoji": emoji}
+    async with httpx.AsyncClient(timeout=15) as cli:
+        r = await cli.post(url, headers=_instance_headers(api_key), json=corpo)
+    if r.status_code >= 400:
+        raise EngineError(f"reação falhou: {r.status_code}", status=r.status_code, body=r.text[:200])
+
+
 async def get_status(instance_id: str, api_key: str) -> dict:
     """Status atual + QR code (se aguardando pairing)."""
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/status"

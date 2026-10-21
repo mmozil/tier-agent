@@ -349,6 +349,13 @@ class TaMessageLog(Base):
     system_prompt_sent: Mapped[str | None] = mapped_column(Text, nullable=True)
     memory_block: Mapped[str | None] = mapped_column(Text, nullable=True)
     rag_block: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 21/10/2026 — reação com emoji: a CHAVE da mensagem no WhatsApp (key.id + chat +
+    # quem mandou), sem a qual não se reage, e as reações {"nosso": {...}, "contato": "👍"}.
+    # Só mensagem nova tem chave — a antiga não guardou. Runtime DDL, nullable.
+    wa_message_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    wa_remote_jid: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    wa_from_me: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    reacoes_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 

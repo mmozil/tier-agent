@@ -652,6 +652,9 @@ async def conversa_mensagens(
                 "conversa_id": m.conversation_id,
                 "numero": _numero(por_id[m.conversation_id]).get("rotulo"),
                 "quem": hc.quem_falou(m.role, nomes.get(m.member_id), agentes.get(por_id[m.conversation_id].agent_id)),
+                # 21/10/2026 — reação: o card mostra e deixa reagir (só mensagem com chave do WhatsApp)
+                "reacoes": m.reacoes_json or None,
+                "pode_reagir": bool(m.wa_message_id),
             }
             for m in msgs
         ],

@@ -22,6 +22,7 @@ from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt
 from models import TaAgent, TaConversation, TaMessageLog
+from services import engine_client
 from services import visao_conversas as visao
 from services.connectors import registry
 from services.connectors.base import ConnectorAttachment, ConnectorConfig, OutboundMessage
@@ -78,6 +79,9 @@ class MessageOut(BaseModel):
     created_at: datetime
     attachments_json: list | None = None  # [{kind, url, mime}] — mídia da mensagem (R2)
     member_id: int | None = None  # Etapa 2: qual pessoa mandou (mensagem humana)
+    # 21/10/2026 — reação: com chave do WhatsApp dá para reagir; reações {"nosso", "contato"}
+    wa_message_id: str | None = None
+    reacoes_json: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -914,8 +918,26 @@ async def reply_manual(
         db, conv, user, registro=registro, content=content,
         enviado={content, out_content}, enviado_em=enviado_em,
     )
+    await _guardar_chave_do_envio(db, msg, conv, conn, resultado)
     _agendar_capinha(msg.id, content)
     return msg
+
+
+async def _guardar_chave_do_envio(db: AsyncSession, msg: TaMessageLog, conv: TaConversation, conn, resultado) -> None:
+    """A chave da mensagem que o painel mandou (21/10/2026) — para dar para reagir a
+    ela depois. Só no WhatsApp por QR (o Engine devolve `waMessageId`); falhar aqui
+    não desfaz o envio, só deixa a mensagem sem reação."""
+    wid = resultado.get("waMessageId") if isinstance(resultado, dict) else None
+    if not wid or getattr(conn, "kind", None) != "whatsapp" or msg.wa_message_id:
+        return
+    try:
+        msg.wa_message_id = str(wid)[:128]
+        msg.wa_remote_jid = (conv.external_id or "")[:128] or None
+        msg.wa_from_me = True
+        await db.commit()
+    except Exception:  # noqa: BLE001
+        await db.rollback()
+        logger.info("chave do envio nao gravada msg=%s", getattr(msg, "id", None))
 
 
 _LIMITE_ANEXO = 25 * 1024 * 1024  # o Engine aceita mais (doc 100 MB), mas aqui o arquivo passa pela memória
@@ -1028,9 +1050,58 @@ async def reply_anexo(
         db, conv, user, registro=registro, content=texto,
         enviado={texto, legenda_canal}, enviado_em=enviado_em, anexos=anexos_para_log([anexo]),
     )
+    await _guardar_chave_do_envio(db, msg, conv, conn, resultado)
     if legenda:
         _agendar_capinha(msg.id, legenda)
     return msg
+
+
+class ReacaoIn(BaseModel):
+    emoji: str = ""  # vazio = tirar a reação
+
+
+@router.post("/{conversation_id}/mensagens/{message_id}/reacao", response_model=dict)
+async def reagir_mensagem(
+    conversation_id: int,
+    message_id: int,
+    body: ReacaoIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reage com emoji a um balão (21/10/2026) — o contato vê o emoji embaixo dele,
+    como no WhatsApp. Mesma régua da resposta: quem não vê a conversa não reage, e
+    sai pelo número da conversa. Só mensagem com chave do WhatsApp (as novas)."""
+    conv, conn, _registro = await _canal_da_resposta(db, conversation_id, user)
+    msg = await db.get(TaMessageLog, message_id)
+    if not msg or msg.conversation_id != conv.id:
+        raise HTTPException(404, "Mensagem não encontrada nesta conversa")
+    if conn.kind != "whatsapp":
+        raise HTTPException(422, "Reação só existe, por enquanto, no WhatsApp conectado por QR")
+    if not msg.wa_message_id:
+        raise HTTPException(422, "Esta mensagem é de antes das reações — reaja pelo celular")
+    emoji = (body.emoji or "").strip()[:8]
+    cfg = json.loads(decrypt(conn.config_json_enc))
+    chave = {
+        "id": msg.wa_message_id,
+        "remoteJid": msg.wa_remote_jid or conv.external_id,
+        "fromMe": bool(msg.wa_from_me),
+    }
+    try:
+        await engine_client.send_reaction(cfg["instance_id"], cfg["api_key"], chave=chave, emoji=emoji)
+    except Exception as e:
+        logger.exception("reação falhou conv=%s msg=%s", conversation_id, message_id)
+        raise HTTPException(502, f"O WhatsApp não aceitou a reação: {e}") from e
+    reacoes = dict(msg.reacoes_json or {})
+    if emoji:
+        reacoes["nosso"] = {
+            "emoji": emoji, "member_id": user.member_id, "nome": user.member_name,
+            "em": datetime.utcnow().isoformat(),
+        }
+    else:
+        reacoes.pop("nosso", None)
+    msg.reacoes_json = reacoes or None
+    await db.commit()
+    return {"ok": True, "reacoes": reacoes}
 
 
 async def _purge_conversations(db: AsyncSession, ids: list[int]) -> int:
