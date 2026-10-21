@@ -58,6 +58,21 @@ function quando(iso: string | null): string {
   return d.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+/** O CRM de onde o Atendimento foi aberto (o Agent mora num iframe do crm./erp.).
+ *  Aberto direto, sem moldura, cai no crm. — a rota do card existe nos dois. */
+function baseDoCrm(): string {
+  const candidatos = [window.location.ancestorOrigins?.[0], document.referrer];
+  for (const c of candidatos) {
+    try {
+      const origem = c ? new URL(c).origin : "";
+      if (/^https:\/\/(crm|erp)\.tier\.finance$/.test(origem)) return origem;
+    } catch {
+      /* referrer vazio ou estranho: tenta o próximo */
+    }
+  }
+  return "https://crm.tier.finance";
+}
+
 const CAMPO =
   "w-full h-8 px-2.5 rounded-[8px] border border-[#E4E4E4] dark:border-[#2a2f37] bg-white dark:bg-[#11141a] " +
   "text-[12.5px] text-[#262626] dark:text-[#e6e8eb] outline-none focus:border-[#003083] dark:focus:border-[#5b9bff]";
@@ -157,28 +172,41 @@ export default function TarefasCrm({ conversaId, crmOpportunityId }: { conversaI
     // `pt-1`: a sanfona corta o que encosta no topo (overflow hidden) — sem o respiro,
     // a borda do card selecionado sumia em cima.
     <div className="space-y-3 pt-1">
-      {/* O card — mais de um, escolhe; um só, mostra. */}
+      {/* O card — mais de um, escolhe; um só, mostra. O NOME abre o card no CRM em
+          outra aba (21/10/2026, pedido do dono); o resto da linha escolhe o card. */}
       <div className="space-y-1.5">
         {cards.map((c) => {
           const ativo = c.id === cardId;
           return (
-            <button
+            <div
               key={c.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => setCardId(c.id)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCardId(c.id); } }}
               aria-pressed={ativo}
-              className={`w-full text-left rounded-[8px] border px-2.5 py-2 transition-colors ${
+              className={`w-full text-left rounded-[8px] border px-2.5 py-2 cursor-pointer transition-colors ${
                 ativo
                   ? "border-[#003083] dark:border-[#5b9bff] bg-[#003083]/[0.04] dark:bg-[#5b9bff]/[0.08]"
                   : `${FC.hair} ${FC.hover}`
               }`}
             >
-              <span className={`block truncate text-[12.5px] font-medium ${FC.ink}`}>{c.titulo}</span>
+              <a
+                href={`${baseDoCrm()}/tier-empresas/vendas/crm/negocio/${c.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title="Abrir o card no CRM (outra aba)"
+                className={`group inline-flex items-center gap-1 min-w-0 max-w-full text-[12.5px] font-medium ${FC.ink} hover:underline`}
+              >
+                <span className="truncate">{c.titulo}</span>
+                <ExternalLink className={`w-3 h-3 shrink-0 ${FC.mut} group-hover:text-[#003083] dark:group-hover:text-[#5b9bff]`} />
+              </a>
               <span className={`block truncate text-[11.5px] ${FC.sub}`}>
                 {[c.funil, c.etapa].filter(Boolean).join(" › ") || "—"}
                 {c.situacao && c.situacao !== "ABERTA" ? ` · ${c.situacao.toLowerCase()}` : ""}
               </span>
-            </button>
+            </div>
           );
         })}
       </div>

@@ -254,15 +254,9 @@ async def crm_funis(user: CurrentUser = Depends(get_current_user)):
 def _variantes_do_numero(digitos: str) -> list[str]:
     """O número como o WhatsApp pode ter gravado: com e sem o 9 do celular (55 + DDD +
     9 + 8). O ERP guarda «(11) 94082-8393»; conversa antiga pode estar sem o 9."""
-    v = {digitos}
-    if not digitos.startswith("55") and len(digitos) in (10, 11):
-        digitos = "55" + digitos
-        v.add(digitos)
-    if digitos.startswith("55") and len(digitos) == 13 and digitos[4] == "9":
-        v.add(digitos[:4] + digitos[5:])
-    elif digitos.startswith("55") and len(digitos) == 12:
-        v.add(digitos[:4] + "9" + digitos[4:])
-    return sorted(v)
+    from services.historico_contato import variantes_do_numero
+
+    return variantes_do_numero(digitos)
 
 
 @router.get("/por-telefone", response_model=dict)

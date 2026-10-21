@@ -36,6 +36,21 @@ def chave_do_contato(external_id: str | None, kind: str | None = "whatsapp") -> 
     return digitos if len(digitos) >= _MIN_DIGITOS else ""
 
 
+def variantes_do_numero(digitos: str) -> list[str]:
+    """O número como o WhatsApp pode ter gravado: com e sem o 55, com e sem o 9 do
+    celular (55 + DDD + 9 + 8). O ERP guarda «(11) 94082-8393»; conversa antiga pode
+    estar sem o 9."""
+    v = {digitos}
+    if not digitos.startswith("55") and len(digitos) in (10, 11):
+        digitos = "55" + digitos
+        v.add(digitos)
+    if digitos.startswith("55") and len(digitos) == 13 and digitos[4] == "9":
+        v.add(digitos[:4] + digitos[5:])
+    elif digitos.startswith("55") and len(digitos) == 12:
+        v.add(digitos[:4] + "9" + digitos[4:])
+    return sorted(v)
+
+
 def mesmo_contato(a_external: str | None, a_kind: str | None, b_external: str | None, b_kind: str | None) -> bool:
     """Duas conversas são do mesmo contato? Igualdade exata do id OU mesmo telefone."""
     if a_external and a_external == b_external and a_kind == b_kind:

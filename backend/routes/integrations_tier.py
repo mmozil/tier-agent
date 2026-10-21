@@ -440,11 +440,65 @@ async def llm_complete(
 
 
 # ─── Histórico de conversa para a aba Conversas do card do CRM (ERP lê daqui) ───
+@router.get("/conversas/por-telefone")
+async def conversa_por_telefone(
+    agent_tenant_id: int,
+    telefone: str,
+    x_tier_integration_secret: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """A conversa mais recente com este telefone no tenant (21/10/2026).
+
+    A aba Conversas do card só achava o WhatsApp do card que nasceu pelo «Enviar
+    para CRM» (que grava o ponteiro): no CCDA eram 6 de 1.878 cards — o lead do
+    Bookly, do site ou do Chatwoot que depois conversa no WhatsApp ficava sem
+    histórico. O ERP pergunta pelo telefone do contato e lê o histórico pela rota
+    de baixo. Contato que o WhatsApp entrega como `@lid` não tem telefone: não casa.
+    """
+    _check_secret(x_tier_integration_secret)
+
+    import re
+
+    from sqlalchemy import or_
+
+    from models import TaConversation
+    from services import historico_contato as hc
+
+    digitos = re.sub(r"\D", "", telefone or "")
+    if len(digitos) < 10:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Telefone inválido")
+    agent_ids = (await db.execute(select(TaAgent.id).where(TaAgent.tenant_id == agent_tenant_id))).scalars().all()
+    if not agent_ids:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Sem conversa com este telefone")
+    variantes = hc.variantes_do_numero(digitos)
+    casa = or_(
+        *[TaConversation.external_id == v for v in variantes],
+        *[TaConversation.external_id.like(f"{v}@%") for v in variantes],
+    )
+    cid = (
+        await db.execute(
+            select(TaConversation.id)
+            .where(
+                TaConversation.agent_id.in_(list(agent_ids)),
+                TaConversation.connector_kind.in_(hc.KINDS_TELEFONE),
+                casa,
+            )
+            .order_by(TaConversation.last_message_at.desc().nulls_last(), TaConversation.id.desc())
+            .limit(1)
+        )
+    ).scalar()
+    if not cid:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Sem conversa com este telefone")
+    return {"id": int(cid)}
+
+
 @router.get("/conversas/{conversa_id}/mensagens")
 async def conversa_mensagens(
     conversa_id: int,
     agent_tenant_id: int,
     limite: int = 200,
+    pessoa_owner_id: str | None = None,
+    pessoa_role: str | None = None,
     x_tier_integration_secret: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -465,6 +519,12 @@ async def conversa_mensagens(
     tenant que pediu, o shared secret viraria chave-mestra para ler a conversa de
     qualquer cliente pelo id. O secret prova que é o ERP; o tenant prova de quem.
     E a busca pelo contato fica DENTRO do tenant.
+
+    🔒 21/10/2026 — `pessoa_owner_id` + `pessoa_role` (a pessoa do CRM que abriu o
+    card, com o papel do SSO): o card passa pela MESMA régua da lista do Atendimento
+    (`visao_conversas`). Sem isso o card furava a regra «só admin vê as conversas dos
+    outros» — o CCDA pediu que a Nathalia não visse o número da Débora, e o card
+    mostrava. ERP antigo (sem os dois) segue vendo tudo, como antes.
     """
     _check_secret(x_tier_integration_secret)
 
@@ -475,6 +535,7 @@ async def conversa_mensagens(
     from models import TaConversation, TaMessageLog
     from services import historico_contato as hc
     from services import numeros as numeros_svc
+    from services import visao_conversas as visao
 
     conv = await db.get(TaConversation, conversa_id)
     if not conv:
@@ -499,6 +560,28 @@ async def conversa_mensagens(
         c for c in candidatas
         if c.id == conv.id or hc.mesmo_contato(conv.external_id, conv.connector_kind, c.external_id, c.connector_kind)
     ]
+    if pessoa_role is not None and not visao.ve_tudo(pessoa_role):
+        # A pessoa vira membro pelo `erp_owner_id` (o SSO grava assim); sem membro,
+        # o lado seguro: atendente sem identidade não vê nada.
+        membro_id = None
+        if pessoa_owner_id:
+            membro_id = (
+                await db.execute(
+                    select(TaMember.id).where(
+                        TaMember.tenant_id == agent_tenant_id, TaMember.erp_owner_id == str(pessoa_owner_id)
+                    )
+                )
+            ).scalars().first()
+        meus = await visao.conectores_do_membro(db, agent_tenant_id, membro_id)
+        conversas = [
+            c for c in conversas
+            if visao.pode_ver(
+                pessoa_role, membro_id,
+                assigned_member_id=c.assigned_member_id, connector_id=c.connector_id, meus_conectores=meus,
+            )
+        ]
+        if not conversas:
+            return {"sem_acesso": True, "conversa": None, "conversas": [], "mensagens": []}
     ids = [c.id for c in conversas]
 
     n = max(1, min(limite, 500))
