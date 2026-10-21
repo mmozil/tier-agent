@@ -16,6 +16,7 @@ from core.db import get_db
 from core.encryption import decrypt, encrypt
 from models import TaAgent, TaConnector, TaNotification
 from services import engine_client
+from services import visao_conversas as visao
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -134,6 +135,16 @@ async def _ensure_agent_owned(db: AsyncSession, agent_id: int, user: CurrentUser
     return agent
 
 
+async def _exigir_numero_seu(db: AsyncSession, conn: TaConnector, user: CurrentUser) -> None:
+    """Atendente só mexe nos números DELE (21/10/2026): os que é responsável ou da
+    equipe. Antes bastava ser do tenant — qualquer atendente desconectava ou APAGAVA
+    qualquer número da conta, e só a tela escondia. Dono/admin seguem com todos."""
+    if visao.ve_tudo(user.role):
+        return
+    if conn.id not in await visao.conectores_do_membro(db, user.tenant_id, user.member_id):
+        raise HTTPException(403, "Este número não é seu — peça ao administrador")
+
+
 @router.get("")
 async def list_connectors(
     agent_id: int | None = None,
@@ -151,6 +162,9 @@ async def list_connectors(
         stmt = stmt.join(TaAgent, TaAgent.id == TaConnector.agent_id).where(
             TaAgent.tenant_id == user.tenant_id
         )
+    if not visao.ve_tudo(user.role):
+        # Atendente vê só os números dele — é onde ele reconecta (lê o QR) quando cai.
+        stmt = stmt.where(TaConnector.id.in_(await visao.conectores_do_membro(db, user.tenant_id, user.member_id)))
     result = await db.execute(stmt.order_by(TaConnector.id.desc()))
     return [_serialize(c) for c in result.scalars().all()]
 
@@ -177,6 +191,7 @@ async def create_connector(
 
     Valida as credenciais no adapter ANTES de salvar. Retorna o conector + a URL de
     webhook que o usuário configura no app do canal."""
+    visao.exigir_gestor(user, "conectar canais")
     agent = await _ensure_agent_owned(db, payload.agent_id, user)
     kind = (payload.kind or "").strip().lower()
     if kind not in _TOKEN_CHANNELS:
@@ -336,6 +351,7 @@ async def provision_whatsapp(
     db: AsyncSession = Depends(get_db),
 ):
     """Cria instância WhatsApp na Engine + grava TaConnector."""
+    visao.exigir_gestor(user, "conectar números novos")
     modo = (payload.modo or "agente").strip()
     if modo not in ("agente", "registro"):
         raise HTTPException(422, "modo deve ser 'agente' ou 'registro'")
@@ -411,6 +427,7 @@ async def connect(
     if not conn:
         raise HTTPException(404, "Conector não encontrado")
     agent = await _ensure_agent_owned(db, conn.agent_id, user)
+    await _exigir_numero_seu(db, conn, user)  # o número caiu: quem é dele relê o QR
 
     cfg = json.loads(decrypt(conn.config_json_enc))
 
@@ -482,6 +499,7 @@ async def status(
     if not conn:
         raise HTTPException(404, "Conector não encontrado")
     await _ensure_agent_owned(db, conn.agent_id, user)
+    await _exigir_numero_seu(db, conn, user)  # o status traz o QR
 
     cfg = json.loads(decrypt(conn.config_json_enc))
     # Cloud API (Meta) não tem instância na Engine — devolve status local (sem QR).
@@ -520,6 +538,7 @@ async def disconnect(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    visao.exigir_gestor(user, "desconectar números")
     conn = await db.get(TaConnector, connector_id)
     if not conn:
         raise HTTPException(404, "Conector não encontrado")
@@ -690,6 +709,7 @@ async def onboard_whatsapp_cloud(
     O cliente paga as próprias mensagens (WABA dele) → Tier sem responsabilidade
     financeira. Requer App Review aprovado (Advanced Access) pra clientes reais.
     """
+    visao.exigir_gestor(user, "conectar números novos")
     import os
 
     import httpx
@@ -774,6 +794,7 @@ async def setup_generic_connector(
     Valida config via adapter.validate_config() antes de persistir.
     Se já existe um conector do mesmo kind+agent, atualiza config.
     """
+    visao.exigir_gestor(user, "conectar canais")
     kind = (payload.kind or "").strip().lower()
     allowed = {"telegram", "email", "instagram"}
     if kind not in allowed:
@@ -894,6 +915,7 @@ async def setup_webchat(
     O slug é global (é o caminho da URL), então a checagem de duplicidade olha
     TODOS os conectores webchat, não só os do tenant.
     """
+    visao.exigir_gestor(user, "mudar o link de demonstração")
     slug = (payload.slug or "").strip().lower()
     if not _SLUG_RE.match(slug):
         raise HTTPException(
@@ -994,6 +1016,7 @@ async def delete_connector(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    visao.exigir_gestor(user, "remover números")
     conn = await db.get(TaConnector, connector_id)
     if not conn:
         raise HTTPException(404, "Conector não encontrado")

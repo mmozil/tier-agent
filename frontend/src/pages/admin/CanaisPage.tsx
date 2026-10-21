@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Copy, ChevronRight, PenLine } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatPhone } from "@/lib/phone";
 import { WhatsAppIcon, ChannelLogo, CHANNEL_META } from "@/components/icons/channelIcons";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
@@ -279,6 +280,11 @@ function ChannelCard({
 }
 
 export default function CanaisPage() {
+  // 21/10/2026 — atendente vê só os números DELE (o servidor filtra) e só reconecta
+  // (lê o QR). Criar, desconectar, apagar e assinar com o nome são do dono/admin:
+  // o servidor recusa, e a tela não oferece o que vai ser recusado.
+  const { user } = useAuth();
+  const gestor = !!user?.is_admin || ["owner", "admin"].includes(user?.role ?? "owner");
   const [conns, setConns] = useState<Connector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [members, setMembers] = useState<{ id: number; nome: string }[]>([]);
@@ -583,17 +589,22 @@ export default function CanaisPage() {
   }
 
   const agentName = (id: number) => agents.find((a) => a.id === id)?.nome || `Agente #${id}`;
-  const memberName = (id: number) => members.find((m) => m.id === id)?.nome || `#${id}`;
+  const memberName = (id: number) =>
+    id === user?.member_id ? "você" : members.find((m) => m.id === id)?.nome || `#${id}`;
   const inputCls = `w-full h-9 px-3 text-[14px] rounded-[10px] bg-white dark:bg-[#14171c] border ${FC.hair} outline-none focus:shadow-[0_0_0_2px_#003083]`;
 
   return (
     <div className="-mx-8 pb-10">
       <PageFrame>
         <PageHero
-          title="Canais"
-          subtitle="Conecte WhatsApp (oficial ou Baileys) e outros canais aos seus agentes. Cada canal fica vinculado a um agente que responde automaticamente."
+          title={gestor ? "Canais" : "Seus números"}
+          subtitle={
+            gestor
+              ? "Conecte WhatsApp (oficial ou Baileys) e outros canais aos seus agentes. Cada canal fica vinculado a um agente que responde automaticamente."
+              : "Os números de que você é responsável ou faz parte. Se um cair, clique em «Escanear QR» e leia o código com o celular do número."
+          }
           right={
-            <Button
+            gestor && <Button
               variant="primary"
               onClick={() => {
                 // 🚨 NÃO recusar por falta de agente. Número em «Registro (sem
@@ -952,7 +963,15 @@ export default function CanaisPage() {
             // quem não tinha agente lia um aviso de «crie um agente primeiro»
             // que nem verdade era (o modo «Registro (sem IA)» dispensa agente).
             // Estado vazio não se divide por configuração da conta.
-            <EmptyHint icon={Smartphone} text='Nenhum canal conectado. Clique em "Conectar canal" — o link de demonstração fica pronto na hora, sem cadastro nenhum.' className="py-16" />
+            <EmptyHint
+              icon={Smartphone}
+              text={
+                gestor
+                  ? 'Nenhum canal conectado. Clique em "Conectar canal" — o link de demonstração fica pronto na hora, sem cadastro nenhum.'
+                  : "Nenhum número é seu ainda. Peça ao administrador para colocar você como responsável do número (em Equipe)."
+              }
+              className="py-16"
+            />
           ) : (
             <div className={`divide-y ${FC.hair}`}>
               {conns.map((c) => {
@@ -1010,7 +1029,7 @@ export default function CanaisPage() {
 
                     {/* Ações */}
                     <div className="flex items-center justify-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      {(c.kind === "whatsapp" || c.kind === "whatsapp_cloud") && (
+                      {gestor && (c.kind === "whatsapp" || c.kind === "whatsapp_cloud") && (
                         <Button
                           variant="secondary"
                           size="sm"
@@ -1038,7 +1057,7 @@ export default function CanaisPage() {
                           <QrCode className="w-3 h-3 shrink-0" /> Escanear QR
                         </Button>
                       )}
-                      {status === "connected" && (
+                      {gestor && status === "connected" && (
                         <Button
                           variant="secondary"
                           size="sm"
@@ -1058,9 +1077,11 @@ export default function CanaisPage() {
                           <Unplug className="w-3 h-3 shrink-0" /> Desconectar
                         </Button>
                       )}
-                      <button onClick={() => onDelete(c.id)} className={`${iconBtn} hover:!text-[#E5484D] hover:!bg-[#E5484D]/[0.08]`} title="Remover canal permanentemente">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {gestor && (
+                        <button onClick={() => onDelete(c.id)} className={`${iconBtn} hover:!text-[#E5484D] hover:!bg-[#E5484D]/[0.08]`} title="Remover canal permanentemente">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -1379,7 +1400,7 @@ export default function CanaisPage() {
                   {detail.kind === "whatsapp" && st !== "connected" && (
                     <Button variant="primary" size="sm" onClick={() => { setDetail(null); openQR(detail.id); }}><QrCode className="w-3 h-3" /> Escanear QR</Button>
                   )}
-                  {st === "connected" && (
+                  {gestor && st === "connected" && (
                     <Button
                       variant="secondary"
                       size="sm"

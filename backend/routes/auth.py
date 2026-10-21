@@ -274,6 +274,10 @@ async def me(db: AsyncSession = Depends(get_db), user=Depends(__import__("core.a
         "email": user.email,
         "tenant_id": user.tenant_id,
         "is_admin": user.is_admin,
+        # Quem é a pessoa nesta sessão (21/10/2026): a tela de números esconde de
+        # quem não é dono/admin o que o servidor já recusa (criar, desconectar, apagar).
+        "role": user.role,
+        "member_id": user.member_id,
         "tenant": {
             "id": tenant.id,
             "nome": tenant.nome,

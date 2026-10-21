@@ -6,6 +6,9 @@ interface User {
   email: string;
   tenant_id: number | null;
   is_admin: boolean;
+  /** owner | admin | atendente — o servidor decide; a tela só esconde o que ele recusa. */
+  role?: string;
+  member_id?: number | null;
   tenant?: {
     id: number;
     nome: string;
