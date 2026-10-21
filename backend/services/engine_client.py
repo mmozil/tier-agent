@@ -106,6 +106,19 @@ async def send_reaction(instance_id: str, api_key: str, *, chave: dict, emoji: s
         raise EngineError(f"reação falhou: {r.status_code}", status=r.status_code, body=r.text[:200])
 
 
+async def send_edit(instance_id: str, api_key: str, *, chave: dict, texto: str) -> None:
+    """Edita uma mensagem já enviada (o contato vê «Editada»). O WhatsApp só aceita
+    até 15 minutos depois do envio — quem chama confere o prazo antes.
+
+    `chave` = {id, remoteJid, fromMe} da mensagem, como o WhatsApp a conhece."""
+    url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/messages/edit"
+    corpo = {"to": chave["remoteJid"], "messageKey": chave, "text": texto}
+    async with httpx.AsyncClient(timeout=15) as cli:
+        r = await cli.post(url, headers=_instance_headers(api_key), json=corpo)
+    if r.status_code >= 400:
+        raise EngineError(f"edição falhou: {r.status_code}", status=r.status_code, body=r.text[:200])
+
+
 async def get_status(instance_id: str, api_key: str) -> dict:
     """Status atual + QR code (se aguardando pairing)."""
     url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/status"

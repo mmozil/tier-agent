@@ -9,7 +9,7 @@ import logging
 import mimetypes
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, field_validator
@@ -82,6 +82,10 @@ class MessageOut(BaseModel):
     # 21/10/2026 — reação: com chave do WhatsApp dá para reagir; reações {"nosso", "contato"}
     wa_message_id: str | None = None
     reacoes_json: dict | None = None
+    # 21/10/2026 — edição: o balão mostra «Editada». Quem pode editar a tela decide
+    # (mensagem própria, com chave, texto, até 15 min); a rota confere de novo.
+    wa_from_me: bool | None = None
+    editada_em: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -1179,6 +1183,83 @@ async def reagir_mensagem(
     msg.reacoes_json = reacoes or None
     await db.commit()
     return {"ok": True, "reacoes": reacoes}
+
+
+# O WhatsApp aceita editar até 15 min depois do envio; a margem cobre o caminho até
+# o Engine — passar do prazo lá é silencioso (o contato continuaria vendo o antigo).
+JANELA_EDICAO = timedelta(minutes=14, seconds=30)
+
+
+class EdicaoIn(BaseModel):
+    texto: str
+
+
+def motivo_para_nao_editar(msg: TaMessageLog, member_id: int | None, agora: datetime | None = None) -> str | None:
+    """Por que esta mensagem NÃO pode ser editada por esta pessoa (None = pode).
+
+    Só a resposta que a própria pessoa mandou pelo painel, de texto, com a chave do
+    WhatsApp (as de 21/10/2026 em diante) e dentro do prazo. Mensagem da IA e a do
+    celular não têm dono no painel — editar o texto de outra pessoa trocaria o que
+    ela disse sem ela saber."""
+    if msg.role != "agent" or not msg.wa_message_id or not msg.wa_from_me:
+        return "Só dá para editar mensagem enviada pelo painel"
+    if not member_id or msg.member_id != member_id:
+        return "Só quem enviou a mensagem pode editar"
+    if msg.attachments_json:
+        return "Só mensagem de texto pode ser editada"
+    if msg.created_at and (agora or datetime.utcnow()) - msg.created_at > JANELA_EDICAO:
+        return "O WhatsApp só deixa editar até 15 minutos depois do envio"
+    return None
+
+
+@router.post("/{conversation_id}/mensagens/{message_id}/editar", response_model=MessageOut)
+async def editar_mensagem(
+    conversation_id: int,
+    message_id: int,
+    body: EdicaoIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Edita uma resposta já enviada (21/10/2026) — o contato vê o texto novo com
+    «Editada», como no WhatsApp. Mesma régua da resposta (quem não vê a conversa não
+    edita) e a versão anterior fica guardada em `edicoes_json`."""
+    conv, conn, _registro = await _canal_da_resposta(db, conversation_id, user)
+    msg = await db.get(TaMessageLog, message_id)
+    if not msg or msg.conversation_id != conv.id:
+        raise HTTPException(404, "Mensagem não encontrada nesta conversa")
+    if conn.kind != "whatsapp":
+        raise HTTPException(422, "Editar só existe, por enquanto, no WhatsApp conectado por QR")
+    motivo = motivo_para_nao_editar(msg, user.member_id)
+    if motivo:
+        raise HTTPException(403 if "quem enviou" in motivo else 422, motivo)
+    texto = (body.texto or "").strip()
+    if not texto:
+        raise HTTPException(422, "A mensagem não pode ficar vazia")
+    if len(texto) > 4000:
+        raise HTTPException(422, "Mensagem longa demais")
+    if texto == (msg.content or "").strip():
+        return msg
+    # A assinatura «*Nome:*» volta junto: o balão original saiu com ela.
+    enviado = _assina(conn, user, texto)
+    cfg = json.loads(decrypt(conn.config_json_enc))
+    chave = {"id": msg.wa_message_id, "remoteJid": msg.wa_remote_jid or conv.external_id, "fromMe": True}
+    try:
+        await engine_client.send_edit(cfg["instance_id"], cfg["api_key"], chave=chave, texto=enviado)
+    except Exception as e:
+        logger.exception("edição falhou conv=%s msg=%s", conversation_id, message_id)
+        raise HTTPException(502, f"O WhatsApp não aceitou a edição: {e}") from e
+    agora = datetime.utcnow()
+    edicoes = list(msg.edicoes_json or [])
+    edicoes.append({
+        "texto": msg.content, "em": agora.isoformat(), "por": user.member_name,
+        "member_id": user.member_id, "enviado": enviado,
+    })
+    msg.edicoes_json = edicoes
+    msg.content = texto[:8000]
+    msg.editada_em = agora
+    await db.commit()
+    await db.refresh(msg)
+    return msg
 
 
 async def _purge_conversations(db: AsyncSession, ids: list[int]) -> int:

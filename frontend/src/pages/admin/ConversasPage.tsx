@@ -13,6 +13,7 @@ import CannedPicker from "@/components/CannedPicker";
 import MidiaDaMensagem, { linkificar, type Anexo } from "@/components/inbox/MidiaDaMensagem";
 import TarefasCrm from "@/components/inbox/TarefasCrm";
 import { BarraDeReacao, ChipsDeReacao, type Reacoes } from "@/components/inbox/Reacoes";
+import { BotaoEditar, EditorDoBalao, podeEditarMensagem } from "@/components/inbox/Edicao";
 import NovaConversa from "@/components/inbox/NovaConversa";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
@@ -178,6 +179,9 @@ interface Message {
   /** 21/10/2026 — com chave do WhatsApp dá para reagir; reações já feitas. */
   wa_message_id?: string | null;
   reacoes_json?: Reacoes;
+  /** 21/10/2026 — edição: só a resposta própria, enviada pelo painel (`wa_from_me`). */
+  wa_from_me?: boolean | null;
+  editada_em?: string | null;
 }
 
 type NavFilter =
@@ -385,6 +389,9 @@ export default function ConversasPage() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [macros, setMacros] = useState<{ id: number; name: string }[]>([]);
   const [msgs, setMsgs] = useState<Message[]>([]);
+  // Balão sendo editado agora (21/10/2026). Um só por vez, como no WhatsApp.
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  useEffect(() => setEditandoId(null), [openId]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [openConv, setOpenConv] = useState<Conversation | null>(null);
   // Número aberto pelo CRM que ainda não tem conversa: mostra a «Nova conversa».
@@ -1365,7 +1372,25 @@ export default function ConversasPage() {
                             : `rounded-2xl rounded-tr-md bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12] border border-[#003083]/[0.08] dark:border-[#5b9bff]/[0.16] ${FC.ink}`
                       }`}
                     >
-                      {(() => {
+                      {editandoId === m.id && openConv ? (
+                        <EditorDoBalao
+                          inicial={m.content || ""}
+                          onCancelar={() => setEditandoId(null)}
+                          onSalvar={async (texto) => {
+                            try {
+                              const { data } = await api.post<Message>(
+                                `/conversations/${openConv.id}/mensagens/${m.id}/editar`,
+                                { texto },
+                              );
+                              setMsgs((prev) => prev.map((x) => (x.id === m.id ? { ...x, ...data } : x)));
+                              setEditandoId(null);
+                            } catch (e: any) {
+                              const d = e?.response?.data?.detail;
+                              toast.error(typeof d === "string" ? d : "Não consegui editar");
+                            }
+                          }}
+                        />
+                      ) : (() => {
                         const media = m.attachments_json || [];
                         const placeholder = !!m.content && /^\[(image|audio|video|document|sticker|file)\]$/i.test(m.content.trim());
                         const showText = m.content && !(placeholder && media.length > 0);
@@ -1376,7 +1401,10 @@ export default function ConversasPage() {
                           </>
                         );
                       })()}
-                      {m.wa_message_id && openConv && (
+                      {openConv && editandoId !== m.id && podeEditarMensagem(m, me?.member_id) && (
+                        <BotaoEditar onClick={() => setEditandoId(m.id)} />
+                      )}
+                      {m.wa_message_id && openConv && editandoId !== m.id && (
                         <BarraDeReacao
                           lado={lado}
                           atual={m.reacoes_json?.nosso?.emoji}
@@ -1399,6 +1427,7 @@ export default function ConversasPage() {
                     <span className={`text-[10px] mt-1 px-1 flex items-center gap-1 ${FC.mut}`}>
                       {isAgent ? <><User className="w-2.5 h-2.5" /> {(m.member_id && m.member_id !== me?.member_id && members.find((x) => x.id === m.member_id)?.nome) || "Você"}</> : isUser ? null : <><Bot className="w-2.5 h-2.5" /> IA</>}
                       {fmtTime(m.created_at) && <span>{isUser ? "" : "· "}{fmtTime(m.created_at)}</span>}
+                      {m.editada_em && <span title="A mensagem foi editada">· Editada</span>}
                       {!isUser && !isAgent && (
                         <>
                           <button

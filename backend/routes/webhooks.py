@@ -150,6 +150,10 @@ async def whatsapp_engine_webhook(
     # conector) carimba o id e a entrega legítima vira "duplicata" e morre calada
     # (incidente 31/08: tenant 15 perdeu 4 de 5 mensagens pra instância órfã do 17).
     _base_id = data.get("id") or _msg_id or f"{_ts}-{data.get('event')}"
+    # 🚨 `messages.update` (edição) traz a chave da mensagem ORIGINAL — sem o carimbo
+    # do evento ela casava com a entrega da própria mensagem e morria como duplicata.
+    if data.get("event") == "messages.update":
+        _base_id = f"upd:{_msg_id}:{_ts}"
     event_id = f"{_inst}:{_base_id}"
 
     if await _record_idempotent(db, "whatsapp-engine", event_id, data):
@@ -159,6 +163,21 @@ async def whatsapp_engine_webhook(
     instance_id = data.get("instance_id") or data.get("instanceId")
     event = data.get("event")
     payload = data.get("data") or data.get("payload") or {}
+
+    # Edição (21/10/2026): o Baileys avisa a mensagem editada também por
+    # `messages.update`, com a chave da original e o texto novo dentro de `update`.
+    if event == "messages.update" and isinstance(payload, dict):
+        _alvo = payload.get("key") or {}
+        _novo = _texto_editado(((payload.get("update") or {}) if isinstance(payload.get("update"), dict) else {}).get("message"))
+        if _alvo.get("id") and _novo is not None:
+            import asyncio as _asyncio_e
+
+            _asyncio_e.create_task(
+                _registrar_edicao(
+                    instance_id=instance_id, alvo_id=_alvo.get("id"), texto=_novo, from_me=bool(_alvo.get("fromMe"))
+                )
+            )
+            return {"status": "edit"}
 
     # Aceita formato Baileys real (messages.upsert) + formato legado (message/message.text)
     if event not in {"messages.upsert", "message", "message.text"}:
@@ -195,6 +214,17 @@ async def whatsapp_engine_webhook(
 
     # A chave desta mensagem no WhatsApp — sem ela não se reage depois (21/10/2026).
     chave_wa = {"id": key.get("id"), "remote_jid": key.get("remoteJid"), "from_me": from_me}
+
+    # Edição (21/10/2026): `protocolMessage` de edição não é fala nova — troca o texto
+    # do balão antigo. Antes caía como «mensagem vazia» e a edição sumia.
+    _edicao = _edicao_do_protocolo(msg)
+    if _edicao:
+        import asyncio as _asyncio_ed
+
+        _asyncio_ed.create_task(
+            _registrar_edicao(instance_id=instance_id, alvo_id=_edicao[0], texto=_edicao[1], from_me=from_me)
+        )
+        return {"status": "edit"}
 
     # Reação (emoji embaixo de um balão): não é fala, é marca na mensagem-alvo.
     # Antes caía como «mensagem vazia» e sumia.
@@ -373,6 +403,97 @@ async def _registrar_reacao(*, instance_id: str | None, alvo_id: str | None, emo
             await db.commit()
     except Exception:
         logger.exception("reação não gravada alvo=%s", alvo_id)
+
+
+_TIPO_EDICAO = (14, "14", "MESSAGE_EDIT")
+
+
+def _texto_editado(bloco) -> str | None:
+    """O texto NOVO de uma edição, em qualquer dos formatos que o Baileys entrega
+    (`editedMessage.message`, `protocolMessage.editedMessage`, texto simples ou
+    estendido). None = não é edição de texto (status, apagada, legenda de foto…)."""
+    m = bloco
+    for _ in range(6):  # trava anti-loop: o aninhamento real tem 3 níveis
+        if not isinstance(m, dict):
+            return None
+        if isinstance(m.get("conversation"), str):
+            return m["conversation"]
+        ext = m.get("extendedTextMessage")
+        if isinstance(ext, dict) and isinstance(ext.get("text"), str):
+            return ext["text"]
+        pm = m.get("protocolMessage")
+        if isinstance(pm, dict):
+            if pm.get("type") not in _TIPO_EDICAO:
+                return None
+            m = pm.get("editedMessage")
+            continue
+        em = m.get("editedMessage")
+        if isinstance(em, dict):
+            m = em.get("message") or em
+            continue
+        if isinstance(m.get("message"), dict):
+            m = m["message"]
+            continue
+        return None
+    return None
+
+
+def _edicao_do_protocolo(msg) -> tuple[str, str] | None:
+    """(chave da mensagem editada, texto novo) quando a mensagem é uma edição."""
+    pm = msg.get("protocolMessage") if isinstance(msg, dict) else None
+    if not isinstance(pm, dict) or pm.get("type") not in _TIPO_EDICAO:
+        return None
+    alvo = (pm.get("key") or {}).get("id")
+    texto = _texto_editado({"protocolMessage": pm})
+    if not alvo or texto is None:
+        return None
+    return alvo, texto
+
+
+async def _registrar_edicao(*, instance_id: str | None, alvo_id: str | None, texto: str, from_me: bool) -> None:
+    """Mensagem editada no WhatsApp — pela família (`from_me=False`) ou pelo celular
+    do número — troca o texto do balão, guardando a versão anterior. O mesmo aviso
+    chega duas vezes (upsert + update) e a edição feita pelo PAINEL volta como eco:
+    texto igual ao que já está gravado (ou ao que o painel enviou) não faz nada."""
+    from core.db import db_context
+    from models import TaConversation, TaMessageLog
+    from services import agent_runtime
+
+    if not alvo_id:
+        return
+    try:
+        async with db_context() as db:
+            conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)
+            if not conn:
+                return
+            alvo = (
+                await db.execute(
+                    select(TaMessageLog)
+                    .join(TaConversation, TaConversation.id == TaMessageLog.conversation_id)
+                    .where(TaConversation.connector_id == conn.id, TaMessageLog.wa_message_id == alvo_id)
+                    .order_by(TaMessageLog.id.desc())
+                    .limit(1)
+                )
+            ).scalars().first()
+            if alvo is None:
+                return
+            novo = (texto or "").strip()
+            edicoes = list(alvo.edicoes_json or [])
+            if novo == (alvo.content or "").strip():
+                return
+            if from_me and edicoes and (edicoes[-1].get("enviado") or "").strip() == novo:
+                return  # eco da edição que o PAINEL acabou de mandar (com a assinatura)
+            agora = datetime.utcnow()
+            edicoes.append({
+                "texto": alvo.content, "em": agora.isoformat(),
+                "por": "celular" if from_me else "contato",
+            })
+            alvo.edicoes_json = edicoes
+            alvo.content = novo[:8000]
+            alvo.editada_em = agora
+            await db.commit()
+    except Exception:
+        logger.exception("edição não gravada alvo=%s", alvo_id)
 
 
 async def _process_engine_from_me(

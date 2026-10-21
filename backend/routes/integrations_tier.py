@@ -560,18 +560,19 @@ async def conversa_mensagens(
         c for c in candidatas
         if c.id == conv.id or hc.mesmo_contato(conv.external_id, conv.connector_kind, c.external_id, c.connector_kind)
     ]
-    if pessoa_role is not None and not visao.ve_tudo(pessoa_role):
-        # A pessoa vira membro pelo `erp_owner_id` (o SSO grava assim); sem membro,
-        # o lado seguro: atendente sem identidade não vê nada.
-        membro_id = None
-        if pessoa_owner_id:
-            membro_id = (
-                await db.execute(
-                    select(TaMember.id).where(
-                        TaMember.tenant_id == agent_tenant_id, TaMember.erp_owner_id == str(pessoa_owner_id)
-                    )
+    # A pessoa vira membro pelo `erp_owner_id` (o SSO grava assim). Serve à visão e a
+    # dizer qual balão ela pode editar (só os que ela mesma mandou).
+    membro_id = None
+    if pessoa_owner_id:
+        membro_id = (
+            await db.execute(
+                select(TaMember.id).where(
+                    TaMember.tenant_id == agent_tenant_id, TaMember.erp_owner_id == str(pessoa_owner_id)
                 )
-            ).scalars().first()
+            )
+        ).scalars().first()
+    if pessoa_role is not None and not visao.ve_tudo(pessoa_role):
+        # Sem membro, o lado seguro: atendente sem identidade não vê nada.
         meus = await visao.conectores_do_membro(db, agent_tenant_id, membro_id)
         conversas = [
             c for c in conversas
@@ -619,6 +620,8 @@ async def conversa_mensagens(
     def _numero(c) -> dict:
         return (numeros.get(c.connector_id) or {}) if c.connector_id else {}
 
+    from routes.conversations import motivo_para_nao_editar  # mesma régua da rota de editar
+
     ultima = max((c.last_message_at for c in conversas if c.last_message_at), default=None)
     return {
         "conversa": {
@@ -655,6 +658,10 @@ async def conversa_mensagens(
                 # 21/10/2026 — reação: o card mostra e deixa reagir (só mensagem com chave do WhatsApp)
                 "reacoes": m.reacoes_json or None,
                 "pode_reagir": bool(m.wa_message_id),
+                # 21/10/2026 — edição: a régua é a mesma da rota de editar (prazo de
+                # 15 min contado agora; a tela esconde o botão quando ele passa).
+                "pode_editar": membro_id is not None and motivo_para_nao_editar(m, membro_id) is None,
+                "editada": bool(m.editada_em),
             }
             for m in msgs
         ],

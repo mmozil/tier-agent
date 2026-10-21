@@ -356,6 +356,11 @@ class TaMessageLog(Base):
     wa_remote_jid: Mapped[str | None] = mapped_column(String(128), nullable=True)
     wa_from_me: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     reacoes_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 21/10/2026 — edição: quando foi editada (o balão mostra «Editada») e as versões
+    # anteriores [{texto, em, por, member_id?, enviado?}] — o texto antigo não some,
+    # quem gere a conversa ainda vê o que foi dito antes. Runtime DDL, nullable.
+    editada_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    edicoes_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 

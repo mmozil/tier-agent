@@ -122,6 +122,9 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS wa_from_me BOOLEAN",
                 "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS reacoes_json JSONB",
                 "CREATE INDEX IF NOT EXISTS ix_ta_message_log_wa_message_id ON ta_message_log (wa_message_id)",
+                # 21/10/2026: edição de mensagem — quando foi editada e as versões anteriores
+                "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS editada_em TIMESTAMP",
+                "ALTER TABLE ta_message_log ADD COLUMN IF NOT EXISTS edicoes_json JSONB",
                 "ALTER TABLE ta_notification ADD COLUMN IF NOT EXISTS target_member_id INTEGER",
                 "ALTER TABLE ta_llm_provider ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 100",
                 "ALTER TABLE ta_agent ADD COLUMN IF NOT EXISTS avatar_url TEXT",
