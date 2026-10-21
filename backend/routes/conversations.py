@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt
-from models import TaAgent, TaConversation, TaMessageLog
+from models import TaAgent, TaConnector, TaConversation, TaMessageLog
 from services import engine_client
 from services import visao_conversas as visao
 from services.connectors import registry
@@ -298,6 +298,83 @@ async def conversa_por_telefone(
     if not cid:
         raise HTTPException(404, "Ainda não há conversa com este número.")
     return {"id": int(cid)}
+
+
+class IniciarConversaIn(BaseModel):
+    telefone: str
+    connector_id: int
+    content: str
+
+
+@router.post("/iniciar", response_model=dict)
+async def iniciar_conversa(
+    body: IniciarConversaIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Começa a conversa com um número que ainda não falou com a escola (21/10/2026) —
+    como o WhatsApp faz ao abrir pelo link: a primeira mensagem cria a conversa.
+
+    Uma pessoa, uma conversa por vez (não é disparo). Só WhatsApp por QR: na API
+    oficial a Meta só deixa iniciar com modelo aprovado. Atendente só pelos números
+    DELE. O WhatsApp confirma o número antes (e devolve o endereço com ou sem o 9).
+    """
+    from services import agent_runtime
+    from services.proactive import marcar_eco_do_envio
+
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(422, "Escreva a mensagem")
+    digitos = re.sub(r"\D", "", body.telefone or "")
+    if len(digitos) < 10:
+        raise HTTPException(422, "Telefone inválido")
+    if not digitos.startswith("55") and len(digitos) in (10, 11):
+        digitos = "55" + digitos
+
+    conn = await db.get(TaConnector, body.connector_id)
+    agente = await db.get(TaAgent, conn.agent_id) if conn else None
+    if not conn or not agente or agente.tenant_id != user.tenant_id:
+        raise HTTPException(404, "Número não encontrado")
+    if conn.kind == "whatsapp_cloud":
+        raise HTTPException(422, "Na API oficial, a Meta só deixa iniciar conversa com modelo aprovado")
+    if conn.kind != "whatsapp" or not conn.enabled:
+        raise HTTPException(422, "Iniciar conversa só existe no WhatsApp conectado por QR")
+    if not visao.ve_tudo(user.role) and conn.id not in await visao.conectores_do_membro(
+        db, user.tenant_id, user.member_id
+    ):
+        raise HTTPException(403, "Este número não é seu — escolha um dos seus")
+
+    cfg = json.loads(decrypt(conn.config_json_enc))
+    conferencia = await engine_client.on_whatsapp(cfg.get("instance_id", ""), cfg.get("api_key", ""), digitos)
+    if conferencia and conferencia.get("checked") and not conferencia.get("exists"):
+        raise HTTPException(422, "Este número não tem WhatsApp")
+    chat = (conferencia or {}).get("jid") or f"{digitos}@s.whatsapp.net"
+
+    out_content = _assina(conn, user, content)
+    enviado_em = datetime.utcnow()
+    try:
+        resultado = await registry.get("whatsapp").send(
+            ConnectorConfig(data=cfg), OutboundMessage(external_chat_id=chat, content=out_content)
+        )
+    except Exception as e:
+        logger.exception("iniciar conversa falhou connector=%s", conn.id)
+        raise HTTPException(502, f"Falha ao enviar: {e}") from e
+    await marcar_eco_do_envio(db, conn, resultado)
+
+    registro = (getattr(conn, "modo", None) or "agente") == "registro"
+    conv = await agent_runtime.ensure_conversation(
+        db, agent_id=conn.agent_id, connector_kind="whatsapp", external_id=chat,
+        connector_id=conn.id, por_numero=registro,
+    )
+    msg = await _gravar_resposta(
+        db, conv, user, registro=registro, content=content,
+        enviado={content, out_content}, enviado_em=enviado_em,
+    )
+    await _guardar_chave_do_envio(db, msg, conv, conn, resultado)
+    _agendar_capinha(msg.id, content)
+    return {"id": conv.id}
 
 
 @router.get("/{conversation_id}", response_model=dict)

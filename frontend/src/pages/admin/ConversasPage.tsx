@@ -13,6 +13,7 @@ import CannedPicker from "@/components/CannedPicker";
 import MidiaDaMensagem, { linkificar, type Anexo } from "@/components/inbox/MidiaDaMensagem";
 import TarefasCrm from "@/components/inbox/TarefasCrm";
 import { BarraDeReacao, ChipsDeReacao, type Reacoes } from "@/components/inbox/Reacoes";
+import NovaConversa from "@/components/inbox/NovaConversa";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
 
@@ -386,6 +387,8 @@ export default function ConversasPage() {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [openConv, setOpenConv] = useState<Conversation | null>(null);
+  // Número aberto pelo CRM que ainda não tem conversa: mostra a «Nova conversa».
+  const [novaConversaTel, setNovaConversaTel] = useState<string | null>(null);
   const [debugMsg, setDebugMsg] = useState<Record<string, any> | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
@@ -546,7 +549,8 @@ export default function ConversasPage() {
         if (det.data.conversation) await openConversation(det.data.conversation);
       } catch (e: any) {
         if (e?.response?.status === 404) {
-          toast(`Ainda não há conversa com ${fmtPhone(tel)} neste WhatsApp.`, { duration: 7000 });
+          // 21/10/2026 — sem conversa: abre o campo para escrever, como o WhatsApp pelo link.
+          setNovaConversaTel(tel);
         } else {
           toast.error("Não consegui abrir a conversa deste número");
         }
@@ -1194,7 +1198,22 @@ export default function ConversasPage() {
 
       {/* ═══════════ ZONA 3 — chat ═══════════ */}
       <section className={`flex-1 flex flex-col min-w-0 min-h-0 ${FC.base}`}>
-        {!openConv ? (
+        {!openConv && novaConversaTel ? (
+          <NovaConversa
+            telefone={novaConversaTel}
+            onCancelar={() => setNovaConversaTel(null)}
+            onCriada={async (id) => {
+              setNovaConversaTel(null);
+              try {
+                const det = await api.get<{ conversation?: Conversation }>(`/conversations/${id}`);
+                if (det.data.conversation) await openConversation(det.data.conversation);
+              } catch {
+                /* a mensagem já saiu; a conversa aparece na lista na próxima atualização */
+              }
+              void load(scope, true);
+            }}
+          />
+        ) : !openConv ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
             <div className="w-12 h-12 rounded-2xl bg-[#003083]/[0.06] dark:bg-[#5b9bff]/[0.12] flex items-center justify-center mb-3">
               <Inbox className="w-6 h-6 text-[#003083] dark:text-[#5b9bff]" />

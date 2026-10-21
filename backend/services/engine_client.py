@@ -82,6 +82,18 @@ async def connect_instance(instance_id: str, api_key: str) -> dict:
     return r.json()
 
 
+async def on_whatsapp(instance_id: str, api_key: str, numero: str) -> dict | None:
+    """O número tem WhatsApp? Devolve {checked, exists, jid} — o `jid` é o endereço
+    como o WhatsApp o conhece (com ou sem o 9). `None` = não deu para perguntar."""
+    url = f"{settings.tier_whatsapp_engine_url}/v1/instances/{instance_id}/on-whatsapp"
+    try:
+        async with httpx.AsyncClient(timeout=10) as cli:
+            r = await cli.post(url, headers=_instance_headers(api_key), json={"number": numero})
+        return r.json() if r.status_code < 400 else None
+    except Exception:  # noqa: BLE001 — sem a conferência, o envio tenta pelo número digitado
+        return None
+
+
 async def send_reaction(instance_id: str, api_key: str, *, chave: dict, emoji: str) -> None:
     """Reage (emoji embaixo do balão, no WhatsApp do contato) — vazio tira a reação.
 
