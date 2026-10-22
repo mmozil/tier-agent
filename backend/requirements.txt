@@ -60,4 +60,4 @@ faster-whisper==1.1.0
 # TTS pelas vozes neurais do Edge (endpoint nao oficial da Microsoft).
 # Motor primario desde 29/08/2026; o Kokoro fica atras dele na fila do
 # TTS_PROVIDER, entao uma queda daqui deixa a voz feia, nao muda.
-edge-tts==7.2.8
+edge-tts==7.3.1
