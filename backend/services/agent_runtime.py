@@ -618,6 +618,51 @@ async def _log_deterministic_turn(db, agent, connector_kind, external_id, contac
         logger.exception("log de turno determinístico falhou agent=%s", agent_id)
 
 
+async def juntar_conversa_do_codigo_oculto(db: AsyncSession, conv: TaConversation, jid_cru: str | None) -> int:
+    """Junta na conversa do TELEFONE a conversa aberta pelo código oculto do mesmo cliente (29/10/2026).
+
+    A vendedora escreve primeiro pelo celular e o WhatsApp manda o chat como `<código>@lid`, sem o telefone:
+    a conversa nasce com esse código (na tela, um número sem sentido). A resposta do cliente vem com o
+    telefone (`resolvedPhoneJid`) e abria OUTRA conversa — no celular é uma só, aqui eram duas. Medido em
+    29/10: 53 na M7, 155 no CCDA, todas só com mensagens da vendedora. Esta resposta traz os dois (o
+    código em `key.remoteJid`), então é aqui que se junta. Devolve quantas foram juntadas."""
+    lid = (jid_cru or "").strip()
+    if not lid.endswith("@lid") or lid == conv.external_id or not getattr(conv, "connector_id", None):
+        return 0
+    fantasmas = (
+        await db.execute(
+            select(TaConversation).where(
+                TaConversation.agent_id == conv.agent_id,
+                TaConversation.connector_id == conv.connector_id,
+                TaConversation.external_id == lid,
+                TaConversation.id != conv.id,
+            )
+        )
+    ).scalars().all()
+    if not fantasmas:
+        return 0
+    from sqlalchemy import update as _update
+
+    from models import TaNotification, TaPlaybookExecution
+
+    for f in fantasmas:
+        for modelo in (TaMessageLog, TaNotification, TaPlaybookExecution):
+            await db.execute(_update(modelo).where(modelo.conversation_id == f.id).values(conversation_id=conv.id))
+        conv.msg_count = (conv.msg_count or 0) + (f.msg_count or 0)
+        if f.started_at and (not conv.started_at or f.started_at < conv.started_at):
+            conv.started_at = f.started_at
+        if not (conv.contact_name or "").strip() and (f.contact_name or "").strip():
+            conv.contact_name = f.contact_name
+        if not conv.crm_opportunity_id and f.crm_opportunity_id:
+            conv.crm_opportunity_id = f.crm_opportunity_id
+        if not conv.assigned_member_id and f.assigned_member_id:
+            conv.assigned_member_id = f.assigned_member_id
+        await db.delete(f)
+    await db.commit()
+    logger.info("conversa do código oculto %s juntada na %s (%d)", lid, conv.id, len(fantasmas))
+    return len(fantasmas)
+
+
 async def registrar_mensagem_sem_ia(
     db: AsyncSession,
     connector: TaConnector,
@@ -678,6 +723,10 @@ async def registrar_mensagem_sem_ia(
         connector_id=connector.id,
         por_numero=True,
     )
+    if role == "user":
+        from services import wa_chave as _wa_chave
+
+        await juntar_conversa_do_codigo_oculto(db, conv, _wa_chave.remote_jid_atual())
     _att = anexos_para_log(attachments)
     await log_message(
         db, conversation_id=conv.id, tenant_id=agent.tenant_id, role=role, tokens_in=0,

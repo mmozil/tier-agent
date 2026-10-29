@@ -30,3 +30,11 @@ def consumir(papel: str) -> dict | None:
         return None
     _ATUAL.set(None)
     return c
+
+
+def remote_jid_atual() -> str | None:
+    """O chat como o WhatsApp mandou (`key.remoteJid`), SEM consumir a chave. Na mensagem do cliente
+    pode ser o código oculto (`…@lid`) enquanto a conversa é aberta pelo telefone — é o elo que junta
+    a conversa partida (29/10/2026)."""
+    c = _ATUAL.get()
+    return (c or {}).get("remote_jid")
