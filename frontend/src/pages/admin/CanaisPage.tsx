@@ -16,6 +16,8 @@ const STATUS_META: Record<string, { color: string; label: string; tip: string }>
   pending: { color: "bg-[#F5A300]", label: "Pendente", tip: "Instância criada, aguardando QR Code" },
   connecting: { color: "bg-[#F5A300]", label: "Conectando", tip: "Estabelecendo conexão" },
   disconnected: { color: "bg-[#262626]/25", label: "Desconectado", tip: "Conexão encerrada" },
+  // O WhatsApp derrubou o aparelho (o motor diz logged_out): antes caía em «Desconhecido».
+  logged_out: { color: "bg-[#E5484D]", label: "Caiu — leia o QR", tip: "O WhatsApp desconectou este número. Clique em «Escanear QR» e leia com o celular do número." },
   unknown: { color: "bg-[#262626]/25", label: "Desconhecido", tip: "Sem resposta da plataforma" },
 };
 
@@ -319,7 +321,9 @@ export default function CanaisPage() {
     setLoading(true);
     try {
       const [c, a, m] = await Promise.all([
-        api.get<Connector[]>("/connectors"),
+        // ao_vivo: o estado vem do motor, não do gravado — senão número caído
+        // aparece «Conectado» e o «Escanear QR» não surge (medido 28/10/2026).
+        api.get<Connector[]>("/connectors", { params: { ao_vivo: 1 } }),
         api.get<Agent[]>("/agents"),
         api.get<{ id: number; nome: string }[]>("/team/members").catch(() => ({ data: [] })),
       ]);

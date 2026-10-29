@@ -1,5 +1,6 @@
 """CRUD de conectores (canais) + provisionamento WhatsApp via Tier Engine."""
 
+import asyncio
 import json
 import logging
 import re as _re
@@ -145,9 +146,52 @@ async def _exigir_numero_seu(db: AsyncSession, conn: TaConnector, user: CurrentU
         raise HTTPException(403, "Este número não é seu — peça ao administrador")
 
 
+async def _status_ao_vivo(db: AsyncSession, conns: list[TaConnector]) -> None:
+    """Pergunta ao motor o estado REAL de cada número por QR e grava (28/10/2026).
+
+    A lista mostrava o `status` gravado na última vez que alguém abriu o QR, e nada
+    o atualiza quando o número cai. Medido em 28/10: 2 números diziam «Conectado»
+    com o WhatsApp fora (um da M7 desde 25/10, outro desde 19/07) — e o «Escanear
+    QR» só aparece fora do «connected», então quem precisava reler o QR não tinha
+    onde clicar. Motor lento ou fora do ar = fica o gravado, a tela não trava."""
+    alvos = []
+    for c in conns:
+        if c.kind != "whatsapp":
+            continue
+        try:
+            cfg = json.loads(decrypt(c.config_json_enc))
+        except Exception:
+            continue
+        if cfg.get("instance_id") and cfg.get("api_key"):
+            alvos.append((c, cfg))
+    if not alvos:
+        return
+
+    async def _um(cfg: dict) -> str | None:
+        try:
+            r = await asyncio.wait_for(engine_client.get_status(cfg["instance_id"], cfg["api_key"]), timeout=4)
+            return r.get("status")
+        except engine_client.EngineError as e:
+            # Instância que o motor não conhece mais = caiu de vez; o «Escanear QR» cria outra.
+            return "disconnected" if e.status == 404 else None
+        except Exception:
+            return None
+
+    novos = await asyncio.gather(*(_um(cfg) for _, cfg in alvos))
+    mudou = False
+    for (c, cfg), st in zip(alvos, novos, strict=True):
+        if st and st != cfg.get("status"):
+            cfg["status"] = st
+            c.config_json_enc = encrypt(json.dumps(cfg))
+            mudou = True
+    if mudou:
+        await db.commit()
+
+
 @router.get("")
 async def list_connectors(
     agent_id: int | None = None,
+    ao_vivo: bool = False,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -166,7 +210,10 @@ async def list_connectors(
         # Atendente vê só os números dele — é onde ele reconecta (lê o QR) quando cai.
         stmt = stmt.where(TaConnector.id.in_(await visao.conectores_do_membro(db, user.tenant_id, user.member_id)))
     result = await db.execute(stmt.order_by(TaConnector.id.desc()))
-    return [_serialize(c) for c in result.scalars().all()]
+    conns = list(result.scalars().all())
+    if ao_vivo:  # a página de números pede; as listas de escolher número não esperam o motor
+        await _status_ao_vivo(db, conns)
+    return [_serialize(c) for c in conns]
 
 
 # Canais "traga sua chave" conectáveis pelo form genérico (token → valida → cria).
