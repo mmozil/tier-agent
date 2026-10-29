@@ -464,6 +464,12 @@ async def ensure_conversation(
             conv.snoozed_until = None  # cliente voltou — tira do snooze
         if connector_id and not getattr(conv, "connector_id", None):
             conv.connector_id = connector_id  # conversa antiga aprende de qual número é
+        # 29/10/2026 (M7): o nome só entrava quando a conversa NASCIA. A vendedora escreve primeiro pelo
+        # celular → a conversa nasce sem nome, e a resposta do cliente (que traz o nome do perfil) não
+        # preenchia depois: 108 das 109 conversas sem nome da M7 eram assim. Só preenche o VAZIO —
+        # nome já gravado (ou trocado à mão no painel) não é sobrescrito.
+        if contact_name and not (conv.contact_name or "").strip():
+            conv.contact_name = contact_name
         await _atribuir_pelo_numero(db, conv, connector_id)
         await db.commit()
         return conv
