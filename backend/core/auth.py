@@ -88,13 +88,18 @@ async def get_current_user(
     # Membro desativado ou removido (na Equipe daqui ou no ERP) não continua com a
     # sessão viva até o token vencer: uma busca por chave a cada requisição e a
     # sessão morre na hora. Dono (sem member_id) não passa por aqui.
+    # O PAPEL também sai do banco, não do token (30/10/2026): o token vale 24 h, e quem
+    # deixava de ser admin seguia vendo as conversas de todos até ele vencer. Igual ao
+    # Chatwoot, que confere o papel da pessoa na conta a cada requisição.
     _mid = payload.get("member_id")
+    role = payload.get("role", "owner")
     if _mid:
         from models import TaMember
 
         _m = await db.get(TaMember, int(_mid))
         if _m is None or _m.status != "active" or (payload.get("tenant_id") and _m.tenant_id != payload.get("tenant_id")):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessão encerrada: este usuário foi desativado ou removido")
+        role = _m.role or "atendente"
     return CurrentUser(
         user_id=int(payload["sub"]),
         email=payload.get("email", ""),
@@ -102,7 +107,7 @@ async def get_current_user(
         is_admin=bool(payload.get("is_admin", False)),
         member_id=payload.get("member_id"),
         member_name=payload.get("member_name"),
-        role=payload.get("role", "owner"),
+        role=role,
     )
 
 
