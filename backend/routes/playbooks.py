@@ -22,6 +22,7 @@ from models import (
     TaPlaybookStepLog,
     TaPlaybookTriggerIndex,
 )
+from services import visao_conversas as visao
 from services import playbook_executor, playbook_seed
 
 router = APIRouter(prefix="/playbooks", tags=["playbooks"])
@@ -695,6 +696,8 @@ async def list_executions(
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = await _ensure_tenant(user)
+    # Pente fino do incidente da M7 (30/10/2026): mostra conversa de qualquer número.
+    visao.exigir_gestor(user, "ver as execuções das automações")
     await _get_playbook_for_tenant(db, playbook_id, tenant_id)
 
     rows = (
@@ -715,6 +718,8 @@ async def list_execution_steps(
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = await _ensure_tenant(user)
+    # Pente fino do incidente da M7 (30/10/2026): mostra conversa de qualquer número.
+    visao.exigir_gestor(user, "ver os passos das automações")
     exe = await db.get(TaPlaybookExecution, execution_id)
     if exe is None:
         raise HTTPException(404, "Execução não encontrada")

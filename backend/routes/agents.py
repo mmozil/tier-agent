@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
+from services import visao_conversas as visao
 from models import TaAgent
 from services import agent_runtime, templates as tpl
 
@@ -261,6 +262,8 @@ async def list_memories(
         limit: max rows (default 100, max 500)
     """
     tenant_id = await _ensure_tenant(user)
+    # Pente fino do incidente da M7 (30/10/2026): mostra conversa de qualquer número.
+    visao.exigir_gestor(user, "ver as memórias de um contato")
     agent = await db.get(TaAgent, agent_id)
     if not agent or agent.tenant_id != tenant_id:
         raise HTTPException(404, "Agente não encontrado")

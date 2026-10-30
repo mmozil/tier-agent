@@ -391,6 +391,29 @@ async def agente_registro_do_tenant(db: AsyncSession, tenant_id: int) -> TaAgent
     return agent
 
 
+async def _encerrar_instancia(instance_id: str | None, api_key: str | None) -> None:
+    """Derruba de verdade a sessão antiga de um número: LOGOUT (apaga o pareamento) e
+    apaga a instância no motor. Qualquer erro vira log — nunca impede o número novo.
+
+    🚨 Sessão escondida (incidente da M7, 30/10/2026): cada «Conectar» cria uma
+    instância nova e o canal passa a apontar para ela; a antiga ficava viva. Se o QR
+    antigo fosse lido, aquela sessão pareava SEM canal nenhum — não aparecia em Canais
+    e seguia conectada (o 19 99701‑2137 do «M7 Agent» ficou assim de 25/10 a 30/10).
+    `disconnect` não basta: só fecha o socket e o vigia do motor religa.
+    """
+    if not instance_id:
+        return
+    if api_key:
+        try:
+            await engine_client.logout_instance(instance_id, api_key)
+        except Exception:  # noqa: BLE001 — já caída ou fora do ar: segue para apagar
+            logger.warning("logout da instância antiga %s falhou", instance_id, exc_info=True)
+    try:
+        await engine_client.delete_instance(instance_id)
+    except Exception:  # noqa: BLE001
+        logger.warning("apagar a instância antiga %s falhou", instance_id, exc_info=True)
+
+
 @router.post("/whatsapp/provision")
 async def provision_whatsapp(
     payload: WhatsAppProvisionIn,
@@ -441,7 +464,13 @@ async def provision_whatsapp(
             )
         )
         conn = existing.scalars().first()
+    antiga: tuple[str | None, str | None] = (None, None)
     if conn:
+        try:
+            _cfg_antiga = json.loads(decrypt(conn.config_json_enc))
+            antiga = (_cfg_antiga.get("instance_id"), _cfg_antiga.get("api_key"))
+        except Exception:  # noqa: BLE001
+            antiga = (None, None)
         conn.config_json_enc = encrypt(json.dumps(cfg))
         conn.enabled = True
         conn.modo = modo
@@ -452,6 +481,8 @@ async def provision_whatsapp(
         db.add(conn)
     await db.commit()
     await db.refresh(conn)
+    if antiga[0] and antiga[0] != instance_id:
+        await _encerrar_instancia(*antiga)
     return _serialize(conn)
 
 
@@ -508,17 +539,10 @@ async def connect(
     conn.enabled = True
     await db.commit()
 
-    # Descarta a instância antiga (best-effort — não bloqueia o pairing novo).
+    # Derruba a instância antiga DE VERDADE (logout + apagar) — senão um QR antigo
+    # lido depois pareia uma sessão sem canal, escondida (30/10/2026).
     if old_instance_id and old_instance_id != instance_id:
-        try:
-            if old_api_key:
-                await engine_client.disconnect_instance(old_instance_id, old_api_key)
-        except engine_client.EngineError:
-            pass
-        try:
-            await engine_client.delete_instance(old_instance_id)
-        except engine_client.EngineError:
-            pass
+        await _encerrar_instancia(old_instance_id, old_api_key)
 
     try:
         await engine_client.connect_instance(instance_id, api_key)

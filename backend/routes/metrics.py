@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("metrics")
 
+from services import visao_conversas as visao
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from models import (
@@ -405,6 +406,8 @@ async def top_conversations(
 ):
     """Top N conversas mais caras."""
     tenant_id = await _ensure_tenant(user)
+    # Pente fino do incidente da M7 (30/10/2026): mostra conversa de qualquer número.
+    visao.exigir_gestor(user, "ver as conversas em destaque")
     since = _period_start(days)
 
     try:

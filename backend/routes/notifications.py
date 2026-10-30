@@ -14,9 +14,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
-from models import TaAgent, TaNotification, TaRuntimeParam
+from models import TaAgent, TaConversation, TaNotification, TaRuntimeParam
+from services import visao_conversas as visao
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+
+
+async def _so_o_que_ve(db: AsyncSession, user: CurrentUser) -> list:
+    """Condições do sino para quem é MEMBRO (30/10/2026, pente fino do incidente da M7).
+
+    Antes: o membro via todo aviso sem destinatário — lead, passagem para humano, SLA —
+    com nome, telefone e o texto do cliente de QUALQUER número do tenant. Agora vale a
+    mesma régua da lista de conversas: aviso de conversa só para quem vê a conversa
+    (`visao_conversas.filtro_para`), e aviso dirigido só para o destinatário.
+    Dono (sem member_id) vê tudo, como sempre."""
+    if not user.member_id:
+        return []
+    conds = [or_(TaNotification.target_member_id.is_(None), TaNotification.target_member_id == user.member_id)]
+    if not visao.ve_tudo(user.role):
+        visiveis = select(TaConversation.id).where(
+            TaConversation.agent_id.in_(select(TaAgent.id).where(TaAgent.tenant_id == user.tenant_id)),
+            await visao.filtro_para(db, user),
+        )
+        conds.append(or_(TaNotification.conversation_id.is_(None), TaNotification.conversation_id.in_(visiveis)))
+    return conds
 
 _ALERT_KEYS = (
     "alert_whatsapp", "alert_email", "alert_enabled", "sla_minutes",
@@ -67,14 +88,8 @@ async def list_notifications(
         stmt = stmt.where(TaNotification.status == status)
     if agent_id is not None:
         stmt = stmt.where(TaNotification.agent_id == agent_id)
-    # Atendente vê broadcasts (target null) + as direcionadas a ele. Dono vê tudo.
-    if user.member_id:
-        stmt = stmt.where(
-            or_(
-                TaNotification.target_member_id.is_(None),
-                TaNotification.target_member_id == user.member_id,
-            )
-        )
+    # Membro: avisos das conversas que ele vê, e só os dirigidos a ele. Dono vê tudo.
+    stmt = stmt.where(*(await _so_o_que_ve(db, user)))
     stmt = stmt.order_by(TaNotification.id.desc()).limit(limit)
 
     rows = (await db.execute(stmt)).scalars().all()
@@ -180,6 +195,8 @@ async def put_alert_config(
 ):
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
+    # Para onde vai o alerta (com nome e resumo do cliente) é decisão de gestor (30/10/2026).
+    visao.exigir_gestor(user, "mudar para onde vão os alertas")
     desired = {
         "alert_whatsapp": (cfg.alert_whatsapp or "").strip(),
         "alert_email": (cfg.alert_email or "").strip(),
@@ -237,14 +254,7 @@ async def notification_stats(
         raise HTTPException(403, "Sem tenant")
 
     # unread count (respeita visibilidade por atendente)
-    member_filter = []
-    if user.member_id:
-        member_filter = [
-            or_(
-                TaNotification.target_member_id.is_(None),
-                TaNotification.target_member_id == user.member_id,
-            )
-        ]
+    member_filter = await _so_o_que_ve(db, user)
     unread = (
         await db.execute(
             select(func.count(TaNotification.id)).where(
@@ -272,15 +282,29 @@ async def notification_stats(
     return NotificationStats(unread=unread, by_category=by_cat)
 
 
+async def _aviso_que_ve(db: AsyncSession, user: CurrentUser, notification_id: int) -> TaNotification:
+    """O aviso pelo id, só se a pessoa o veria no sino — senão 404 (não diz que existe)."""
+    notif = (
+        await db.execute(
+            select(TaNotification).where(
+                TaNotification.id == notification_id,
+                TaNotification.tenant_id == user.tenant_id,
+                *(await _so_o_que_ve(db, user)),
+            )
+        )
+    ).scalar_one_or_none()
+    if not notif:
+        raise HTTPException(404, "Notificação não encontrada")
+    return notif
+
+
 @router.patch("/{notification_id}/read", response_model=NotificationOut)
 async def mark_read(
     notification_id: int,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    notif = await db.get(TaNotification, notification_id)
-    if not notif or notif.tenant_id != user.tenant_id:
-        raise HTTPException(404, "Notificação não encontrada")
+    notif = await _aviso_que_ve(db, user, notification_id)
     if notif.status != "read":
         notif.status = "read"
         notif.read_at = datetime.utcnow()
@@ -295,9 +319,7 @@ async def archive_notification(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    notif = await db.get(TaNotification, notification_id)
-    if not notif or notif.tenant_id != user.tenant_id:
-        raise HTTPException(404, "Notificação não encontrada")
+    notif = await _aviso_que_ve(db, user, notification_id)
     notif.status = "archived"
     await db.commit()
     await db.refresh(notif)
@@ -316,6 +338,7 @@ async def mark_all_read(
         .where(
             TaNotification.tenant_id == user.tenant_id,
             TaNotification.status == "unread",
+            *(await _so_o_que_ve(db, user)),
         )
         .values(status="read", read_at=datetime.utcnow())
     )

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
+from services import visao_conversas as visao
 from models import TaAgent, TaConversation, TaNotification
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,12 @@ async def attention_queue(
 
     now = datetime.utcnow()
     nao_snoozed = or_(TaConversation.snoozed_until.is_(None), TaConversation.snoozed_until <= now)
+    # 🚨 Pente fino (30/10/2026): esta fila não tinha filtro NENHUM — mostrava conversa de
+    # qualquer número. Mesma régua da lista de conversas e do sino.
+    so_as_que_ve = await visao.filtro_para(db, user)
+    from routes.notifications import _so_o_que_ve
+
+    avisos_que_ve = await _so_o_que_ve(db, user)
 
     # 1. Aguardando humano — conversas em handed_off (humano assumiu / precisa conduzir)
     aguardando_rows = (
@@ -61,6 +68,7 @@ async def attention_queue(
                 TaConversation.agent_id.in_(agent_ids),
                 TaConversation.status == "handed_off",
                 nao_snoozed,
+                so_as_que_ve,
             )
             .order_by(TaConversation.last_message_at.desc().nulls_last())
             .limit(100)
@@ -76,6 +84,7 @@ async def attention_queue(
                 TaConversation.status == "active",
                 TaConversation.assigned_member_id.is_(None),
                 nao_snoozed,
+                so_as_que_ve,
             )
             .order_by(TaConversation.last_message_at.desc().nulls_last())
             .limit(100)
@@ -90,6 +99,7 @@ async def attention_queue(
                 TaNotification.tenant_id == user.tenant_id,
                 TaNotification.status == "unread",
                 TaNotification.category.in_(_ATTN_CATEGORIES),
+                *avisos_que_ve,
             )
             .order_by(TaNotification.created_at.desc())
             .limit(100)
