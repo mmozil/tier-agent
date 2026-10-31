@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
-from services import visao_conversas as visao
 from models import TaAgent, TaConversation, TaNotification
+from services import visao_conversas as visao
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,10 @@ async def attention_queue(
             "agent_id": c.agent_id,
             "contato": c.contact_name or _phone(c.external_id),
             "telefone": _phone(c.external_id),
-            "preview": c.last_preview,
+            # 🚨 31/10/2026: `TaConversation` não tem `last_preview` (é campo da resposta da
+            # lista, calculado lá). Lido aqui, a fila inteira dava 500 desde 05/06 sempre que
+            # havia algo nela — o teste de ponta a ponta achou. Sem prévia até ter uma de verdade.
+            "preview": None,
             "last_message_at": c.last_message_at.isoformat() if c.last_message_at else None,
             "tags": c.tags or [],
         }
@@ -122,8 +125,9 @@ async def attention_queue(
             "notification_id": n.id,
             "category": n.category,
             "conversation_id": n.conversation_id,
-            "contato": n.contato,
-            "telefone": n.telefone,
+            # o contato e o telefone moram no payload do aviso (handoff/lead), não em coluna
+            "contato": (n.payload_json or {}).get("contato"),
+            "telefone": (n.payload_json or {}).get("telefone"),
             "title": n.title,
             "body": n.body,
             "created_at": n.created_at.isoformat() if n.created_at else None,
