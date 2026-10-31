@@ -130,6 +130,11 @@ interface Connector {
   member_id?: number | null;
   /** Resposta do painel sai com «*Nome:*» na frente — número usado por várias pessoas. */
   assinar_nome?: boolean;
+  /** 31/10/2026 — perfil do WhatsApp visto nas mensagens que saem pelo número, e se ele bate
+   *  com a pessoa dona do número (false = o perfil tem o nome de OUTRA pessoa da equipe). */
+  perfil_whatsapp?: string | null;
+  perfil_confere?: boolean | null;
+  perfil_aviso?: string | null;
   config_summary: {
     instance_id?: string;
     phone?: string;
@@ -1023,6 +1028,17 @@ export default function CanaisPage() {
                           <span className="truncate" title="Dona do número — as conversas dele nascem atribuídas a ela (vincule em Equipe)">· de {memberName(c.member_id)}</span>
                         )}
                       </div>
+                      {/* De quem é o chip (31/10/2026): o número do Paulo era o WhatsApp da Rebecca e
+                          a regra entregava as conversas dela a ele. */}
+                      {c.perfil_confere === false ? (
+                        <div className="mt-0.5 text-[12px] font-medium text-red-600 dark:text-red-400 truncate" title={c.perfil_aviso || undefined}>
+                          ⚠ WhatsApp no perfil «{c.perfil_whatsapp}» — confira se o número é mesmo de {c.member_id ? memberName(c.member_id) : "quem está cadastrado"}
+                        </div>
+                      ) : c.perfil_whatsapp ? (
+                        <div className={`mt-0.5 text-[12px] truncate ${FC.mut}`} title="Nome do perfil do WhatsApp visto nas mensagens que saem por este número">
+                          WhatsApp: «{c.perfil_whatsapp}»
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Status */}

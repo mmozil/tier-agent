@@ -61,3 +61,48 @@ async def create_tenant(
     await db.commit()
     await db.refresh(tenant)
     return tenant
+
+
+# ── «Fechar o Atendimento» — modo incidente (31/10/2026) ────────────────────────
+# No incidente da M7 a contenção foi derrubar número por número. Aqui é um interruptor:
+# fechado, só o dono da conta entra (a trava está em `core.auth.get_current_user`).
+# Fechar: dono ou gestor (fechar é sempre seguro — e o gestor que fecha também fica de fora).
+# Reabrir: só o dono (ou a equipe Tier), para ninguém de dentro reabrir por conta própria.
+
+
+@router.get("/me/atendimento")
+async def estado_do_atendimento(user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    t = await db.get(TaTenant, user.tenant_id)
+    em = getattr(t, "atendimento_fechado_em", None) if t else None
+    return {"fechado": bool(em), "fechado_em": em.isoformat() if em else None}
+
+
+@router.post("/me/atendimento/fechar")
+async def fechar_atendimento(user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from datetime import datetime
+
+    from services import visao_conversas as visao
+
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    visao.exigir_gestor(user, "fechar o Atendimento")
+    t = await db.get(TaTenant, user.tenant_id)
+    if t.atendimento_fechado_em is None:
+        t.atendimento_fechado_em = datetime.utcnow()
+        await db.commit()
+    return {"fechado": True, "fechado_em": t.atendimento_fechado_em.isoformat()}
+
+
+@router.post("/me/atendimento/abrir")
+async def abrir_atendimento(user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    if user.member_id is not None and not user.is_admin:
+        raise HTTPException(403, "Só o dono da conta reabre o Atendimento. O que fazer: entre com o login do dono.")
+    t = await db.get(TaTenant, user.tenant_id)
+    if t.atendimento_fechado_em is not None:
+        t.atendimento_fechado_em = None
+        await db.commit()
+    return {"fechado": False, "fechado_em": None}

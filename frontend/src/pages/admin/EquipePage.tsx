@@ -54,6 +54,8 @@ export default function EquipePage() {
   const [newTeam, setNewTeam] = useState("");
   const [numeros, setNumeros] = useState<Numero[]>([]);
   const [me, setMe] = useState<{ role: string } | null>(null);
+  // Modo incidente (31/10/2026): fechado = só o dono da conta entra no Atendimento.
+  const [fechado, setFechado] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -68,6 +70,7 @@ export default function EquipePage() {
       setTeams(tRes.data);
       setNumeros((nRes.data || []).filter((n) => n.kind === "whatsapp" || n.kind === "whatsapp_cloud"));
       setMe(meRes.data);
+      api.get<{ fechado: boolean }>("/tenants/me/atendimento").then(({ data }) => setFechado(!!data.fechado)).catch(() => {});
     } catch {
       toast.error("Falha ao carregar equipe");
     } finally {
@@ -76,6 +79,31 @@ export default function EquipePage() {
   }
 
   const gestor = !me || me.role === "owner" || me.role === "admin";
+
+  async function alternarAtendimento() {
+    if (!fechado) {
+      const ok = window.confirm(
+        "Fechar o Atendimento?\n\nNinguém da equipe — nem admin, nem você, se não for o dono da conta — entra no Atendimento até o dono reabrir. Use em incidente (conversa vista por quem não devia)."
+      );
+      if (!ok) return;
+      try {
+        await api.post("/tenants/me/atendimento/fechar");
+        setFechado(true);
+        toast.success("Atendimento fechado. Só o dono da conta entra até reabrir.");
+      } catch {
+        toast.error("Não foi possível fechar o Atendimento");
+      }
+      return;
+    }
+    try {
+      await api.post("/tenants/me/atendimento/abrir");
+      setFechado(false);
+      toast.success("Atendimento reaberto para a equipe");
+    } catch (e: unknown) {
+      const det = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(det || "Não foi possível reabrir o Atendimento");
+    }
+  }
   // «+ número» oferece todo número que a pessoa ainda não tem. Sem responsável, ela vira
   // a responsável; com responsável, ela passa a DIVIDIR o número (16/10/2026 — padrão
   // Chatwoot/Zendesk: o número da Secretaria é da equipe, não de uma pessoa só).
@@ -252,6 +280,26 @@ export default function EquipePage() {
             </div>
           }
         />
+
+        {gestor && (
+          <Row>
+            <div className="px-6 py-4 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className={`text-[14px] font-medium ${FC.ink}`}>
+                  {fechado ? "Atendimento fechado — só o dono da conta entra" : "Fechar o Atendimento (modo incidente)"}
+                </div>
+                <div className={`text-[13px] ${FC.sub}`}>
+                  {fechado
+                    ? "Ninguém da equipe abre conversa, sino ou relatório até o dono reabrir."
+                    : "Se alguém viu conversa que não devia: fecha tudo de uma vez para a equipe, enquanto você confere. Só o dono reabre."}
+                </div>
+              </div>
+              <Button variant={fechado ? "primary" : "secondary"} onClick={alternarAtendimento} className="shrink-0 whitespace-nowrap">
+                <Shield className="w-3.5 h-3.5" /> {fechado ? "Reabrir" : "Fechar o Atendimento"}
+              </Button>
+            </div>
+          </Row>
+        )}
 
         {showForm && (
           <Row>

@@ -571,6 +571,11 @@ async def conversa_mensagens(
                 )
             )
         ).scalars().first()
+    # Atendimento fechado (modo incidente, 31/10/2026): só o dono — quem abre o card sem
+    # pessoa resolvida — continua vendo; qualquer pessoa da equipe fica sem acesso.
+    _tenant = await db.get(TaTenant, agent_tenant_id)
+    if _tenant is not None and getattr(_tenant, "atendimento_fechado_em", None) and pessoa_role is not None:
+        return {"sem_acesso": True, "conversa": None, "conversas": [], "mensagens": []}
     if pessoa_role is not None and not visao.ve_tudo(pessoa_role):
         # Sem membro, o lado seguro: atendente sem identidade não vê nada.
         meus = await visao.conectores_do_membro(db, agent_tenant_id, membro_id)
@@ -584,6 +589,13 @@ async def conversa_mensagens(
         if not conversas:
             return {"sem_acesso": True, "conversa": None, "conversas": [], "mensagens": []}
     ids = [c.id for c in conversas]
+    # Quem abriu (31/10/2026): o card do CRM também lê a conversa inteira.
+    from services import acesso_conversa
+
+    await acesso_conversa.registrar(
+        tenant_id=agent_tenant_id, conversation_ids=ids, member_id=membro_id,
+        papel=pessoa_role if pessoa_role is not None else "owner", via="card_crm",
+    )
 
     n = max(1, min(limite, 500))
     msgs = list(

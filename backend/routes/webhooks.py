@@ -346,6 +346,7 @@ async def whatsapp_engine_webhook(
                 text_content=text_content,
                 attachments=attachments,
                 chave_wa=chave_wa,
+                perfil=sender_name,
             )
         )
         return {"status": "accepted", "from_me": True}
@@ -503,6 +504,7 @@ async def _process_engine_from_me(
     text_content: str,
     attachments: list,
     chave_wa: dict | None = None,
+    perfil: str | None = None,
 ) -> None:
     """Mensagem que SAIU pelo número (fromMe). Só interessa no modo registro: é a
     consultora falando pelo celular. Em número com IA é o eco da resposta do
@@ -514,6 +516,12 @@ async def _process_engine_from_me(
     try:
         async with db_context() as db:
             conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)
+            if conn and perfil:
+                # De quem é o chip? O pushName de quem ENVIA pelo número é o perfil do próprio
+                # WhatsApp (31/10/2026 — o número do Paulo era o WhatsApp da Rebecca).
+                from services import perfil_numero
+
+                await perfil_numero.observar(conn.id, perfil)
             if not conn or (getattr(conn, "modo", None) or "agente") != "registro":
                 return
             result = await agent_runtime.registrar_mensagem_sem_ia(

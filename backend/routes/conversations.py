@@ -161,6 +161,7 @@ async def list_conversations(
     stmt = stmt.order_by(TaConversation.last_message_at.desc().nulls_last()).limit(limit)
 
     convs = (await db.execute(stmt)).scalars().all()
+    convs = await visao.conferir_saida(db, user, convs, "lista de conversas")
 
     # Nome do agente por conversa — pra UI separar DevSecOps / Tier Empresas / etc.
     from models import TaAgent as _TaAgent
@@ -391,6 +392,11 @@ async def conversation_detail(
         raise HTTPException(403, "Sem tenant")
 
     conv = await _get_owned_conversation(db, conversation_id, user)
+    from services import acesso_conversa
+
+    await acesso_conversa.registrar(
+        tenant_id=user.tenant_id, conversation_ids=[conv.id], member_id=user.member_id, papel=user.role, via="tela"
+    )
 
     msgs = (
         await db.execute(
@@ -504,6 +510,12 @@ async def message_debug(
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
     await _get_owned_conversation(db, conversation_id, user)  # só a posse/visão; a mensagem é lida abaixo
+    from services import acesso_conversa
+
+    await acesso_conversa.registrar(
+        tenant_id=user.tenant_id, conversation_ids=[conversation_id], member_id=user.member_id, papel=user.role,
+        via="depuracao",
+    )
     msg = await db.get(TaMessageLog, message_id)
     if not msg or msg.conversation_id != conversation_id:
         raise HTTPException(404, "Mensagem não encontrada")

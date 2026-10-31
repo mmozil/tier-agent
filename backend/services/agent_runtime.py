@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.encryption import decrypt
@@ -448,11 +449,26 @@ async def ensure_conversation(
     ]
     if por_numero and connector_id:
         filtros.append(TaConversation.connector_id == connector_id)
+    # 31/10/2026 — trava por CONTATO antes de procurar/criar. Duas mensagens do mesmo cliente
+    # chegando juntas («oi» + «tudo bem?», comum no WhatsApp) rodavam em paralelo, nenhuma achava
+    # a conversa e as duas criavam: na simulação da conta fictícia, 900 mensagens deram 226
+    # conversas onde eram 224 — histórico do cliente partido em dois. A trava vale até o commit
+    # deste bloco (os dois ramos abaixo terminam em commit). Só no Postgres (os testes de unidade
+    # usam bancos de mentira).
+    try:
+        _dialeto = db.get_bind().dialect.name
+    except Exception:  # noqa: BLE001
+        _dialeto = ""
+    if _dialeto == "postgresql":
+        await db.execute(
+            sa_text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+            {"k": f"conv:{agent_id}:{connector_id if por_numero else ''}:{connector_kind}:{external_id}"},
+        )
     result = await db.execute(
         select(TaConversation)
         .where(*filtros)
-        # .first() (não scalar_one_or_none): tolera conversas ativas duplicadas
-        # (race de 2 mensagens quase simultâneas) sem quebrar o atendimento.
+        # .first() (não scalar_one_or_none): tolera conversas ativas duplicadas antigas
+        # (de antes da trava acima) sem quebrar o atendimento.
         .order_by(TaConversation.id.desc())
         .limit(1)
     )

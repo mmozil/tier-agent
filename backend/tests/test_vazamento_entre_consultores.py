@@ -464,5 +464,169 @@ def test_numero_dividido_aparece_so_para_quem_divide():
     _rodar(_semear())
 
 
+# ─────────────── pente fino de 31/10/2026: o que o mercado faz e nós não fazíamos ───────────────
+
+
+async def _get(quem_ou_token: str, url: str, **kw):
+    tok = quem_ou_token if len(quem_ou_token) > 3 else _token(quem_ou_token)
+    transporte = httpx.ASGITransport(app=main.app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transporte, base_url="http://teste") as cli:
+        return await cli.get(url, headers={"Authorization": f"Bearer {tok}"}, **kw)
+
+
+async def _post(quem: str, url: str, **kw):
+    transporte = httpx.ASGITransport(app=main.app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transporte, base_url="http://teste") as cli:
+        return await cli.post(url, headers={"Authorization": f"Bearer {_token(quem)}"}, **kw)
+
+
+async def _sql(q: str, **p):
+    async with SessionLocal() as db:
+        r = await db.execute(text(q), p)
+        await db.commit()
+        try:
+            return r.all()
+        except Exception:  # noqa: BLE001 — UPDATE/INSERT sem linhas de volta
+            return []
+
+
+def test_segunda_conferencia_barra_mesmo_com_a_consulta_quebrada(monkeypatch):
+    """Se o filtro da consulta quebrar (bug, cache, refatoração), a conversa do outro NÃO sai."""
+    from sqlalchemy import true
+
+    from services import visao_conversas
+
+    async def _filtro_quebrado(db, user):
+        return true()  # simula o defeito: a consulta deixa passar tudo
+
+    monkeypatch.setattr(visao_conversas, "filtro_para", _filtro_quebrado)
+    r = _rodar(_get("A", "/api/v1/conversations"))
+    assert r.status_code == 200
+    assert MARCAS["A"][0] in r.text, "o consultor A tem de continuar vendo as dele"
+    assert not _vazou(r.text, "A"), "a segunda conferência deixou passar: " + r.text[:300]
+
+
+def test_registro_de_quem_abriu():
+    _rodar(_semear())
+    conv_a = R["conv"]["A"]
+    for _ in range(3):  # a tela se atualiza sozinha: 3 aberturas seguidas = 1 linha
+        assert _rodar(_get("A", f"/api/v1/conversations/{conv_a}")).status_code == 200
+    linhas = _rodar(_sql("SELECT member_id, via, papel FROM ta_acesso_conversa WHERE conversation_id = :c", c=conv_a))
+    assert [(m, v) for m, v, _ in linhas] == [(R["a"], "tela")], linhas
+    # o gestor vê quem abriu; o consultor não
+    r = _rodar(_get("G", f"/api/v1/acessos/conversas/{conv_a}"))
+    assert r.status_code == 200 and "Consultor A" in r.text, r.text[:300]
+    assert _rodar(_get("A", f"/api/v1/acessos/conversas/{conv_a}")).status_code == 403
+    assert _rodar(_get("A", "/api/v1/acessos")).status_code == 403
+    r = _rodar(_get("G", "/api/v1/acessos?dias=1"))
+    assert r.status_code == 200 and r.json()["resumo"][0]["conversas"] == 1, r.text[:300]
+
+
+def test_resposta_da_api_nunca_vai_para_cache():
+    for url in ("/api/v1/health", "/api/v1/conversations"):
+        r = _rodar(_get("A", url))
+        assert "no-store" in r.headers.get("cache-control", ""), (url, dict(r.headers))
+
+
+def test_fechar_o_atendimento_deixa_so_o_dono():
+    _rodar(_semear())
+    assert _rodar(_get("A", "/api/v1/conversations")).status_code == 200
+    assert _rodar(_post("A", "/api/v1/tenants/me/atendimento/fechar")).status_code == 403  # consultor não fecha
+    assert _rodar(_post("G", "/api/v1/tenants/me/atendimento/fechar")).status_code == 200
+    for quem in ("A", "B", "G"):  # todo membro, inclusive o gestor que fechou
+        r = _rodar(_get(quem, "/api/v1/conversations"))
+        assert r.status_code == 403 and "O que fazer" in r.text, (quem, r.status_code, r.text[:200])
+        assert _rodar(_get(quem, "/api/v1/notifications")).status_code == 403  # porta lateral também
+    r = _rodar(_get("D", "/api/v1/conversations"))
+    assert r.status_code == 200 and all(MARCAS[d][0] in r.text for d in ("A", "B", "C")), r.text[:200]
+    # o card do CRM, para uma pessoa da equipe, também fecha
+    transporte = httpx.ASGITransport(app=main.app, raise_app_exceptions=False)
+
+    async def _card():
+        async with httpx.AsyncClient(transport=transporte, base_url="http://teste") as cli:
+            return await cli.get(f"/api/v1/integrations/tier/conversas/{R['conv']['A']}/mensagens",
+                                 params={"agent_tenant_id": R["t1"], "pessoa_role": "admin", "pessoa_owner_id": "x"},
+                                 headers={"X-Tier-Integration-Secret": SEGREDO})
+
+    r = _rodar(_card())
+    assert r.status_code == 200 and r.json().get("sem_acesso") is True, r.text[:200]
+    # só o dono reabre
+    r = _rodar(_post("D", "/api/v1/tenants/me/atendimento/abrir"))
+    assert r.status_code == 200 and r.json()["fechado"] is False
+    assert _rodar(_get("A", "/api/v1/conversations")).status_code == 200
+
+
+def test_perfil_do_numero_regra_pura():
+    from services.perfil_numero import conferir
+
+    equipe = {1: "Paulo Santana", 2: "Rebecca Pandolfo", 3: "Marisa Graciano"}
+    assert conferir("Rebecca", 1, equipe)["confere"] is False
+    assert conferir("Rebecca", 1, equipe)["outra_pessoa"] == "Rebecca Pandolfo"
+    assert conferir("Paulo Santana M7", 1, equipe)["confere"] is True
+    assert conferir("M7 Ambientes", 1, equipe)["confere"] is None  # nome da empresa: não acusa
+    assert conferir("Colégio Carlos Drummond de Andrade", 3, equipe)["confere"] is None
+    assert conferir(None, 1, equipe)["confere"] is None
+    assert conferir("Rébecca", 1, equipe)["confere"] is False  # acento não esconde
+
+
+def test_perfil_do_numero_avisa_so_o_gestor():
+    """O número do B (Paulo) sai com o perfil da A (Rebecca): o gestor é avisado, uma vez."""
+    from services import perfil_numero
+
+    _rodar(_semear())
+    _rodar(_sql("UPDATE ta_member SET nome = 'Rebecca Pandolfo' WHERE id = :i", i=R["a"]))
+    _rodar(_sql("UPDATE ta_member SET nome = 'Paulo Santana' WHERE id = :i", i=R["b"]))
+    for _ in range(perfil_numero.VEZES_PARA_AVISAR - 1):
+        _rodar(perfil_numero.observar(R["con"]["B"], "Rebecca"))
+    tipo = "SELECT count(*) FROM ta_notification WHERE payload_json::jsonb->>'tipo' = 'perfil_do_numero'"
+    assert _rodar(_sql(tipo))[0][0] == 0, "avisou antes de mensagens seguidas suficientes"
+    for _ in range(3):  # passa do limite: avisa UMA vez
+        _rodar(perfil_numero.observar(R["con"]["B"], "Rebecca"))
+    assert _rodar(_sql(tipo))[0][0] == 1
+    assert "Rebecca" in _rodar(_get("G", "/api/v1/notifications?status=all")).text
+    for quem in ("A", "B"):  # nenhum consultor vê o aviso
+        assert "perfil_do_numero" not in _rodar(_get(quem, "/api/v1/notifications?status=all")).text
+    lista = _rodar(_get("G", "/api/v1/connectors")).json()
+    numero_b = next(c for c in lista if c["id"] == R["con"]["B"])
+    assert numero_b["perfil_whatsapp"] == "Rebecca" and numero_b["perfil_confere"] is False, numero_b
+    _rodar(_semear())
+
+
+def test_mensagens_juntas_do_mesmo_cliente_nao_partem_a_conversa(monkeypatch):
+    """Achado da simulação (31/10/2026): mensagens do mesmo cliente chegando juntas criavam duas
+    conversas no mesmo número (900 mensagens → 226 conversas onde eram 224).
+
+    Na simulação saiu em ~1% dos clientes, com dois processos do servidor em paralelo — raro demais
+    para um teste pegar sempre. O atraso abaixo alarga a janela entre «procurar» e «criar»: sem a
+    trava, 4 chamadas juntas abrem mais de uma conversa (conferido: 2 no código de antes); com a
+    trava, a 2ª espera a 1ª gravar e acha a conversa dela."""
+    from services import agent_runtime
+
+    original = agent_runtime._atribuir_pelo_numero
+
+    async def _devagar(*a, **kw):
+        await asyncio.sleep(0.2)
+        return await original(*a, **kw)
+
+    monkeypatch.setattr(agent_runtime, "_atribuir_pelo_numero", _devagar)
+    _rodar(_semear())
+    contato = "5511944440000@s.whatsapp.net"
+
+    async def uma():
+        async with SessionLocal() as db:
+            c = await agent_runtime.ensure_conversation(
+                db, agent_id=R["ag1"], connector_kind="whatsapp", external_id=contato,
+                contact_name="CLIENTE-JUNTO", connector_id=R["con"]["A"], por_numero=True,
+            )
+            return c.id
+
+    async def todas():
+        return await asyncio.gather(*(uma() for _ in range(4)))
+
+    ids = _rodar(todas())
+    conversas = _rodar(_sql("SELECT id FROM ta_conversation WHERE external_id = :e", e=contato))
+    assert len(conversas) == 1 and len(set(ids)) == 1, f"a conversa partiu em {len(conversas)}: {ids}"
+
+
 if __name__ == "__main__":  # relatório completo, sem pytest
     sys.exit(pytest.main([__file__, "-q", "-s", "-p", "no:cacheprovider"]))

@@ -100,6 +100,18 @@ async def get_current_user(
         if _m is None or _m.status != "active" or (payload.get("tenant_id") and _m.tenant_id != payload.get("tenant_id")):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessão encerrada: este usuário foi desativado ou removido")
         role = _m.role or "atendente"
+        # «Fechar o Atendimento» (31/10/2026, modo incidente): com o interruptor ligado, só o
+        # dono entra — todo membro, inclusive admin, para aqui, em TODA rota. É na entrada
+        # justamente para não sobrar porta lateral (o incidente da M7 vazou pelo sino e pelos
+        # relatórios, não pela tela principal).
+        from models import TaTenant
+
+        _t = await db.get(TaTenant, _m.tenant_id)
+        if _t is not None and getattr(_t, "atendimento_fechado_em", None):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="O Atendimento desta empresa está fechado pelo dono da conta. O que fazer: fale com o dono da conta.",
+            )
     return CurrentUser(
         user_id=int(payload["sub"]),
         email=payload.get("email", ""),

@@ -47,6 +47,9 @@ class TaTenant(Base):
     # Login (MVP: tenant_email + password vira JWT). V2 split em ta_user.
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 31/10/2026 — «fechar o Atendimento» (modo incidente): preenchido = só o dono entra;
+    # todo membro, inclusive admin, leva 403 em qualquer rota. Runtime DDL em main.py.
+    atendimento_fechado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -235,6 +238,15 @@ class TaConnector(Base):
     # 07/10/2026: resposta do painel sai com «*Nome:*» na frente (número dividido por
     # várias pessoas — a família vê quem fala). Runtime DDL. Ver services/assinatura.py.
     assinar_nome: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # 31/10/2026 — o nome do perfil do WhatsApp deste número, lido do `pushName` das mensagens
+    # que SAEM por ele. Incidente da M7: o número no nome do Paulo era o WhatsApp da Rebecca
+    # (948 mensagens com o perfil dela) e a regra entregava as conversas dela a ele.
+    # `perfil_vezes` = quantas mensagens seguidas com o mesmo perfil (evita alarme por eco
+    # isolado); `perfil_alertado` = perfil que já gerou aviso (avisa uma vez). Runtime DDL.
+    perfil_whatsapp: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    perfil_vezes: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    perfil_visto_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    perfil_alertado: Mapped[str | None] = mapped_column(String(200), nullable=True)
     last_event_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

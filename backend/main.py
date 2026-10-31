@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import agents, attention, auth, billing, canned_responses, connectors, containers, conversations, embedding_providers, features, health, integrations_pet, integrations_tier, internal, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, public_chat, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks
+from routes import acessos, agents, attention, auth, billing, canned_responses, connectors, containers, conversations, embedding_providers, features, health, integrations_pet, integrations_tier, internal, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, public_chat, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks
 
 settings = get_settings()
 
@@ -21,6 +21,36 @@ app = FastAPI(
     description="SaaS de agentes IA configuráveis. Multi-tenant via 1 container Engine por cliente.",
     version="0.1.0",
 )
+
+class _NuncaGuardarRespostaDaApi:
+    """Toda resposta da API sai com `Cache-Control: private, no-store` (31/10/2026).
+
+    Lição do Steam (Natal de 2015): uma regra de cache numa CDN serviu a página de um usuário
+    logado a 34 mil outros. Hoje a Cloudflare não guarda nada da API (medido: DYNAMIC), mas por
+    padrão dela, não por regra nossa — se alguém criar uma regra de cache, esta linha segura.
+    Quem já define o próprio Cache-Control (arquivo público de voz, por exemplo) fica como está.
+    ASGI puro, sem BaseHTTPMiddleware: não mexe em resposta em fluxo.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or not scope.get("path", "").startswith("/api/"):
+            return await self.app(scope, receive, send)
+
+        async def _send(msg):
+            if msg.get("type") == "http.response.start":
+                headers = list(msg.get("headers") or [])
+                if not any(k.lower() == b"cache-control" for k, _ in headers):
+                    headers.append((b"cache-control", b"private, no-store"))
+                    msg = {**msg, "headers": headers}
+            await send(msg)
+
+        await self.app(scope, receive, _send)
+
+
+app.add_middleware(_NuncaGuardarRespostaDaApi)
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,6 +108,7 @@ app.include_router(mcp_server.router, prefix="/api/v1")
 app.include_router(canned_responses.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(team.router, prefix="/api/v1")
+app.include_router(acessos.router, prefix="/api/v1")
 app.include_router(secops.router, prefix="/api/v1")
 app.include_router(public_chat.router, prefix="/api/v1")
 
@@ -152,6 +183,27 @@ async def _ensure_message_content_column():
                 " created_at TIMESTAMP DEFAULT now(),"
                 " PRIMARY KEY (connector_id, member_id))",
                 "CREATE INDEX IF NOT EXISTS ix_ta_connector_membro_member ON ta_connector_membro (member_id)",
+                # 31/10/2026 — pente fino do incidente da M7 (conversas vistas por quem não devia):
+                # perfil do WhatsApp de cada número (conferir de quem é o chip)…
+                "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS perfil_whatsapp VARCHAR(200)",
+                "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS perfil_vezes INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS perfil_visto_em TIMESTAMP",
+                "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS perfil_alertado VARCHAR(200)",
+                # …o interruptor «fechar o Atendimento» (modo incidente)…
+                "ALTER TABLE ta_tenant ADD COLUMN IF NOT EXISTS atendimento_fechado_em TIMESTAMP",
+                # …e o registro de QUEM ABRIU cada conversa (sem ele não há como medir um
+                # incidente: «quem leu a conversa da Rebecca?» ficava sem resposta).
+                "CREATE TABLE IF NOT EXISTS ta_acesso_conversa ("
+                " id BIGSERIAL PRIMARY KEY,"
+                " tenant_id INTEGER NOT NULL,"
+                " conversation_id INTEGER NOT NULL,"
+                " member_id INTEGER,"
+                " papel VARCHAR(16),"
+                " via VARCHAR(24) NOT NULL,"
+                " criado_em TIMESTAMP NOT NULL DEFAULT now())",
+                "CREATE INDEX IF NOT EXISTS ix_ta_acesso_conversa_conv ON ta_acesso_conversa (conversation_id, criado_em)",
+                "CREATE INDEX IF NOT EXISTS ix_ta_acesso_conversa_tenant ON ta_acesso_conversa (tenant_id, criado_em)",
+                "CREATE INDEX IF NOT EXISTS ix_ta_acesso_conversa_member ON ta_acesso_conversa (member_id, criado_em)",
             ):
                 await db.execute(_sql_text(ddl))
             # Macros (paridade Chatwoot) — tabela criada em runtime (sem Alembic)

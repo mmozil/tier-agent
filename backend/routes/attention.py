@@ -106,6 +106,11 @@ async def attention_queue(
         )
     ).scalars().all()
 
+    # Segunda conferência, independente da consulta (31/10/2026).
+    aguardando_rows = await visao.conferir_saida(db, user, aguardando_rows, "fila: aguardando")
+    nao_atrib_rows = await visao.conferir_saida(db, user, nao_atrib_rows, "fila: não atribuídas")
+    alerta_rows = await visao.conferir_avisos(db, user, alerta_rows, "fila: alertas")
+
     def conv_item(c: TaConversation) -> dict:
         return {
             "conversation_id": c.id,

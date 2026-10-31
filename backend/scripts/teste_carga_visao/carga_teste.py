@@ -29,7 +29,7 @@ with open(sys.argv[2]) as _f:
 DSN = sys.argv[3]
 SEG = int(sys.argv[4]) if len(sys.argv) > 4 else 30
 SENHA = "Teste@2026"
-MARCA = re.compile(r"CLI-(C\d{2}|S\d|T2)-\d{4}")
+MARCA = re.compile(r"(?:CLI|NOVO)-(C\d{2}|S\d|T2)-\d{4}")  # NOVO- = conversas criadas pela simulação
 TODOS_T1 = {f"C{k:02d}" for k in range(1, 51)} | {f"S{s}" for s in range(1, 6)}
 
 
@@ -197,7 +197,8 @@ async def caos(pg, estado, personas, prazo):
 async def main():
     pg = await asyncpg.connect(DSN)
     linhas = await pg.fetch("SELECT id, contact_name, external_id FROM ta_conversation")
-    convs = [{"id": r["id"], "dono": MARCA.match(r["contact_name"]).group(1), "fone": r["external_id"]} for r in linhas]
+    convs = [{"id": r["id"], "dono": MARCA.match(r["contact_name"]).group(1), "fone": r["external_id"]}
+             for r in linhas if r["contact_name"] and MARCA.match(r["contact_name"])]
     limites = httpx.Limits(max_connections=400, max_keepalive_connections=400)
     async with httpx.AsyncClient(limits=limites, timeout=20) as cli:
         personas = [{"nome": "Dono", "email": "dono@ficticia.teste", "papel": "owner", "mid": None, "k": 0}]

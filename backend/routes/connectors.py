@@ -124,6 +124,7 @@ def _serialize(c: TaConnector) -> dict:
         "modo": getattr(c, "modo", None) or "agente",
         "member_id": getattr(c, "member_id", None),  # Etapa 2: de quem é o número
         "assinar_nome": bool(getattr(c, "assinar_nome", False)),  # «*Nome:*» na resposta do painel
+        "perfil_whatsapp": getattr(c, "perfil_whatsapp", None),  # perfil visto nas mensagens que saem
     }
 
 
@@ -213,7 +214,17 @@ async def list_connectors(
     conns = list(result.scalars().all())
     if ao_vivo:  # a página de números pede; as listas de escolher número não esperam o motor
         await _status_ao_vivo(db, conns)
-    return [_serialize(c) for c in conns]
+    saida = [_serialize(c) for c in conns]
+    # De quem é o chip (31/10/2026): o perfil do WhatsApp visto nas mensagens que saem pelo
+    # número, conferido contra a pessoa a quem o número foi atribuído.
+    if user.tenant_id and any(c.get("perfil_whatsapp") for c in saida):
+        from services import perfil_numero
+
+        equipe = await perfil_numero.equipe_do_tenant(db, user.tenant_id)
+        for c in saida:
+            r = perfil_numero.conferir(c.get("perfil_whatsapp"), c.get("member_id"), equipe)
+            c["perfil_confere"], c["perfil_aviso"] = r["confere"], r["motivo"]
+    return saida
 
 
 # Canais "traga sua chave" conectáveis pelo form genérico (token → valida → cria).

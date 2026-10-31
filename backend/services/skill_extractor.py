@@ -52,10 +52,10 @@ def list_skills_in_container(tenant_id: int) -> list[SkillInfo]:
     """Lista todas skills `.md` dentro do container Engine do tenant."""
     cname = container_name(tenant_id)
     # find + stat — formato saída: <path>|<size>|<mtime_epoch>
-    cmd = (
-        f"docker exec {shlex.quote(cname)} sh -c "
-        f"{shlex.quote(f'find {SKILLS_ROOT} -type f -name \"*.md\" -exec stat -c \"%n|%s|%Y\" {{}} \\;')}"
-    )
+    # 31/10/2026: a f-string aninhada com barra invertida só compila do Python 3.12 em diante;
+    # a imagem roda 3.11 e a tela de habilidades caía com SyntaxError ao importar este módulo.
+    achar = f'find {SKILLS_ROOT} -type f -name "*.md" -exec stat -c "%n|%s|%Y" {{}} \\;'
+    cmd = f"docker exec {shlex.quote(cname)} sh -c {shlex.quote(achar)}"
     rc, out, err = _ssh_run(cmd, timeout=15)
     if rc != 0:
         logger.warning("list_skills_in_container falhou tenant=%s: %s", tenant_id, err[:200])

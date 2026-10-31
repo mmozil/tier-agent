@@ -103,3 +103,54 @@ async def pode_ver_conversa(db: AsyncSession, user: CurrentUser, conv: TaConvers
         connector_id=getattr(conv, "connector_id", None),
         meus_conectores=meus,
     )
+
+
+# ── Segunda conferência na saída (31/10/2026) ──────────────────────────────────
+# Lição do ChatGPT (março/2023): o vazamento veio de uma camada que ninguém olhava (o cache),
+# e a correção incluiu conferir, item a item, que o dado devolvido é de quem pediu. Aqui a
+# consulta já filtra (`filtro_para`); esta conferência é INDEPENDENTE dela — refeita em Python,
+# linha por linha, a partir dos campos da própria conversa. Se as duas discordarem, a conversa
+# NÃO sai e fica um erro no log: divergência entre as duas é defeito, nunca dado a mostrar.
+
+_log = __import__("logging").getLogger(__name__)
+
+
+async def conferir_saida(db: AsyncSession, user: CurrentUser, conversas, onde: str) -> list:
+    conversas = list(conversas or [])
+    if not conversas:
+        return conversas
+    agentes = set((await db.execute(select(TaAgent.id).where(TaAgent.tenant_id == user.tenant_id))).scalars().all())
+    if ve_tudo(user.role):
+        ok = [c for c in conversas if c.agent_id in agentes]
+    else:
+        meus = set(await conectores_do_membro(db, user.tenant_id, user.member_id))
+        ok = [
+            c for c in conversas
+            if c.agent_id in agentes
+            and pode_ver(user.role, user.member_id, assigned_member_id=c.assigned_member_id,
+                         connector_id=getattr(c, "connector_id", None), meus_conectores=meus)
+        ]
+    if len(ok) != len(conversas):
+        barradas = [c.id for c in conversas if c not in ok]
+        _log.error("conferência dupla BARROU %d conversa(s) em %s — membro=%s papel=%s ids=%s",
+                   len(barradas), onde, user.member_id, user.role, barradas[:20])
+    return ok
+
+
+async def conferir_avisos(db: AsyncSession, user: CurrentUser, avisos, onde: str) -> list:
+    """Mesma conferência para o sino e a fila: empresa certa, destinatário certo e, quando o
+    aviso é de uma conversa, a conversa tem de passar em `conferir_saida`."""
+    avisos = list(avisos or [])
+    if not avisos:
+        return avisos
+    ok = [n for n in avisos if n.tenant_id == user.tenant_id
+          and (user.member_id is None or n.target_member_id in (None, user.member_id))]
+    ids = {n.conversation_id for n in ok if n.conversation_id}
+    if ids:
+        convs = (await db.execute(select(TaConversation).where(TaConversation.id.in_(ids)))).scalars().all()
+        visiveis = {c.id for c in await conferir_saida(db, user, convs, onde)}
+        ok = [n for n in ok if not n.conversation_id or n.conversation_id in visiveis]
+    if len(ok) != len(avisos):
+        barrados = [n.id for n in avisos if n not in ok]
+        _log.error("conferência dupla BARROU %d aviso(s) em %s — membro=%s ids=%s", len(barrados), onde, user.member_id, barrados[:20])
+    return ok

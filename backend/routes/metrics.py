@@ -352,7 +352,9 @@ async def ab_tests(
     stmt = select(
         TaPlaybookExecution.playbook_id,
         TaPlaybookStepLog.node_id,
-        TaPlaybookStepLog.output_json["variant"].astext.label("variant"),
+        # 31/10/2026: `.astext` só existe no JSON do dialeto postgres; a coluna é JSON genérico
+        # e a rota dava 500. `.as_string()` gera o mesmo `->>'variant'`.
+        TaPlaybookStepLog.output_json["variant"].as_string().label("variant"),
         func.count(TaPlaybookStepLog.id),
         func.coalesce(func.avg(TaPlaybookStepLog.latency_ms), 0),
         func.coalesce(func.sum(TaPlaybookStepLog.cost_cents), 0),
@@ -365,11 +367,11 @@ async def ab_tests(
         TaAgent.tenant_id == tenant_id,
         TaPlaybookStepLog.node_type == "llm_step",
         TaPlaybookStepLog.created_at >= since,
-        TaPlaybookStepLog.output_json["variant"].astext.is_not(None),
+        TaPlaybookStepLog.output_json["variant"].as_string().is_not(None),
     ).group_by(
         TaPlaybookExecution.playbook_id,
         TaPlaybookStepLog.node_id,
-        TaPlaybookStepLog.output_json["variant"].astext,
+        TaPlaybookStepLog.output_json["variant"].as_string(),
     ).order_by(
         TaPlaybookExecution.playbook_id, TaPlaybookStepLog.node_id, desc(func.count(TaPlaybookStepLog.id))
     )

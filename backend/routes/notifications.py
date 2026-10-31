@@ -93,6 +93,7 @@ async def list_notifications(
     stmt = stmt.order_by(TaNotification.id.desc()).limit(limit)
 
     rows = (await db.execute(stmt)).scalars().all()
+    rows = await visao.conferir_avisos(db, user, rows, "sino")
 
     # Enriquece com nome/telefone do cliente da conversa vinculada (cobre
     # notificações sem contato no payload, ex: handoff de playbook).
