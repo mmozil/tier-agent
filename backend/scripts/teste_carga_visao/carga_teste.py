@@ -197,8 +197,11 @@ async def caos(pg, estado, personas, prazo):
 async def main():
     pg = await asyncpg.connect(DSN)
     linhas = await pg.fetch("SELECT id, contact_name, external_id FROM ta_conversation")
-    convs = [{"id": r["id"], "dono": MARCA.match(r["contact_name"]).group(1), "fone": r["external_id"]}
-             for r in linhas if r["contact_name"] and MARCA.match(r["contact_name"])]
+    convs = [
+        {"id": r["id"], "dono": MARCA.match(r["contact_name"]).group(1), "fone": r["external_id"]}
+        for r in linhas
+        if r["contact_name"] and MARCA.match(r["contact_name"])
+    ]
     limites = httpx.Limits(max_connections=400, max_keepalive_connections=400)
     async with httpx.AsyncClient(limits=limites, timeout=20) as cli:
         personas = [{"nome": "Dono", "email": "dono@ficticia.teste", "papel": "owner", "mid": None, "k": 0}]

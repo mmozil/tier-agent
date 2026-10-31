@@ -4,6 +4,8 @@ Cada webhook valida assinatura/secret, faz idempotency via TaWebhookEvent,
 encaminha pra agent_runtime via tier_engine.
 """
 
+import asyncio
+import functools
 import hashlib
 import hmac
 import logging
@@ -25,6 +27,33 @@ from models import (
 from services import playbook_executor
 
 logger = logging.getLogger(__name__)
+
+# 31/10/2026 — no máximo N mensagens sendo processadas ao mesmo tempo, por processo. Cada aviso do
+# WhatsApp vira uma tarefa em segundo plano com uma conexão do banco; SEM limite, uma rajada
+# (simulação da conta fictícia: 900 mensagens em 3 min) esgotava o pool (10 + 20 por processo) e
+# mensagens se perdiam em silêncio com TimeoutError — 1 a 2 em 900, já antes das mudanças de
+# 31/10. As que passam do limite esperam a vez EM MEMÓRIA, sem segurar conexão; o resto do pool
+# fica para as telas.
+_PROCESSANDO_NO_MAXIMO = 15
+_vagas_por_loop: dict[int, asyncio.Semaphore] = {}
+
+
+def _com_vaga(fn):
+    @functools.wraps(fn)
+    async def _envolto(*a, **kw):
+        # um semáforo por loop: o de um loop não serve em outro (os testes criam vários)
+        async with _vaga():
+            return await fn(*a, **kw)
+
+    return _envolto
+
+
+def _vaga():
+    chave = id(asyncio.get_running_loop())
+    vagas = _vagas_por_loop.get(chave)
+    if vagas is None:
+        vagas = _vagas_por_loop[chave] = asyncio.Semaphore(_PROCESSANDO_NO_MAXIMO)
+    return vagas
 settings = get_settings()
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -365,6 +394,7 @@ async def whatsapp_engine_webhook(
     return {"status": "accepted"}
 
 
+@_com_vaga
 async def _registrar_reacao(*, instance_id: str | None, alvo_id: str | None, emoji: str, from_me: bool) -> None:
     """Reação recebida — do contato (`from_me=False`) ou do celular da consultora —
     gravada na mensagem-alvo, achada pela chave do WhatsApp. Emoji vazio = tirou.
@@ -451,6 +481,7 @@ def _edicao_do_protocolo(msg) -> tuple[str, str] | None:
     return alvo, texto
 
 
+@_com_vaga
 async def _registrar_edicao(*, instance_id: str | None, alvo_id: str | None, texto: str, from_me: bool) -> None:
     """Mensagem editada no WhatsApp — pela família (`from_me=False`) ou pelo celular
     do número — troca o texto do balão, guardando a versão anterior. O mesmo aviso
@@ -497,6 +528,7 @@ async def _registrar_edicao(*, instance_id: str | None, alvo_id: str | None, tex
         logger.exception("edição não gravada alvo=%s", alvo_id)
 
 
+@_com_vaga
 async def _process_engine_from_me(
     *,
     instance_id: str | None,
@@ -513,15 +545,11 @@ async def _process_engine_from_me(
     from services import agent_runtime, wa_chave
 
     wa_chave.definir(chave_wa, "agent")
+    numero_do_perfil = None
     try:
         async with db_context() as db:
             conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)
-            if conn and perfil:
-                # De quem é o chip? O pushName de quem ENVIA pelo número é o perfil do próprio
-                # WhatsApp (31/10/2026 — o número do Paulo era o WhatsApp da Rebecca).
-                from services import perfil_numero
-
-                await perfil_numero.observar(conn.id, perfil)
+            numero_do_perfil = conn.id if conn and perfil else None
             if not conn or (getattr(conn, "modo", None) or "agente") != "registro":
                 return
             result = await agent_runtime.registrar_mensagem_sem_ia(
@@ -531,6 +559,15 @@ async def _process_engine_from_me(
             logger.info("registro fromMe gravado conv=%s", result.get("conversation_id"))
     except Exception:
         logger.exception("registro fromMe falhou chat=%s", external_chat_id)
+    finally:
+        # De quem é o chip? O pushName de quem ENVIA pelo número é o perfil do próprio WhatsApp
+        # (31/10/2026 — o número do Paulo era o WhatsApp da Rebecca). Roda DEPOIS de a sessão
+        # acima devolver a conexão: abrir uma 2ª sessão com a 1ª presa esgotou o pool numa rajada
+        # de mensagens na simulação (cada tarefa segurando uma conexão e esperando outra).
+        if numero_do_perfil:
+            from services import perfil_numero
+
+            await perfil_numero.observar(numero_do_perfil, perfil)
 
 
 async def _process_engine_message(
@@ -565,7 +602,9 @@ async def _process_engine_message(
         #    real do LLM já faz o tempo de digitação; aqui só um respiro mínimo anti-robô.
         await asyncio.sleep(random.uniform(0.6, 1.3))
 
-        async with db_context() as db:
+        # a vaga (limite de mensagens processando ao mesmo tempo) só começa DEPOIS do respiro:
+        # esperar de propósito não precisa ocupar lugar de quem tem trabalho a fazer.
+        async with _vaga(), db_context() as db:
             # 2. marca '…digitando' (3 pontinhos no WhatsApp do cliente)
             try:
                 conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)

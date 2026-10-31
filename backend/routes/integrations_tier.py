@@ -593,7 +593,7 @@ async def conversa_mensagens(
     from services import acesso_conversa
 
     await acesso_conversa.registrar(
-        tenant_id=agent_tenant_id, conversation_ids=ids, member_id=membro_id,
+        db, tenant_id=agent_tenant_id, conversation_ids=ids, member_id=membro_id,
         papel=pessoa_role if pessoa_role is not None else "owner", via="card_crm",
     )
 

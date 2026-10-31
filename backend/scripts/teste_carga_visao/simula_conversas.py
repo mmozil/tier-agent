@@ -31,6 +31,7 @@ SENHA = "Teste@2026"
 MARCA = re.compile(r"(?:CLI|NOVO)-(C\d{2}|S\d|T2)-\d{4}")
 TODOS_T1 = {f"C{k:02d}" for k in range(1, 51)} | {f"S{s}" for s in range(1, 6)}
 CLIENTES_POR_NUMERO, MSGS_POR_CLIENTE = 4, 3
+RODADA = int(time.time())
 
 NOMES = {1: "Paulo Santana", 2: "Rebecca Pandolfo"}
 
@@ -53,7 +54,9 @@ def evento(instancia, remoto, texto, de_mim, perfil, seq):
         "event": "messages.upsert",
         "timestamp": int(time.time()),
         "data": {
-            "key": {"id": f"SIM{seq:07d}", "remoteJid": f"{remoto}@s.whatsapp.net", "fromMe": de_mim},
+            # identificador ÚNICO por rodada: o webhook descarta aviso repetido pelo id (o motor
+            # reenvia) — reaproveitar SIM0000001… entre rodadas fazia mensagens sumirem como «repetidas»
+            "key": {"id": f"SIM{RODADA}{seq:07d}", "remoteJid": f"{remoto}@s.whatsapp.net", "fromMe": de_mim},
             "pushName": perfil,
             "message": {"conversation": texto},
             "messageTimestamp": int(time.time()),
@@ -97,7 +100,8 @@ async def injetar(cli, evs, placar):
                 content=raw,
                 headers={"Content-Type": "application/json", "X-Tier-Signature": assinatura},
             )
-            placar["webhook"][r.status_code] = placar["webhook"].get(r.status_code, 0) + 1
+            chave = f"{r.status_code}:{(r.json() or {}).get('status', '?') if r.status_code == 200 else ''}"
+            placar["webhook"][chave] = placar["webhook"].get(chave, 0) + 1
 
     random.shuffle(evs)
     await asyncio.gather(*(um(e) for e in evs))
@@ -123,6 +127,8 @@ async def usar(cli, p, prazo, placar):
 
 async def main():
     pg = await asyncpg.connect(DSN)
+    # recomeça do zero: apaga as conversas de uma simulação anterior (faixa de telefones 552198…)
+    await pg.execute("DELETE FROM ta_conversation WHERE external_id LIKE '552198%'")
     await pg.execute("UPDATE ta_connector SET perfil_whatsapp=NULL, perfil_vezes=0, perfil_alertado=NULL")
     await pg.execute("DELETE FROM ta_notification WHERE payload_json::jsonb->>'tipo' = 'perfil_do_numero'")
     antes = await pg.fetchval("SELECT count(*) FROM ta_conversation WHERE contact_name LIKE 'NOVO-%'")
@@ -167,13 +173,23 @@ async def main():
         for v in placar["violacoes"][:10]:
             print("   !!", v)
 
-        # espera o processamento em segundo plano terminar
-        ultimo, estavel = -1, 0
-        while estavel < 3:
-            n = await pg.fetchval("SELECT count(*) FROM ta_conversation WHERE contact_name LIKE 'NOVO-%'")
-            estavel = estavel + 1 if n == ultimo else 0
-            ultimo = n
-            await asyncio.sleep(2)
+        # espera o processamento em segundo plano terminar: as MENSAGENS (não só as conversas)
+        # paradas por 10 s seguidos — a fila de processamento termina depois da última chegada.
+        t_fim = time.monotonic()
+        ultimo, estavel = None, 0
+        while estavel < 4 and time.monotonic() - t_fim < 300:
+            agora = await pg.fetchrow(
+                "SELECT (SELECT count(*) FROM ta_conversation WHERE external_id LIKE '552198%') AS c, "
+                "(SELECT count(*) FROM ta_message_log l JOIN ta_conversation c ON c.id = l.conversation_id "
+                "WHERE c.external_id LIKE '552198%') AS m"
+            )
+            estavel = estavel + 1 if agora == ultimo else 0
+            ultimo = agora
+            await asyncio.sleep(2.5)
+        print(
+            f"fila de processamento terminou {time.monotonic() - t_fim:.0f}s depois da última mensagem · "
+            f"mensagens gravadas: {ultimo['m']} de {len(evs)}"
+        )
 
         # 1) banco: cada conversa nova no número certo
         linhas = await pg.fetch(

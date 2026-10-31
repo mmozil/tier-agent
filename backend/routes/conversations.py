@@ -395,7 +395,7 @@ async def conversation_detail(
     from services import acesso_conversa
 
     await acesso_conversa.registrar(
-        tenant_id=user.tenant_id, conversation_ids=[conv.id], member_id=user.member_id, papel=user.role, via="tela"
+        db, tenant_id=user.tenant_id, conversation_ids=[conv.id], member_id=user.member_id, papel=user.role, via="tela"
     )
 
     msgs = (
@@ -513,7 +513,7 @@ async def message_debug(
     from services import acesso_conversa
 
     await acesso_conversa.registrar(
-        tenant_id=user.tenant_id, conversation_ids=[conversation_id], member_id=user.member_id, papel=user.role,
+        db, tenant_id=user.tenant_id, conversation_ids=[conversation_id], member_id=user.member_id, papel=user.role,
         via="depuracao",
     )
     msg = await db.get(TaMessageLog, message_id)

@@ -8,6 +8,7 @@ vem no SSO. O filtro é aplicado no servidor — lista, detalhe e toda ação pa
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
@@ -79,13 +80,34 @@ async def conectores_do_membro(db: AsyncSession, tenant_id: int, member_id: int 
     return sorted(ids)
 
 
+async def _meus(db: AsyncSession, user: CurrentUser) -> list[int]:
+    """`conectores_do_membro` uma vez por PEDIDO (31/10/2026): lista, sino e fila chamavam a mesma
+    busca até três vezes na mesma requisição. O `CurrentUser` nasce a cada requisição, então o
+    resultado guardado nele não sobrevive ao pedido."""
+    guardado = getattr(user, "_meus_conectores", None)
+    if guardado is None:
+        guardado = await conectores_do_membro(db, user.tenant_id, user.member_id)
+        with contextlib.suppress(Exception):  # objeto que não aceita atributo: só não guarda
+            user._meus_conectores = guardado
+    return guardado
+
+
+async def _agentes_do_tenant(db: AsyncSession, user: CurrentUser) -> set[int]:
+    guardado = getattr(user, "_agentes_do_tenant", None)
+    if guardado is None:
+        guardado = set((await db.execute(select(TaAgent.id).where(TaAgent.tenant_id == user.tenant_id))).scalars().all())
+        with contextlib.suppress(Exception):
+            user._agentes_do_tenant = guardado
+    return guardado
+
+
 async def filtro_para(db: AsyncSession, user: CurrentUser):
     """Cláusula SQL para a listagem: `true()` para quem vê tudo; senão, os meus números ∪ atribuídas a mim."""
     if ve_tudo(user.role):
         return true()
     if not user.member_id:
         return TaConversation.id == -1  # nada
-    meus = await conectores_do_membro(db, user.tenant_id, user.member_id)
+    meus = await _meus(db, user)
     cond = TaConversation.assigned_member_id == user.member_id
     if meus:
         cond = or_(cond, TaConversation.connector_id.in_(meus))
@@ -95,7 +117,7 @@ async def filtro_para(db: AsyncSession, user: CurrentUser):
 async def pode_ver_conversa(db: AsyncSession, user: CurrentUser, conv: TaConversation) -> bool:
     if ve_tudo(user.role):
         return True
-    meus = await conectores_do_membro(db, user.tenant_id, user.member_id)
+    meus = await _meus(db, user)
     return pode_ver(
         user.role,
         user.member_id,
@@ -119,11 +141,11 @@ async def conferir_saida(db: AsyncSession, user: CurrentUser, conversas, onde: s
     conversas = list(conversas or [])
     if not conversas:
         return conversas
-    agentes = set((await db.execute(select(TaAgent.id).where(TaAgent.tenant_id == user.tenant_id))).scalars().all())
+    agentes = await _agentes_do_tenant(db, user)
     if ve_tudo(user.role):
         ok = [c for c in conversas if c.agent_id in agentes]
     else:
-        meus = set(await conectores_do_membro(db, user.tenant_id, user.member_id))
+        meus = set(await _meus(db, user))
         ok = [
             c for c in conversas
             if c.agent_id in agentes
