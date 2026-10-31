@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor_ou_admin
 from core.db import db_context, get_db
 from core.encryption import decrypt, encrypt
 from models import TaEmbeddingProvider
@@ -254,7 +254,7 @@ async def _run_reindex(tenant_id: int | None) -> dict:
     return out
 
 
-@router.post("", response_model=EmbeddingProviderOut, status_code=201)
+@router.post("", response_model=EmbeddingProviderOut, status_code=201, dependencies=[Depends(require_gestor_ou_admin)])
 async def create_provider(
     payload: EmbeddingProviderIn,
     background_tasks: BackgroundTasks,
@@ -294,7 +294,7 @@ async def create_provider(
     return out
 
 
-@router.patch("/{provider_id}", response_model=EmbeddingProviderOut)
+@router.patch("/{provider_id}", response_model=EmbeddingProviderOut, dependencies=[Depends(require_gestor_ou_admin)])
 async def update_provider(
     provider_id: int,
     payload: EmbeddingProviderPatch,
@@ -327,7 +327,7 @@ async def update_provider(
     return out
 
 
-@router.delete("/{provider_id}", status_code=204)
+@router.delete("/{provider_id}", status_code=204, dependencies=[Depends(require_gestor_ou_admin)])
 async def delete_provider(
     provider_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -344,7 +344,7 @@ async def delete_provider(
     await db.commit()
 
 
-@router.post("/{provider_id}/test")
+@router.post("/{provider_id}/test", dependencies=[Depends(require_gestor_ou_admin)])
 async def test_provider(
     provider_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -392,7 +392,7 @@ class ReindexOut(BaseModel):
     errors: int = 0
 
 
-@router.post("/reindex-all", response_model=ReindexOut)
+@router.post("/reindex-all", response_model=ReindexOut, dependencies=[Depends(require_gestor_ou_admin)])
 async def reindex_all(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

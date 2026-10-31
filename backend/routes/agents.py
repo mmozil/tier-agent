@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.db import get_db
 from services import visao_conversas as visao
 from models import TaAgent
@@ -58,7 +58,7 @@ async def list_agents(
     return list(result.scalars().all())
 
 
-@router.post("", response_model=AgentOut, status_code=201)
+@router.post("", response_model=AgentOut, status_code=201, dependencies=[Depends(require_gestor)])
 async def create_agent(
     payload: AgentCreate,
     user: CurrentUser = Depends(get_current_user),
@@ -110,7 +110,7 @@ class AgentUpdate(BaseModel):
     active: bool | None = None
 
 
-@router.patch("/{agent_id}", response_model=AgentOut)
+@router.patch("/{agent_id}", response_model=AgentOut, dependencies=[Depends(require_gestor)])
 async def update_agent(
     agent_id: int,
     payload: AgentUpdate,
@@ -171,6 +171,7 @@ async def toggle_active(
 ):
     """Liga/desliga o agente sem afetar dados."""
     tenant_id = await _ensure_tenant(user)
+    visao.exigir_gestor(user, "ligar ou desligar o agente")  # trava de papel (juiz 31/10)
     agent = await db.get(TaAgent, agent_id)
     if not agent or agent.tenant_id != tenant_id:
         raise HTTPException(404, "Agente não encontrado")
@@ -279,7 +280,7 @@ async def list_memories(
     return {"agent_id": agent_id, "contact": contact, "memories": items, "count": len(items)}
 
 
-@router.delete("/memories/{memory_id}", status_code=204)
+@router.delete("/memories/{memory_id}", status_code=204, dependencies=[Depends(require_gestor)])
 async def delete_memory(
     memory_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -306,6 +307,7 @@ async def delete_agent(
     OPERAÇÃO DESTRUTIVA — sem recuperação.
     """
     tenant_id = await _ensure_tenant(user)
+    visao.exigir_gestor(user, "apagar o agente")  # trava de papel (juiz 31/10): a cascata leva TODAS as conversas
     agent = await db.get(TaAgent, agent_id)
     if not agent or agent.tenant_id != tenant_id:
         raise HTTPException(404, "Agente não encontrado")

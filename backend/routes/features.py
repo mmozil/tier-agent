@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.db import get_db
 from models import TaFeatureFlag
 
@@ -84,7 +84,7 @@ async def list_flags(
     return list(result.scalars().all())
 
 
-@router.post("", response_model=FlagOut, status_code=201)
+@router.post("", response_model=FlagOut, status_code=201, dependencies=[Depends(require_gestor)])
 async def upsert_flag(
     payload: FlagIn,
     user: CurrentUser = Depends(get_current_user),
@@ -111,7 +111,7 @@ async def upsert_flag(
     return item
 
 
-@router.delete("/{flag_id}", status_code=204)
+@router.delete("/{flag_id}", status_code=204, dependencies=[Depends(require_gestor)])
 async def delete_flag(
     flag_id: int,
     user: CurrentUser = Depends(get_current_user),

@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from models import TaAgent, TaConversation, TaPlaybook, TaUsageDaily
+from services import visao_conversas as visao
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/mcp", tags=["mcp-server"])
@@ -203,17 +204,25 @@ async def _execute_tool(name: str, args: dict, user: CurrentUser, db: AsyncSessi
         from services.connectors import registry as conn_registry
         from services.connectors.base import ConnectorConfig, OutboundMessage
 
-        conn = (
-            await db.execute(
-                _sel(TaConnector).where(
-                    TaConnector.agent_id == agent_id,
-                    TaConnector.kind == "whatsapp",
-                    TaConnector.enabled.is_(True),
-                )
-            )
-        ).scalar_one_or_none()
-        if not conn:
+        q = _sel(TaConnector).where(
+            TaConnector.agent_id == agent_id,
+            TaConnector.kind == "whatsapp",
+            TaConnector.enabled.is_(True),
+        )
+        # Só dono/admin manda por qualquer número; o atendente, só pelo(s) seu(s) — mesma régua
+        # da visão de conversas. Sem isto a rota MCP mandava WhatsApp pelo número de outra pessoa
+        # (achado do juiz, 31/10/2026). O envio autônomo do agente NÃO passa por aqui.
+        if not visao.ve_tudo(user.role):
+            meus = set(await visao.conectores_do_membro(db, user.tenant_id, user.member_id))
+            q = q.where(TaConnector.id.in_(meus or {-1}))
+        conns = (await db.execute(q)).scalars().all()
+        if not conns:
+            if not visao.ve_tudo(user.role):
+                return "Erro: você só pode enviar pelo seu próprio número do WhatsApp"
             return "Erro: agente sem WhatsApp conectado"
+        if len(conns) > 1:
+            return "Erro: há mais de um número; a rota MCP envia por um número só"
+        conn = conns[0]
 
         import json as _j
 

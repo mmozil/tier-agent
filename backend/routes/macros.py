@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.db import get_db
 from core.encryption import decrypt
 from models import TaAgent, TaConversation, TaMacro
@@ -59,7 +59,7 @@ async def list_macros(
     return rows
 
 
-@router.post("", response_model=MacroOut, status_code=201)
+@router.post("", response_model=MacroOut, status_code=201, dependencies=[Depends(require_gestor)])
 async def create_macro(
     payload: MacroIn,
     user: CurrentUser = Depends(get_current_user),
@@ -76,7 +76,7 @@ async def create_macro(
     return item
 
 
-@router.put("/{macro_id}", response_model=MacroOut)
+@router.put("/{macro_id}", response_model=MacroOut, dependencies=[Depends(require_gestor)])
 async def update_macro(
     macro_id: int,
     payload: MacroIn,
@@ -93,7 +93,7 @@ async def update_macro(
     return item
 
 
-@router.delete("/{macro_id}", status_code=204)
+@router.delete("/{macro_id}", status_code=204, dependencies=[Depends(require_gestor)])
 async def delete_macro(
     macro_id: int,
     user: CurrentUser = Depends(get_current_user),

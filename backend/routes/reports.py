@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.db import get_db
 from models import TaAgent, TaConversation, TaMember, TaNotification
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 _DOW_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
 
-@router.get("/atendimento", response_model=dict)
+@router.get("/atendimento", response_model=dict, dependencies=[Depends(require_gestor)])
 async def atendimento(
     days: int = Query(30, ge=1, le=365),
     user: CurrentUser = Depends(get_current_user),
@@ -130,7 +130,7 @@ async def atendimento(
     return out
 
 
-@router.get("/overview-live", response_model=dict)
+@router.get("/overview-live", response_model=dict, dependencies=[Depends(require_gestor)])
 async def overview_live(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

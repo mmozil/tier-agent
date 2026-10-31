@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user, require_admin
+from core.auth import CurrentUser, get_current_user, require_admin, require_gestor_ou_admin
 from core.db import get_db
 from core.encryption import decrypt, encrypt
 from models import TaAgent, TaLlmProvider
@@ -312,7 +312,7 @@ class AplicarEmAgentesIn(BaseModel):
     herdar: bool = False
 
 
-@router.post("/{provider_id}/aplicar")
+@router.post("/{provider_id}/aplicar", dependencies=[Depends(require_gestor_ou_admin)])
 async def aplicar_em_agentes(
     provider_id: int,
     body: AplicarEmAgentesIn,
@@ -445,7 +445,7 @@ async def list_providers(
     return items
 
 
-@router.post("", response_model=LlmProviderOut, status_code=201)
+@router.post("", response_model=LlmProviderOut, status_code=201, dependencies=[Depends(require_gestor_ou_admin)])
 async def create_provider(
     payload: LlmProviderIn,
     user: CurrentUser = Depends(get_current_user),
@@ -486,7 +486,7 @@ async def create_provider(
     return item
 
 
-@router.patch("/{provider_id}", response_model=LlmProviderOut)
+@router.patch("/{provider_id}", response_model=LlmProviderOut, dependencies=[Depends(require_gestor_ou_admin)])
 async def update_provider(
     provider_id: int,
     payload: LlmProviderPatch,
@@ -518,7 +518,7 @@ async def update_provider(
     return item
 
 
-@router.delete("/{provider_id}", status_code=204)
+@router.delete("/{provider_id}", status_code=204, dependencies=[Depends(require_gestor_ou_admin)])
 async def delete_provider(
     provider_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -537,7 +537,7 @@ async def delete_provider(
     _invalidate_cost_cache(tenant_for_cache)
 
 
-@router.post("/{provider_id}/test")
+@router.post("/{provider_id}/test", dependencies=[Depends(require_gestor_ou_admin)])
 async def test_provider_connection(
     provider_id: int,
     user: CurrentUser = Depends(get_current_user),

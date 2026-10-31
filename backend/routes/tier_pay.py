@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.db import get_db
 from core.encryption import decrypt, encrypt
 from models import TaTierPayConfig
@@ -90,7 +90,7 @@ async def get_config(
     )
 
 
-@router.post("/config", response_model=TierPayConfigOut)
+@router.post("/config", response_model=TierPayConfigOut, dependencies=[Depends(require_gestor)])
 async def upsert_config(
     payload: TierPayConfigIn,
     user: CurrentUser = Depends(get_current_user),
@@ -145,7 +145,7 @@ async def upsert_config(
     )
 
 
-@router.delete("/config", status_code=204)
+@router.delete("/config", status_code=204, dependencies=[Depends(require_gestor)])
 async def delete_config(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

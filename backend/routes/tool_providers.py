@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.db import get_db
 from core.encryption import encrypt
 from models import TaAgent, TaToolProvider
@@ -124,7 +124,7 @@ async def list_providers(
     return [_to_out(p) for p in rows]
 
 
-@router.post("", response_model=ToolProviderOut, status_code=201)
+@router.post("", response_model=ToolProviderOut, status_code=201, dependencies=[Depends(require_gestor)])
 async def create_provider(
     agent_id: int,
     payload: ToolProviderCreate,
@@ -153,7 +153,7 @@ async def create_provider(
     return _to_out(p)
 
 
-@router.patch("/{provider_id}", response_model=ToolProviderOut)
+@router.patch("/{provider_id}", response_model=ToolProviderOut, dependencies=[Depends(require_gestor)])
 async def update_provider(
     agent_id: int,
     provider_id: int,
@@ -182,7 +182,7 @@ async def update_provider(
     return _to_out(p)
 
 
-@router.delete("/{provider_id}", status_code=204)
+@router.delete("/{provider_id}", status_code=204, dependencies=[Depends(require_gestor)])
 async def delete_provider(
     agent_id: int,
     provider_id: int,
@@ -199,7 +199,7 @@ class OAuthStartRequest(BaseModel):
     preset: str  # ex: "tier-erp"
 
 
-@router.post("/oauth/start")
+@router.post("/oauth/start", dependencies=[Depends(require_gestor)])
 async def oauth_start(
     agent_id: int,
     payload: OAuthStartRequest,
@@ -252,7 +252,7 @@ async def oauth_callback(
     return _to_out(provider)
 
 
-@router.post("/{provider_id}/test")
+@router.post("/{provider_id}/test", dependencies=[Depends(require_gestor)])
 async def test_provider(
     agent_id: int,
     provider_id: int,

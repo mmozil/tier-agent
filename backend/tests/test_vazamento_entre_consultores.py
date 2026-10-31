@@ -480,6 +480,12 @@ async def _post(quem: str, url: str, **kw):
         return await cli.post(url, headers={"Authorization": f"Bearer {_token(quem)}"}, **kw)
 
 
+async def _delete(quem: str, url: str, **kw):
+    transporte = httpx.ASGITransport(app=main.app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transporte, base_url="http://teste") as cli:
+        return await cli.request("DELETE", url, headers={"Authorization": f"Bearer {_token(quem)}"}, **kw)
+
+
 async def _sql(q: str, **p):
     async with SessionLocal() as db:
         r = await db.execute(text(q), p)
@@ -626,6 +632,221 @@ def test_mensagens_juntas_do_mesmo_cliente_nao_partem_a_conversa(monkeypatch):
     ids = _rodar(todas())
     conversas = _rodar(_sql("SELECT id FROM ta_conversation WHERE external_id = :e", e=contato))
     assert len(conversas) == 1 and len(set(ids)) == 1, f"a conversa partiu em {len(conversas)}: {ids}"
+
+
+def test_consultor_nao_apaga_nem_desliga_o_agente():
+    """Achado do juiz (31/10/2026): DELETE /agents/{id} e toggle-active só conferiam o tenant, não o
+    papel. Um atendente apagava o agente (a cascata leva TODAS as conversas da empresa) ou o desligava."""
+    _rodar(_semear())
+    antes = _rodar(_sql("SELECT count(*) FROM ta_conversation"))[0][0]
+    assert _rodar(_delete("A", f"/api/v1/agents/{R['ag1']}")).status_code == 403
+    assert _rodar(_post("A", f"/api/v1/agents/{R['ag1']}/toggle-active")).status_code == 403
+    depois = _rodar(_sql("SELECT count(*) FROM ta_conversation"))[0][0]
+    assert depois == antes, f"o consultor apagou conversas: {antes} -> {depois}"
+    # o dono liga/desliga normalmente
+    assert _rodar(_post("D", f"/api/v1/agents/{R['ag1']}/toggle-active")).status_code == 200
+    _rodar(_semear())
+
+
+def test_consultor_nao_manda_whatsapp_pelo_numero_de_outro():
+    """Achado do juiz (31/10/2026): a rota MCP send_whatsapp pegava o número ligado do agente sem
+    conferir de quem é. Deixo só o número do B ligado; o A (atendente) não pode enviar por ele."""
+    _rodar(_semear())
+    _rodar(_sql("UPDATE ta_connector SET enabled = false WHERE id IN (:ca, :cc)", ca=R["con"]["A"], cc=R["con"]["C"]))
+
+    def _mcp(quem, agent_id, to):
+        corpo = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                 "params": {"name": "send_whatsapp", "arguments": {"agent_id": agent_id, "to": to, "text": "oi"}}}
+        return _rodar(_post(quem, "/api/v1/mcp/server", json=corpo))
+
+    r = _mcp("A", R["ag1"], MARCAS["B"][2])
+    assert "próprio" in r.text, f"o atendente mandou pelo número de outro: {r.text[:300]}"
+    # o dono NÃO é barrado pela trava de dono — chega a tentar enviar (o motor está fora no teste)
+    rd = _mcp("D", R["ag1"], MARCAS["B"][2])
+    assert "próprio" not in rd.text, rd.text[:300]
+    _rodar(_semear())
+
+
+def test_consultor_nao_captura_conversa_de_outro_numero_em_modo_agente(monkeypatch):
+    """Achado do juiz G1: em modo 'agente', iniciar() resolvia a conversa do cliente em QUALQUER
+    número (por_numero=False) e a capturava para quem iniciou. A correção escopa iniciar() ao
+    número de quem envia. Mockamos só o motor de WhatsApp (envio) — a lógica é a de verdade."""
+    import routes.conversations as convmod
+    from services import proactive
+
+    async def _fake_onwa(*a, **k):
+        return None
+
+    class _FakeAdapter:
+        async def send(self, *a, **k):
+            return {}
+
+    async def _noop_async(*a, **k):
+        return None
+
+    monkeypatch.setattr(convmod.engine_client, "on_whatsapp", _fake_onwa)
+    monkeypatch.setattr(convmod.registry, "get", lambda kind: _FakeAdapter())
+    monkeypatch.setattr(proactive, "marcar_eco_do_envio", _noop_async)
+    monkeypatch.setattr(convmod, "_guardar_chave_do_envio", _noop_async)
+    monkeypatch.setattr(convmod, "_agendar_capinha", lambda *a, **k: None)
+
+    _rodar(_semear())
+    chat = "5511955550000@s.whatsapp.net"
+    _rodar(_sql("UPDATE ta_connector SET modo='agente' WHERE id IN (:ca, :cb)", ca=R["con"]["A"], cb=R["con"]["B"]))
+    # a conversa do B fica ATIVA e SEM dono, nesse número — a condição exata do achado
+    _rodar(_sql("UPDATE ta_conversation SET status='active', assigned_member_id=NULL, external_id=:e, connector_id=:cb WHERE id=:c",
+                e=chat, cb=R["con"]["B"], c=R["conv"]["B"]))
+
+    corpo = {"connector_id": R["con"]["A"], "telefone": "5511955550000", "content": "oi"}
+    r = _rodar(_post("A", "/api/v1/conversations/iniciar", json=corpo))
+    assert r.status_code == 200, r.text
+    nova = r.json()["id"]
+    dono, numero = _rodar(_sql("SELECT assigned_member_id, connector_id FROM ta_conversation WHERE id = :c", c=R["conv"]["B"]))[0]
+    assert nova != R["conv"]["B"], f"o A caiu na conversa do B (id {nova})"
+    assert dono != R["a"], f"a conversa do B foi capturada pelo A (assigned={dono})"
+    assert _rodar(_get("A", f"/api/v1/conversations/{R['conv']['B']}")).status_code in (403, 404)
+    _rodar(_semear())
+
+
+# ── Fail-loud: trava de inventário + prova da trava de gestor (31/10/2026) ──────
+# O «verify_authorized» do Chatwoot à nossa maneira. Lição do juiz: o vazamento mora nas rotas
+# que ninguém re-confere. Duas travas:
+#  (1) INVENTÁRIO — toda rota de ESCRITA tem de estar na lista abaixo. Rota nova/renomeada =
+#      teste vermelho → obriga alguém a decidir a autorização dela antes de subir.
+#  (2) GESTOR BARRA — as rotas de config/automação da empresa têm de devolver 403 ao consultor,
+#      provado CHAMANDO de verdade (não lendo o código): o `require_gestor` (dependência) dispara
+#      antes do corpo, então o 403 vale mesmo com json={} e id fictício.
+
+ESCRITA_CONHECIDAS = {
+    "POST /api/v1/agents", "DELETE /api/v1/agents/memories/{memory_id}", "DELETE /api/v1/agents/{agent_id}",
+    "PATCH /api/v1/agents/{agent_id}", "POST /api/v1/agents/{agent_id}/playground",
+    "POST /api/v1/agents/{agent_id}/skills/archive", "POST /api/v1/agents/{agent_id}/toggle-active",
+    "POST /api/v1/agents/{agent_id}/tool-providers", "POST /api/v1/agents/{agent_id}/tool-providers/oauth/start",
+    "DELETE /api/v1/agents/{agent_id}/tool-providers/{provider_id}",
+    "PATCH /api/v1/agents/{agent_id}/tool-providers/{provider_id}",
+    "POST /api/v1/agents/{agent_id}/tool-providers/{provider_id}/test",
+    "POST /api/v1/auth/google", "POST /api/v1/auth/login", "POST /api/v1/auth/logout", "PATCH /api/v1/auth/me",
+    "DELETE /api/v1/auth/me/avatar", "POST /api/v1/auth/me/avatar", "POST /api/v1/auth/signup",
+    "POST /api/v1/billing/checkout", "POST /api/v1/canned-responses", "DELETE /api/v1/canned-responses/{item_id}",
+    "PUT /api/v1/canned-responses/{item_id}", "POST /api/v1/connectors", "POST /api/v1/connectors/generic",
+    "POST /api/v1/connectors/webchat", "POST /api/v1/connectors/whatsapp-cloud/onboard",
+    "POST /api/v1/connectors/whatsapp/provision", "DELETE /api/v1/connectors/{connector_id}",
+    "PUT /api/v1/connectors/{connector_id}/assinatura", "POST /api/v1/connectors/{connector_id}/connect",
+    "POST /api/v1/connectors/{connector_id}/disconnect", "PUT /api/v1/connectors/{connector_id}/member",
+    "DELETE /api/v1/connectors/{connector_id}/membros/{member_id}",
+    "POST /api/v1/connectors/{connector_id}/membros/{member_id}", "DELETE /api/v1/containers/{tenant_id}",
+    "POST /api/v1/containers/{tenant_id}/provision", "POST /api/v1/containers/{tenant_id}/restart",
+    "POST /api/v1/containers/{tenant_id}/stop", "POST /api/v1/conversations/bulk-delete",
+    "POST /api/v1/conversations/iniciar", "DELETE /api/v1/conversations/{conversation_id}",
+    "PUT /api/v1/conversations/{conversation_id}/assign", "POST /api/v1/conversations/{conversation_id}/crm/tarefas",
+    "POST /api/v1/conversations/{conversation_id}/enviar-crm", "POST /api/v1/conversations/{conversation_id}/handoff",
+    "POST /api/v1/conversations/{conversation_id}/mensagens/{message_id}/editar",
+    "POST /api/v1/conversations/{conversation_id}/mensagens/{message_id}/reacao",
+    "POST /api/v1/conversations/{conversation_id}/note", "PUT /api/v1/conversations/{conversation_id}/priority",
+    "POST /api/v1/conversations/{conversation_id}/reply", "POST /api/v1/conversations/{conversation_id}/reply-anexo",
+    "POST /api/v1/conversations/{conversation_id}/resolve", "POST /api/v1/conversations/{conversation_id}/resume",
+    "POST /api/v1/conversations/{conversation_id}/snooze", "PUT /api/v1/conversations/{conversation_id}/tags",
+    "PUT /api/v1/conversations/{conversation_id}/team", "POST /api/v1/conversations/{conversation_id}/unsnooze",
+    "POST /api/v1/embedding-providers", "POST /api/v1/embedding-providers/reindex-all",
+    "DELETE /api/v1/embedding-providers/{provider_id}", "PATCH /api/v1/embedding-providers/{provider_id}",
+    "POST /api/v1/embedding-providers/{provider_id}/test", "POST /api/v1/feature-flags",
+    "DELETE /api/v1/feature-flags/{flag_id}", "POST /api/v1/integrations/pet/send-status",
+    "POST /api/v1/integrations/tier/llm-complete", "POST /api/v1/integrations/tier/members/desligar",
+    "POST /api/v1/integrations/tier/provision", "POST /api/v1/integrations/tier/sso",
+    "POST /api/v1/integrations/tier/transcribe", "POST /api/v1/integrations/tier/whatsapp-cloud/send-template",
+    "POST /api/v1/internal/proactive-whatsapp", "POST /api/v1/knowledge/from-feedback", "POST /api/v1/knowledge/upload",
+    "DELETE /api/v1/knowledge/{knowledge_id}", "POST /api/v1/knowledge/{knowledge_id}/reindex",
+    "POST /api/v1/llm-providers", "DELETE /api/v1/llm-providers/{provider_id}", "PATCH /api/v1/llm-providers/{provider_id}",
+    "POST /api/v1/llm-providers/{provider_id}/aplicar", "POST /api/v1/llm-providers/{provider_id}/test",
+    "POST /api/v1/macros", "DELETE /api/v1/macros/{macro_id}", "PUT /api/v1/macros/{macro_id}",
+    "POST /api/v1/macros/{macro_id}/apply", "POST /api/v1/mcp/server", "PUT /api/v1/notifications/alert-config",
+    "POST /api/v1/notifications/mark-all-read", "PATCH /api/v1/notifications/{notification_id}/archive",
+    "PATCH /api/v1/notifications/{notification_id}/read", "POST /api/v1/playbooks",
+    "POST /api/v1/playbooks/marketplace/{playbook_id}/import", "POST /api/v1/playbooks/seed/{template_key}",
+    "DELETE /api/v1/playbooks/{playbook_id}", "PUT /api/v1/playbooks/{playbook_id}",
+    "POST /api/v1/playbooks/{playbook_id}/archive", "POST /api/v1/playbooks/{playbook_id}/publish",
+    "POST /api/v1/playbooks/{playbook_id}/publish-marketplace", "POST /api/v1/playbooks/{playbook_id}/test-run",
+    "POST /api/v1/playbooks/{playbook_id}/unpublish-marketplace", "POST /api/v1/playbooks/{playbook_id}/validate",
+    "POST /api/v1/public/chat/{slug}/mensagem", "POST /api/v1/public/chat/{slug}/pontuar", "POST /api/v1/secops/alert",
+    "POST /api/v1/secops/incidents/{incident_id}/ack", "POST /api/v1/secops/incidents/{incident_id}/resolve",
+    "POST /api/v1/team/invite/{token}/accept", "POST /api/v1/team/members", "DELETE /api/v1/team/members/{member_id}",
+    "PUT /api/v1/team/members/{member_id}", "POST /api/v1/team/online", "POST /api/v1/team/teams",
+    "DELETE /api/v1/team/teams/{team_id}", "POST /api/v1/tenants", "POST /api/v1/tenants/me/atendimento/abrir",
+    "POST /api/v1/tenants/me/atendimento/fechar", "DELETE /api/v1/tier-pay/config", "POST /api/v1/tier-pay/config",
+    "POST /api/v1/tool-providers/oauth/callback", "POST /api/v1/webhooks/email/{connector_id}",
+    "POST /api/v1/webhooks/event/{event_key}", "POST /api/v1/webhooks/instagram",
+    "POST /api/v1/webhooks/instagram/{ig_user_id}", "POST /api/v1/webhooks/slack/{connector_id}",
+    "POST /api/v1/webhooks/telegram/{bot_id}", "POST /api/v1/webhooks/whatsapp-cloud",
+    "POST /api/v1/webhooks/whatsapp-engine",
+}
+
+# Config/automação da empresa — DEVE barrar o consultor (atendente) com 403. id fictício de propósito:
+# a trava dispara antes de olhar o id. Cobre o conjunto travado hoje + as de `aecfa8e` (connectors/team).
+DEVE_BARRAR_CONSULTOR = [
+    ("POST", "/api/v1/agents"), ("PATCH", "/api/v1/agents/999999"), ("DELETE", "/api/v1/agents/999999"),
+    ("POST", "/api/v1/agents/999999/toggle-active"), ("DELETE", "/api/v1/agents/memories/999999"),
+    ("POST", "/api/v1/knowledge/upload"), ("POST", "/api/v1/knowledge/999999/reindex"),
+    ("DELETE", "/api/v1/knowledge/999999"), ("POST", "/api/v1/feature-flags"), ("DELETE", "/api/v1/feature-flags/999999"),
+    ("POST", "/api/v1/tier-pay/config"), ("DELETE", "/api/v1/tier-pay/config"),
+    ("POST", "/api/v1/playbooks"), ("PUT", "/api/v1/playbooks/999999"), ("DELETE", "/api/v1/playbooks/999999"),
+    ("POST", "/api/v1/playbooks/999999/validate"), ("POST", "/api/v1/playbooks/999999/publish"),
+    ("POST", "/api/v1/playbooks/999999/archive"), ("POST", "/api/v1/playbooks/999999/test-run"),
+    ("POST", "/api/v1/playbooks/999999/publish-marketplace"), ("POST", "/api/v1/playbooks/999999/unpublish-marketplace"),
+    ("POST", "/api/v1/playbooks/marketplace/999999/import"), ("POST", "/api/v1/playbooks/seed/qualquer"),
+    ("DELETE", "/api/v1/connectors/999999"), ("DELETE", "/api/v1/team/members/999999"),
+    ("DELETE", "/api/v1/team/teams/999999"),
+    # 2ª leva (decisão do dono 31/10): macros, secops, providers LLM/embedding/tool
+    ("POST", "/api/v1/macros"), ("PUT", "/api/v1/macros/999999"), ("DELETE", "/api/v1/macros/999999"),
+    ("POST", "/api/v1/secops/incidents/999999/ack"), ("POST", "/api/v1/secops/incidents/999999/resolve"),
+    ("POST", "/api/v1/llm-providers"), ("PATCH", "/api/v1/llm-providers/999999"),
+    ("DELETE", "/api/v1/llm-providers/999999"), ("POST", "/api/v1/llm-providers/999999/aplicar"),
+    ("POST", "/api/v1/llm-providers/999999/test"),
+    ("POST", "/api/v1/embedding-providers"), ("PATCH", "/api/v1/embedding-providers/999999"),
+    ("DELETE", "/api/v1/embedding-providers/999999"), ("POST", "/api/v1/embedding-providers/999999/test"),
+    ("POST", "/api/v1/embedding-providers/reindex-all"),
+    ("POST", "/api/v1/agents/999999/tool-providers"), ("PATCH", "/api/v1/agents/999999/tool-providers/999999"),
+    ("DELETE", "/api/v1/agents/999999/tool-providers/999999"),
+    ("POST", "/api/v1/agents/999999/tool-providers/oauth/start"),
+    ("POST", "/api/v1/agents/999999/tool-providers/999999/test"),
+    # Leitura — dashboards de admin (metrics + reports). reports/atendimento vazava contagem por
+    # colega (assigned_to) sobre todas as conversas; os demais são KPI de tenant, só-gestor por desenho.
+    ("GET", "/api/v1/metrics/overview"), ("GET", "/api/v1/metrics/daily"),
+    ("GET", "/api/v1/metrics/by-agent"), ("GET", "/api/v1/metrics/by-model"),
+    ("GET", "/api/v1/metrics/ab-tests"), ("GET", "/api/v1/metrics/top-conversations"),
+    ("GET", "/api/v1/reports/atendimento"), ("GET", "/api/v1/reports/overview-live"),
+]
+
+
+async def _req(quem: str, metodo: str, url: str, **kw):
+    transporte = httpx.ASGITransport(app=main.app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transporte, base_url="http://teste") as cli:
+        return await cli.request(metodo, url, headers={"Authorization": f"Bearer {_token(quem)}"}, **kw)
+
+
+def test_inventario_de_rotas_de_escrita_trancado():
+    vivas = {
+        f"{m} {r.path}"
+        for r in main.app.routes
+        for m in (getattr(r, "methods", None) or set())
+        if m in {"POST", "PUT", "PATCH", "DELETE"}
+    }
+    novas = vivas - ESCRITA_CONHECIDAS
+    sumidas = ESCRITA_CONHECIDAS - vivas
+    assert not novas, f"rota(s) de escrita NÃO classificada(s) — decida a autorização e inclua em ESCRITA_CONHECIDAS: {sorted(novas)}"
+    assert not sumidas, f"rota(s) saíram do app — atualize ESCRITA_CONHECIDAS: {sorted(sumidas)}"
+
+
+def test_rotas_de_gestor_barram_o_consultor():
+    """Prova ativa: o consultor (atendente) leva 403 em toda rota de config/automação da empresa."""
+    _rodar(_semear())
+    falhas = []
+    for metodo, url in DEVE_BARRAR_CONSULTOR:
+        kw = {} if metodo == "GET" else {"json": {}}
+        r = _rodar(_req("A", metodo, url, **kw))
+        if r.status_code != 403:
+            falhas.append(f"{metodo} {url} -> {r.status_code} (devia 403)")
+    assert not falhas, "rotas de gestor que NÃO barraram o consultor:\n" + "\n".join(falhas)
+    _rodar(_semear())
 
 
 if __name__ == "__main__":  # relatório completo, sem pytest

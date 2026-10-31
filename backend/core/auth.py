@@ -127,3 +127,22 @@ async def require_admin(user: CurrentUser = Depends(get_current_user)) -> Curren
     if not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Apenas admin Tier")
     return user
+
+
+async def require_gestor(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Dependência de rota: só dono/admin do tenant (mesma régua de `visao_conversas.ve_tudo`).
+    Como dependência, roda na resolução ANTES da validação do corpo — então a recusa é 403 mesmo
+    sem corpo, o que deixa o teste fail-loud provar a trava sem montar um corpo válido por rota.
+    Config da empresa e automações (que falam com os clientes de todos) usam isto."""
+    if (user.role or "owner") not in ("owner", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Apenas dono/admin")
+    return user
+
+
+async def require_gestor_ou_admin(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Como require_gestor, mas o superadmin Tier (is_admin) também passa — para config de modelo
+    DUPLO global/tenant (providers de IA): global exige is_admin, tenant exige dono/admin, e o
+    atendente nunca entra. As checagens finas (global × cross-tenant) seguem dentro do handler."""
+    if not (user.is_admin or (user.role or "owner") in ("owner", "admin")):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Apenas dono/admin")
+    return user

@@ -369,9 +369,13 @@ async def iniciar_conversa(
     await marcar_eco_do_envio(db, conn, resultado)
 
     registro = (getattr(conn, "modo", None) or "agente") == "registro"
+    # G1 (juiz 31/10): iniciar() SEMPRE escopa ao número de quem envia. Sem isto, em modo 'agente'
+    # a busca por (agente, contato) achava a conversa do cliente em OUTRO número e a capturava para
+    # quem iniciou (o _atribuir a reatribuía). O atendente só envia pelo próprio número (checado
+    # acima), então escopar por ele nunca cruza. O caminho autônomo do agente (webhook) não passa aqui.
     conv = await agent_runtime.ensure_conversation(
         db, agent_id=conn.agent_id, connector_kind="whatsapp", external_id=chat,
-        connector_id=conn.id, por_numero=registro,
+        connector_id=conn.id, por_numero=True,
     )
     msg = await _gravar_resposta(
         db, conv, user, registro=registro, content=content,

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.config import get_settings
 from core.db import get_db
 from core.encryption import decrypt
@@ -140,7 +140,7 @@ async def list_incidents(
     return {"incidents": [dict(r) for r in rows]}
 
 
-@router.post("/incidents/{incident_id}/ack")
+@router.post("/incidents/{incident_id}/ack", dependencies=[Depends(require_gestor)])
 async def ack_incident(
     incident_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -154,7 +154,7 @@ async def ack_incident(
     return {"ok": True}
 
 
-@router.post("/incidents/{incident_id}/resolve")
+@router.post("/incidents/{incident_id}/resolve", dependencies=[Depends(require_gestor)])
 async def resolve_incident(
     incident_id: int,
     user: CurrentUser = Depends(get_current_user),

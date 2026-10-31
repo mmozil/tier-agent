@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.db import get_db
 from models import TaAgent, TaKnowledge
 from services import skill_builder
@@ -73,7 +73,7 @@ async def list_knowledge(
     ]
 
 
-@router.post("/upload")
+@router.post("/upload", dependencies=[Depends(require_gestor)])
 async def upload(
     agent_id: int = Form(...),
     title: str | None = Form(None),
@@ -285,7 +285,7 @@ async def create_from_feedback(
     }
 
 
-@router.post("/{knowledge_id}/reindex")
+@router.post("/{knowledge_id}/reindex", dependencies=[Depends(require_gestor)])
 async def reindex_knowledge(
     knowledge_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -334,7 +334,7 @@ async def reindex_knowledge(
     return {"reindexed": True, "knowledge_id": k.id, "chunks_count": k.chunks_count}
 
 
-@router.delete("/{knowledge_id}", status_code=204)
+@router.delete("/{knowledge_id}", status_code=204, dependencies=[Depends(require_gestor)])
 async def delete_knowledge(
     knowledge_id: int,
     user: CurrentUser = Depends(get_current_user),

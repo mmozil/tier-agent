@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.db import get_db
 from models import (
     TaAgent,
@@ -216,7 +216,7 @@ class ValidateResult(BaseModel):
     errors: list[str]
 
 
-@router.post("/{playbook_id}/validate", response_model=ValidateResult)
+@router.post("/{playbook_id}/validate", response_model=ValidateResult, dependencies=[Depends(require_gestor)])
 async def validate_playbook(
     playbook_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -279,7 +279,7 @@ async def list_marketplace(
     ]
 
 
-@router.post("/{playbook_id}/publish-marketplace", response_model=PlaybookOut)
+@router.post("/{playbook_id}/publish-marketplace", response_model=PlaybookOut, dependencies=[Depends(require_gestor)])
 async def publish_to_marketplace(
     playbook_id: int,
     payload: PublishMarketplaceIn,
@@ -299,7 +299,7 @@ async def publish_to_marketplace(
     return pb
 
 
-@router.post("/{playbook_id}/unpublish-marketplace", response_model=PlaybookOut)
+@router.post("/{playbook_id}/unpublish-marketplace", response_model=PlaybookOut, dependencies=[Depends(require_gestor)])
 async def unpublish_marketplace(
     playbook_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -313,7 +313,7 @@ async def unpublish_marketplace(
     return pb
 
 
-@router.post("/marketplace/{playbook_id}/import", response_model=PlaybookOut, status_code=201)
+@router.post("/marketplace/{playbook_id}/import", response_model=PlaybookOut, status_code=201, dependencies=[Depends(require_gestor)])
 async def import_from_marketplace(
     playbook_id: int,
     payload: ImportMarketplaceIn,
@@ -365,7 +365,7 @@ async def list_playbook_templates(user: CurrentUser = Depends(get_current_user))
     return [TemplateInfo(**t) for t in playbook_seed.list_templates()]
 
 
-@router.post("/seed/{template_key}", response_model=PlaybookOut, status_code=201)
+@router.post("/seed/{template_key}", response_model=PlaybookOut, status_code=201, dependencies=[Depends(require_gestor)])
 async def seed_from_template(
     template_key: str,
     payload: SeedIn,
@@ -427,7 +427,7 @@ async def list_playbooks(
     ]
 
 
-@router.post("", response_model=PlaybookOut, status_code=201)
+@router.post("", response_model=PlaybookOut, status_code=201, dependencies=[Depends(require_gestor)])
 async def create_playbook(
     payload: PlaybookCreate,
     user: CurrentUser = Depends(get_current_user),
@@ -459,7 +459,7 @@ async def get_playbook(
     return await _get_playbook_for_tenant(db, playbook_id, tenant_id)
 
 
-@router.put("/{playbook_id}", response_model=PlaybookOut)
+@router.put("/{playbook_id}", response_model=PlaybookOut, dependencies=[Depends(require_gestor)])
 async def update_playbook(
     playbook_id: int,
     payload: PlaybookUpdate,
@@ -484,7 +484,7 @@ async def update_playbook(
     return pb
 
 
-@router.delete("/{playbook_id}", status_code=204)
+@router.delete("/{playbook_id}", status_code=204, dependencies=[Depends(require_gestor)])
 async def delete_playbook(
     playbook_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -496,7 +496,7 @@ async def delete_playbook(
     await db.commit()
 
 
-@router.post("/{playbook_id}/publish", response_model=PublishResult)
+@router.post("/{playbook_id}/publish", response_model=PublishResult, dependencies=[Depends(require_gestor)])
 async def publish_playbook(
     playbook_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -579,7 +579,7 @@ class TestRunResult(BaseModel):
     trigger_type: str
 
 
-@router.post("/{playbook_id}/test-run", response_model=TestRunResult)
+@router.post("/{playbook_id}/test-run", response_model=TestRunResult, dependencies=[Depends(require_gestor)])
 async def test_run(
     playbook_id: int,
     payload: TestRunIn,
@@ -637,7 +637,7 @@ async def test_run(
     )
 
 
-@router.post("/{playbook_id}/archive", response_model=PlaybookOut)
+@router.post("/{playbook_id}/archive", response_model=PlaybookOut, dependencies=[Depends(require_gestor)])
 async def archive_playbook(
     playbook_id: int,
     user: CurrentUser = Depends(get_current_user),

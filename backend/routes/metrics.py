@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger("metrics")
 
 from services import visao_conversas as visao
-from core.auth import CurrentUser, get_current_user
+from core.auth import CurrentUser, get_current_user, require_gestor
 from core.db import get_db
 from models import (
     TaAgent,
@@ -94,7 +94,7 @@ def _period_start_str(days: int) -> str:
 
 
 # ─── Endpoints
-@router.get("/overview", response_model=OverviewResponse)
+@router.get("/overview", response_model=OverviewResponse, dependencies=[Depends(require_gestor)])
 async def overview(
     days: int = Query(30, ge=1, le=365),
     user: CurrentUser = Depends(get_current_user),
@@ -190,7 +190,7 @@ async def _overview_query(db, tenant_id, days, since, since_day) -> "OverviewRes
     )
 
 
-@router.get("/daily", response_model=list[DailyPoint])
+@router.get("/daily", response_model=list[DailyPoint], dependencies=[Depends(require_gestor)])
 async def daily(
     days: int = Query(30, ge=1, le=180),
     user: CurrentUser = Depends(get_current_user),
@@ -231,7 +231,7 @@ async def daily(
     ]
 
 
-@router.get("/by-agent", response_model=list[ByAgentRow])
+@router.get("/by-agent", response_model=list[ByAgentRow], dependencies=[Depends(require_gestor)])
 async def by_agent(
     days: int = Query(30, ge=1, le=365),
     user: CurrentUser = Depends(get_current_user),
@@ -279,7 +279,7 @@ async def by_agent(
     ]
 
 
-@router.get("/by-model", response_model=list[ByModelRow])
+@router.get("/by-model", response_model=list[ByModelRow], dependencies=[Depends(require_gestor)])
 async def by_model(
     days: int = Query(30, ge=1, le=365),
     user: CurrentUser = Depends(get_current_user),
@@ -337,7 +337,7 @@ class AbVariantRow(BaseModel):
     total_cost_cents: int
 
 
-@router.get("/ab-tests", response_model=list[AbVariantRow])
+@router.get("/ab-tests", response_model=list[AbVariantRow], dependencies=[Depends(require_gestor)])
 async def ab_tests(
     days: int = Query(30, ge=1, le=365),
     playbook_id: int | None = None,
