@@ -108,6 +108,8 @@ async def enviar_conversa_para_crm(
     resumo: str | None = None,
     ultima_mensagem: str | None = None,
     estagio_id: int | None = None,
+    origem_canal: dict | None = None,
+    agente_respondeu: bool | None = None,
 ) -> dict:
     """POST no ERP → {ok, oportunidade_id, cliente_id, titulo, estagio_id, ja_existia}.
 
@@ -136,6 +138,10 @@ async def enviar_conversa_para_crm(
         # que é exatamente o comportamento que existia antes do seletor.
         "estagio_id": estagio_id,
         "origem_sistema": "tier-agent",
+        # Como a conversa foi aberta (anúncio, link, busca). Ver services/origem_whatsapp.py.
+        "origem_canal": origem_canal,
+        # True só com a resposta já enviada: é o que tira o card da entrada do funil.
+        "agente_respondeu": agente_respondeu,
     }
     headers = {
         "X-Tier-Integration-Secret": secret,

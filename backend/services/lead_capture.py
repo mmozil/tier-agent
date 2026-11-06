@@ -71,6 +71,7 @@ async def maybe_capture_lead(
     external_chat_id: str,
     sender_name: str | None,
     user_text: str,
+    origem_canal: dict | None = None,
 ) -> bool:
     """Cria um lead se houver telefone informado OU intenção clara de compra.
 
@@ -152,6 +153,7 @@ async def maybe_capture_lead(
 
         if get_settings().tier_erp_auto_crm and conversation_id is not None:
             from services import erp_crm_client
+            from services.origem_whatsapp import sem_invisiveis
 
             if erp_crm_client.integracao_ativa():
                 await erp_crm_client.enviar_conversa_para_crm(
@@ -160,7 +162,11 @@ async def maybe_capture_lead(
                     contato_nome=sender_name,
                     telefone=contato_tel,
                     canal="whatsapp",
-                    resumo=(user_text or "")[:300],
+                    resumo=sem_invisiveis(user_text)[:300],
+                    # 🚨 Esta chamada vem ANTES do auto-CRM do runtime: sem o caminho
+                    # aqui, o card de quem já escreve «orçamento» nasce sem a campanha.
+                    origem_canal=origem_canal,
+                    agente_respondeu=True,
                 )
     except Exception:
         logger.exception("auto-CRM (fase 2) falhou tenant=%s — ignorando", tenant_id)

@@ -241,6 +241,11 @@ async def whatsapp_engine_webhook(
     msg = _desembrulhar_mensagem(payload.get("message") or {})
     media_url = payload.get("mediaUrl")  # URL R2 pública (pre-uploaded pelo Engine)
 
+    # Como a conversa foi aberta (anúncio, link, busca): vai para o CRM com a mensagem.
+    from services.origem_whatsapp import sinal_de_origem
+
+    origem_canal = sinal_de_origem(msg)
+
     # A chave desta mensagem no WhatsApp — sem ela não se reage depois (21/10/2026).
     chave_wa = {"id": key.get("id"), "remote_jid": key.get("remoteJid"), "from_me": from_me}
 
@@ -388,6 +393,7 @@ async def whatsapp_engine_webhook(
             text_content=text_content,
             attachments=attachments,
             chave_wa=chave_wa,
+            origem_canal=origem_canal,
         )
     )
     logger.info("webhook WhatsApp Engine aceito chat=%s attachments=%s", external_chat_id, len(attachments))
@@ -578,6 +584,7 @@ async def _process_engine_message(
     text_content: str,
     attachments: list,
     chave_wa: dict | None = None,
+    origem_canal: dict | None = None,
 ) -> None:
     """Processa 1 mensagem inbound do Tier WhatsApp Engine em background, com sessão de
     DB própria — não segura o 200 do webhook (evita timeout/retry do Engine).
@@ -624,6 +631,7 @@ async def _process_engine_message(
                 sender_name=sender_name,
                 text_content=text_content,
                 attachments=attachments,
+                origem_canal=origem_canal,
             )
             logger.info(
                 "Engine msg processada: agent=%s status=%s",

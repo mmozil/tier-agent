@@ -758,6 +758,94 @@ async def registrar_mensagem_sem_ia(
     return {"status": "registro", "agent_id": agent.id, "conversation_id": conv.id, "role": role}
 
 
+async def _espelhar_no_crm(
+    db: AsyncSession,
+    *,
+    agent: TaAgent,
+    conv: TaConversation,
+    connector,
+    connector_kind: str,
+    external_chat_id: str,
+    sender_name: str | None,
+    text_content: str,
+    origem_canal: dict | None,
+    agente_respondeu: bool,
+) -> None:
+    """Auto-CRM: espelha TODA conversa nova como card no CRM do ERP.
+
+    Captura de lead automática: não exige intenção de compra. Gated por
+    TIER_ERP_AUTO_CRM. Best-effort: nunca derruba o atendimento.
+
+    🚨 Roda também quando o agente NÃO responde (modelo fora do ar, envio recusado,
+    pedido de humano). O card é do cliente que chegou, não da resposta: com a chamada
+    só depois do envio, modelo fora do ar significava lead que nunca entrou no CRM.
+    `agente_respondeu` diz ao ERP se o card pode sair da entrada do funil.
+
+    Idempotência AO VIVO (padrão de mercado): NÃO gateia por crm_opportunity_id
+    cacheado (fica stale se o card for apagado). Chama sempre — o ERP dedup pela
+    coluna indexada conversa_externa_id em card ATIVO. Apagou o card + mandou msg
+    → o ERP não acha nenhum ativo → recria. Sem sincronizar delete, sem stale.
+    """
+    try:
+        from core.config import get_settings
+
+        if not get_settings().tier_erp_auto_crm:
+            return
+        from services import erp_crm_client
+        from services.origem_whatsapp import sem_invisiveis
+
+        if not erp_crm_client.integracao_ativa():
+            return
+        import re as _re_crm
+
+        # Foto: busca só quando ainda NÃO temos link (1ª vez / recriação). Nas msgs
+        # seguintes o call é só o dedup barato (sem HTTP ao Engine). Se o card foi
+        # apagado e recriado, o cliente mantém a foto (delete não apaga o cliente).
+        # Só Baileys ('whatsapp'); Cloud API não expõe foto de contato.
+        _foto = None
+        if conv.crm_opportunity_id is None and connector_kind == "whatsapp" and connector is not None:
+            try:
+                import httpx as _httpx_pic
+                from urllib.parse import quote as _quote_pic
+
+                _cfg = json.loads(decrypt(connector.config_json_enc))
+                _iid = _cfg.get("instance_id")
+                _akey = _cfg.get("api_key")
+                _jid = external_chat_id or ""
+                if _iid and _akey and _jid:
+                    if "@" not in _jid:
+                        _jid = _re_crm.sub(r"\D", "", _jid) + "@s.whatsapp.net"
+                    _base = get_settings().tier_whatsapp_engine_url
+                    async with _httpx_pic.AsyncClient(timeout=5.0) as _pc:
+                        _pr = await _pc.get(
+                            f"{_base}/v1/instances/{_iid}/contacts/{_quote_pic(_jid, safe='')}/profile-pic",
+                            headers={"X-API-Key": _akey},
+                        )
+                    if _pr.status_code < 400:
+                        _foto = (_pr.json() or {}).get("url") or None
+            except Exception:
+                _foto = None
+
+        _res = await erp_crm_client.enviar_conversa_para_crm(
+            agent_tenant_id=agent.tenant_id,
+            conversa_externa_id=str(conv.id),
+            contato_nome=sender_name,
+            contato_avatar=_foto,
+            telefone=_re_crm.sub(r"\D", "", external_chat_id or ""),
+            canal="whatsapp",
+            resumo=sem_invisiveis(text_content)[:300],
+            origem_canal=origem_canal,
+            agente_respondeu=agente_respondeu,
+        )
+        _op_id = _res.get("oportunidade_id") if isinstance(_res, dict) else None
+        # Atualiza o link só se mudou (ex.: card recriado com id novo após delete).
+        if _op_id and _op_id != conv.crm_opportunity_id:
+            conv.crm_opportunity_id = _op_id
+            await db.commit()
+    except Exception:
+        logger.exception("auto-CRM (todo lead) falhou agent=%s — ignorando", agent.id)
+
+
 async def handle_inbound_message(
     db: AsyncSession,
     *,
@@ -768,6 +856,7 @@ async def handle_inbound_message(
     text_content: str,
     attachments: list | None = None,
     modo_voz: bool = False,
+    origem_canal: dict | None = None,
 ) -> dict:
     """Pipeline completo: webhook → Engine → resposta no canal.
 
@@ -1088,6 +1177,11 @@ async def handle_inbound_message(
                 db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="assistant",
                 content=handoff_reply,
             )
+            await _espelhar_no_crm(
+                db, agent=agent, conv=conv, connector=connector, connector_kind=connector_kind,
+                external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
+                origem_canal=origem_canal, agente_respondeu=True,
+            )
             return {"status": "handoff", "agent_id": agent.id, "conversation_id": conv.id}
 
         if escalation.is_frustrated(text_content):
@@ -1252,9 +1346,19 @@ async def handle_inbound_message(
             "LLM do tenant desativada (todas off) — agente em silêncio tenant=%s agent=%s",
             agent.tenant_id, agent.id,
         )
+        await _espelhar_no_crm(
+            db, agent=agent, conv=conv, connector=connector, connector_kind=connector_kind,
+            external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
+            origem_canal=origem_canal, agente_respondeu=False,
+        )
         return {"status": "llm_disabled"}
     except Exception as e:
         logger.exception("Engine falhou tenant=%s agent=%s", agent.tenant_id, agent.id)
+        await _espelhar_no_crm(
+            db, agent=agent, conv=conv, connector=connector, connector_kind=connector_kind,
+            external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
+            origem_canal=origem_canal, agente_respondeu=False,
+        )
         return {"status": "engine_error", "error": str(e)}
     _cron.marca("llm")
 
@@ -1324,6 +1428,11 @@ async def handle_inbound_message(
                     await _asyncio.sleep(1.2)  # pausa natural entre balões
     except Exception as e:
         logger.exception("Falha enviando resposta agent=%s channel=%s", agent.id, connector_kind)
+        await _espelhar_no_crm(
+            db, agent=agent, conv=conv, connector=connector, connector_kind=connector_kind,
+            external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
+            origem_canal=origem_canal, agente_respondeu=False,
+        )
         return {"status": "send_error", "agent_id": agent.id, "error": str(e)}
     _cron.marca("envio")
 
@@ -1351,71 +1460,23 @@ async def handle_inbound_message(
             external_chat_id=external_chat_id,
             sender_name=sender_name,
             user_text=text_content,
+            origem_canal=origem_canal,
         )
     except Exception:
         logger.exception("lead_capture falhou agent=%s — ignorando", agent.id)
 
-    # Auto-CRM: espelha TODA conversa nova como card no CRM do ERP (captura de lead
-    # automática — não exige intenção de compra). Idempotente: dispara só enquanto a
-    # conversa ainda não tem card (conv.crm_opportunity_id), então na prática roda 1x
-    # (a 1ª mensagem cria o card e grava o id). Gated por TIER_ERP_AUTO_CRM. Best-effort.
-    try:
-        from core.config import get_settings
-
-        # Idempotência AO VIVO (padrão de mercado): NÃO gateia por crm_opportunity_id
-        # cacheado (fica stale se o card for apagado). Chama sempre — o ERP dedup pela
-        # coluna indexada conversa_externa_id em card ATIVO. Apagou o card + mandou msg
-        # → o ERP não acha nenhum ativo → recria. Sem sincronizar delete, sem stale.
-        if get_settings().tier_erp_auto_crm:
-            from services import erp_crm_client
-
-            if erp_crm_client.integracao_ativa():
-                import re as _re_crm
-
-                # Foto: busca só quando ainda NÃO temos link (1ª vez / recriação). Nas msgs
-                # seguintes o call é só o dedup barato (sem HTTP ao Engine). Se o card foi
-                # apagado e recriado, o cliente mantém a foto (delete não apaga o cliente).
-                # Só Baileys ('whatsapp'); Cloud API não expõe foto de contato.
-                _foto = None
-                if conv.crm_opportunity_id is None and connector_kind == "whatsapp" and connector is not None:
-                    try:
-                        import httpx as _httpx_pic
-                        from urllib.parse import quote as _quote_pic
-
-                        _cfg = json.loads(decrypt(connector.config_json_enc))
-                        _iid = _cfg.get("instance_id")
-                        _akey = _cfg.get("api_key")
-                        _jid = external_chat_id or ""
-                        if _iid and _akey and _jid:
-                            if "@" not in _jid:
-                                _jid = _re_crm.sub(r"\D", "", _jid) + "@s.whatsapp.net"
-                            _base = get_settings().tier_whatsapp_engine_url
-                            async with _httpx_pic.AsyncClient(timeout=5.0) as _pc:
-                                _pr = await _pc.get(
-                                    f"{_base}/v1/instances/{_iid}/contacts/{_quote_pic(_jid, safe='')}/profile-pic",
-                                    headers={"X-API-Key": _akey},
-                                )
-                            if _pr.status_code < 400:
-                                _foto = (_pr.json() or {}).get("url") or None
-                    except Exception:
-                        _foto = None
-
-                _res = await erp_crm_client.enviar_conversa_para_crm(
-                    agent_tenant_id=agent.tenant_id,
-                    conversa_externa_id=str(conv.id),
-                    contato_nome=sender_name,
-                    contato_avatar=_foto,
-                    telefone=_re_crm.sub(r"\D", "", external_chat_id or ""),
-                    canal="whatsapp",
-                    resumo=(text_content or "")[:300],
-                )
-                _op_id = _res.get("oportunidade_id") if isinstance(_res, dict) else None
-                # Atualiza o link só se mudou (ex.: card recriado com id novo após delete).
-                if _op_id and _op_id != conv.crm_opportunity_id:
-                    conv.crm_opportunity_id = _op_id
-                    await db.commit()
-    except Exception:
-        logger.exception("auto-CRM (todo lead) falhou agent=%s — ignorando", agent.id)
+    await _espelhar_no_crm(
+        db,
+        agent=agent,
+        conv=conv,
+        connector=connector,
+        connector_kind=connector_kind,
+        external_chat_id=external_chat_id,
+        sender_name=sender_name,
+        text_content=text_content,
+        origem_canal=origem_canal,
+        agente_respondeu=True,
+    )
 
     # Qualificação automática: a mensagem do cliente preenche os campos do card.
     #
