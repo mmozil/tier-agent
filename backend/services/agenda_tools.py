@@ -573,6 +573,7 @@ CAMPOS_DO_AGENTE = [
     # o roteiro manda usar o nome do responsável assim que souber. Quem trata a
     # diferença é o CRM, não o modelo.
     "nome",
+    "data_nascimento",
     "ano_escolar",
     "nome_do_filho",
     "escola_atual",
@@ -767,6 +768,7 @@ def build_campo_tool_schema() -> dict:
             "description": (
                 "Grava no CRM uma informação que a família acabou de dar. Chame assim que "
                 "souber, uma vez por informação: ano_escolar (a série), nome_do_filho, "
+                "data_nascimento (a do filho, dd/mm/aaaa), "
                 "escola_atual, motivo_procura (o que a família disse, com as palavras dela), "
                 "motivo_procura_categoria (classifique o motivo), preco_apresentado ('sim' "
                 "quando você acabou de informar o valor) e valor_apresentado. "

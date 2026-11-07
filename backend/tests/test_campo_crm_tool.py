@@ -88,7 +88,7 @@ def test_as_duas_listas_de_campo_nao_podem_divergir():
         # na lista porque o modelo tentava gravá-lo e levava 422 de volta — e ele
         # estava certo em querer, o roteiro manda usar o nome do responsável
         # assim que souber. Quem sabe que ali é outra tabela é o CRM.
-        "nome",
+        "nome", "data_nascimento",
         "ano_escolar", "nome_do_filho", "escola_atual", "origem_do_lead",
         "motivo_procura", "motivo_procura_categoria",
         "preco_apresentado", "valor_apresentado", "data_preco_apresentado",
