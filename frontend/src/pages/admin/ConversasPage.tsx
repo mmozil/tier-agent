@@ -16,7 +16,8 @@ import TarefasCrm from "@/components/inbox/TarefasCrm";
 import { BarraDeReacao, ChipsDeReacao, type Reacoes } from "@/components/inbox/Reacoes";
 import { BotaoEditar, EditorDoBalao, podeEditarMensagem } from "@/components/inbox/Edicao";
 import NovaConversa from "@/components/inbox/NovaConversa";
-import NumeroNaLateral, { type InfoNumero } from "@/components/inbox/NumeroNaLateral";
+import { EtiquetasDeMencao, ListaDeMencoes, MiniAvatar, useMencoes } from "@/components/inbox/Mencoes";
+import NumeroNaLateral, { tituloComNumero, type InfoNumero } from "@/components/inbox/NumeroNaLateral";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
 
@@ -50,29 +51,6 @@ const PRIORITY_OPTS = (["none", "low", "medium", "high", "urgent"] as const).map
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: PRIORITY_META[v].tint }} />
     ),
 }));
-
-/** Foto da pessoa (ou as iniciais) com o ponto verde de online — a lista «Agente atribuído». */
-function MiniAvatar({ nome, url, online, tam = 22 }: { nome: string; url?: string | null; online?: boolean; tam?: number }) {
-  const partes = nome.trim().split(/\s+/).filter(Boolean);
-  const ini = ((partes[0]?.[0] || "") + (partes.length > 1 ? partes[partes.length - 1][0] : "")).toUpperCase() || "?";
-  return (
-    <span className="relative inline-flex shrink-0" style={{ width: tam, height: tam }}>
-      {url ? (
-        <img src={url} alt="" className="h-full w-full rounded-full object-cover" />
-      ) : (
-        <span
-          className="inline-flex h-full w-full items-center justify-center rounded-full bg-[#003083]/[0.08] font-semibold leading-none text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
-          style={{ fontSize: Math.round(tam * 0.42) }}
-        >
-          {ini}
-        </span>
-      )}
-      {online && (
-        <span className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-[#16a34a] ring-2 ring-white dark:ring-[#14171c]" title="Online" />
-      )}
-    </span>
-  );
-}
 
 function PriorityBadge({ priority }: { priority: string }) {
   if (!priority || priority === "none") return null;
@@ -360,7 +338,7 @@ function fmtPhone(ext: string): string {
  *  revelado mostra o telefone; sem ele, «Número oculto» (antes saía «+24 (86) 5768…», um número falso). */
 function telefoneDaConversa(c: Pick<Conversation, "external_id" | "telefone_oculto">): string {
   const ext = c.external_id || "";
-  if (ext.endsWith("@lid")) return c.telefone_oculto ? fmtPhone(c.telefone_oculto) : "Número oculto pelo WhatsApp";
+  if (ext.endsWith("@lid")) return c.telefone_oculto ? fmtPhone(c.telefone_oculto) : "Número oculto";
   return fmtPhone(ext);
 }
 
@@ -511,7 +489,9 @@ function SubNavItem({
   return (
     <button
       onClick={onClick}
-      className={`group relative w-full flex items-center gap-2.5 h-8 px-2.5 rounded-[8px] text-[13px] transition-colors ${
+      // 09/11/2026 (M7): sem reticências — o texto quebra em até duas linhas («Todas as conversas»,
+      // «Registro (sem IA)»), em vez de «Todas as conve…».
+      className={`group relative w-full flex items-center gap-2.5 min-h-8 py-1.5 px-2.5 rounded-[8px] text-[13px] leading-[1.25] transition-colors ${
         active
           ? "text-[#003083] dark:text-[#8ab4ff] font-medium"
           : "text-[#262626]/[0.72] dark:text-[#9aa1ab] hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white font-[450]"
@@ -530,7 +510,7 @@ function SubNavItem({
       ) : Icon ? (
         <Icon className="relative z-10 w-4 h-4 shrink-0 opacity-70 group-hover:opacity-100" />
       ) : null}
-      <span className="relative z-10 truncate flex-1 text-left">{label}</span>
+      <span className="relative z-10 flex-1 text-left break-words">{label}</span>
       {soon ? (
         <span className="relative z-10 text-[9.5px] uppercase tracking-wide text-[#262626]/35 dark:text-[#6b7280] shrink-0">em breve</span>
       ) : count != null && count > 0 ? (
@@ -745,6 +725,17 @@ export default function ConversasPage() {
 
   const msgsEndRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  // 09/11/2026 (M7): «@» na nota interna abre a lista de pessoas (foto + cargo).
+  const mencao = useMencoes({
+    ativo: noteMode,
+    texto: replyText,
+    setTexto: setReplyText,
+    taRef,
+    pessoas: members
+      .filter((m) => m.status === "active")
+      .map((m) => ({ id: m.id, nome: m.nome, cargo: m.cargo, avatar_url: m.avatar_url, online: m.online })),
+    setMarcadas: setMentions,
+  });
   const viewRef = useRef<"mentions" | "participating" | null>(null);
 
   useEffect(() => {
@@ -1203,6 +1194,8 @@ export default function ConversasPage() {
     : navFilter.type === "participants" ? "Participantes"
     : navFilter.type === "channel" ? channelLabel(navFilter.value === "outro" ? null : navFilter.value)
     : navFilter.type === "team" ? (teams.find((t) => t.id === navFilter.value)?.name || "Time")
+    : navFilter.type === "numero" ? tituloComNumero(infoDoNumero(navFilter.value))
+    : navFilter.type === "agent" ? navFilter.value
     : `#${navFilter.value}`;
 
   const priorConvs = openConv
@@ -2011,18 +2004,20 @@ export default function ConversasPage() {
                   <button onClick={() => setNoteMode(false)} className={`text-[12px] h-8 px-3 rounded-[10px] inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${!noteMode ? "bg-[#003083]/[0.08] text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff] font-medium" : `${FC.sub} hover:bg-black/[0.04] dark:hover:bg-white/[0.04]`}`}>Responder</button>
                   <button onClick={() => setNoteMode(true)} className={`text-[12px] h-8 px-3 rounded-[10px] inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${noteMode ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300 font-medium" : `${FC.sub} hover:bg-black/[0.04] dark:hover:bg-white/[0.04]`}`}>📝 Nota interna</button>
                 </div>
-                {noteMode && members.filter((m) => m.status === "active").length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1 mb-2">
-                    <span className={`text-[11px] ${FC.mut}`}>Marcar:</span>
-                    {members.filter((m) => m.status === "active").map((m) => {
-                      const on = mentions.includes(m.id);
-                      return (
-                        <button key={m.id} onClick={() => setMentions((prev) => (on ? prev.filter((x) => x !== m.id) : [...prev, m.id]))} className={`text-[11px] h-8 px-2 rounded-full border transition-colors ${on ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-500/30" : `${FC.hair} ${FC.sub} ${FC.hover}`}`}>@{m.nome}</button>
-                      );
-                    })}
+                {noteMode && (
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    {mentions.length === 0 ? (
+                      <span className={`text-[11.5px] ${FC.mut}`}>Digite <b className="font-semibold">@</b> para avisar alguém da equipe</span>
+                    ) : (
+                      <EtiquetasDeMencao
+                        pessoas={members.map((m) => ({ id: m.id, nome: m.nome, avatar_url: m.avatar_url }))}
+                        marcadas={mentions}
+                        tirar={(id) => setMentions((prev) => prev.filter((x) => x !== id))}
+                      />
+                    )}
                   </div>
                 )}
-                <div className={`rounded-2xl border transition-shadow ${noteMode ? "border-amber-200 dark:border-amber-700/50 bg-amber-50/40 dark:bg-amber-900/10 focus-within:shadow-[0_0_0_2px_#f59e0b]" : `${FC.hair} bg-white dark:bg-[#14171c] focus-within:shadow-[0_0_0_2px_#003083] dark:focus-within:shadow-[0_0_0_2px_#5b9bff]`}`}>
+                <div className={`relative rounded-2xl border transition-shadow ${noteMode ? "border-amber-200 dark:border-amber-700/50 bg-amber-50/40 dark:bg-amber-900/10 focus-within:shadow-[0_0_0_2px_#f59e0b]" : `${FC.hair} bg-white dark:bg-[#14171c] focus-within:shadow-[0_0_0_2px_#003083] dark:focus-within:shadow-[0_0_0_2px_#5b9bff]`}`}>
                   {anexo && !noteMode && (
                     <div className="flex items-center gap-2.5 mx-3 mt-3 p-2 rounded-xl bg-[#262626]/[0.04] dark:bg-white/[0.05]">
                       {anexoPrevia ? (
@@ -2043,11 +2038,16 @@ export default function ConversasPage() {
                       </button>
                     </div>
                   )}
+                  {mencao.aberta && (
+                    <ListaDeMencoes lista={mencao.lista} idx={mencao.idx} setIdx={mencao.setIdx} escolher={mencao.escolher} />
+                  )}
                   <textarea
                     ref={taRef}
                     value={replyText}
-                    onChange={(e) => { setReplyText(e.target.value); autoGrowTextarea(e.target); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
+                    onChange={(e) => { setReplyText(e.target.value); autoGrowTextarea(e.target); requestAnimationFrame(mencao.atualizar); }}
+                    onClick={() => mencao.atualizar()}
+                    onKeyUp={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") mencao.atualizar(); }}
+                    onKeyDown={(e) => { if (mencao.teclado(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
                     rows={1}
                     placeholder={noteMode ? "Nota visível só pra equipe (não vai pro cliente)…" : "Responder ao cliente… (Enter envia, Shift+Enter quebra linha)"}
                     className="block w-full resize-none overflow-y-auto px-4 pt-3.5 pb-1 text-[13px] leading-relaxed bg-transparent outline-none text-[#262626] dark:text-[#e6e8eb] placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280]"

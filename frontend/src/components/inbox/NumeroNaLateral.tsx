@@ -46,6 +46,13 @@ export function tituloDoNumero(info: InfoNumero): string {
   return telefone(info.rotulo);
 }
 
+/** «Paulo Santana · +55 (11) 92163-0354» — o título da lista filtrada por um número. */
+export function tituloComNumero(info: InfoNumero): string {
+  const t = tituloDoNumero(info);
+  const n = telefone(info.rotulo);
+  return t === n ? n : `${t} · ${n}`;
+}
+
 function telefone(rotulo: string): string {
   const d = (rotulo || "").replace(/\D/g, "");
   return d.length >= 10 ? formatPhone(d) : rotulo;
@@ -239,7 +246,7 @@ export default function NumeroNaLateral({
         onFocus={abrir}
         onBlur={fechar}
         aria-label={`${tituloDoNumero(info)} · ${telefone(info.rotulo)}`}
-        className={`group relative flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-[13px] transition-colors ${
+        className={`group relative flex min-h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 py-1.5 text-[13px] leading-[1.25] transition-colors ${
           active
             ? "font-medium text-[#003083] dark:text-[#8ab4ff]"
             : "font-[450] text-[#262626]/[0.72] hover:bg-black/[0.04] hover:text-[#262626] dark:text-[#9aa1ab] dark:hover:bg-white/[0.05] dark:hover:text-white"
@@ -253,7 +260,7 @@ export default function NumeroNaLateral({
           />
         )}
         <Avatar c={p} tam={18} />
-        <span className="relative z-10 flex-1 truncate text-left">{tituloDoNumero(info)}</span>
+        <span className="relative z-10 flex-1 break-words text-left">{tituloDoNumero(info)}</span>
         {/* Ponto só quando algo não está bem: desconectado (vermelho), aguardando (âmbar), desligado (cinza). */}
         {alerta && <span className="relative z-10 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: alerta }} />}
         {conversas > 0 && (
