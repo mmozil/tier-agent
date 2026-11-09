@@ -173,12 +173,14 @@ function Cartao({ info, conversas, rect }: { info: InfoNumero; conversas: number
 }
 
 export default function NumeroNaLateral({
-  info, conversas, active, onClick,
+  info, conversas, active, onClick, compacto = false,
 }: {
   info: InfoNumero;
   conversas: number;
   active: boolean;
   onClick: () => void;
+  /** Menu recolhido (09/11/2026): só a foto, com o mesmo cartão no hover. */
+  compacto?: boolean;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
   const espera = useRef<number | undefined>(undefined);
@@ -193,6 +195,39 @@ export default function NumeroNaLateral({
     setRect(null);
   };
   const p = principal(info);
+  const alerta = p && (!p.ligado || (p.status && p.status !== "connected")) ? conexao(p).cor : null;
+  if (compacto) {
+    return (
+      <>
+        <button
+          ref={ref}
+          type="button"
+          onClick={onClick}
+          onMouseEnter={abrir}
+          onMouseLeave={fechar}
+          onFocus={abrir}
+          onBlur={fechar}
+          aria-label={`${tituloDoNumero(info)} · ${telefone(info.rotulo)}`}
+          className={`relative mx-auto flex h-9 w-9 items-center justify-center rounded-[8px] transition-colors ${
+            active ? "" : "hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
+          }`}
+        >
+          {active && (
+            <motion.span
+              layoutId="ta-subnav-active"
+              className="absolute inset-0 z-0 rounded-[8px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12]"
+              transition={{ type: "spring", stiffness: 350, damping: 35 }}
+            />
+          )}
+          <Avatar c={p} tam={24} />
+          {alerta && (
+            <span className="absolute bottom-1 right-1 z-10 h-2 w-2 rounded-full ring-2 ring-white dark:ring-[#0c0e12]" style={{ background: alerta }} />
+          )}
+        </button>
+        {rect && createPortal(<Cartao info={info} conversas={conversas} rect={rect} />, document.body)}
+      </>
+    );
+  }
   return (
     <>
       <button
@@ -220,9 +255,7 @@ export default function NumeroNaLateral({
         <Avatar c={p} tam={18} />
         <span className="relative z-10 flex-1 truncate text-left">{tituloDoNumero(info)}</span>
         {/* Ponto só quando algo não está bem: desconectado (vermelho), aguardando (âmbar), desligado (cinza). */}
-        {p && (!p.ligado || (p.status && p.status !== "connected")) && (
-          <span className="relative z-10 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: conexao(p).cor }} />
-        )}
+        {alerta && <span className="relative z-10 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: alerta }} />}
         {conversas > 0 && (
           <span className="relative z-10 shrink-0 text-[11px] tabular-nums text-[#262626]/[0.5] dark:text-[#8b93a0]">{conversas}</span>
         )}

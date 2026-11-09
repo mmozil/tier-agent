@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
-  AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, Search, Zap,
+  AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Search, Zap,
   Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone, Mic, FileText,
   CalendarDays,
 } from "lucide-react";
@@ -402,6 +402,47 @@ function SubNavGroup({
   );
 }
 
+/** Item do menu recolhido (09/11/2026, M7): só o ícone; o nome e a contagem no hover.
+ *  `destaque` põe a contagem num selo (Não atendidas — é o que pede ação). */
+function RailItem({
+  icon: Icon, label, count, active, onClick, destaque,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  count?: number;
+  active?: boolean;
+  onClick?: () => void;
+  destaque?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={count != null && count > 0 ? `${label} · ${count}` : label}
+      aria-label={label}
+      className={`group relative flex h-9 w-9 items-center justify-center rounded-[8px] transition-colors ${
+        active
+          ? "text-[#003083] dark:text-[#8ab4ff]"
+          : "text-[#262626]/[0.62] dark:text-[#9aa1ab] hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white"
+      }`}
+    >
+      {active && (
+        <motion.span
+          layoutId="ta-subnav-active"
+          className="absolute inset-0 z-0 rounded-[8px] bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12]"
+          transition={{ type: "spring", stiffness: 350, damping: 35 }}
+        />
+      )}
+      <Icon className="relative z-10 h-[18px] w-[18px]" />
+      {destaque && count != null && count > 0 && (
+        <span className="absolute -right-0.5 -top-0.5 z-10 min-w-[16px] rounded-full bg-[#003083] px-1 text-center text-[9.5px] font-semibold leading-[16px] tabular-nums text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]">
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function SubNavItem({
   icon: Icon, label, count, active, onClick, dotColor, soon,
 }: {
@@ -521,7 +562,37 @@ export default function ConversasPage() {
   const [cleanMenu, setCleanMenu] = useState(false);
   const [navFilter, setNavFilter] = useState<NavFilter>({ type: "all" });
   const [search, setSearch] = useState("");
-  const [showContact, setShowContact] = useState(true);
+  // 09/11/2026 (M7): tela estreita. No notebook com o Windows em 125–150% (gente que precisa de
+  // letra maior), o Atendimento dentro do CRM tem ~1.000 px: menu 208 + lista 340 + contato 384
+  // deixavam ~90 px para o chat, e a Marisa achou que as conversas não apareciam. Abaixo de
+  // 1.280 px o menu recolhe para ícones e o contato abre POR CIMA do chat, sem espremê-lo.
+  const [largura, setLargura] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const medir = () => setLargura(window.innerWidth);
+    window.addEventListener("resize", medir);
+    return () => window.removeEventListener("resize", medir);
+  }, []);
+  const estreito = largura < 1280;
+  const [menuEscolha, setMenuEscolha] = useState<"aberto" | "recolhido" | null>(() => {
+    try {
+      const v = localStorage.getItem("ta-conversas-menu");
+      return v === "aberto" || v === "recolhido" ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  // A escolha da pessoa vale mais que a largura; sem escolha, a largura decide.
+  const menuRecolhido = menuEscolha ? menuEscolha === "recolhido" : estreito;
+  function alternarMenu() {
+    const v = menuRecolhido ? "aberto" : "recolhido";
+    setMenuEscolha(v);
+    try {
+      localStorage.setItem("ta-conversas-menu", v);
+    } catch {
+      /* navegador sem armazenamento: vale só nesta visita */
+    }
+  }
+  const [showContact, setShowContact] = useState(() => window.innerWidth >= 1280);
   const [teach, setTeach] = useState<{ question: string; answer: string; messageId: number } | null>(null);
   const [teaching, setTeaching] = useState(false);
 
@@ -1211,17 +1282,71 @@ export default function ConversasPage() {
     </div>
   );
 
+  // Menu recolhido: os mesmos atalhos, só o ícone (o nome no hover). Números com a foto e o cartão.
+  const subNavRecolhido = (
+    <div className="flex flex-col items-center gap-0.5">
+      <RailItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
+      <RailItem icon={Clock} label="Não atendidas" count={unattendedCount} destaque active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
+      <RailItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
+      <RailItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => selectNav({ type: "participants" })} />
+      {numerosList.length > 1 && (
+        <>
+          <span className={`my-2 h-px w-7 ${FC.hairBg}`} />
+          {numerosList.map((n) => (
+            <NumeroNaLateral
+              key={n}
+              compacto
+              info={infoDoNumero(n)}
+              conversas={convs.filter((c) => c.canal_rotulo === n).length}
+              active={navFilter.type === "numero" && navFilter.value === n}
+              onClick={() => selectNav({ type: "numero", value: n })}
+            />
+          ))}
+        </>
+      )}
+      {agentsList.length > 1 && (
+        <>
+          <span className={`my-2 h-px w-7 ${FC.hairBg}`} />
+          {agentsList.map((ag) => (
+            <RailItem
+              key={ag}
+              icon={Bot}
+              label={ag}
+              count={convs.filter((c) => c.agent_nome === ag).length}
+              active={navFilter.type === "agent" && navFilter.value === ag}
+              onClick={() => selectNav({ type: "agent", value: ag })}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  );
+
   return (
     <>
       {!embed && subNavSlot && createPortal(subNav, subNavSlot)}
-      <div className="-mx-8 -mb-8 h-[calc(100vh-60px)] flex bg-white dark:bg-[#0c0e12] border-t border-[#EDEDED] dark:border-[#23272e]">
+      <div className="relative -mx-8 -mb-8 h-[calc(100vh-60px)] flex bg-white dark:bg-[#0c0e12] border-t border-[#EDEDED] dark:border-[#23272e]">
       {/* ═══════════ ZONA 1 — sub-nav (só no modo embed; standalone usa o sidebar) ═══════════ */}
       {embed && (
-        <aside className={`w-[208px] shrink-0 border-r ${FC.hair} flex flex-col min-h-0 ${FC.base}`}>
-          <div className={`h-14 shrink-0 flex items-center px-4 border-b ${FC.hair}`}>
-            <h1 className="text-[15px] font-[550] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>
+        <aside
+          className={`${menuRecolhido ? "w-[60px]" : "w-[208px]"} shrink-0 border-r ${FC.hair} flex flex-col min-h-0 ${FC.base} transition-[width] duration-200`}
+        >
+          <div className={`h-14 shrink-0 flex items-center border-b ${FC.hair} ${menuRecolhido ? "justify-center" : "justify-between pl-4 pr-2"}`}>
+            {!menuRecolhido && <h1 className="text-[15px] font-[550] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>}
+            <button
+              type="button"
+              onClick={alternarMenu}
+              title={menuRecolhido ? "Mostrar o menu" : "Recolher o menu e dar mais espaço às conversas"}
+              aria-label={menuRecolhido ? "Mostrar o menu" : "Recolher o menu"}
+              aria-expanded={!menuRecolhido}
+              className={iconBtn}
+            >
+              {menuRecolhido ? <PanelLeftOpen className="w-[18px] h-[18px]" /> : <PanelLeftClose className="w-[18px] h-[18px]" />}
+            </button>
           </div>
-          <nav className="flex-1 overflow-y-auto sidebar-scroll px-2 py-3 min-h-0">{subNav}</nav>
+          <nav className={`flex-1 overflow-y-auto sidebar-scroll min-h-0 ${menuRecolhido ? "px-1.5 py-3" : "px-2 py-3"}`}>
+            {menuRecolhido ? subNavRecolhido : subNav}
+          </nav>
         </aside>
       )}
       {/* ═══════════ ZONA 2 — lista ═══════════ */}
@@ -1482,8 +1607,10 @@ export default function ConversasPage() {
           </div>
         ) : (
           <>
-            <div className={`flex items-center justify-between px-5 py-3 border-b ${FC.hair} bg-white dark:bg-[#0c0e12] shrink-0`}>
-              <div className="min-w-0 flex items-center gap-3">
+            {/* 09/11/2026 (M7): quebra em duas linhas quando falta largura. Antes as ações eram
+                fixas e o nome encolhia até «Ma…», com o seletor de funil por cima do «WhatsApp». */}
+            <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-5 py-3 border-b ${FC.hair} bg-white dark:bg-[#0c0e12] shrink-0`}>
+              <div className="min-w-[180px] flex-1 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[13px] font-semibold text-[#003083] dark:text-[#5b9bff] shrink-0">
                   {(nomeDaConversa(openConv) || "?").trim().charAt(0).toUpperCase()}
                 </div>
@@ -1491,7 +1618,7 @@ export default function ConversasPage() {
                   <h2 className="text-[15px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate leading-tight">
                     {nomeDaConversa(openConv)}
                   </h2>
-                  <p className={`text-[12px] ${FC.mut} flex items-center gap-2`}>
+                  <p className={`text-[12px] ${FC.mut} flex items-center gap-2 overflow-hidden whitespace-nowrap`}>
                     <span>{channelLabel(openConv.connector_kind)}</span>
                     <StatusBadge status={openConv.status} />
                     <PriorityBadge priority={openConv.priority} />
@@ -1503,7 +1630,7 @@ export default function ConversasPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1 ml-auto">
                 {/* Destino do card. Só aparece quando há mais de um funil — com
                     um só, escolher não é decisão, é clique a mais. Some depois
                     de enviado: o card já tem lugar, e trocá-lo é no CRM. */}
@@ -1894,7 +2021,12 @@ export default function ConversasPage() {
 
       {/* ═══════════ ZONA 4 — contato / ações ═══════════ */}
       {openConv && showContact && (
-        <aside className={`w-[384px] shrink-0 border-l ${FC.hair} flex flex-col min-h-0 bg-white dark:bg-[#0c0e12]`}>
+        <aside
+          className={`w-[384px] shrink-0 border-l ${FC.hair} flex flex-col min-h-0 bg-white dark:bg-[#0c0e12] ${
+            // Tela estreita: por cima do chat, com sombra — espremer deixava o chat sem largura.
+            estreito ? "absolute inset-y-0 right-0 z-30 max-w-[92%] shadow-[-12px_0_32px_rgba(0,0,0,0.12)]" : ""
+          }`}
+        >
           <div className={`h-14 shrink-0 flex items-center justify-between px-4 border-b ${FC.hair}`}>
             <h3 className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb]">Contato</h3>
             <button onClick={() => setShowContact(false)} className={iconBtn} title="Fechar"><X className="w-4 h-4" /></button>
