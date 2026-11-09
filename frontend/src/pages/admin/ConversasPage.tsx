@@ -1042,13 +1042,14 @@ export default function ConversasPage() {
   const janela = janelaDoPeriodo(periodo);
   const datasTrocadas = !!(janela.de && janela.ate && janela.de > janela.ate);
   const filtroAtivo = periodo.modo !== "todas" || responsavel !== TODOS_RESPONSAVEIS;
-  const iconePessoa = <User className={`w-3.5 h-3.5 shrink-0 ${FC.mut}`} />;
+  // 🚨 «Qualquer pessoa», não «Todos»: a aba de fila logo acima já se chama «Todos», e dois «Todos» lado a lado
+  //    não dizem qual é o quê. Sem ícone no gatilho: a coluna tem 340 px e o ícone cortava «Mês passado».
   const opcoesResponsavel = [
-    { value: TODOS_RESPONSAVEIS, label: "Todos", icon: iconePessoa },
-    { value: 0, label: "Sem responsável", icon: iconePessoa },
+    { value: TODOS_RESPONSAVEIS, label: "Qualquer pessoa" },
+    { value: 0, label: "Sem responsável" },
     ...[...activeMembers]
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
-      .map((m) => ({ value: m.id, label: m.nome, icon: iconePessoa })),
+      .map((m) => ({ value: m.id, label: m.nome })),
   ];
   const nomeDoResponsavel = (id: number | null | undefined) => (id ? members.find((m) => m.id === id)?.nome : undefined);
   const resumoDoFiltro = (() => {
@@ -1232,7 +1233,7 @@ export default function ConversasPage() {
             <Select<ModoPeriodo>
               className="flex-1 min-w-0"
               value={periodo.modo}
-              options={PERIODOS.map((o) => ({ ...o, icon: <CalendarDays className={`w-3.5 h-3.5 shrink-0 ${FC.mut}`} /> }))}
+              options={PERIODOS}
               onChange={(v) =>
                 setPeriodo((p) =>
                   v === "datas"
@@ -1279,7 +1280,8 @@ export default function ConversasPage() {
                 onClick={() => { setPeriodo(PERIODO_LIVRE); setResponsavel(TODOS_RESPONSAVEIS); }}
                 className="ml-auto shrink-0 text-[#003083] dark:text-[#8ab4ff] hover:underline underline-offset-2"
               >
-                Limpar
+                {/* não «Limpar»: é o nome da lixeira do topo, que apaga conversas */}
+                Limpar filtros
               </button>
             </div>
           ) : null}
@@ -1344,19 +1346,23 @@ export default function ConversasPage() {
                         <span className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{name}</span>
                         <span className={`ml-auto shrink-0 text-[11px] ${FC.sub} tabular-nums`}>{fmtDate(c.last_message_at)}</span>
                       </div>
-                      <p className={`mt-0.5 truncate text-[12.5px] ${FC.sub}`}>
-                        {c.last_preview || <span className="italic text-[#262626]/30 dark:text-white/30">Sem prévia</span>}
-                      </p>
-                      {(c.started_at || c.agent_nome || c.canal_rotulo || (c.tags || []).length > 0 || c.assigned_member_id) && (
+                      {/* a data de criação mora na linha da prévia, alinhada com a hora da última mensagem —
+                          como etiqueta, empurrava as outras para uma segunda linha e cada conversa crescia */}
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <p className={`min-w-0 flex-1 truncate text-[12.5px] ${FC.sub}`}>
+                          {c.last_preview || <span className="italic text-[#262626]/30 dark:text-white/30">Sem prévia</span>}
+                        </p>
+                        {c.started_at && (
+                          <span
+                            className={`shrink-0 inline-flex items-center gap-1 text-[10.5px] ${FC.mut} tabular-nums`}
+                            title={`Criada em ${fmtCriada(c.started_at).longa}`}
+                          >
+                            <CalendarDays className="w-2.5 h-2.5" /> criada {fmtCriada(c.started_at).curta}
+                          </span>
+                        )}
+                      </div>
+                      {(c.agent_nome || c.canal_rotulo || (c.tags || []).length > 0 || c.responsavel_member_id || c.assigned_member_id) && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          {c.started_at && (
-                            <span
-                              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab] tabular-nums"
-                              title={`Criada em ${fmtCriada(c.started_at).longa}`}
-                            >
-                              <CalendarDays className="w-2.5 h-2.5" /> Criada {fmtCriada(c.started_at).curta}
-                            </span>
-                          )}
                           {c.canal_rotulo && (
                             <span
                               className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab] tabular-nums"
