@@ -1,5 +1,6 @@
 import type { ComponentType, MouseEvent, ReactNode } from "react";
-import { Children, useEffect, useRef, useState } from "react";
+import { Children, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Check, ChevronDown } from "lucide-react";
 
@@ -432,25 +433,60 @@ export function Select<T extends string | number>({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const botaoRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // 09/11/2026 (M7): a lista é desenhada SOLTA na página (portal), na posição do campo.
+  // Dentro de uma caixa que corta o que passa da borda (a sanfona «Ações da conversa» do
+  // painel do contato), a lista da Prioridade abria por trás da seção de baixo.
+  // Sem espaço embaixo, abre para cima.
+  const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; max: number } | null>(null);
+  const posicionar = useCallback(() => {
+    const b = botaoRef.current?.getBoundingClientRect();
+    if (!b) return;
+    const abaixo = window.innerHeight - b.bottom - 8;
+    const acima = b.top - 8;
+    const paraCima = abaixo < 200 && acima > abaixo;
+    const max = Math.max(120, Math.min(280, (paraCima ? acima : abaixo) - 4));
+    setPos(
+      paraCima
+        ? { left: b.left, width: b.width, bottom: window.innerHeight - b.top + 4, max }
+        : { left: b.left, width: b.width, top: b.bottom + 4, max },
+    );
+  }, []);
+  useLayoutEffect(() => {
+    if (open) posicionar();
+  }, [open, posicionar]);
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: globalThis.MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const alvo = e.target as Node;
+      if (ref.current?.contains(alvo) || menuRef.current?.contains(alvo)) return;
+      setOpen(false);
     };
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    // A página ou o painel rolou / a janela mudou: a lista acompanha o campo.
+    const onMover = (e: Event) => {
+      if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return;
+      posicionar();
+    };
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onMover);
+    window.addEventListener("scroll", onMover, true);
     return () => {
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onMover);
+      window.removeEventListener("scroll", onMover, true);
     };
-  }, [open]);
+  }, [open, posicionar]);
   const sel = options.find((o) => o.value === value);
   return (
     <div ref={ref} className={`relative ${className}`}>
       <button
+        ref={botaoRef}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
@@ -464,9 +500,11 @@ export function Select<T extends string | number>({
         </span>
         <ChevronDown className={`w-4 h-4 shrink-0 ${FC.mut} transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && (
+      {open && pos && createPortal(
         <div
-          className={`absolute z-50 mt-1 w-full max-h-[280px] overflow-y-auto sidebar-scroll rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.12)]`}
+          ref={menuRef}
+          style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.max, zIndex: 1000 }}
+          className={`overflow-y-auto sidebar-scroll rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.12)]`}
         >
           {options.length === 0 ? (
             <div className={`px-2.5 py-2 text-[13px] ${FC.mut}`}>Nenhuma opção</div>
@@ -494,7 +532,8 @@ export function Select<T extends string | number>({
               );
             })
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
