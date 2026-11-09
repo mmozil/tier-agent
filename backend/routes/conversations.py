@@ -22,7 +22,7 @@ from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt
 from models import TaAgent, TaConnector, TaConversation, TaMessageLog
-from services import engine_client, filtro_conversas
+from services import engine_client, filtro_conversas, nome_crm
 from services import visao_conversas as visao
 from services.connectors import registry
 from services.connectors.base import ConnectorAttachment, ConnectorConfig, OutboundMessage
@@ -61,6 +61,9 @@ class ConversationOut(BaseModel):
     started_at: datetime | None = None
     responsavel_member_id: int | None = None
     responsavel_origem: str | None = None  # atribuida | numero
+    # 09/11/2026 (M7): nome do contato no CRM, pelo número. O `contact_name` é o apelido do WhatsApp
+    # e vem vazio em quem nunca escreveu primeiro (`services.nome_crm`).
+    crm_nome: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -261,6 +264,9 @@ async def list_conversations(
                 responsavel_origem=resp_origem,
             )
         )
+    nomes = await nome_crm.nomes_do_crm(user.tenant_id, [o.external_id for o in out])
+    for o in out:
+        o.crm_nome = nomes.get(o.external_id)
     return out
 
 
@@ -334,6 +340,19 @@ async def conversa_por_telefone(
     if not cid:
         raise HTTPException(404, "Ainda não há conversa com este número.")
     return {"id": int(cid)}
+
+
+@router.get("/nome-do-contato", response_model=dict)
+async def nome_do_contato(
+    telefone: str = Query(..., min_length=8, max_length=40),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """O nome do contato no CRM para um número sem conversa ainda (09/11/2026, M7) — a tela de
+    conversa nova, aberta pelo número do card, mostrava só o número. Declarada antes de
+    `/{conversation_id}`, como a `/por-telefone`."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    return {"nome": await nome_crm.nome_do_crm_por_telefone(user.tenant_id, telefone)}
 
 
 class IniciarConversaIn(BaseModel):
@@ -461,6 +480,7 @@ async def conversation_detail(
             priority=conv.priority,
             team_id=conv.team_id,
             crm_opportunity_id=conv.crm_opportunity_id,
+            crm_nome=(await nome_crm.nomes_do_crm(user.tenant_id, [conv.external_id])).get(conv.external_id),
         ).model_dump(),
         "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
     }

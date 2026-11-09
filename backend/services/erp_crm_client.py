@@ -251,3 +251,25 @@ async def criar_tarefa(*, agent_tenant_id: int, corpo: dict) -> dict:
     if r.status_code >= 400:
         raise _erro_do_erp(r)
     return r.json()
+
+
+# ── Nome do contato pelo CRM (09/11/2026, M7) ─────────────────────────────────
+# A conversa só tinha o apelido do WhatsApp, vazio em quem nunca escreveu primeiro: o link do
+# número no card abria o Atendimento mostrando só o número.
+
+
+async def nomes_dos_contatos(*, agent_tenant_id: int, telefones: list[str], timeout: float = 4.0) -> dict[str, str]:
+    """{telefone: nome no CRM} dos números que o CRM conhece. Erro sobe como ErpCrmError."""
+    base, headers = _base_e_headers()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as cli:
+            r = await cli.post(
+                f"{base}/api/tier-empresas/vendas/crm/agent/nomes-dos-contatos",
+                json={"agent_tenant_id": agent_tenant_id, "telefones": telefones[:300]},
+                headers=headers,
+            )
+    except httpx.HTTPError as e:
+        raise ErpCrmError(f"Falha de rede ao ler os nomes do CRM: {e}") from e
+    if r.status_code >= 400:
+        raise _erro_do_erp(r)
+    return {str(k): str(v) for k, v in (r.json().get("nomes") or {}).items() if v}

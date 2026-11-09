@@ -35,6 +35,15 @@ export default function NovaConversa({
   const [escolhido, setEscolhido] = useState<number | null>(null);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
+  // 09/11/2026 (M7): o nome do contato no CRM. Sem ele a tela mostrava só o número.
+  const [nome, setNome] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .get<{ nome?: string | null }>("/conversations/nome-do-contato", { params: { telefone } })
+      .then(({ data }) => setNome((data?.nome || "").trim() || null))
+      .catch(() => setNome(null));
+  }, [telefone]);
 
   useEffect(() => {
     api
@@ -76,11 +85,13 @@ export default function NovaConversa({
       <div className={`flex items-center justify-between px-5 py-3 border-b ${FC.hair} bg-white dark:bg-[#0c0e12] shrink-0`}>
         <div className="min-w-0 flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[13px] font-semibold text-[#003083] dark:text-[#5b9bff] shrink-0">
-            +
+            {nome ? nome.charAt(0).toUpperCase() : "+"}
           </div>
           <div className="min-w-0">
-            <p className={`text-[14px] font-medium tabular-nums ${FC.ink}`}>{rotulo}</p>
-            <p className={`text-[12px] ${FC.sub}`}>Nova conversa — ainda não falou com a escola por WhatsApp</p>
+            <p className={`text-[14px] font-medium truncate ${FC.ink}`}>{nome || <span className="tabular-nums">{rotulo}</span>}</p>
+            <p className={`text-[12px] ${FC.sub}`}>
+              {nome && <span className="tabular-nums">{rotulo} · </span>}Nova conversa — ainda não há mensagens com este número
+            </p>
           </div>
         </div>
         <button type="button" onClick={onCancelar} className={`text-[12px] ${FC.sub} hover:underline`}>

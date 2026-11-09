@@ -155,6 +155,8 @@ interface Conversation {
   started_at?: string | null;
   responsavel_member_id?: number | null;
   responsavel_origem?: "atribuida" | "numero" | null;
+  /** 09/11/2026 (M7): nome do contato no CRM, pelo número. `contact_name` é o apelido do WhatsApp. */
+  crm_nome?: string | null;
 }
 
 interface Team {
@@ -298,6 +300,12 @@ function fmtPhone(ext: string): string {
   const d = (ext || "").replace(/\D/g, "");
   if (d.length >= 12) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4)}`;
   return ext;
+}
+
+/** O nome que a tela mostra: o do CRM, senão o apelido do WhatsApp, senão o número
+ *  (09/11/2026, M7 — «só aparece o número, confundindo os usuários»). */
+function nomeDaConversa(c: Pick<Conversation, "crm_nome" | "contact_name" | "external_id">): string {
+  return (c.crm_nome || "").trim() || (c.contact_name || "").trim() || fmtPhone(c.external_id || "");
 }
 
 // Ajusta a altura do textarea ao conteúdo (cresce conforme digita, até 180px).
@@ -992,7 +1000,7 @@ export default function ConversasPage() {
     // menções/participantes já vêm filtradas do backend (view=…); aqui só a busca
     if (search.trim()) {
       const q = search.toLowerCase();
-      const name = (c.contact_name || c.external_id || "").toLowerCase();
+      const name = `${c.crm_nome || ""} ${c.contact_name || ""} ${c.external_id || ""}`.toLowerCase();
       const prev = (c.last_preview || "").toLowerCase();
       if (!name.includes(q) && !prev.includes(q)) return false;
     }
@@ -1324,7 +1332,7 @@ export default function ConversasPage() {
           {!loading && filteredConvs.length > 0 && (
             <div className={`divide-y ${FC.hair}`}>
               {filteredConvs.map((c) => {
-                const name = c.contact_name || fmtPhone(c.external_id);
+                const name = nomeDaConversa(c);
                 const selected = c.id === openId;
                 const dot = STATUS_META[c.status]?.dot || STATUS_META.active.dot;
                 return (
@@ -1432,11 +1440,11 @@ export default function ConversasPage() {
             <div className={`flex items-center justify-between px-5 py-3 border-b ${FC.hair} bg-white dark:bg-[#0c0e12] shrink-0`}>
               <div className="min-w-0 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[13px] font-semibold text-[#003083] dark:text-[#5b9bff] shrink-0">
-                  {(openConv.contact_name || openConv.external_id || "?").trim().charAt(0).toUpperCase()}
+                  {(nomeDaConversa(openConv) || "?").trim().charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-[15px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate leading-tight">
-                    {openConv.contact_name || fmtPhone(openConv.external_id || "")}
+                    {nomeDaConversa(openConv)}
                   </h2>
                   <p className={`text-[12px] ${FC.mut} flex items-center gap-2`}>
                     <span>{channelLabel(openConv.connector_kind)}</span>
@@ -1851,9 +1859,9 @@ export default function ConversasPage() {
             {/* cartão do contato */}
             <div className={`px-5 py-6 flex flex-col items-center text-center border-b ${FC.hair}`}>
               <div className="w-16 h-16 rounded-full flex items-center justify-center text-[22px] font-semibold text-[#003083] dark:text-[#5b9bff] select-none bg-gradient-to-b from-[#003083]/[0.12] to-[#003083]/[0.04] dark:from-[#5b9bff]/[0.20] dark:to-[#5b9bff]/[0.07] ring-1 ring-inset ring-[#003083]/[0.12] dark:ring-[#5b9bff]/[0.20]">
-                {(openConv.contact_name || openConv.external_id || "?").trim().charAt(0).toUpperCase()}
+                {(nomeDaConversa(openConv) || "?").trim().charAt(0).toUpperCase()}
               </div>
-              <p className="mt-3 text-[16px] font-medium text-[#262626] dark:text-[#e6e8eb] leading-tight">{openConv.contact_name || fmtPhone(openConv.external_id || "")}</p>
+              <p className="mt-3 text-[16px] font-medium text-[#262626] dark:text-[#e6e8eb] leading-tight">{nomeDaConversa(openConv)}</p>
               {openConv.external_id && (
                 <button
                   type="button"
@@ -1996,7 +2004,10 @@ export default function ConversasPage() {
 
             <AccordionSection title="Atributos do contato" defaultOpen={false}>
               <dl className="space-y-2 text-[12.5px]">
-                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Nome</dt><dd className="text-[#262626] dark:text-[#e6e8eb] truncate">{openConv.contact_name || "—"}</dd></div>
+                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Nome</dt><dd className="text-[#262626] dark:text-[#e6e8eb] truncate">{openConv.crm_nome || openConv.contact_name || "—"}</dd></div>
+                {openConv.crm_nome && openConv.contact_name && openConv.contact_name.trim() !== openConv.crm_nome.trim() && (
+                  <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>No WhatsApp</dt><dd className="text-[#262626] dark:text-[#e6e8eb] truncate">{openConv.contact_name}</dd></div>
+                )}
                 <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Telefone</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb]">{fmtPhone(openConv.external_id || "")}</dd></div>
                 <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Canal</dt><dd className="text-[#262626] dark:text-[#e6e8eb]">{channelLabel(openConv.connector_kind)}</dd></div>
                 <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>ID externo</dt><dd className="font-mono text-[11px] text-[#262626]/70 dark:text-[#9aa1ab] truncate max-w-[150px]" title={openConv.external_id || ""}>{openConv.external_id || "—"}</dd></div>
