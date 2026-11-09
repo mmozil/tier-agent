@@ -1,8 +1,8 @@
 import type { ComponentType, MouseEvent, ReactNode } from "react";
-import { Children, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Children, isValidElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Check, ChevronDown } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, Search } from "lucide-react";
 
 // ScrambleText — efeito "decode" (estilo Firecrawl): no mount as letras aparecem
 // embaralhadas e se resolvem da esquerda pra direita até o texto final. Anti-jitter:
@@ -416,6 +416,20 @@ export function EmptyHint({
 // Select — dropdown customizado no padrão Firecrawl (substitui o <select> nativo do
 // SO, que não casa com o design). Trigger h-9 + painel flutuante com hover/check.
 // Genérico sobre o tipo do value (string | number). Fecha no clique-fora / Esc.
+/** O texto de um rótulo que pode ser JSX — a busca do Select procura nele. */
+function textoDoNo(n: ReactNode): string {
+  if (n == null || typeof n === "boolean") return "";
+  if (typeof n === "string" || typeof n === "number") return String(n);
+  if (Array.isArray(n)) return n.map(textoDoNo).join(" ");
+  if (isValidElement(n)) return textoDoNo((n.props as { children?: ReactNode }).children);
+  return "";
+}
+
+const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** A partir daqui a lista ganha o campo de busca — a mesma regra das listas do CRM (25/09/2026). */
+const BUSCA_A_PARTIR_DE = 9;
+
 export function Select<T extends string | number>({
   value,
   options,
@@ -425,13 +439,30 @@ export function Select<T extends string | number>({
   disabled = false,
 }: {
   value: T | null | undefined;
-  options: { value: T; label: ReactNode; icon?: ReactNode }[];
+  /** `busca`: texto extra para a busca (sem ele, procura no texto do rótulo). */
+  options: { value: T; label: ReactNode; icon?: ReactNode; busca?: string }[];
   onChange: (v: T) => void;
   placeholder?: string;
   className?: string;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // 09/11/2026 (M7): busca dentro da lista — «ao ir digitando vai aparecendo o que tem na lista».
+  const comBusca = options.length >= BUSCA_A_PARTIR_DE;
+  const [busca, setBusca] = useState("");
+  const [destaque, setDestaque] = useState(0);
+  useEffect(() => {
+    if (!open) setBusca("");
+  }, [open]);
+  const termo = semAcento(busca.trim());
+  const visiveis = termo
+    ? options.filter((o) => semAcento(o.busca ?? textoDoNo(o.label)).includes(termo))
+    : options;
+  useEffect(() => setDestaque(0), [busca, open]);
+  const escolher = (o: { value: T }) => {
+    onChange(o.value);
+    setOpen(false);
+  };
   const ref = useRef<HTMLDivElement>(null);
   const botaoRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -503,26 +534,56 @@ export function Select<T extends string | number>({
       {open && pos && createPortal(
         <div
           ref={menuRef}
-          style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.max, zIndex: 1000 }}
-          className={`overflow-y-auto sidebar-scroll rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.12)]`}
+          style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.max + (comBusca ? 44 : 0), zIndex: 1000 }}
+          className={`flex flex-col rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] shadow-[0_8px_28px_rgba(0,0,0,0.12)]`}
         >
-          {options.length === 0 ? (
-            <div className={`px-2.5 py-2 text-[13px] ${FC.mut}`}>Nenhuma opção</div>
+          {comBusca && (
+            <div className={`shrink-0 border-b ${FC.hair} p-1.5`}>
+              <div className="flex h-8 items-center gap-2 rounded-[8px] bg-[#F1F3F5] px-2.5 dark:bg-[#1b1f26]">
+                <Search className={`h-3.5 w-3.5 shrink-0 ${FC.mut}`} />
+                <input
+                  autoFocus
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setDestaque((i) => Math.min(i + 1, visiveis.length - 1));
+                    } else if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setDestaque((i) => Math.max(i - 1, 0));
+                    } else if (e.key === "Enter") {
+                      e.preventDefault();
+                      const o = visiveis[destaque];
+                      if (o) escolher(o);
+                    }
+                  }}
+                  placeholder="Buscar…"
+                  aria-label="Buscar na lista"
+                  className={`min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[#262626]/40 dark:placeholder:text-white/30 ${FC.ink}`}
+                />
+              </div>
+            </div>
+          )}
+          <div className="min-h-0 flex-1 overflow-y-auto sidebar-scroll p-1">
+          {visiveis.length === 0 ? (
+            <div className={`px-2.5 py-2 text-[13px] ${FC.mut}`}>{termo ? "Nada encontrado" : "Nenhuma opção"}</div>
           ) : (
-            options.map((o) => {
+            visiveis.map((o, i) => {
               const active = o.value === value;
+              const realce = comBusca && termo !== "" && i === destaque && !active;
               return (
                 <button
                   key={String(o.value)}
                   type="button"
-                  onClick={() => {
-                    onChange(o.value);
-                    setOpen(false);
-                  }}
+                  onClick={() => escolher(o)}
+                  onMouseEnter={() => comBusca && setDestaque(i)}
                   className={`w-full h-8 px-2.5 rounded-[7px] inline-flex items-center gap-2 text-[13px] text-left transition-colors ${
                     active
                       ? "bg-[#003083]/[0.07] dark:bg-[#5b9bff]/[0.12] text-[#003083] dark:text-[#8ab4ff] font-medium"
-                      : `${FC.ink} hover:bg-black/[0.04] dark:hover:bg-white/[0.05]`
+                      : realce
+                        ? `${FC.ink} bg-black/[0.05] dark:bg-white/[0.07]`
+                        : `${FC.ink} hover:bg-black/[0.04] dark:hover:bg-white/[0.05]`
                   }`}
                 >
                   {o.icon}
@@ -532,6 +593,7 @@ export function Select<T extends string | number>({
               );
             })
           )}
+          </div>
         </div>,
         document.body,
       )}
