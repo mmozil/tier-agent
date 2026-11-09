@@ -70,3 +70,37 @@ def test_persona_sem_blocos_ou_sem_horario_passa_igual():
     assert persona_do_horario("persona comum", datetime(2026, 11, 9, 10, 0)) == "persona comum"
     sem_horario = "[[dentro]]\nX\n[[/dentro]]"
     assert persona_do_horario(sem_horario, datetime(2026, 11, 9, 10, 0)) == sem_horario
+
+
+# ─── 09/11/2026 (M7): bloco [[fora]] e {quando} preenchido pelo sistema ───
+from services.agent_runtime import quando_retorno  # noqa: E402
+
+PF = (
+    "[horario: seg-sex 08:00-17:00]\n"
+    "[[dentro]]\nSO A PRIMEIRA\n[[/dentro]]\n"
+    "[[fora]]\nTe ligo {quando}?\n[[/fora]]\n"
+)
+
+
+def test_quando_retorno_nos_quatro_momentos():
+    assert quando_retorno(PF, datetime(2026, 11, 9, 18, 55)) == "amanhã a partir das 8h"  # segunda
+    assert quando_retorno(PF, datetime(2026, 11, 13, 19, 0)) == "na segunda a partir das 8h"  # sexta
+    assert quando_retorno(PF, datetime(2026, 11, 14, 10, 0)) == "na segunda a partir das 8h"  # sábado
+    assert quando_retorno(PF, datetime(2026, 11, 10, 6, 30)) == "hoje a partir das 8h"  # terça cedo
+    assert quando_retorno(PF, datetime(2026, 11, 9, 10, 0)) == ""  # dentro
+    assert quando_retorno("sem marcação {quando}", datetime(2026, 11, 9, 18, 55)) == ""
+
+
+def test_bloco_fora_some_dentro_e_aparece_fora_com_quando():
+    dentro = persona_do_horario(PF, datetime(2026, 11, 9, 10, 0))
+    assert "SO A PRIMEIRA" in dentro and "Te ligo" not in dentro
+    noite = persona_do_horario(PF, datetime(2026, 11, 9, 18, 55))
+    assert "Te ligo amanhã a partir das 8h?" in noite and "SO A PRIMEIRA" not in noite
+    fds = persona_do_horario(PF, datetime(2026, 11, 14, 10, 0))
+    assert "Te ligo na segunda a partir das 8h?" in fds and "[[" not in fds
+
+
+def test_tag_fora_nao_engole_fora_dia_util():
+    t = "[horario: seg-sex 08:00-17:00]\n[[fora_dia_util]]\nA\n[[/fora_dia_util]]\n[[fim_de_semana]]\nB\n[[/fim_de_semana]]"
+    saida = persona_do_horario(t, datetime(2026, 11, 9, 18, 55))
+    assert saida.splitlines()[-1] == "A" and "B" not in saida and "[[" not in saida

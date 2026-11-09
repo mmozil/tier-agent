@@ -166,11 +166,40 @@ def _horario_agora(texto: str, agora) -> tuple[str, str] | None:
         return "dentro", ""
     if dia in uteis and minuto < ini:
         return "fora_dia_util", f"hoje, a partir das {hora_ini}"
-    prox = next(d for d in range(1, 8) if (dia + d) % 7 in uteis)
+    prox = _dias_ate_o_proximo_util(dia, uteis)
     nome = _DIAS_LONGOS[(dia + prox) % 7]
     quando = f"amanhã, {nome}, a partir das {hora_ini}" if prox == 1 else f"{nome}, a partir das {hora_ini}"
     codigo = "fora_dia_util" if (dia in uteis and (dia + 1) % 7 in uteis) else "fim_de_semana"
     return codigo, quando
+
+
+def _dias_ate_o_proximo_util(dia: int, uteis: list[int]) -> int:
+    return next(d for d in range(1, 8) if (dia + d) % 7 in uteis)
+
+
+_DIA_COM_PREPOSICAO = ["na segunda", "na terça", "na quarta", "na quinta", "na sexta", "no sábado", "no domingo"]
+
+
+def quando_retorno(texto: str, agora) -> str:
+    """O que entra no lugar de `{quando}` na persona (09/11/2026, M7).
+
+    «amanhã a partir das 8h», «na segunda a partir das 8h», «hoje a partir das 8h» (antes da
+    abertura). O Marcos escreveu «te ligo {amanhã / na segunda / próximo dia útil}» e deixou a
+    escolha com o modelo, que às 18:55 de segunda respondeu como se fosse horário comercial.
+    Dentro do horário ou sem a marcação `[horario: …]`: "" (o `{quando}` fica como está)."""
+    m = _RE_HORARIO.search(texto or "")
+    h = _horario_agora(texto, agora)
+    if not m or not h or h[0] == "dentro":
+        return ""
+    d0, d1 = _DIAS_CURTOS.index(m.group(1).lower()), _DIAS_CURTOS.index(m.group(2).lower())
+    uteis = list(range(d0, d1 + 1)) if d0 <= d1 else list(range(d0, 7)) + list(range(0, d1 + 1))
+    hora_ini = f"{int(m.group(3))}h" + (f"{m.group(4)}" if m.group(4) != "00" else "")
+    if h[1].startswith("hoje"):
+        return f"hoje a partir das {hora_ini}"
+    dia = agora.weekday()
+    prox = _dias_ate_o_proximo_util(dia, uteis)
+    quem = "amanhã" if prox == 1 else _DIA_COM_PREPOSICAO[(dia + prox) % 7]
+    return f"{quem} a partir das {hora_ini}"
 
 
 def situacao_do_horario(texto: str, agora) -> str:
@@ -190,24 +219,32 @@ def situacao_do_horario(texto: str, agora) -> str:
 
 
 _RE_BLOCO_HORARIO = _re_horario.compile(
-    r"\[\[(dentro|fora_dia_util|fim_de_semana)\]\](.*?)\[\[/\1\]\]", _re_horario.DOTALL
+    r"\[\[(dentro|fora|fora_dia_util|fim_de_semana)\]\](.*?)\[\[/\1\]\]", _re_horario.DOTALL
 )
+
+
+def _bloco_fica(tag: str, codigo: str) -> bool:
+    """`[[fora]]` vale para qualquer horário fora do comercial (dia útil OU fim de semana)."""
+    return tag == codigo or (tag == "fora" and codigo != "dentro")
 
 
 def persona_do_horario(texto: str, agora) -> str:
     """Deixa na persona SÓ o bloco do horário de agora (09/11/2026, M7).
 
     Com a marcação `[horario: …]` e blocos `[[dentro]]…[[/dentro]]`, `[[fora_dia_util]]…` e
-    `[[fim_de_semana]]…`, os blocos de outro horário saem do prompt. Mesmo com a situação
+    `[[fim_de_semana]]…` (e `[[fora]]…`, que vale para os dois de fora), os blocos de outro
+    horário saem do prompt, e `{quando}` vira o próximo atendimento. Mesmo com a situação
     calculada, o gpt-4.1-mini escolheu o modelo errado em 4 de 6 testes: o que o modelo não vê
     ele não escolhe. Persona sem blocos passa igual."""
-    if "[[" not in (texto or ""):
+    if "[[" not in (texto or "") and "{quando}" not in (texto or ""):
         return texto
     h = _horario_agora(texto, agora)
     if not h:
         return texto
     codigo = h[0]
-    return _RE_BLOCO_HORARIO.sub(lambda m: m.group(2).strip("\n") if m.group(1) == codigo else "", texto)
+    saida = _RE_BLOCO_HORARIO.sub(lambda m: m.group(2).strip("\n") if _bloco_fica(m.group(1), codigo) else "", texto)
+    quando = quando_retorno(texto, agora)
+    return saida.replace("{quando}", quando) if quando else saida
 
 
 def persona_efetiva(agent, agora=None) -> str:
