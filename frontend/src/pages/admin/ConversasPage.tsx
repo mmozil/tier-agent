@@ -627,6 +627,23 @@ export default function ConversasPage() {
     }
   }
   const [showContact, setShowContact] = useState(() => window.innerWidth >= 1280);
+  // 09/11/2026 (M7): a lista também recolhe — com a conversa aberta, o chat fica com a largura toda.
+  // Sem conversa aberta a lista aparece sempre (senão não há onde escolher uma).
+  const [listaRecolhida, setListaRecolhida] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ta-conversas-lista") === "recolhida";
+    } catch {
+      return false;
+    }
+  });
+  function alternarLista(recolher: boolean) {
+    setListaRecolhida(recolher);
+    try {
+      localStorage.setItem("ta-conversas-lista", recolher ? "recolhida" : "aberta");
+    } catch {
+      /* sem armazenamento: vale só nesta visita */
+    }
+  }
   const [teach, setTeach] = useState<{ question: string; answer: string; messageId: number } | null>(null);
   const [teaching, setTeaching] = useState(false);
 
@@ -1359,7 +1376,9 @@ export default function ConversasPage() {
   return (
     <>
       {!embed && subNavSlot && createPortal(subNav, subNavSlot)}
-      <div className="relative -mx-8 -mb-8 h-[calc(100vh-60px)] flex bg-white dark:bg-[#0c0e12] border-t border-[#EDEDED] dark:border-[#23272e]">
+      {/* 09/11/2026 (M7): no embed não há barra de 60 px em cima — o layout só tem o pt-6 (24 px),
+          que ficava como vão branco entre o CRM e o Atendimento. Desconta e ocupa a altura toda. */}
+      <div className={`relative -mx-8 -mb-8 ${embed ? "-mt-6 h-screen" : "h-[calc(100vh-60px)] border-t"} flex bg-white dark:bg-[#0c0e12] border-[#EDEDED] dark:border-[#23272e]`}>
       {/* ═══════════ ZONA 1 — sub-nav (só no modo embed; standalone usa o sidebar) ═══════════ */}
       {embed && (
         <aside
@@ -1384,7 +1403,7 @@ export default function ConversasPage() {
         </aside>
       )}
       {/* ═══════════ ZONA 2 — lista ═══════════ */}
-      <section className={`w-[340px] shrink-0 border-r ${FC.hair} flex flex-col min-h-0 bg-white dark:bg-[#0c0e12]`}>
+      <section className={`w-[340px] shrink-0 border-r ${FC.hair} flex-col min-h-0 bg-white dark:bg-[#0c0e12] ${listaRecolhida && openConv ? "hidden" : "flex"}`}>
         <div className={`shrink-0 px-4 pt-3.5 pb-2.5 border-b ${FC.hair}`}>
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-[15px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{navTitle}</h2>
@@ -1412,6 +1431,11 @@ export default function ConversasPage() {
               <button onClick={() => load()} className={iconBtn} title="Atualizar">
                 <RefreshCw className="w-4 h-4" />
               </button>
+              {openConv && (
+                <button onClick={() => alternarLista(true)} className={iconBtn} title="Recolher a lista e dar mais espaço à conversa" aria-label="Recolher a lista">
+                  <PanelLeftClose className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
           {/* busca */}
@@ -1645,6 +1669,16 @@ export default function ConversasPage() {
                 fixas e o nome encolhia até «Ma…», com o seletor de funil por cima do «WhatsApp». */}
             <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-5 py-3 border-b ${FC.hair} bg-white dark:bg-[#0c0e12] shrink-0`}>
               <div className="min-w-[180px] flex-1 flex items-center gap-3">
+                {listaRecolhida && (
+                  <button
+                    onClick={() => alternarLista(false)}
+                    className={`${iconBtn} -ml-2`}
+                    title="Mostrar a lista de conversas"
+                    aria-label="Mostrar a lista de conversas"
+                  >
+                    <PanelLeftOpen className="w-[18px] h-[18px]" />
+                  </button>
+                )}
                 <div className="w-9 h-9 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[13px] font-semibold text-[#003083] dark:text-[#5b9bff] shrink-0">
                   {(nomeDaConversa(openConv) || "?").trim().charAt(0).toUpperCase()}
                 </div>
