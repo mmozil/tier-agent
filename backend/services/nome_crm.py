@@ -91,3 +91,39 @@ async def nome_do_crm_por_telefone(tenant_id: int | None, telefone: str | None) 
     if not digitos:
         return None
     return (await nomes_do_crm(tenant_id, [digitos])).get(digitos)
+
+
+# ── Foto da equipe (09/11/2026, M7) ───────────────────────────────────────────
+# O hover do número no Atendimento mostra de quem ele é, com a foto. A pessoa do Agent não
+# tem foto; a do CRM tem. Uma pergunta por conta a cada 10 min (a lista da equipe carrega
+# uma vez por tela).
+
+_TTL_FOTOS = 600.0
+_fotos: dict[int, tuple[float, dict[str, str]]] = {}
+
+
+async def fotos_da_equipe(tenant_id: int | None, nomes: Iterable[str | None]) -> dict[str, str]:
+    """{nome: url da foto}. Nunca levanta: sem integração ou ERP fora do ar → {}."""
+    if not tenant_id or not erp_crm_client.integracao_ativa():
+        return {}
+    agora = time.monotonic()
+    lista = sorted({(n or "").strip() for n in nomes if (n or "").strip()})
+    guardado = _fotos.get(tenant_id)
+    if guardado and guardado[0] > agora and all(n in guardado[1] for n in lista):
+        return {n: u for n, u in guardado[1].items() if u}
+    if _conta_pausada.get(tenant_id, 0.0) > agora:
+        return {n: u for n, u in (guardado[1] if guardado else {}).items() if u}
+    try:
+        achadas = await erp_crm_client.fotos_da_equipe(agent_tenant_id=tenant_id, nomes=lista, timeout=3.0)
+    except erp_crm_client.ErpCrmError as e:
+        fora = "nao vinculado" in str(e).lower()
+        _conta_pausada[tenant_id] = agora + (_TTL_CONTA_FORA if fora else _TTL_FALHA)
+        logger.info("[nome_crm] tenant %s sem fotos do CRM: %s", tenant_id, e)
+        return {}
+    except Exception:  # noqa: BLE001 — foto é luxo
+        _conta_pausada[tenant_id] = agora + _TTL_FALHA
+        logger.warning("[nome_crm] falha inesperada nas fotos (tenant %s)", tenant_id, exc_info=True)
+        return {}
+    # Quem não tem foto também fica guardado (valor vazio), para não perguntar de novo.
+    _fotos[tenant_id] = (agora + _TTL_FOTOS, {n: achadas.get(n, "") for n in lista})
+    return {n: u for n, u in achadas.items() if u}

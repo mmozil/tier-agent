@@ -98,3 +98,33 @@ async def test_numero_solto_da_conversa_nova(monkeypatch):
     assert await N.nome_do_crm_por_telefone(18, "(11) 97260-3355") == "Marcos Barros"
     assert await N.nome_do_crm_por_telefone(18, "5511972603355") == "Marcos Barros"
     assert await N.nome_do_crm_por_telefone(18, "") is None
+
+
+async def test_fotos_da_equipe_guarda_e_lembra_quem_nao_tem(monkeypatch):
+    N._fotos.clear()
+    chamadas = []
+
+    async def falso(*, agent_tenant_id, nomes, timeout=4.0):
+        chamadas.append(list(nomes))
+        return {"Paulo Santana": "https://r2/paulo.jpg"}
+
+    monkeypatch.setattr(erp_crm_client, "fotos_da_equipe", falso)
+    r = await N.fotos_da_equipe(18, ["Paulo Santana", "Camilla Paciello", None, " "])
+    assert r == {"Paulo Santana": "https://r2/paulo.jpg"}
+    # de novo, com as mesmas pessoas: não pergunta (quem não tem foto também ficou guardado)
+    assert await N.fotos_da_equipe(18, ["Camilla Paciello", "Paulo Santana"]) == {"Paulo Santana": "https://r2/paulo.jpg"}
+    assert chamadas == [["Camilla Paciello", "Paulo Santana"]]
+    # pessoa nova na equipe: pergunta de novo
+    await N.fotos_da_equipe(18, ["Camilla Paciello", "Paulo Santana", "Nova Pessoa"])
+    assert len(chamadas) == 2
+    N._fotos.clear()
+
+
+async def test_fotos_com_erp_fora_do_ar_devolve_vazio(monkeypatch):
+    N._fotos.clear()
+
+    async def falso(*, agent_tenant_id, nomes, timeout=4.0):
+        raise erp_crm_client.ErpCrmError("ERP retornou 502")
+
+    monkeypatch.setattr(erp_crm_client, "fotos_da_equipe", falso)
+    assert await N.fotos_da_equipe(18, ["Paulo Santana"]) == {}

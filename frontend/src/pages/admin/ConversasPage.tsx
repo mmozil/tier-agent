@@ -16,6 +16,7 @@ import TarefasCrm from "@/components/inbox/TarefasCrm";
 import { BarraDeReacao, ChipsDeReacao, type Reacoes } from "@/components/inbox/Reacoes";
 import { BotaoEditar, EditorDoBalao, podeEditarMensagem } from "@/components/inbox/Edicao";
 import NovaConversa from "@/components/inbox/NovaConversa";
+import NumeroNaLateral, { type InfoNumero } from "@/components/inbox/NumeroNaLateral";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
 
@@ -170,6 +171,21 @@ interface Member {
   role: string;
   online: boolean;
   status: string;
+  /** 09/11/2026 (M7): para o cartão do número na lateral. */
+  cargo?: string | null;
+  avatar_url?: string | null;
+  numeros?: { id: number; rotulo: string; modo: string; status: string; compartilhado?: boolean }[];
+}
+
+/** Cadastro de número do tenant (`GET /connectors`): de quem é, uso e conexão. */
+interface ConectorDaLateral {
+  id: number;
+  agent_id: number;
+  kind: string;
+  enabled: boolean;
+  modo?: string | null;
+  member_id?: number | null;
+  config_summary?: { phone?: string; status?: string } | null;
 }
 
 type Attachment = Anexo;
@@ -491,6 +507,7 @@ export default function ConversasPage() {
   const anexoInputRef = useRef<HTMLInputElement | null>(null);
   const gravador = useGravadorVoz();
   const [members, setMembers] = useState<Member[]>([]);
+  const [conectores, setConectores] = useState<ConectorDaLateral[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [me, setMe] = useState<{ role: string; member_id: number | null; ve_tudo?: boolean; pode_atribuir?: boolean } | null>(null);
   const [scope, setScope] = useState<"todas" | "mine" | "unassigned" | "snoozed">("todas");
@@ -616,6 +633,7 @@ export default function ConversasPage() {
   useEffect(() => {
     load();
     api.get<Member[]>("/team/members").then(({ data }) => setMembers(data)).catch(() => {});
+    api.get<ConectorDaLateral[]>("/connectors").then(({ data }) => setConectores(data || [])).catch(() => {});
     api.get<Team[]>("/team/teams").then(({ data }) => setTeams(data)).catch(() => {});
     api.get<{ role: string; member_id: number | null; ve_tudo?: boolean; pode_atribuir?: boolean }>("/team/me").then(({ data }) => setMe(data)).catch(() => {});
     api.get<{ id: number; name: string }[]>("/macros").then(({ data }) => setMacros(data)).catch(() => {});
@@ -989,6 +1007,34 @@ export default function ConversasPage() {
   const agentsList = Array.from(new Set(convs.map((c) => c.agent_nome).filter(Boolean) as string[])).sort();
   // Números (um por conector): só vale a pena listar quando há mais de um.
   const numerosList = Array.from(new Set(convs.map((c) => c.canal_rotulo).filter(Boolean) as string[])).sort();
+  // 09/11/2026 (M7): de quem é cada número, para a linha e o cartão de hover. Um número pode ter
+  // mais de um cadastro (o 9150 da M7 foi da Isabella e hoje é do agente).
+  const agenteNome = new Map<number, string>();
+  for (const c of convs) if (c.agent_nome) agenteNome.set(c.agent_id, c.agent_nome);
+  const infoDoNumero = (rotulo: string): InfoNumero => {
+    const digitos = rotulo.replace(/\D/g, "");
+    const ids = new Set<number>();
+    for (const c of convs) if (c.canal_rotulo === rotulo && c.connector_id) ids.add(c.connector_id);
+    for (const k of conectores) {
+      const fone = (k.config_summary?.phone || "").replace(/\D/g, "");
+      if (digitos && fone === digitos) ids.add(k.id);
+    }
+    const cadastros = Array.from(ids).map((id) => {
+      const k = conectores.find((x) => x.id === id);
+      const viaConversa = convs.find((c) => c.connector_id === id);
+      const dono = k?.member_id ? members.find((m) => m.id === k.member_id) || null : null;
+      return {
+        id,
+        modo: k?.modo || viaConversa?.canal_modo || "agente",
+        ligado: k ? k.enabled : true,
+        status: k?.config_summary?.status ?? null,
+        dono,
+        agente: agenteNome.get(k?.agent_id ?? viaConversa?.agent_id ?? -1) ?? viaConversa?.agent_nome ?? null,
+        tambem: members.filter((m) => (m.numeros || []).some((n) => n.id === id && n.compartilhado)),
+      };
+    });
+    return { rotulo, cadastros };
+  };
 
   const filteredConvs = convs.filter((c) => {
     if (navFilter.type === "channel" && (c.connector_kind || "outro") !== navFilter.value) return false;
@@ -1110,11 +1156,10 @@ export default function ConversasPage() {
       {numerosList.length > 1 && (
         <SubNavGroup title="Números" icon={Smartphone}>
           {numerosList.map((n) => (
-            <SubNavItem
+            <NumeroNaLateral
               key={n}
-              icon={Smartphone}
-              label={n}
-              count={convs.filter((c) => c.canal_rotulo === n).length}
+              info={infoDoNumero(n)}
+              conversas={convs.filter((c) => c.canal_rotulo === n).length}
               active={navFilter.type === "numero" && navFilter.value === n}
               onClick={() => selectNav({ type: "numero", value: n })}
             />

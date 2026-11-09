@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from models import TaMember, TaTeam, TaTenant
+from services import nome_crm
 from services import numeros as numeros_svc
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class MemberOut(BaseModel):
     origem: str = "agent"  # agent | erp
     cargo: str | None = None  # nome do cargo no ERP (só leitura aqui)
     numeros: list[dict] = []  # [{id, rotulo, modo, status}] — os números desta pessoa
+    avatar_url: str | None = None  # 09/11/2026 (M7): a foto da pessoa no CRM (`services.nome_crm`)
 
     model_config = {"from_attributes": True}
 
@@ -131,12 +133,13 @@ async def list_members(
                 {"id": n["id"], "rotulo": n["rotulo"], "modo": n["modo"], "status": n["status"],
                  "compartilhado": True}
             )
+    fotos = await nome_crm.fotos_da_equipe(user.tenant_id, [m.nome for m in rows])
     return [
         MemberOut(
             id=m.id, nome=m.nome, email=m.email, role=m.role, status=m.status, online=m.online,
             max_conversas=m.max_conversas, invite_token=m.invite_token,
             erp_owner_id=m.erp_owner_id, origem=("erp" if m.erp_owner_id else "agent"),
-            numeros=por_membro.get(m.id, []), cargo=m.cargo,
+            numeros=por_membro.get(m.id, []), cargo=m.cargo, avatar_url=fotos.get((m.nome or "").strip()),
         )
         for m in rows
     ]
