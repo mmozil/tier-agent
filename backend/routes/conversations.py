@@ -9,7 +9,7 @@ import logging
 import mimetypes
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, field_validator
@@ -22,7 +22,7 @@ from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt
 from models import TaAgent, TaConnector, TaConversation, TaMessageLog
-from services import engine_client
+from services import engine_client, filtro_conversas
 from services import visao_conversas as visao
 from services.connectors import registry
 from services.connectors.base import ConnectorAttachment, ConnectorConfig, OutboundMessage
@@ -56,6 +56,11 @@ class ConversationOut(BaseModel):
     connector_id: int | None = None
     canal_rotulo: str | None = None  # telefone ou rótulo do número; None = conversa antiga sem número
     canal_modo: str | None = None  # agente | registro
+    # 09/11/2026 (M7): a linha diz quando a conversa foi criada e quem responde por ela —
+    # a atribuída, ou a pessoa do número por onde entrou (`services.filtro_conversas`).
+    started_at: datetime | None = None
+    responsavel_member_id: int | None = None
+    responsavel_origem: str | None = None  # atribuida | numero
 
     model_config = {"from_attributes": True}
 
@@ -102,12 +107,21 @@ async def list_conversations(
     tag: str | None = None,
     scope: str | None = None,  # "mine" | "unassigned" | None (todas)
     view: str | None = None,  # "mentions" | "participating" (folders Chatwoot)
+    # 09/11/2026 (M7): dia em que a conversa foi CRIADA, no fuso do Brasil (AAAA-MM-DD)…
+    de: date | None = None,
+    ate: date | None = None,
+    # …e quem responde por ela (id da pessoa; 0 = sem responsável). Só vale para quem vê tudo.
+    responsavel: int | None = Query(None, ge=0),
     limit: int = Query(100, ge=1, le=300),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
+    try:
+        criada_de, criada_ate = filtro_conversas.janela_utc(de, ate)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
 
     agent_ids = await _tenant_agent_ids(db, user.tenant_id)
     if not agent_ids:
@@ -117,6 +131,14 @@ async def list_conversations(
     # Etapa 2 do caminho A (09/09/2026): atendente só vê as conversas dos SEUS números e
     # as atribuídas a ela; dono/admin veem todas. O filtro é do servidor, não do cliente.
     stmt = stmt.where(await visao.filtro_para(db, user))
+    if criada_de is not None:
+        stmt = stmt.where(TaConversation.started_at >= criada_de)
+    if criada_ate is not None:
+        stmt = stmt.where(TaConversation.started_at < criada_ate)
+    # O filtro por pessoa só existe para quem vê a conta inteira. O atendente já está preso às
+    # conversas dele pela linha acima; o parâmetro é ignorado em vez de virar outra porta.
+    if responsavel is not None and visao.ve_tudo(user.role):
+        stmt = stmt.where(filtro_conversas.condicao_responsavel(responsavel, agent_ids))
     if agent_id is not None:
         if agent_id not in agent_ids:
             raise HTTPException(403, "Agente de outro tenant")
@@ -174,6 +196,7 @@ async def list_conversations(
     # Rótulo do número por conector (telefone ou label) — um decrypt por conector,
     # uma vez por listagem, só para os conectores do tenant.
     canal_por_conector: dict[int, tuple[str | None, str]] = {}
+    dono_por_conector: dict[int, int | None] = {}
     try:
         from core.encryption import decrypt as _dec
         from models import TaConnector as _TaConnector
@@ -186,8 +209,10 @@ async def list_conversations(
                 _cfg = {}
             _rot = _cfg.get("phone") or _cfg.get("display_phone") or _cfg.get("label") or f"#{_c.id}"
             canal_por_conector[_c.id] = (str(_rot), getattr(_c, "modo", None) or "agente")
+            dono_por_conector[_c.id] = getattr(_c, "member_id", None)
     except Exception:  # noqa: BLE001 — rótulo é luxo; a lista sai sem ele
         canal_por_conector = {}
+        dono_por_conector = {}
 
     out: list[ConversationOut] = []
     for c in convs:
@@ -204,6 +229,9 @@ async def list_conversations(
             )
         ).first()
         preview = (last[0][:120] if last and last[0] else None)
+        resp_id, resp_origem = filtro_conversas.responsavel_da_conversa(
+            c.assigned_member_id, dono_por_conector.get(getattr(c, "connector_id", None) or -1)
+        )
         out.append(
             ConversationOut(
                 id=c.id,
@@ -228,6 +256,9 @@ async def list_conversations(
                 connector_id=getattr(c, "connector_id", None),
                 canal_rotulo=(canal_por_conector.get(getattr(c, "connector_id", None) or -1) or (None, None))[0],
                 canal_modo=(canal_por_conector.get(getattr(c, "connector_id", None) or -1) or (None, None))[1],
+                started_at=c.started_at,
+                responsavel_member_id=resp_id,
+                responsavel_origem=resp_origem,
             )
         )
     return out

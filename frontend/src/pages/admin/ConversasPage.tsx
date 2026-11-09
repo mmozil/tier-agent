@@ -6,6 +6,7 @@ import {
   MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, Search, Zap,
   Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone, Mic, FileText,
+  CalendarDays,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -150,6 +151,10 @@ interface Conversation {
   connector_id?: number | null;
   canal_rotulo?: string | null;
   canal_modo?: "agente" | "registro" | null;
+  /** 09/11/2026 (M7): quando a conversa foi criada e quem responde por ela. */
+  started_at?: string | null;
+  responsavel_member_id?: number | null;
+  responsavel_origem?: "atribuida" | "numero" | null;
 }
 
 interface Team {
@@ -194,6 +199,77 @@ type NavFilter =
   | { type: "agent"; value: string }
   | { type: "tag"; value: string }
   | { type: "team"; value: number };
+
+// ─── Período da lista (09/11/2026, M7) ───
+// O filtro é sobre o dia em que a conversa foi CRIADA, no fuso do Brasil. A tela manda só os dias
+// (AAAA-MM-DD); o servidor converte para a hora guardada no banco.
+type ModoPeriodo = "todas" | "hoje" | "ontem" | "7d" | "mes" | "mes_passado" | "datas";
+interface Periodo { modo: ModoPeriodo; de: string; ate: string }
+const PERIODO_LIVRE: Periodo = { modo: "todas", de: "", ate: "" };
+const TODOS_RESPONSAVEIS = -1; // 0 = sem responsável (como no servidor)
+
+const PERIODOS: { value: ModoPeriodo; label: string }[] = [
+  { value: "todas", label: "Qualquer data" },
+  { value: "hoje", label: "Hoje" },
+  { value: "ontem", label: "Ontem" },
+  { value: "7d", label: "Últimos 7 dias" },
+  { value: "mes", label: "Este mês" },
+  { value: "mes_passado", label: "Mês passado" },
+  { value: "datas", label: "Escolher datas" },
+];
+
+/** Hoje no Brasil, como AAAA-MM-DD — não o dia do relógio de quem abre a tela. */
+function hojeNoBrasil(): string {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+}
+
+function somaDias(dia: string, n: number): string {
+  const [a, m, d] = dia.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+function janelaDoPeriodo(p: Periodo): { de?: string; ate?: string } {
+  const hoje = hojeNoBrasil();
+  const inicioDoMes = `${hoje.slice(0, 8)}01`;
+  switch (p.modo) {
+    case "hoje": return { de: hoje, ate: hoje };
+    case "ontem": { const o = somaDias(hoje, -1); return { de: o, ate: o }; }
+    case "7d": return { de: somaDias(hoje, -6), ate: hoje };
+    case "mes": return { de: inicioDoMes, ate: hoje };
+    case "mes_passado": { const fim = somaDias(inicioDoMes, -1); return { de: `${fim.slice(0, 8)}01`, ate: fim }; }
+    case "datas": return { de: p.de || undefined, ate: p.ate || undefined };
+    default: return {};
+  }
+}
+
+const diaCurto = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+
+/** O que o período quer dizer, por extenso, para a linha de resumo. */
+function rotuloDoPeriodo(p: Periodo): string {
+  const j = janelaDoPeriodo(p);
+  if (p.modo === "hoje") return "hoje";
+  if (p.modo === "ontem") return "ontem";
+  if (p.modo === "7d") return "nos últimos 7 dias";
+  if (p.modo === "mes") return "neste mês";
+  if (p.modo === "mes_passado") return "no mês passado";
+  if (j.de && j.ate) return j.de === j.ate ? `em ${diaCurto(j.de)}` : `de ${diaCurto(j.de)} a ${diaCurto(j.ate)}`;
+  if (j.de) return `a partir de ${diaCurto(j.de)}`;
+  if (j.ate) return `até ${diaCurto(j.ate)}`;
+  return "";
+}
+
+/** Dia em que a conversa foi criada: «06/11», com o ano só quando não é o atual. */
+function fmtCriada(iso: string): { curta: string; longa: string } {
+  const norm = /[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`;
+  const dt = new Date(norm);
+  const tz = { timeZone: "America/Sao_Paulo" } as const;
+  const ano = dt.toLocaleDateString("pt-BR", { ...tz, year: "numeric" });
+  const doAno = ano === new Date().toLocaleDateString("pt-BR", { ...tz, year: "numeric" });
+  return {
+    curta: dt.toLocaleDateString("pt-BR", { ...tz, day: "2-digit", month: "2-digit", ...(doAno ? {} : { year: "2-digit" }) }),
+    longa: dt.toLocaleString("pt-BR", { ...tz, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+  };
+}
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -410,6 +486,12 @@ export default function ConversasPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [me, setMe] = useState<{ role: string; member_id: number | null; ve_tudo?: boolean; pode_atribuir?: boolean } | null>(null);
   const [scope, setScope] = useState<"todas" | "mine" | "unassigned" | "snoozed">("todas");
+  // 09/11/2026 (M7): período de criação para todos; responsável só para quem vê a conta inteira.
+  const [periodo, setPeriodo] = useState<Periodo>(PERIODO_LIVRE);
+  const [responsavel, setResponsavel] = useState<number>(TODOS_RESPONSAVEIS);
+  // O `load` também roda no intervalo de atualização: lê o filtro daqui para nunca usar um antigo.
+  const filtroRef = useRef({ periodo, responsavel });
+  filtroRef.current = { periodo, responsavel };
   const [mentions, setMentions] = useState<number[]>([]);
   const [cleanMenu, setCleanMenu] = useState(false);
   const [navFilter, setNavFilter] = useState<NavFilter>({ type: "all" });
@@ -477,10 +559,18 @@ export default function ConversasPage() {
       const params: Record<string, any> = { limit: 200 };
       if (sc !== "todas") params.scope = sc;
       if (view) params.view = view;
+      const f = filtroRef.current;
+      const j = janelaDoPeriodo(f.periodo);
+      // datas trocadas: a tela já avisa embaixo dos campos; não adianta perguntar ao servidor
+      if (j.de && j.ate && j.de > j.ate) return;
+      if (j.de) params.de = j.de;
+      if (j.ate) params.ate = j.ate;
+      if (f.responsavel !== TODOS_RESPONSAVEIS) params.responsavel = f.responsavel;
       const { data } = await api.get<Conversation[]>("/conversations", { params });
       setConvs(data);
-    } catch {
-      if (!silent) toast.error("Falha ao carregar conversas");
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      if (!silent) toast.error(typeof detail === "string" ? detail : "Falha ao carregar conversas");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -523,6 +613,17 @@ export default function ConversasPage() {
     api.get<{ id: number; name: string }[]>("/macros").then(({ data }) => setMacros(data)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Trocou o período ou a pessoa: recarrega com o filtro novo (a montagem já carregou uma vez).
+  const filtroMontou = useRef(false);
+  useEffect(() => {
+    if (!filtroMontou.current) {
+      filtroMontou.current = true;
+      return;
+    }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodo, responsavel]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -937,6 +1038,30 @@ export default function ConversasPage() {
     }
   }
 
+  // Filtro de período e responsável (09/11/2026, M7)
+  const janela = janelaDoPeriodo(periodo);
+  const datasTrocadas = !!(janela.de && janela.ate && janela.de > janela.ate);
+  const filtroAtivo = periodo.modo !== "todas" || responsavel !== TODOS_RESPONSAVEIS;
+  const iconePessoa = <User className={`w-3.5 h-3.5 shrink-0 ${FC.mut}`} />;
+  const opcoesResponsavel = [
+    { value: TODOS_RESPONSAVEIS, label: "Todos", icon: iconePessoa },
+    { value: 0, label: "Sem responsável", icon: iconePessoa },
+    ...[...activeMembers]
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+      .map((m) => ({ value: m.id, label: m.nome, icon: iconePessoa })),
+  ];
+  const nomeDoResponsavel = (id: number | null | undefined) => (id ? members.find((m) => m.id === id)?.nome : undefined);
+  const resumoDoFiltro = (() => {
+    const n = filteredConvs.length;
+    const partes = [`${n} ${n === 1 ? "conversa" : "conversas"}`];
+    if (periodo.modo !== "todas") partes.push(`${n === 1 ? "criada" : "criadas"} ${rotuloDoPeriodo(periodo)}`);
+    if (responsavel === 0) partes.push("sem responsável");
+    else if (responsavel !== TODOS_RESPONSAVEIS) partes.push(`de ${nomeDoResponsavel(responsavel) || "—"}`);
+    if (convs.length >= 200) partes.push("mostrando as 200 mais recentes");
+    return partes.join(" · ");
+  })();
+  const campoData = `flex-1 min-w-0 h-8 px-2 text-[13px] rounded-[8px] bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow tabular-nums`;
+
   const scopeTabs = [
     { k: "todas", label: "Todos" },
     { k: "unassigned", label: "Não atribuídas" },
@@ -1102,6 +1227,62 @@ export default function ConversasPage() {
               </button>
             ))}
           </div>
+          {/* período de criação (todos) + responsável (só quem vê a conta inteira) */}
+          <div className="mt-2 flex items-center gap-1.5">
+            <Select<ModoPeriodo>
+              className="flex-1 min-w-0"
+              value={periodo.modo}
+              options={PERIODOS.map((o) => ({ ...o, icon: <CalendarDays className={`w-3.5 h-3.5 shrink-0 ${FC.mut}`} /> }))}
+              onChange={(v) =>
+                setPeriodo((p) =>
+                  v === "datas"
+                    ? { modo: v, de: p.de || `${hojeNoBrasil().slice(0, 8)}01`, ate: p.ate || hojeNoBrasil() }
+                    : { ...p, modo: v },
+                )
+              }
+            />
+            {me?.ve_tudo && (
+              <Select<number>
+                className="flex-1 min-w-0"
+                value={responsavel}
+                options={opcoesResponsavel}
+                onChange={setResponsavel}
+              />
+            )}
+          </div>
+          {periodo.modo === "datas" && (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <input
+                type="date"
+                aria-label="Criadas a partir de"
+                value={periodo.de}
+                onChange={(e) => setPeriodo((p) => ({ ...p, de: e.target.value }))}
+                className={campoData}
+              />
+              <span className={`text-[12px] shrink-0 ${FC.mut}`}>até</span>
+              <input
+                type="date"
+                aria-label="Criadas até"
+                value={periodo.ate}
+                onChange={(e) => setPeriodo((p) => ({ ...p, ate: e.target.value }))}
+                className={campoData}
+              />
+            </div>
+          )}
+          {datasTrocadas ? (
+            <p className="mt-1.5 px-1 text-[11px] leading-snug text-[#c0362c] dark:text-[#ff6b5e]">A data de início é depois da data final.</p>
+          ) : filtroAtivo && !loading ? (
+            <div className={`mt-1.5 px-1 flex items-start gap-2 text-[11px] leading-snug ${FC.mut}`}>
+              <span className="min-w-0">{resumoDoFiltro}</span>
+              <button
+                type="button"
+                onClick={() => { setPeriodo(PERIODO_LIVRE); setResponsavel(TODOS_RESPONSAVEIS); }}
+                className="ml-auto shrink-0 text-[#003083] dark:text-[#8ab4ff] hover:underline underline-offset-2"
+              >
+                Limpar
+              </button>
+            </div>
+          ) : null}
           {me && me.ve_tudo === false && (
             <p className={`mt-1.5 px-1 text-[11px] leading-snug ${FC.mut}`}>Você vê as conversas dos seus números e as atribuídas a você.</p>
           )}
@@ -1166,8 +1347,16 @@ export default function ConversasPage() {
                       <p className={`mt-0.5 truncate text-[12.5px] ${FC.sub}`}>
                         {c.last_preview || <span className="italic text-[#262626]/30 dark:text-white/30">Sem prévia</span>}
                       </p>
-                      {(c.agent_nome || c.canal_rotulo || (c.tags || []).length > 0 || c.assigned_member_id) && (
+                      {(c.started_at || c.agent_nome || c.canal_rotulo || (c.tags || []).length > 0 || c.assigned_member_id) && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          {c.started_at && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab] tabular-nums"
+                              title={`Criada em ${fmtCriada(c.started_at).longa}`}
+                            >
+                              <CalendarDays className="w-2.5 h-2.5" /> Criada {fmtCriada(c.started_at).curta}
+                            </span>
+                          )}
                           {c.canal_rotulo && (
                             <span
                               className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab] tabular-nums"
@@ -1181,9 +1370,13 @@ export default function ConversasPage() {
                               <Bot className="w-2.5 h-2.5" /> {c.agent_nome}
                             </span>
                           )}
-                          {c.assigned_member_id && (
-                            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab]">
-                              <User className="w-2.5 h-2.5" /> {members.find((m) => m.id === c.assigned_member_id)?.nome || "Atribuída"}
+                          {(c.responsavel_member_id ?? c.assigned_member_id) && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#262626]/[0.05] text-[#262626]/[0.72] dark:bg-white/[0.06] dark:text-[#9aa1ab]"
+                              title={c.responsavel_origem === "numero" ? "Responsável pelo número (conversa sem atribuição)" : "Atribuída"}
+                            >
+                              <User className="w-2.5 h-2.5" />{" "}
+                              {nomeDoResponsavel(c.responsavel_member_id ?? c.assigned_member_id) || (c.responsavel_origem === "numero" ? "Responsável" : "Atribuída")}
                             </span>
                           )}
                           {(c.tags || []).slice(0, 2).map((t) => (
