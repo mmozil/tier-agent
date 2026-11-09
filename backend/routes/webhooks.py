@@ -576,6 +576,29 @@ async def _process_engine_from_me(
             await perfil_numero.observar(numero_do_perfil, perfil)
 
 
+async def _ia_vai_responder(db, conn, external_chat_id: str) -> bool:
+    """A IA vai responder esta mensagem? Número em registro nunca; conversa que a equipe
+    assumiu (`handed_off`) também não. Na dúvida (erro de leitura), não mostra «digitando…»."""
+    if (getattr(conn, "modo", None) or "agente") != "agente":
+        return False
+    try:
+        from sqlalchemy import select as _select
+
+        from models import TaConversation
+
+        status = (
+            await db.execute(
+                _select(TaConversation.status)
+                .where(TaConversation.agent_id == conn.agent_id, TaConversation.external_id == external_chat_id)
+                .order_by(TaConversation.last_message_at.desc().nulls_last())
+                .limit(1)
+            )
+        ).scalar()
+    except Exception:
+        return False
+    return status != "handed_off"
+
+
 async def _process_engine_message(
     *,
     instance_id: str | None,
@@ -612,14 +635,19 @@ async def _process_engine_message(
         # a vaga (limite de mensagens processando ao mesmo tempo) só começa DEPOIS do respiro:
         # esperar de propósito não precisa ocupar lugar de quem tem trabalho a fazer.
         async with _vaga(), db_context() as db:
-            # 2. marca '…digitando' (3 pontinhos no WhatsApp do cliente)
+            # 2. marca '…digitando' (3 pontinhos no WhatsApp do cliente) — SÓ quando a IA vai
+            #    responder. 09/11/2026 (M7): ia em toda mensagem, inclusive no número em registro
+            #    (sem IA) e na conversa que a equipe assumiu — o cliente via «digitando…» de quem
+            #    não estava digitando. Mesmas regras de `handle_inbound_message`.
+            wa = cfg = None
             try:
                 conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)
-                if conn:
+                if conn and await _ia_vai_responder(db, conn, external_chat_id):
                     wa = _reg.get("whatsapp")
                     cfg = ConnectorConfig(data=_json.loads(decrypt(conn.config_json_enc)))
                     await wa.send_typing(cfg, external_chat_id, "composing")
             except Exception:
+                wa = cfg = None
                 logger.debug("typing whatsapp-engine falhou (segue)")
 
             # 3+4. gera e envia (latência do LLM = tempo de digitação percebido)
@@ -637,6 +665,13 @@ async def _process_engine_message(
                 "Engine msg processada: agent=%s status=%s",
                 result.get("agent_id"), result.get("status"),
             )
+            # A IA acabou não respondendo (fora do horário, guarda, erro…): desliga o «digitando…»
+            # na hora, em vez de deixar os 3 pontinhos até o WhatsApp apagar sozinho.
+            if wa and cfg:
+                try:
+                    await wa.send_typing(cfg, external_chat_id, "paused")
+                except Exception:
+                    logger.debug("paused whatsapp-engine falhou (segue)")
     except Exception:
         logger.exception("processamento Engine em background falhou chat=%s", external_chat_id)
 
