@@ -219,7 +219,8 @@ export default function NumeroNaLateral({
         )}
         <Avatar c={p} tam={18} />
         <span className="relative z-10 flex-1 truncate text-left">{tituloDoNumero(info)}</span>
-        {p && p.ligado && p.status && p.status !== "connected" && (
+        {/* Ponto só quando algo não está bem: desconectado (vermelho), aguardando (âmbar), desligado (cinza). */}
+        {p && (!p.ligado || (p.status && p.status !== "connected")) && (
           <span className="relative z-10 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: conexao(p).cor }} />
         )}
         {conversas > 0 && (
