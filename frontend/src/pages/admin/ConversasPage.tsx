@@ -38,7 +38,41 @@ const PRIORITY_META: Record<string, { label: string; tint: string }> = {
   high: { label: "Alta", tint: "#9a6700" },
   urgent: { label: "Urgente", tint: "#E5484D" },
 };
-const PRIORITY_OPTS = (["none", "low", "medium", "high", "urgent"] as const).map((v) => ({ value: v, label: PRIORITY_META[v].label }));
+// 09/11/2026 (M7): ponto na cor do nível em cada opção (as mesmas cores do selo do topo da
+// conversa); «Nenhuma» é um anel vazio.
+const PRIORITY_OPTS = (["none", "low", "medium", "high", "urgent"] as const).map((v) => ({
+  value: v,
+  label: PRIORITY_META[v].label,
+  icon:
+    v === "none" ? (
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full border-[1.5px] border-[#697386]/60" />
+    ) : (
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: PRIORITY_META[v].tint }} />
+    ),
+}));
+
+/** Foto da pessoa (ou as iniciais) com o ponto verde de online — a lista «Agente atribuído». */
+function MiniAvatar({ nome, url, online, tam = 22 }: { nome: string; url?: string | null; online?: boolean; tam?: number }) {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  const ini = ((partes[0]?.[0] || "") + (partes.length > 1 ? partes[partes.length - 1][0] : "")).toUpperCase() || "?";
+  return (
+    <span className="relative inline-flex shrink-0" style={{ width: tam, height: tam }}>
+      {url ? (
+        <img src={url} alt="" className="h-full w-full rounded-full object-cover" />
+      ) : (
+        <span
+          className="inline-flex h-full w-full items-center justify-center rounded-full bg-[#003083]/[0.08] font-semibold leading-none text-[#003083] dark:bg-[#5b9bff]/[0.14] dark:text-[#5b9bff]"
+          style={{ fontSize: Math.round(tam * 0.42) }}
+        >
+          {ini}
+        </span>
+      )}
+      {online && (
+        <span className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-[#16a34a] ring-2 ring-white dark:ring-[#14171c]" title="Online" />
+      )}
+    </span>
+  );
+}
 
 function PriorityBadge({ priority }: { priority: string }) {
   if (!priority || priority === "none") return null;
@@ -2074,10 +2108,23 @@ export default function ConversasPage() {
                     <Select
                       value={openConv.assigned_member_id ?? 0}
                       onChange={(v) => saveAssign(openConv.id, v === 0 ? null : (v as number))}
-                      placeholder="— ninguém —"
+                      placeholder="Ninguém"
                       options={[
-                        { value: 0, label: "— ninguém —" },
-                        ...activeMembers.map((m) => ({ value: m.id, label: `${m.nome}${m.online ? " 🟢" : ""}` })),
+                        {
+                          value: 0,
+                          label: <span className={FC.sub}>Ninguém</span>,
+                          icon: <span className="h-[22px] w-[22px] shrink-0 rounded-full border border-dashed border-[#262626]/30 dark:border-white/25" />,
+                        },
+                        ...activeMembers.map((m) => ({
+                          value: m.id,
+                          icon: <MiniAvatar nome={m.nome} url={m.avatar_url} online={m.online} />,
+                          label: (
+                            <span className="flex min-w-0 items-baseline gap-1.5">
+                              <span className="truncate">{m.nome}</span>
+                              {m.cargo && <span className={`shrink-0 text-[11.5px] ${FC.mut}`}>{m.cargo}</span>}
+                            </span>
+                          ),
+                        })),
                       ]}
                     />
                   ) : (
