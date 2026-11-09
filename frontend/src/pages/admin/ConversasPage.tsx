@@ -1408,6 +1408,7 @@ export default function ConversasPage() {
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-[15px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{navTitle}</h2>
             <div className="flex items-center gap-0.5 shrink-0">
+              {me?.ve_tudo && (
               <div className="relative">
                 <button onClick={() => setCleanMenu((v) => !v)} className={iconBtn} title="Limpar">
                   <Trash2 className="w-4 h-4" />
@@ -1428,6 +1429,7 @@ export default function ConversasPage() {
                   </>
                 )}
               </div>
+              )}
               <button onClick={() => load()} className={iconBtn} title="Atualizar">
                 <RefreshCw className="w-4 h-4" />
               </button>
@@ -1736,9 +1738,13 @@ export default function ConversasPage() {
                     <CheckCircle2 className="w-3.5 h-3.5" /> Resolver
                   </Button>
                 )}
-                <button onClick={() => deleteConv(openConv.id)} title="Excluir conversa" className={`${iconBtn} hover:text-[#c0362c] hover:bg-[#c0362c]/[0.06] dark:hover:text-[#ff6b5e] dark:hover:bg-[#ff6b5e]/[0.10]`}>
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {/* 09/11/2026 (M7): só administrador apaga — o servidor já recusava os demais, e o
+                    atendente via a lixeira e levava erro ao clicar. */}
+                {me?.ve_tudo && (
+                  <button onClick={() => deleteConv(openConv.id)} title="Excluir conversa" className={`${iconBtn} hover:text-[#c0362c] hover:bg-[#c0362c]/[0.06] dark:hover:text-[#ff6b5e] dark:hover:bg-[#ff6b5e]/[0.10]`}>
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
                 <button onClick={() => setShowContact((v) => !v)} title={showContact ? "Ocultar contato" : "Mostrar contato"} className={iconBtn}>
                   {showContact ? <PanelRightClose className="w-[18px] h-[18px]" /> : <PanelRightOpen className="w-[18px] h-[18px]" />}
                 </button>
