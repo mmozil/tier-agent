@@ -22,7 +22,7 @@ from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt
 from models import TaAgent, TaConnector, TaConversation, TaMessageLog
-from services import engine_client, filtro_conversas, nome_crm
+from services import engine_client, filtro_conversas, nome_agenda, nome_crm
 from services import visao_conversas as visao
 from services.connectors import registry
 from services.connectors.base import ConnectorAttachment, ConnectorConfig, OutboundMessage
@@ -64,6 +64,10 @@ class ConversationOut(BaseModel):
     # 09/11/2026 (M7): nome do contato no CRM, pelo número. O `contact_name` é o apelido do WhatsApp
     # e vem vazio em quem nunca escreveu primeiro (`services.nome_crm`).
     crm_nome: str | None = None
+    # 09/11/2026 (M7): nome salvo na agenda do celular do número (`services.nome_agenda`) e o
+    # telefone por trás de um código oculto (`@lid`), quando o WhatsApp já o revelou.
+    agenda_nome: str | None = None
+    telefone_oculto: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -267,7 +271,35 @@ async def list_conversations(
     nomes = await nome_crm.nomes_do_crm(user.tenant_id, [o.external_id for o in out])
     for o in out:
         o.crm_nome = nomes.get(o.external_id)
+    await _completar_com_agenda(db, user.tenant_id, out)
     return out
+
+
+async def _completar_com_agenda(db: AsyncSession, tenant_id: int | None, outs: list[ConversationOut]) -> None:
+    """Nome da agenda do celular onde o CRM não deu nome, e o telefone do código oculto (09/11/2026).
+
+    Com o telefone de um `@lid` em mãos, pergunta de novo ao CRM: o cliente que esconde o número
+    passa a aparecer com o nome do CRM, como os outros. Nunca derruba a tela."""
+    try:
+        alvo = [o for o in outs if not o.crm_nome or "@lid" in (o.external_id or "")]
+        if not alvo:
+            return
+        agenda = await nome_agenda.agenda_das_conversas(db, [(o.connector_id, o.external_id) for o in alvo])
+        lids: dict[str, str] = {}
+        for o in alvo:
+            a = agenda.get(o.external_id) or {}
+            o.agenda_nome = a.get("nome")
+            if "@lid" in (o.external_id or "") and a.get("telefone"):
+                o.telefone_oculto = a["telefone"]
+                if not o.crm_nome:
+                    lids[o.external_id] = a["telefone"]
+        if lids:
+            pelo_telefone = await nome_crm.nomes_do_crm(tenant_id, list(set(lids.values())))
+            for o in alvo:
+                if not o.crm_nome and o.external_id in lids:
+                    o.crm_nome = pelo_telefone.get(lids[o.external_id])
+    except Exception:  # noqa: BLE001 — nome é luxo
+        logger.warning("agenda do celular falhou na lista de conversas", exc_info=True)
 
 
 @router.get("/crm/funis")
@@ -461,10 +493,10 @@ async def conversation_detail(
         )
     ).scalars().all()
 
-    return {
-        "conversation": ConversationOut(
+    saida = ConversationOut(
             id=conv.id,
             agent_id=conv.agent_id,
+            connector_id=getattr(conv, "connector_id", None),
             connector_kind=conv.connector_kind,
             external_id=conv.external_id,
             contact_name=conv.contact_name,
@@ -481,7 +513,10 @@ async def conversation_detail(
             team_id=conv.team_id,
             crm_opportunity_id=conv.crm_opportunity_id,
             crm_nome=(await nome_crm.nomes_do_crm(user.tenant_id, [conv.external_id])).get(conv.external_id),
-        ).model_dump(),
+        )
+    await _completar_com_agenda(db, user.tenant_id, [saida])
+    return {
+        "conversation": saida.model_dump(),
         "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
     }
 

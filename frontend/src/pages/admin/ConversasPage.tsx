@@ -192,6 +192,10 @@ interface Conversation {
   responsavel_origem?: "atribuida" | "numero" | null;
   /** 09/11/2026 (M7): nome do contato no CRM, pelo número. `contact_name` é o apelido do WhatsApp. */
   crm_nome?: string | null;
+  /** Nome salvo na agenda do celular do número (o mesmo do WhatsApp Web). */
+  agenda_nome?: string | null;
+  /** Telefone por trás de um código oculto (`@lid`), quando o WhatsApp já o revelou. */
+  telefone_oculto?: string | null;
 }
 
 interface Team {
@@ -352,10 +356,26 @@ function fmtPhone(ext: string): string {
   return ext;
 }
 
-/** O nome que a tela mostra: o do CRM, senão o apelido do WhatsApp, senão o número
- *  (09/11/2026, M7 — «só aparece o número, confundindo os usuários»). */
-function nomeDaConversa(c: Pick<Conversation, "crm_nome" | "contact_name" | "external_id">): string {
-  return (c.crm_nome || "").trim() || (c.contact_name || "").trim() || fmtPhone(c.external_id || "");
+/** O telefone da conversa para mostrar. Código oculto (`…@lid`) NÃO é telefone: com o telefone
+ *  revelado mostra o telefone; sem ele, «Número oculto» (antes saía «+24 (86) 5768…», um número falso). */
+function telefoneDaConversa(c: Pick<Conversation, "external_id" | "telefone_oculto">): string {
+  const ext = c.external_id || "";
+  if (ext.endsWith("@lid")) return c.telefone_oculto ? fmtPhone(c.telefone_oculto) : "Número oculto pelo WhatsApp";
+  return fmtPhone(ext);
+}
+
+/** O nome que a tela mostra: CRM → agenda do celular → perfil do WhatsApp → número
+ *  (09/11/2026, M7 — «só aparece o número, confundindo os usuários»; «se ela salvou o contato,
+ *  no celular e no WhatsApp Web aparece o nome — aqui também»). */
+function nomeDaConversa(
+  c: Pick<Conversation, "crm_nome" | "agenda_nome" | "contact_name" | "external_id" | "telefone_oculto">,
+): string {
+  return (
+    (c.crm_nome || "").trim() ||
+    (c.agenda_nome || "").trim() ||
+    (c.contact_name || "").trim() ||
+    telefoneDaConversa(c)
+  );
 }
 
 // Ajusta a altura do textarea ao conteúdo (cresce conforme digita, até 180px).
@@ -1168,7 +1188,7 @@ export default function ConversasPage() {
     // menções/participantes já vêm filtradas do backend (view=…); aqui só a busca
     if (search.trim()) {
       const q = search.toLowerCase();
-      const name = `${c.crm_nome || ""} ${c.contact_name || ""} ${c.external_id || ""}`.toLowerCase();
+      const name = `${c.crm_nome || ""} ${c.agenda_nome || ""} ${c.contact_name || ""} ${c.telefone_oculto || ""} ${c.external_id || ""}`.toLowerCase();
       const prev = (c.last_preview || "").toLowerCase();
       if (!name.includes(q) && !prev.includes(q)) return false;
     }
@@ -2117,13 +2137,13 @@ export default function ConversasPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard?.writeText(fmtPhone(openConv.external_id || ""));
+                    navigator.clipboard?.writeText(telefoneDaConversa(openConv));
                     toast.success("Número copiado");
                   }}
                   title="Copiar número"
                   className={`group mt-1 inline-flex items-center gap-1.5 text-[12.5px] ${FC.sub} hover:text-[#262626] dark:hover:text-[#e6e8eb] transition-colors`}
                 >
-                  {fmtPhone(openConv.external_id || "")}
+                  {telefoneDaConversa(openConv)}
                   <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </button>
               )}
@@ -2272,7 +2292,10 @@ export default function ConversasPage() {
                 {openConv.crm_nome && openConv.contact_name && openConv.contact_name.trim() !== openConv.crm_nome.trim() && (
                   <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>No WhatsApp</dt><dd className="text-[#262626] dark:text-[#e6e8eb] truncate">{openConv.contact_name}</dd></div>
                 )}
-                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Telefone</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb]">{fmtPhone(openConv.external_id || "")}</dd></div>
+                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Telefone</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb]">{telefoneDaConversa(openConv)}</dd></div>
+                {openConv.agenda_nome && openConv.agenda_nome.trim() !== nomeDaConversa(openConv) && (
+                  <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Na agenda</dt><dd className="text-[#262626] dark:text-[#e6e8eb] truncate">{openConv.agenda_nome}</dd></div>
+                )}
                 <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Canal</dt><dd className="text-[#262626] dark:text-[#e6e8eb]">{channelLabel(openConv.connector_kind)}</dd></div>
                 <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>ID externo</dt><dd className="font-mono text-[11px] text-[#262626]/70 dark:text-[#9aa1ab] truncate max-w-[150px]" title={openConv.external_id || ""}>{openConv.external_id || "—"}</dd></div>
               </dl>
