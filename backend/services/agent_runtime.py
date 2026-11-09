@@ -138,6 +138,88 @@ def build_contact_block(
     return "\n".join(out)
 
 
+import re as _re_horario  # noqa: E402 — o `import re as _re` deste arquivo vem mais abaixo
+
+_DIAS_CURTOS = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"]
+_DIAS_LONGOS = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
+_RE_HORARIO = _re_horario.compile(
+    r"\[horario:\s*(seg|ter|qua|qui|sex|sab|dom)\s*-\s*(seg|ter|qua|qui|sex|sab|dom)\s+(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*\]",
+    _re_horario.IGNORECASE,
+)
+
+
+def _horario_agora(texto: str, agora) -> tuple[str, str] | None:
+    """(código, próximo atendimento) pela marcação `[horario: seg-sex 08:00-17:00]` da persona.
+
+    Código: «dentro», «fora_dia_util» ou «fim_de_semana» (sábado, domingo e o último dia útil
+    depois do expediente — o domingo à noite também). Sem a marcação, None. Sem feriados."""
+    m = _RE_HORARIO.search(texto or "")
+    if not m:
+        return None
+    d0, d1 = _DIAS_CURTOS.index(m.group(1).lower()), _DIAS_CURTOS.index(m.group(2).lower())
+    uteis = list(range(d0, d1 + 1)) if d0 <= d1 else list(range(d0, 7)) + list(range(0, d1 + 1))
+    ini = int(m.group(3)) * 60 + int(m.group(4))
+    fim = int(m.group(5)) * 60 + int(m.group(6))
+    dia, minuto = agora.weekday(), agora.hour * 60 + agora.minute
+    hora_ini = f"{int(m.group(3))}h" + (f"{m.group(4)}" if m.group(4) != "00" else "")
+    if dia in uteis and ini <= minuto < fim:
+        return "dentro", ""
+    if dia in uteis and minuto < ini:
+        return "fora_dia_util", f"hoje, a partir das {hora_ini}"
+    prox = next(d for d in range(1, 8) if (dia + d) % 7 in uteis)
+    nome = _DIAS_LONGOS[(dia + prox) % 7]
+    quando = f"amanhã, {nome}, a partir das {hora_ini}" if prox == 1 else f"{nome}, a partir das {hora_ini}"
+    codigo = "fora_dia_util" if (dia in uteis and (dia + 1) % 7 in uteis) else "fim_de_semana"
+    return codigo, quando
+
+
+def situacao_do_horario(texto: str, agora) -> str:
+    """Bloco «Situação do horário AGORA» quando a persona declara `[horario: seg-sex 08:00-17:00]`.
+
+    Calculado aqui porque o modelo erra a comparação de hora (09/11/2026, M7). Sem a marcação,
+    devolve "" — nenhum agente muda sem pedir."""
+    h = _horario_agora(texto, agora)
+    if not h:
+        return ""
+    codigo, quando = h
+    titulo = "# Situação do horário AGORA (calculada pelo sistema — use isto, não calcule)\n"
+    if codigo == "dentro":
+        return titulo + "- DENTRO do horário comercial.\n\n"
+    tipo = "dia útil" if codigo == "fora_dia_util" else "fim de semana (sexta à noite até domingo)"
+    return titulo + f"- FORA do horário comercial — {tipo}.\n" + f"- Próximo atendimento: {quando}.\n\n"
+
+
+_RE_BLOCO_HORARIO = _re_horario.compile(
+    r"\[\[(dentro|fora_dia_util|fim_de_semana)\]\](.*?)\[\[/\1\]\]", _re_horario.DOTALL
+)
+
+
+def persona_do_horario(texto: str, agora) -> str:
+    """Deixa na persona SÓ o bloco do horário de agora (09/11/2026, M7).
+
+    Com a marcação `[horario: …]` e blocos `[[dentro]]…[[/dentro]]`, `[[fora_dia_util]]…` e
+    `[[fim_de_semana]]…`, os blocos de outro horário saem do prompt. Mesmo com a situação
+    calculada, o gpt-4.1-mini escolheu o modelo errado em 4 de 6 testes: o que o modelo não vê
+    ele não escolhe. Persona sem blocos passa igual."""
+    if "[[" not in (texto or ""):
+        return texto
+    h = _horario_agora(texto, agora)
+    if not h:
+        return texto
+    codigo = h[0]
+    return _RE_BLOCO_HORARIO.sub(lambda m: m.group(2).strip("\n") if m.group(1) == codigo else "", texto)
+
+
+def persona_efetiva(agent, agora=None) -> str:
+    """A persona como ela vai para o modelo — produção e teste do painel usam esta (ponto único)."""
+    if agora is None:
+        from datetime import datetime as _dtp
+        from zoneinfo import ZoneInfo as _ZIp
+
+        agora = _dtp.now(_ZIp("America/Sao_Paulo"))
+    return persona_do_horario(agent.persona or agent.system_prompt or "", agora)
+
+
 def build_base_directives(agent, *, connector_kind: str, extra_block: str = "") -> str:
     """Data/hora + diretrizes base herdadas por TODO agente.
 
@@ -165,6 +247,9 @@ def build_base_directives(agent, *, connector_kind: str, extra_block: str = "") 
         "- Ao falar de 'hoje', 'amanhã', 'esta semana' ou dias da semana, calcule a partir desta data. "
         "NUNCA diga que não sabe a data.\n\n"
     )
+    # 09/11/2026 (M7): a situação do horário vem CALCULADA, não deduzida pelo modelo. A persona da
+    # M7 escolhe a 1ª mensagem por horário e o gpt-4o-mini errou 2 de 3 vezes às 18:20 de segunda.
+    date_block += situacao_do_horario(agent.persona or agent.system_prompt or "", agora)
     # Diretrizes GENÉRICAS + guidelines do TEMPLATE do agente (definidas em
     # services/templates.py — o runtime não conhece nenhum nicho).
     base = date_block + _templates.GENERIC_GUIDELINES
@@ -1269,7 +1354,7 @@ async def handle_inbound_message(
         logger.exception("memory.search falhou agent=%s — segue sem memory", agent.id)
     _cron.marca("memoria")
 
-    system_prompt = agent.persona or agent.system_prompt or ""
+    system_prompt = persona_efetiva(agent)  # 09/11/2026: blocos por horário (persona_do_horario)
     if memory_block:
         system_prompt = f"{system_prompt}\n\n{memory_block}".strip()
 

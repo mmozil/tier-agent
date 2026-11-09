@@ -462,7 +462,7 @@ async def agent_playground(
     # MESMA precedência da produção (agent_runtime: `persona or system_prompt`).
     # Estava invertida aqui — e como todo agente de template nasce com os DOIS
     # campos preenchidos, o prompt testado nunca era o prompt executado.
-    system = agent.persona or agent.system_prompt or None
+    system = agent_runtime.persona_efetiva(agent) or None  # mesmos blocos por horário da produção
 
     # RAG: o teste consulta a base de conhecimento pelo MESMO caminho da produção
     # (services.agent_runtime.build_rag_block). Sem isso o cliente subia um
