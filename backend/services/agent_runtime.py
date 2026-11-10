@@ -1033,6 +1033,33 @@ async def handle_inbound_message(
         logger.exception("ASR exception agent=%s — segue sem transcrição", agent.id)
     _cron.marca("stt")
 
+    # ─── IA DESLIGADA no número (10/11/2026, M7) ───
+    # Botão «IA ligada» da tela de Números. Desligado NÃO é desconectar: a sessão do
+    # WhatsApp segue viva, a mensagem entra no Atendimento e o lead nasce no CRM como
+    # sempre — só ninguém responde pelo sistema. Fica ANTES das guardas, do CSAT e dos
+    # comandos de ops, que também mandam mensagem ao cliente.
+    if not getattr(connector, "ia_ligada", True):
+        conv = await ensure_conversation(
+            db,
+            agent_id=agent.id,
+            connector_kind=connector_kind,
+            external_id=external_chat_id,
+            contact_name=sender_name,
+            connector_id=connector.id,
+        )
+        _att = anexos_para_log(attachments)
+        await log_message(
+            db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", tokens_in=0,
+            content=text_content, attachments_json=_att or None,
+        )
+        await _espelhar_no_crm(
+            db, agent=agent, conv=conv, connector=connector, connector_kind=connector_kind,
+            external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
+            origem_canal=origem_canal, agente_respondeu=False,
+        )
+        logger.info("conv=%s número %s com a IA desligada — só registra", conv.id, connector.id)
+        return {"status": "ia_desligada", "agent_id": agent.id, "conversation_id": conv.id}
+
     # ─── Comandos de ops (DevSecOps) — resposta determinística, sem LLM ───
     # Agente marcado como template_kind="devsecops" responde status/health/ping
     # com a saúde REAL do stack (sem alucinar). Conversa normal segue o fluxo.

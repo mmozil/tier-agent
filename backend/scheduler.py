@@ -425,6 +425,10 @@ async def _send_proactive(db, conv: TaConversation, text_content: str) -> bool:
     conn = await proactive.conector_da_conversa(db, conv)
     if not conn:
         return False
+    # Terceira trava (10/11/2026): número com o botão «IA ligada» desligado não manda follow-up.
+    if not getattr(conn, "ia_ligada", True):
+        logger.info("followup: número %s com a IA desligada — envio barrado (conv %s)", conn.id, conv.id)
+        return False
     return await proactive.send_text_via_connector(conn, conv.external_id, text_content)
 
 

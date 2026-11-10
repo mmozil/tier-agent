@@ -238,6 +238,10 @@ class TaConnector(Base):
     # 07/10/2026: resposta do painel sai com «*Nome:*» na frente (número dividido por
     # várias pessoas — a família vê quem fala). Runtime DDL. Ver services/assinatura.py.
     assinar_nome: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # 10/11/2026 (M7) — botão «IA ligada» do número. Desligado: a sessão do WhatsApp continua
+    # (o QR não se perde), a mensagem entra no Atendimento e o card nasce no CRM; só a IA não
+    # responde nem manda follow-up. Não confundir com `enabled` (desconectar) nem `modo`.
+    ia_ligada: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     # 31/10/2026 — o nome do perfil do WhatsApp deste número, lido do `pushName` das mensagens
     # que SAEM por ele. Incidente da M7: o número no nome do Paulo era o WhatsApp da Rebecca
     # (948 mensagens com o perfil dela) e a regra entregava as conversas dela a ele.

@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatPhone } from "@/lib/phone";
 import { WhatsAppIcon, ChannelLogo, CHANNEL_META } from "@/components/icons/channelIcons";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
-import { FC, PageFrame, PageHero, Row, Select, Button, EmptyHint, SkeletonBar, iconBtn } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Select, Button, EmptyHint, SkeletonBar, iconBtn, Interruptor } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { color: string; label: string; tip: string }> = {
   connected: { color: "bg-[#0a8f5a]", label: "Conectado", tip: "Pareado e recebendo mensagens" },
@@ -130,6 +130,9 @@ interface Connector {
   member_id?: number | null;
   /** Resposta do painel sai com «*Nome:*» na frente — número usado por várias pessoas. */
   assinar_nome?: boolean;
+  /** 10/11/2026 — botão «IA ligada»: desligado, o número segue conectado e o lead entra no
+   *  CRM, só a IA não responde. Não é Desconectar (que pede QR novo). */
+  ia_ligada?: boolean;
   /** 31/10/2026 — perfil do WhatsApp visto nas mensagens que saem pelo número, e se ele bate
    *  com a pessoa dona do número (false = o perfil tem o nome de OUTRA pessoa da equipe). */
   perfil_whatsapp?: string | null;
@@ -1014,6 +1017,14 @@ export default function CanaisPage() {
                         {c.modo === "registro" && (
                           <span className="shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-violet-500/10 text-violet-600 dark:text-violet-400 uppercase tracking-wide">Sem IA</span>
                         )}
+                        {c.modo !== "registro" && c.ia_ligada === false && (
+                          <span
+                            className="shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 uppercase tracking-wide"
+                            title="A IA não responde por este número. As mensagens continuam chegando no Atendimento e os leads no CRM."
+                          >
+                            IA desligada
+                          </span>
+                        )}
                         {isCloud ? (
                           <span className="shrink-0 text-[9px] font-semibold px-1 py-px rounded bg-[#003083]/[0.08] text-[#003083] dark:text-[#5b9bff] uppercase tracking-wide">Oficial</span>
                         ) : (
@@ -1049,6 +1060,37 @@ export default function CanaisPage() {
 
                     {/* Ações */}
                     <div className="flex items-center justify-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {/* Botão «IA ligada» (10/11/2026): desligar sem perder a conexão do QR. */}
+                      {gestor && c.modo !== "registro" && (
+                        <span className={`mr-1 inline-flex items-center gap-2 text-[12px] font-medium whitespace-nowrap ${FC.sub}`}>
+                          IA
+                          <Interruptor
+                            label="IA responde por este número"
+                            ligado={c.ia_ligada !== false}
+                            title={
+                              c.ia_ligada !== false
+                                ? "Ligada: a IA responde sozinha por este número. Clique para desligar sem desconectar."
+                                : "Desligada: as mensagens chegam no Atendimento e os leads no CRM, mas a IA não responde. Clique para ligar."
+                            }
+                            onChange={async (ligar) => {
+                              if (
+                                !ligar &&
+                                !confirm(
+                                  "Desligar a IA deste número?\n\nO número continua conectado: as mensagens chegam no Atendimento e os leads continuam entrando no CRM. Só a IA para de responder.",
+                                )
+                              )
+                                return;
+                              try {
+                                await api.put(`/connectors/${c.id}/ia`, { ligada: ligar });
+                                toast.success(ligar ? "IA ligada neste número" : "IA desligada · o número segue conectado");
+                                load();
+                              } catch {
+                                toast.error("Não foi possível mudar a IA do número");
+                              }
+                            }}
+                          />
+                        </span>
+                      )}
                       {gestor && (c.kind === "whatsapp" || c.kind === "whatsapp_cloud") && (
                         <Button
                           variant="secondary"

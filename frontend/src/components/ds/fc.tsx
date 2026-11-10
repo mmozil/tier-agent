@@ -632,6 +632,43 @@ export function SegToggle<T extends string | number>({
   );
 }
 
+// Interruptor — liga/desliga (10/11/2026, botão «IA ligada» do número). Ligado na cor
+// da marca, desligado em cinco. `role="switch"` + `aria-checked` para leitor de tela.
+export function Interruptor({
+  ligado,
+  onChange,
+  disabled,
+  label,
+  title,
+}: {
+  ligado: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  label: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={ligado}
+      aria-label={label}
+      title={title}
+      disabled={disabled}
+      onClick={() => onChange(!ligado)}
+      className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 disabled:opacity-50 disabled:pointer-events-none ${
+        ligado ? "bg-[#003083] dark:bg-[#5b9bff]" : "bg-[#262626]/[0.18] dark:bg-white/[0.16]"
+      }`}
+    >
+      <span
+        className={`inline-block h-[14px] w-[14px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2)] transition-transform ${
+          ligado ? "translate-x-[16px]" : "translate-x-[2px]"
+        }`}
+      />
+    </button>
+  );
+}
+
 /* ───────────────────────────────────────────────────────────────
    Primitivas de formulário e layout (ago/2026)
 

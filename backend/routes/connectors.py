@@ -124,6 +124,7 @@ def _serialize(c: TaConnector) -> dict:
         "modo": getattr(c, "modo", None) or "agente",
         "member_id": getattr(c, "member_id", None),  # Etapa 2: de quem é o número
         "assinar_nome": bool(getattr(c, "assinar_nome", False)),  # «*Nome:*» na resposta do painel
+        "ia_ligada": bool(getattr(c, "ia_ligada", True)),  # botão «IA ligada» (10/11/2026)
         "perfil_whatsapp": getattr(c, "perfil_whatsapp", None),  # perfil visto nas mensagens que saem
     }
 
@@ -763,6 +764,41 @@ async def set_connector_assinatura(
     c.assinar_nome = bool(body.ativo)
     await db.commit()
     await db.refresh(c)
+    return _serialize(c)
+
+
+class ConnectorIaIn(BaseModel):
+    ligada: bool
+
+
+@router.put("/{connector_id}/ia")
+async def set_connector_ia(
+    connector_id: int,
+    body: ConnectorIaIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Liga/desliga a IA neste número SEM desconectar (10/11/2026, M7).
+
+    Pedido do dono: «um switch para ligar ou desligar o número, mas sem que ele perdesse a
+    conexão que já tinha feito pelo QR». Desligado, a sessão do WhatsApp segue viva, a
+    mensagem entra no Atendimento e o lead continua nascendo no CRM — só a IA não responde
+    nem manda follow-up. Antes a única saída era Desconectar, que pede QR novo."""
+    from services.visao_conversas import exigir_gestor
+
+    exigir_gestor(user, "ligar ou desligar a IA do número")
+    c = await db.get(TaConnector, connector_id)
+    if not c:
+        raise HTTPException(404, "Conector não encontrado")
+    await _ensure_agent_owned(db, c.agent_id, user)
+    if (getattr(c, "modo", None) or "agente") == "registro":
+        raise HTTPException(422, "Número em modo registro não tem IA")
+    c.ia_ligada = bool(body.ligada)
+    await db.commit()
+    await db.refresh(c)
+    logger.info(
+        "IA do número %s %s por user=%s", c.id, "LIGADA" if c.ia_ligada else "DESLIGADA", getattr(user, "id", None)
+    )
     return _serialize(c)
 
 

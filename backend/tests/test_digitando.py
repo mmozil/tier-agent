@@ -50,3 +50,10 @@ async def test_erro_de_leitura_nao_mostra():
 
 async def test_conector_antigo_sem_modo_e_agente():
     assert await _ia_vai_responder(_Db(status="active"), SimpleNamespace(agent_id=25), "x") is True
+
+
+async def test_ia_desligada_no_numero_nao_mostra_digitando():
+    db = _Db(status="active")
+    conn = SimpleNamespace(modo="agente", agent_id=25, ia_ligada=False)
+    assert await _ia_vai_responder(db, conn, "x") is False
+    assert db.chamou is False
