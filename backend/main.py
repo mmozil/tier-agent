@@ -177,6 +177,7 @@ async def _ensure_message_content_column():
                 "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS assinar_nome BOOLEAN NOT NULL DEFAULT FALSE",
                 # 10/11/2026: botão «IA ligada» do número (desligar sem desconectar o QR)
                 "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS ia_ligada BOOLEAN NOT NULL DEFAULT TRUE",
+                "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS ia_horario TEXT",
                 # 16/10/2026: número com VÁRIAS pessoas (padrão Chatwoot/Zendesk) — o
                 # `member_id` segue sendo o responsável; aqui ficam as outras que também veem.
                 "CREATE TABLE IF NOT EXISTS ta_connector_membro ("

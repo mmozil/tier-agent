@@ -409,6 +409,20 @@ async def mirror_pet_conversations_job() -> None:
         logger.exception("mirror_pet_conversations_job falhou")
 
 
+async def _no_horario_da_ia(db, conv: TaConversation) -> bool:
+    """O número da conversa está no horário da IA? (10/11/2026). Na dúvida, sim — o envio
+    tem as outras travas; um erro de leitura aqui não pode parar a cadência inteira."""
+    try:
+        from services import proactive
+        from services.agent_runtime import ia_no_horario
+
+        conn = await proactive.conector_da_conversa(db, conv)
+        return conn is None or ia_no_horario(conn)
+    except Exception:  # noqa: BLE001
+        logger.exception("followup: leitura do horário da IA falhou conv=%s", conv.id)
+        return True
+
+
 async def _send_proactive(db, conv: TaConversation, text_content: str) -> bool:
     """Envia uma mensagem proativa (follow-up) pro contato da conversa, via connector.
 
@@ -716,6 +730,10 @@ async def followup_inactivity_job() -> None:
                             )
                             houve = True
                             continue
+                        # 10/11/2026 — fora do horário da IA do número: espera o horário
+                        # abrir, SEM consumir a etapa (a marca logo abaixo a consumiria).
+                        if not await _no_horario_da_ia(db, conv):
+                            continue
                         nome = (conv.contact_name or "").strip().split(" ")[0]
                         if nome:
                             msg = msg.replace("{nome}", nome)
@@ -777,6 +795,8 @@ async def followup_inactivity_job() -> None:
                     )
                 ).scalars().all()
                 for conv in convs:
+                    if not await _no_horario_da_ia(db, conv):
+                        continue  # fora do horário da IA do número: tenta no próximo ciclo
                     conv.last_followup_at = now  # claim antes do envio (ver acima)
                     await db.commit()
                     if await _send_proactive(db, conv, message):

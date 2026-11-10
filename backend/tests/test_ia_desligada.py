@@ -67,3 +67,59 @@ async def test_conector_antigo_sem_campo_segue_com_ia(monkeypatch, chamadas):
     """Sem o atributo (linha antiga em memória) o padrão é IA ligada: não cai no atalho."""
     conn = SimpleNamespace(id=55, agent_id=25, modo="agente", config_json_enc="")
     assert getattr(conn, "ia_ligada", True) is True
+
+
+# ─── Horário da IA do número (10/11/2026) ───
+import json  # noqa: E402
+from datetime import datetime  # noqa: E402
+
+from services.agent_runtime import ia_no_horario, ia_responde_agora, validar_ia_horario  # noqa: E402
+
+SEG_10, SEG_19, SAB_10, TER_07 = (
+    datetime(2026, 11, 9, 10, 0), datetime(2026, 11, 9, 19, 0), datetime(2026, 11, 14, 10, 0), datetime(2026, 11, 10, 7, 0),
+)
+
+
+def _num(h, ligada=True):
+    return SimpleNamespace(ia_ligada=ligada, ia_horario=json.dumps(h) if h else None)
+
+
+def test_sem_horario_responde_sempre():
+    for t in (SEG_10, SEG_19, SAB_10, TER_07):
+        assert ia_no_horario(_num(None), t) is True
+
+
+def test_so_dentro_do_horario():
+    n = _num({"modo": "dentro", "dias": "seg-sex", "inicio": "08:00", "fim": "17:00"})
+    assert [ia_no_horario(n, t) for t in (SEG_10, SEG_19, SAB_10, TER_07)] == [True, False, False, False]
+
+
+def test_so_fora_do_horario_a_equipe_atende_no_expediente():
+    n = _num({"modo": "fora", "dias": "seg-sex", "inicio": "08:00", "fim": "17:00"})
+    assert [ia_no_horario(n, t) for t in (SEG_10, SEG_19, SAB_10, TER_07)] == [False, True, True, True]
+
+
+def test_sabado_conta_quando_os_dias_incluem():
+    n = _num({"modo": "dentro", "dias": "seg-sab", "inicio": "08:00", "fim": "17:00"})
+    assert ia_no_horario(n, SAB_10) is True
+
+
+def test_interruptor_desligado_vence_o_horario():
+    n = _num({"modo": "dentro", "dias": "seg-sex", "inicio": "08:00", "fim": "17:00"}, ligada=False)
+    assert ia_responde_agora(n, SEG_10) is False
+
+
+def test_horario_ilegivel_nao_cala_o_agente():
+    assert ia_no_horario(SimpleNamespace(ia_horario="{quebrado"), SEG_19) is True
+
+
+def test_validacao():
+    assert validar_ia_horario({"modo": "sempre"}) is None
+    for ruim in (
+        {"modo": "dentro", "dias": "seg-sex", "inicio": "17:00", "fim": "08:00"},
+        {"modo": "dentro", "dias": "ter-qui", "inicio": "08:00", "fim": "17:00"},
+        {"modo": "talvez", "dias": "seg-sex", "inicio": "08:00", "fim": "17:00"},
+        {"modo": "fora", "dias": "seg-sex", "inicio": "8h", "fim": "17:00"},
+    ):
+        with pytest.raises(ValueError):
+            validar_ia_horario(ruim)

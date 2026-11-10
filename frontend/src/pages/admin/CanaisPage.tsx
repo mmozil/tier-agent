@@ -1,14 +1,14 @@
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Copy, ChevronRight, PenLine } from "lucide-react";
+import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Copy, ChevronRight, PenLine, Clock } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatPhone } from "@/lib/phone";
 import { WhatsAppIcon, ChannelLogo, CHANNEL_META } from "@/components/icons/channelIcons";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
-import { FC, PageFrame, PageHero, Row, Select, Button, EmptyHint, SkeletonBar, iconBtn, Interruptor } from "@/components/ds/fc";
+import { FC, PageFrame, PageHero, Row, Select, Button, EmptyHint, SkeletonBar, iconBtn, Interruptor, useConfirmar, SegToggle } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { color: string; label: string; tip: string }> = {
   connected: { color: "bg-[#0a8f5a]", label: "Conectado", tip: "Pareado e recebendo mensagens" },
@@ -133,6 +133,8 @@ interface Connector {
   /** 10/11/2026 — botão «IA ligada»: desligado, o número segue conectado e o lead entra no
    *  CRM, só a IA não responde. Não é Desconectar (que pede QR novo). */
   ia_ligada?: boolean;
+  /** 10/11/2026 — horário em que a IA responde. null = sempre. */
+  ia_horario?: HorarioIa | null;
   /** 31/10/2026 — perfil do WhatsApp visto nas mensagens que saem pelo número, e se ele bate
    *  com a pessoa dona do número (false = o perfil tem o nome de OUTRA pessoa da equipe). */
   perfil_whatsapp?: string | null;
@@ -289,12 +291,132 @@ function ChannelCard({
   );
 }
 
+/** Horário da IA do número (10/11/2026). «dentro» = só no horário; «fora» = só fora dele. */
+type HorarioIa = { modo: "dentro" | "fora"; dias: "seg-sex" | "seg-sab" | "seg-dom"; inicio: string; fim: string };
+
+const DIAS_IA: { value: HorarioIa["dias"]; label: string }[] = [
+  { value: "seg-sex", label: "Segunda a sexta" },
+  { value: "seg-sab", label: "Segunda a sábado" },
+  { value: "seg-dom", label: "Todos os dias" },
+];
+
+// De 30 em 30 minutos — seletor do sistema no lugar do relógio do navegador.
+const HORAS_IA = Array.from({ length: 48 }, (_, i) => {
+  const v = `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`;
+  return { value: v, label: v };
+});
+
+const hh = (t: string) => (t.endsWith(":00") ? `${Number(t.slice(0, 2))}h` : t.replace(":", "h"));
+
+function rotuloHorarioIa(h?: HorarioIa | null): string {
+  if (!h) return "Sempre";
+  const faixa = `${hh(h.inicio)}–${hh(h.fim)}`;
+  const dias = h.dias === "seg-sex" ? "" : h.dias === "seg-sab" ? " seg–sáb" : " todo dia";
+  return h.modo === "dentro" ? `Só ${faixa}${dias}` : `Fora de ${faixa}${dias}`;
+}
+
+/** Janela do «Horário da IA» — quando a IA responde por este número. */
+function HorarioIaJanela({ conn, onFechar, onSalvo }: { conn: Connector; onFechar: () => void; onSalvo: () => void }) {
+  const atual = conn.ia_horario;
+  const [modo, setModo] = useState<"sempre" | "dentro" | "fora">(atual?.modo ?? "sempre");
+  const [dias, setDias] = useState<HorarioIa["dias"]>(atual?.dias ?? "seg-sex");
+  const [inicio, setInicio] = useState(atual?.inicio ?? "08:00");
+  const [fim, setFim] = useState(atual?.fim ?? "17:00");
+  const [salvando, setSalvando] = useState(false);
+  const faixa = `${hh(inicio)} às ${hh(fim)}`;
+  const resumo =
+    modo === "sempre"
+      ? "A IA responde a qualquer hora."
+      : modo === "dentro"
+        ? `A IA responde só ${DIAS_IA.find((d) => d.value === dias)?.label.toLowerCase()}, das ${faixa}. Fora disso a mensagem chega no Atendimento e o lead entra no CRM, sem resposta automática.`
+        : `A IA responde fora do expediente (${DIAS_IA.find((d) => d.value === dias)?.label.toLowerCase()}, das ${faixa}). No expediente a equipe atende: a mensagem chega no Atendimento e o lead entra no CRM, sem resposta automática.`;
+
+  async function salvar() {
+    setSalvando(true);
+    try {
+      await api.put(`/connectors/${conn.id}/ia-horario`, modo === "sempre" ? { modo } : { modo, dias, inicio, fim });
+      toast.success(modo === "sempre" ? "A IA responde a qualquer hora" : "Horário da IA salvo");
+      onSalvo();
+    } catch (e) {
+      const det = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof det === "string" ? det : "Não foi possível salvar o horário");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={onFechar}>
+      <div className={`w-full max-w-[520px] rounded-2xl border bg-white p-6 shadow-2xl dark:bg-[#0c0e12] ${FC.hair}`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className={`text-[16px] font-medium leading-6 ${FC.ink}`}>Horário da IA</h2>
+            <p className={`text-[12px] ${FC.sub}`}>{formatPhone((conn.config_summary as { phone?: string } | undefined)?.phone)}</p>
+          </div>
+          <button onClick={onFechar} className={iconBtn} aria-label="Fechar"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="mt-5 space-y-4">
+          <SegToggle
+            value={modo}
+            onChange={setModo}
+            options={[
+              { value: "sempre", label: "Sempre" },
+              { value: "dentro", label: "Só no horário" },
+              { value: "fora", label: "Só fora do horário" },
+            ]}
+          />
+          {modo !== "sempre" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={dias} onChange={setDias} options={DIAS_IA} className="w-[172px]" />
+              <span className={`text-[13px] ${FC.sub}`}>das</span>
+              <Select value={inicio} onChange={setInicio} options={HORAS_IA} className="w-[96px]" />
+              <span className={`text-[13px] ${FC.sub}`}>às</span>
+              <Select value={fim} onChange={setFim} options={HORAS_IA} className="w-[96px]" />
+            </div>
+          )}
+          <p className={`text-[13px] leading-relaxed ${FC.sub}`}>{resumo}</p>
+          <p className={`text-[12px] ${FC.mut}`}>Horário de Brasília. Follow-up que vencer fora do horário espera o horário abrir.</p>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onFechar}>Cancelar</Button>
+          <Button variant="primary" size="sm" onClick={salvar} disabled={salvando || (modo !== "sempre" && inicio >= fim)}>
+            {salvando ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Salvar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CanaisPage() {
   // 21/10/2026 — atendente vê só os números DELE (o servidor filtra) e só reconecta
   // (lê o QR). Criar, desconectar, apagar e assinar com o nome são do dono/admin:
   // o servidor recusa, e a tela não oferece o que vai ser recusado.
   const { user } = useAuth();
   const gestor = !!user?.is_admin || ["owner", "admin"].includes(user?.role ?? "owner");
+  // 10/11/2026 — confirmação no padrão do sistema (era o `confirm()` cinza do navegador).
+  const [confirmar, janelaConfirmar] = useConfirmar();
+  const [horarioDe, setHorarioDe] = useState<Connector | null>(null);
+  /** «Desconectar» apaga a sessão do WhatsApp — foi assim que o 9150 da M7 perdeu o QR em
+   *  10/11 quando a intenção era só parar a IA. O aviso diz isso e aponta o interruptor. */
+  async function pedirDesconectar(c: Connector): Promise<boolean> {
+    return confirmar({
+      titulo: "Desconectar este número?",
+      texto: (
+        <>
+          A sessão do WhatsApp é encerrada: para voltar, alguém precisa <b>ler o QR de novo</b> no celular deste número.
+          {c.modo !== "registro" && (
+            <>
+              {" "}
+              Se a ideia é só parar as respostas automáticas, use o interruptor <b>IA</b> — o número continua conectado.
+            </>
+          )}
+        </>
+      ),
+      confirmar: "Desconectar",
+      perigo: true,
+    });
+  }
   const [conns, setConns] = useState<Connector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [members, setMembers] = useState<{ id: number; nome: string }[]>([]);
@@ -432,7 +554,15 @@ export default function CanaisPage() {
   }, [qrModal?.connId]);
 
   async function onDelete(id: number) {
-    if (!confirm("Remover este canal?")) return;
+    if (
+      !(await confirmar({
+        titulo: "Remover este canal?",
+        texto: "O número sai da lista e a sessão do WhatsApp é encerrada. Para usar de novo, é preciso conectar e ler o QR outra vez.",
+        confirmar: "Remover",
+        perigo: true,
+      }))
+    )
+      return;
     try {
       await api.delete(`/connectors/${id}`);
       toast.success("Canal removido");
@@ -993,7 +1123,6 @@ export default function CanaisPage() {
                 const isWa = c.kind === "whatsapp" || c.kind === "whatsapp_cloud";
                 const cm = CHANNEL_META[c.kind];
                 const cs = (c.config_summary || {}) as unknown as Record<string, string | undefined>;
-                const tipoLabel = c.config_summary?.tipo || channelType(c.kind);
                 // Linha secundária: WhatsApp → telefone; link de demonstração → a
                 // própria URL; demais → bot/workspace ou descrição.
                 const secondary = isWa
@@ -1075,9 +1204,11 @@ export default function CanaisPage() {
                             onChange={async (ligar) => {
                               if (
                                 !ligar &&
-                                !confirm(
-                                  "Desligar a IA deste número?\n\nO número continua conectado: as mensagens chegam no Atendimento e os leads continuam entrando no CRM. Só a IA para de responder.",
-                                )
+                                !(await confirmar({
+                                  titulo: "Desligar a IA deste número?",
+                                  texto: "O número continua conectado: as mensagens chegam no Atendimento e os leads continuam entrando no CRM. Só a IA para de responder.",
+                                  confirmar: "Desligar a IA",
+                                }))
                               )
                                 return;
                               try {
@@ -1090,6 +1221,18 @@ export default function CanaisPage() {
                             }}
                           />
                         </span>
+                      )}
+                      {/* Horário da IA (10/11/2026): quando a IA responde por este número. */}
+                      {gestor && c.modo !== "registro" && c.ia_ligada !== false && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="whitespace-nowrap"
+                          title="Horário em que a IA responde por este número"
+                          onClick={() => setHorarioDe(c)}
+                        >
+                          <Clock className="w-3 h-3 shrink-0" /> {rotuloHorarioIa(c.ia_horario)}
+                        </Button>
                       )}
                       {gestor && (c.kind === "whatsapp" || c.kind === "whatsapp_cloud") && (
                         <Button
@@ -1126,7 +1269,7 @@ export default function CanaisPage() {
                           title="Desconectar"
                           className="whitespace-nowrap"
                           onClick={async () => {
-                            if (!confirm(`Desconectar este canal (${tipoLabel})?`)) return;
+                            if (!(await pedirDesconectar(c))) return;
                             try {
                               await api.post(`/connectors/${c.id}/disconnect`);
                               toast.success("Desconectado");
@@ -1467,7 +1610,7 @@ export default function CanaisPage() {
                       variant="secondary"
                       size="sm"
                       onClick={async () => {
-                        if (!confirm("Desconectar este canal?")) return;
+                        if (!(await pedirDesconectar(detail))) return;
                         try {
                           await api.post(`/connectors/${detail.id}/disconnect`);
                           toast.success("Desconectado");
@@ -1486,6 +1629,17 @@ export default function CanaisPage() {
             </div>
           );
         })()}
+      {horarioDe && (
+        <HorarioIaJanela
+          conn={horarioDe}
+          onFechar={() => setHorarioDe(null)}
+          onSalvo={() => {
+            setHorarioDe(null);
+            load();
+          }}
+        />
+      )}
+      {janelaConfirmar}
     </div>
   );
 }

@@ -109,6 +109,16 @@ def _summary(kind: str, cfg: dict) -> dict:
     return {}
 
 
+def _ia_horario_de(c: TaConnector) -> dict | None:
+    bruto = getattr(c, "ia_horario", None)
+    if not bruto:
+        return None
+    try:
+        return json.loads(bruto)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _serialize(c: TaConnector) -> dict:
     try:
         cfg = json.loads(decrypt(c.config_json_enc))
@@ -125,6 +135,7 @@ def _serialize(c: TaConnector) -> dict:
         "member_id": getattr(c, "member_id", None),  # Etapa 2: de quem é o número
         "assinar_nome": bool(getattr(c, "assinar_nome", False)),  # «*Nome:*» na resposta do painel
         "ia_ligada": bool(getattr(c, "ia_ligada", True)),  # botão «IA ligada» (10/11/2026)
+        "ia_horario": _ia_horario_de(c),  # horário da IA do número (10/11/2026) — None = sempre
         "perfil_whatsapp": getattr(c, "perfil_whatsapp", None),  # perfil visto nas mensagens que saem
     }
 
@@ -799,6 +810,46 @@ async def set_connector_ia(
     logger.info(
         "IA do número %s %s por user=%s", c.id, "LIGADA" if c.ia_ligada else "DESLIGADA", getattr(user, "id", None)
     )
+    return _serialize(c)
+
+
+class ConnectorIaHorarioIn(BaseModel):
+    modo: str = "sempre"  # sempre | dentro | fora
+    dias: str | None = None  # seg-sex | seg-sab | seg-dom
+    inicio: str | None = None  # HH:MM
+    fim: str | None = None  # HH:MM
+
+
+@router.put("/{connector_id}/ia-horario")
+async def set_connector_ia_horario(
+    connector_id: int,
+    body: ConnectorIaHorarioIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Horário em que a IA responde por este número (10/11/2026, M7).
+
+    «dentro» = só no horário; «fora» = só fora dele (a equipe atende no expediente);
+    «sempre» = o de sempre. Fora do horário o número age como IA desligada: grava, abre o
+    card no CRM e não responde. Follow-up vencido fora do horário espera o horário abrir."""
+    from services.agent_runtime import validar_ia_horario
+    from services.visao_conversas import exigir_gestor
+
+    exigir_gestor(user, "mudar o horário da IA do número")
+    c = await db.get(TaConnector, connector_id)
+    if not c:
+        raise HTTPException(404, "Conector não encontrado")
+    await _ensure_agent_owned(db, c.agent_id, user)
+    if (getattr(c, "modo", None) or "agente") == "registro":
+        raise HTTPException(422, "Número em modo registro não tem IA")
+    try:
+        h = validar_ia_horario(body.model_dump())
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    c.ia_horario = json.dumps(h) if h else None
+    await db.commit()
+    await db.refresh(c)
+    logger.info("horário da IA do número %s = %s por user=%s", c.id, h, getattr(user, "id", None))
     return _serialize(c)
 
 

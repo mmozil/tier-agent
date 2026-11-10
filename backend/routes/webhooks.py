@@ -581,7 +581,9 @@ async def _ia_vai_responder(db, conn, external_chat_id: str) -> bool:
     assumiu (`handed_off`) também não. Na dúvida (erro de leitura), não mostra «digitando…»."""
     if (getattr(conn, "modo", None) or "agente") != "agente":
         return False
-    if not getattr(conn, "ia_ligada", True):  # botão «IA ligada» desligado (10/11/2026)
+    from services.agent_runtime import ia_responde_agora
+
+    if not ia_responde_agora(conn):  # botão «IA ligada» desligado ou fora do horário da IA (10/11/2026)
         return False
     try:
         from sqlalchemy import select as _select

@@ -247,6 +247,62 @@ def persona_do_horario(texto: str, agora) -> str:
     return saida.replace("{quando}", quando) if quando else saida
 
 
+_DIAS_IA = {"seg-sex", "seg-sab", "seg-dom"}
+_RE_HHMM = _re_horario.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def validar_ia_horario(h: dict | None) -> dict | None:
+    """Normaliza o horário da IA do número; levanta ValueError com a frase para a tela.
+
+    `None` ou modo «sempre» = a IA responde a qualquer hora (o padrão de sempre)."""
+    if not h or (h.get("modo") or "sempre") == "sempre":
+        return None
+    modo, dias = h.get("modo"), h.get("dias") or "seg-sex"
+    inicio, fim = (h.get("inicio") or "").strip(), (h.get("fim") or "").strip()
+    if modo not in ("dentro", "fora"):
+        raise ValueError("Modo deve ser «sempre», «dentro» ou «fora»")
+    if dias not in _DIAS_IA:
+        raise ValueError("Dias devem ser seg-sex, seg-sab ou seg-dom")
+    if not _RE_HHMM.match(inicio) or not _RE_HHMM.match(fim):
+        raise ValueError("Horário no formato HH:MM")
+    if inicio >= fim:
+        raise ValueError("O início tem de ser antes do fim (para a noite, use «fora do horário»)")
+    return {"modo": modo, "dias": dias, "inicio": inicio, "fim": fim}
+
+
+def ia_no_horario(conn, agora=None) -> bool:
+    """O horário da IA deste número permite responder AGORA? (10/11/2026, M7)
+
+    Pedido do dono: «conseguimos colocar um horário para que ele funcione?». O número guarda
+    `{modo, dias, inicio, fim}`: «dentro» = a IA só responde no horário; «fora» = só fora
+    dele (a equipe atende no expediente). Sem horário, sempre. Fuso de São Paulo. Fora do
+    horário o número age como IA desligada: grava, abre card, não responde."""
+    import json as _json_h
+
+    bruto = getattr(conn, "ia_horario", None)
+    if not bruto:
+        return True
+    try:
+        h = validar_ia_horario(_json_h.loads(bruto) if isinstance(bruto, str) else bruto)
+    except Exception:  # noqa: BLE001 — horário ilegível não pode calar o agente
+        return True
+    if not h:
+        return True
+    if agora is None:
+        from datetime import datetime as _dth
+        from zoneinfo import ZoneInfo as _ZIh
+
+        agora = _dth.now(_ZIh("America/Sao_Paulo"))
+    situacao = _horario_agora(f"[horario: {h['dias']} {h['inicio']}-{h['fim']}]", agora)
+    dentro = bool(situacao and situacao[0] == "dentro")
+    return dentro if h["modo"] == "dentro" else not dentro
+
+
+def ia_responde_agora(conn, agora=None) -> bool:
+    """Interruptor «IA ligada» E horário da IA do número."""
+    return bool(getattr(conn, "ia_ligada", True)) and ia_no_horario(conn, agora)
+
+
 def persona_efetiva(agent, agora=None) -> str:
     """A persona como ela vai para o modelo — produção e teste do painel usam esta (ponto único)."""
     if agora is None:
@@ -1033,12 +1089,12 @@ async def handle_inbound_message(
         logger.exception("ASR exception agent=%s — segue sem transcrição", agent.id)
     _cron.marca("stt")
 
-    # ─── IA DESLIGADA no número (10/11/2026, M7) ───
-    # Botão «IA ligada» da tela de Números. Desligado NÃO é desconectar: a sessão do
-    # WhatsApp segue viva, a mensagem entra no Atendimento e o lead nasce no CRM como
-    # sempre — só ninguém responde pelo sistema. Fica ANTES das guardas, do CSAT e dos
-    # comandos de ops, que também mandam mensagem ao cliente.
-    if not getattr(connector, "ia_ligada", True):
+    # ─── IA DESLIGADA no número, ou FORA do horário dela (10/11/2026, M7) ───
+    # Botão «IA ligada» e «Horário da IA» da tela de Números. Desligado NÃO é desconectar:
+    # a sessão do WhatsApp segue viva, a mensagem entra no Atendimento e o lead nasce no
+    # CRM como sempre — só ninguém responde pelo sistema. Fica ANTES das guardas, do CSAT
+    # e dos comandos de ops, que também mandam mensagem ao cliente.
+    if not ia_responde_agora(connector):
         conv = await ensure_conversation(
             db,
             agent_id=agent.id,
@@ -1057,8 +1113,9 @@ async def handle_inbound_message(
             external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
             origem_canal=origem_canal, agente_respondeu=False,
         )
-        logger.info("conv=%s número %s com a IA desligada — só registra", conv.id, connector.id)
-        return {"status": "ia_desligada", "agent_id": agent.id, "conversation_id": conv.id}
+        _motivo = "ia_desligada" if not getattr(connector, "ia_ligada", True) else "fora_do_horario_da_ia"
+        logger.info("conv=%s número %s %s — só registra", conv.id, connector.id, _motivo)
+        return {"status": _motivo, "agent_id": agent.id, "conversation_id": conv.id}
 
     # ─── Comandos de ops (DevSecOps) — resposta determinística, sem LLM ───
     # Agente marcado como template_kind="devsecops" responde status/health/ping

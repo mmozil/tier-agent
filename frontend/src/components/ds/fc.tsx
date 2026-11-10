@@ -669,6 +669,86 @@ export function Interruptor({
   );
 }
 
+// useConfirmar — confirmação no padrão do sistema (10/11/2026). Substitui o `confirm()` do
+// navegador, que abre a caixa cinza «agent.tier.finance diz» com OK/Cancelar soltos (o dono
+// pediu para arrumar). Uso:
+//   const [confirmar, janelaConfirmar] = useConfirmar();
+//   if (!(await confirmar({ titulo: "…", texto: "…", confirmar: "Desligar" }))) return;
+//   …e renderizar {janelaConfirmar} uma vez na página.
+export type PedidoConfirmacao = {
+  titulo: string;
+  texto?: ReactNode;
+  confirmar: string;
+  cancelar?: string;
+  /** Ação que derruba algo (vermelho) — desconectar, remover. */
+  perigo?: boolean;
+};
+
+export function useConfirmar(): [(p: PedidoConfirmacao) => Promise<boolean>, ReactNode] {
+  const [pedido, setPedido] = useState<(PedidoConfirmacao & { resolver: (v: boolean) => void }) | null>(null);
+  const confirmar = useCallback(
+    (p: PedidoConfirmacao) => new Promise<boolean>((resolver) => setPedido({ ...p, resolver })),
+    [],
+  );
+  const fechar = useCallback(
+    (v: boolean) => {
+      setPedido((atual) => {
+        atual?.resolver(v);
+        return null;
+      });
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!pedido) return;
+    const tecla = (e: KeyboardEvent) => {
+      if (e.key === "Escape") fechar(false);
+    };
+    window.addEventListener("keydown", tecla);
+    return () => window.removeEventListener("keydown", tecla);
+  }, [pedido, fechar]);
+  const janela = pedido
+    ? createPortal(
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+          onClick={() => fechar(false)}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirmar-titulo"
+            className={`w-full max-w-[420px] rounded-2xl border bg-white p-6 shadow-2xl dark:bg-[#0c0e12] ${FC.hair}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="confirmar-titulo" className={`text-[16px] font-medium leading-6 ${FC.ink}`}>
+              {pedido.titulo}
+            </h2>
+            {pedido.texto && <div className={`mt-2 text-[13px] leading-relaxed ${FC.sub}`}>{pedido.texto}</div>}
+            <div className="mt-6 flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => fechar(false)}>
+                {pedido.cancelar || "Cancelar"}
+              </Button>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => fechar(true)}
+                className={
+                  pedido.perigo
+                    ? "h-8 px-3 rounded-[10px] text-[12px] font-medium inline-flex items-center justify-center text-white bg-[#E5484D] hover:bg-[#d13f44] transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#E5484D]/30"
+                    : btnPrimary
+                }
+              >
+                {pedido.confirmar}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+  return [confirmar, janela];
+}
+
 /* ───────────────────────────────────────────────────────────────
    Primitivas de formulário e layout (ago/2026)
 
