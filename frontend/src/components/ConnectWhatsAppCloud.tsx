@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
 import { api } from "@/lib/api";
@@ -48,6 +48,46 @@ function loadFbSdk(): Promise<void> {
   });
 }
 
+/* 🚨 O ouvinte do postMessage vive no MÓDULO, não no componente (11/11/2026).
+   Os dois gatilhos da tela de Canais fecham o painel no mesmo clique que abre a
+   janela da Meta (`setShowPicker(false); connect()`): o componente desmontava, o
+   `useEffect` tirava o ouvinte, e o waba_id/phone_number_id que a Meta manda no
+   fim chegava sem ninguém escutando. O cadastro ia até o fim na Meta e nunca
+   chegava ao /onboard — «cadastrou até o final, depois sumiu». */
+let ultimaSessao: { waba_id?: string; phone_number_id?: string; evento?: string } = {};
+let ouvinteInstalado = false;
+
+function instalarOuvinte() {
+  if (ouvinteInstalado) return;
+  ouvinteInstalado = true;
+  window.addEventListener("message", (event: MessageEvent) => {
+    if (event.origin !== "https://www.facebook.com" && event.origin !== "https://web.facebook.com") return;
+    try {
+      const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      if (data?.type === "WA_EMBEDDED_SIGNUP") {
+        ultimaSessao = {
+          ...ultimaSessao,
+          evento: data.event,
+          ...(data.data?.waba_id ? { waba_id: data.data.waba_id } : {}),
+          ...(data.data?.phone_number_id ? { phone_number_id: data.data.phone_number_id } : {}),
+        };
+      }
+    } catch {
+      // ignora mensagens não-JSON
+    }
+  });
+}
+
+// A mensagem da Meta pode chegar DEPOIS do retorno do FB.login: espera um pouco.
+async function esperarSessao(ms = 6000) {
+  const fim = Date.now() + ms;
+  while (Date.now() < fim) {
+    if (ultimaSessao.waba_id && ultimaSessao.phone_number_id) return ultimaSessao;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return ultimaSessao;
+}
+
 export default function ConnectWhatsAppCloud({
   agentId,
   onConnected,
@@ -60,31 +100,10 @@ export default function ConnectWhatsAppCloud({
   render?: (p: { connect: () => void; loading: boolean }) => ReactNode;
 }) {
   const [loading, setLoading] = useState(false);
-  // captura waba_id + phone_number_id do postMessage do Embedded Signup
-  const sessionInfo = useRef<{ waba_id?: string; phone_number_id?: string }>({});
 
   useEffect(() => {
     loadFbSdk();
-    function onMessage(event: MessageEvent) {
-      if (
-        event.origin !== "https://www.facebook.com" &&
-        event.origin !== "https://web.facebook.com"
-      )
-        return;
-      try {
-        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-        if (data?.type === "WA_EMBEDDED_SIGNUP" && data?.data) {
-          sessionInfo.current = {
-            waba_id: data.data.waba_id,
-            phone_number_id: data.data.phone_number_id,
-          };
-        }
-      } catch {
-        // ignora mensagens não-JSON
-      }
-    }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    instalarOuvinte();
   }, []);
 
   function connect() {
@@ -97,15 +116,21 @@ export default function ConnectWhatsAppCloud({
       return;
     }
     setLoading(true);
+    instalarOuvinte();
+    ultimaSessao = {};
     // FB SDK NÃO aceita callback async — usamos função normal + IIFE async dentro.
     window.FB.login(
       (response: any) => {
         void (async () => {
           try {
             const code = response?.authResponse?.code;
-            const { waba_id, phone_number_id } = sessionInfo.current;
-            if (!code || !waba_id || !phone_number_id) {
+            if (!code) {
               toast.error("Conexão cancelada ou incompleta.");
+              return;
+            }
+            const { waba_id, phone_number_id } = await esperarSessao();
+            if (!waba_id || !phone_number_id) {
+              toast.error("A Meta concluiu sem informar o número. Abra de novo e escolha o número no fim.");
               return;
             }
             await api.post("/connectors/whatsapp-cloud/onboard", {
