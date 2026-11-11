@@ -766,6 +766,24 @@ def test_historico_da_ia_inclui_o_disparo_como_fala_nossa(sessao):
     assert hist == [{"role": "assistant", "content": "MODELO"}]
 
 
+def test_historico_da_ia_inclui_o_modelo_da_nova_conversa(sessao):
+    """Conversa 1338 do CCDA (11/11): o modelo saiu por «Nova conversa com modelo» (marca
+    «Modelo»), a família respondeu «Ótimo.» e a IA não via o modelo — abriu do zero."""
+    sessao.add(TaConversation(id=1, agent_id=26, connector_kind="whatsapp_cloud", external_id=WA, msg_count=2))
+    sessao.add_all(
+        [
+            TaMessageLog(
+                conversation_id=1, role="agent", content="REAGENDAR", model_used="Modelo · visita_perdida_reagendar"
+            ),
+            TaMessageLog(conversation_id=1, role="agent", content="resposta da secretaria pelo painel"),
+            TaMessageLog(conversation_id=1, role="user", content="Ótimo."),  # turno atual
+        ]
+    )
+    sessao.commit()
+    hist = _rodar(agent_runtime.load_history(_Db(sessao), 1))
+    assert hist == [{"role": "assistant", "content": "REAGENDAR"}]
+
+
 def test_metricas_nao_contam_disparo_como_abordagem(sessao, monkeypatch):
     from services import metricas_atendimento as met
 

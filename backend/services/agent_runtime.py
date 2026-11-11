@@ -786,8 +786,13 @@ async def load_history(db: AsyncSession, conversation_id: int, limit: int = 80) 
     11/11/2026 — o modelo enviado pelo DISPARO do ERP (`role="agent"`, `model_used` começando por
     `disparo_oficial.MARCA_DISPARO`) entra como fala nossa (`assistant`): sem isso o lead
     respondia «Falar conosco» e a IA não sabia a que mensagem. Mensagem humana comum continua fora.
+
+    11/11/2026 (noite) — o modelo enviado pela equipe em «Nova conversa com modelo»
+    (`iniciar-conversa`, marca `MARCA_MODELO`) também entra. Só o do disparo entrava: no CCDA o
+    `visita_perdida_reagendar` saiu por ali, a família respondeu «Ótimo.» e a IA, sem ver o
+    modelo, abriu com a apresentação e perguntou o ano (conversa 1338).
     """
-    from services.disparo_oficial import MARCA_DISPARO
+    from services.disparo_oficial import MARCA_DISPARO, MARCA_MODELO
 
     rows = (
         await db.execute(
@@ -796,7 +801,13 @@ async def load_history(db: AsyncSession, conversation_id: int, limit: int = 80) 
                 TaMessageLog.conversation_id == conversation_id,
                 or_(
                     TaMessageLog.role.in_(["user", "assistant"]),
-                    and_(TaMessageLog.role == "agent", TaMessageLog.model_used.like(f"{MARCA_DISPARO}%")),
+                    and_(
+                        TaMessageLog.role == "agent",
+                        or_(
+                            TaMessageLog.model_used.like(f"{MARCA_DISPARO}%"),
+                            TaMessageLog.model_used.like(f"{MARCA_MODELO}%"),
+                        ),
+                    ),
                 ),
                 TaMessageLog.content.isnot(None),
             )
