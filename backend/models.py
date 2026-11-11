@@ -784,6 +784,77 @@ class TaToolProvider(Base):
 
 
 # ============================================================
+# 19b. Disparo em lote pela tela do Agent — WhatsApp oficial (11/11/2026)
+# ============================================================
+class TaDisparoOficial(Base):
+    """Um disparo da página «Disparos»: um modelo APROVADO, por um número oficial, para uma lista.
+
+    Ciclo: `rascunho` → `em_andamento` → `pausado` / `concluido` / `cancelado`. O worker
+    (`services/disparo_lote.py`) manda um contato por vez no ritmo `intervalo_ms ± variacao_ms`.
+    `proximo_envio_em` é a VEZ do disparo: um UPDATE condicional nele decide qual processo envia
+    (o backend roda 2 workers e, no deploy, dois contêineres por alguns segundos).
+    Os números (enviado, entregue, lido, falhou…) NÃO ficam aqui: saem das linhas de
+    `ta_disparo_oficial_envio` + `ta_wa_envio_status` na hora — não há contador para perder soma.
+    Runtime DDL (`main._ensure_disparo_lote_tables`), nasce vazia.
+    """
+
+    __tablename__ = "ta_disparo_oficial"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    connector_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    modelo: Mapped[str] = mapped_column(String(512), nullable=False)  # nome do modelo na Meta
+    idioma: Mapped[str] = mapped_column(String(16), nullable=False)
+    categoria: Mapped[str | None] = mapped_column(String(32), nullable=True)  # MARKETING / UTILITY
+    # `resumo_do_modelo` no momento da criação: o texto que entra na conversa e o balão da tela.
+    modelo_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Uma entrada por {{n}}: {"fonte": "nome"} (primeiro nome da lista) ou {"fonte": "fixo", "valor": "…"}.
+    variaveis_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    intervalo_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=8000)
+    variacao_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=2000)
+    agendado_para: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # UTC
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="rascunho")
+    motivo_pausa: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    proximo_envio_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Régua da pausa por falhas: só conta o que aconteceu desde o último iniciar/retomar.
+    taxa_base_enviados: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    taxa_base_falhas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    criado_por_member_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    criado_por: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    iniciado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    pausado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    concluido_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancelado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class TaDisparoOficialEnvio(Base):
+    """Um contato de um disparo. Estados gravados: `pendente`, `enviando` (reservado por um
+    processo, chamada à Meta em curso), `enviado`, `falhou`, `descadastrado`, `sem_nome`,
+    `cancelado`. Entregue/lido/falha tardia vêm de `ta_wa_envio_status` pelo `wamid`."""
+
+    __tablename__ = "ta_disparo_oficial_envio"
+    __table_args__ = (UniqueConstraint("disparo_id", "chave", name="uq_ta_disparo_oficial_envio_chave"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    disparo_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    numero: Mapped[str] = mapped_column(String(20), nullable=False)  # só dígitos, com DDI
+    chave: Mapped[str] = mapped_column(String(32), nullable=False)  # tolerante ao 9º dígito (sem duplicado)
+    nome: Mapped[str | None] = mapped_column(String(120), nullable=True)  # como veio na lista
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pendente")
+    tentativas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    reservado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    wamid: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    wa_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    erro_codigo: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    erro: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    enviado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# ============================================================
 # 20. WhatsApp oficial (Cloud API) — disparo em lote (11/11/2026)
 # ============================================================
 class TaWaDescadastro(Base):
@@ -832,3 +903,12 @@ class TaWaEnvioStatus(Base):
     status_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # hora do evento (Meta)
     criado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Cobrança da Meta (objeto `pricing` do webhook de status — vem no `sent` OU no `delivered`/`read`,
+    # nunca no `failed`). NULL = a Meta ainda não mandou (ou a linha é de antes de gravarmos).
+    # Relatório «WhatsApp oficial» (12/11/2026). Runtime DDL: `_ensure_wa_preco_columns` em main.py.
+    cobravel: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # pricing.billable (a Meta vai aposentar)
+    tipo_preco: Mapped[str | None] = mapped_column(String(32), nullable=True)  # regular · free_customer_service · free_entry_point…
+    categoria_preco: Mapped[str | None] = mapped_column(String(32), nullable=True)  # marketing · utility · service…
+    modelo_preco: Mapped[str | None] = mapped_column(String(8), nullable=True)  # PMP (CBP só antes de 01/07/2025)
+    subtipo_preco: Mapped[str | None] = mapped_column(String(32), nullable=True)  # paid_exempt (governo/ONG)
+    origem_conversa: Mapped[str | None] = mapped_column(String(32), nullable=True)  # conversation.origin.type

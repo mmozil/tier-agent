@@ -27,6 +27,7 @@ import { PRIMARY_SHADOW, ScrambleText } from "./ds/fc";
 import {
   AgentsMenuIcon,
   AttentionMenuIcon,
+  BroadcastMenuIcon,
   ChannelsMenuIcon,
   ConversationsMenuIcon,
   KnowledgeMenuIcon,
@@ -63,6 +64,7 @@ const SECTIONS: NavGroup[] = [
       { to: "/admin/atencao", label: "Precisa de você", icon: AttentionMenuIcon, metaLabel: "/attention" },
       { to: "/admin/agentes", label: "Agentes", icon: AgentsMenuIcon, metaLabel: "/agents" },
       { to: "/admin/conversas", label: "Conversas", icon: ConversationsMenuIcon, metaLabel: "/inbox" },
+      { to: "/admin/disparos", label: "Disparos", icon: BroadcastMenuIcon, metaLabel: "/broadcasts" },
       { to: "/admin/leads", label: "Leads", icon: LeadsMenuIcon, metaLabel: "/leads" },
       { to: "/admin/playbooks", label: "Playbooks", icon: PlaybooksMenuIcon, metaLabel: "/flows" },
       { to: "/admin/marketplace", label: "Marketplace", icon: MarketplaceMenuIcon, metaLabel: "/market" },

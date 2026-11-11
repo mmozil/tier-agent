@@ -97,20 +97,11 @@ class CloudSendTemplateIn(BaseModel):
 
 
 def _detalhe_erro_envio(e: Exception) -> dict:
-    """Corpo do 502 do send-template (11/11/2026). `conta=true` = o erro é do NÚMERO/CONTA (ou do
-    modelo inteiro) e o disparo deve parar; `false` = só deste contato, segue para os outros.
-    Erro antes de falar com a Meta (config sem token) também é `conta`: nenhum envio sai."""
-    from services.connectors.base import ConnectorError
-    from services.disparo_oficial import erro_e_da_conta
+    """Corpo do 502 do send-template (11/11/2026). A regra mora em `disparo_oficial` — o disparo
+    em lote da tela do Agent usa a mesma."""
+    from services.disparo_oficial import detalhe_erro_envio
 
-    if isinstance(e, ConnectorError):
-        code = getattr(e, "meta_code", None)
-        http = e.status_code
-        conta = True if http is None else erro_e_da_conta(code, http)
-        mensagem = getattr(e, "detalhe", None) or str(e)
-    else:  # rede/timeout: transitório, não é da conta
-        code, conta, mensagem = None, False, f"{type(e).__name__}: {e}"
-    return {"codigo": "meta_error", "meta_code": code, "conta": conta, "mensagem": str(mensagem)[:500]}
+    return detalhe_erro_envio(e)
 
 
 @router.post("/whatsapp-cloud/send-template")
@@ -144,55 +135,22 @@ async def cloud_send_template(
     conn = await _resolve_cloud_connector(db, body.tenant_id, body.agent_id)
     impl = registry.get("whatsapp_cloud")
     cfg_dict = json.loads(decrypt(conn.config_json_enc))
-    cfg = ConnectorConfig(data=cfg_dict)
+    # Envio + 131050 + conversa + status: `disparo_oficial.enviar_modelo`, o mesmo caminho do
+    # disparo em lote da tela do Agent (11/11/2026). O contrato desta rota não mudou.
     try:
-        res = await impl.send_template(cfg, to, body.template_name, body.lang, body.components)
-    except Exception as e:  # noqa: BLE001
-        detalhe = _detalhe_erro_envio(e)
-        logger.warning(
-            "disparo cloud recusado tenant=%s connector=%s meta_code=%s conta=%s",
-            body.tenant_id, conn.id, detalhe["meta_code"], detalhe["conta"],
+        return await disparo_oficial.enviar_modelo(
+            db,
+            tenant_id=body.tenant_id,
+            conn=conn,
+            cfg=cfg_dict,
+            impl=impl,
+            to=to,
+            template_name=body.template_name,
+            lang=body.lang,
+            components=body.components,
         )
-        # 131050 = o contato parou de receber marketing deste número: entra na lista do tenant,
-        # e o próximo disparo para ele já volta 409 sem gastar chamada na Meta.
-        if detalhe["meta_code"] == disparo_oficial.CODIGO_PAROU_MARKETING:
-            try:
-                await disparo_oficial.registrar_descadastro(
-                    db, tenant_id=body.tenant_id, connector_id=conn.id, numero=to,
-                    texto=disparo_oficial.TEXTO_PAROU_MARKETING,
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception("disparo cloud: 131050 não entrou na lista tenant=%s", body.tenant_id)
-                await db.rollback()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detalhe) from e
-    msg_id = None
-    wa_id = None
-    try:
-        msg_id = (res.get("messages") or [{}])[0].get("id")
-        # O endereço que a Meta devolve é o que vem nas respostas do contato (com ou sem o 9).
-        wa_id = (res.get("contacts") or [{}])[0].get("wa_id")
-    except Exception:  # noqa: BLE001
-        pass
-    wa_id = wa_id or disparo_oficial.so_digitos(to)
-
-    conversation_id = None
-    try:
-        modelo = await disparo_oficial.modelo_do_cache(conn.id, cfg_dict, body.template_name, body.lang)
-        texto = disparo_oficial.texto_do_disparo(modelo, body.template_name, body.components)
-        conversation_id = await disparo_oficial.gravar_disparo_na_conversa(db, conn, wa_id, texto, body.template_name)
-    except Exception:  # noqa: BLE001 — o envio já saiu; a conversa é complemento
-        logger.exception("disparo cloud: enviado mas não entrou na conversa connector=%s", conn.id)
-        await db.rollback()
-    if msg_id:
-        try:
-            await disparo_oficial.registrar_status(
-                db, wamid=msg_id, status="accepted", tenant_id=body.tenant_id, connector_id=conn.id,
-                conversation_id=conversation_id, destino=wa_id,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("disparo cloud: status inicial não gravou wamid=%s", msg_id)
-            await db.rollback()
-    return {"ok": True, "message_id": msg_id, "wa_id": wa_id, "conversation_id": conversation_id, "raw": res}
+    except disparo_oficial.ErroDeEnvio as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, e.detalhe) from e
 
 
 class CloudStatusIn(BaseModel):

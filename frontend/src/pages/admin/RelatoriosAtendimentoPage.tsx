@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { BarChart3, RefreshCw, MessageSquare, Hand, Flame, Clock, Star, Headphones, Megaphone, Timer, Hourglass } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { FC, PageFrame, Row, HairCells, Button, EmptyHint, SKEL } from "@/components/ds/fc";
+import { FC, PageFrame, Row, HairCells, Button, EmptyHint, SKEL, SegToggle } from "@/components/ds/fc";
+import WhatsAppOficialRelatorio from "@/components/relatorios/WhatsAppOficialRelatorio";
+
+// Duas visões na mesma página (12/11/2026): o atendimento (de sempre) e o WhatsApp oficial
+// (volume, entrega e cobrança da Meta). A visão fica na URL (?visao=whatsapp-oficial) para dar link.
+type Visao = "atendimento" | "whatsapp-oficial";
 
 interface Report {
   days: number;
@@ -120,6 +126,8 @@ function ReportSkeleton() {
 }
 
 export default function RelatoriosAtendimentoPage() {
+  const [params, setParams] = useSearchParams();
+  const visao: Visao = params.get("visao") === "whatsapp-oficial" ? "whatsapp-oficial" : "atendimento";
   const [data, setData] = useState<Report | null>(null);
   const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(false);
@@ -149,10 +157,26 @@ export default function RelatoriosAtendimentoPage() {
         <Row>
           <div className="flex items-start justify-between gap-4 p-6">
             <div>
-              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>Relatórios de atendimento</h2>
-              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>Volume, handoffs, satisfação e etiquetas no período.</p>
+              <h2 className={`text-[20px] font-[500] fc-crisp tracking-[-0.1px] leading-7 ${FC.ink}`}>
+                {visao === "atendimento" ? "Relatórios de atendimento" : "WhatsApp oficial"}
+              </h2>
+              <p className={`text-[13px] leading-5 mt-1 ${FC.dim}`}>
+                {visao === "atendimento"
+                  ? "Volume, handoffs, satisfação e etiquetas no período."
+                  : "Mensagens do número oficial (API da Meta): entrega, pagas e grátis, anúncios e custo estimado."}
+              </p>
+              <div className="mt-3">
+                <SegToggle<Visao>
+                  value={visao}
+                  onChange={(v) => setParams(v === "atendimento" ? {} : { visao: v }, { replace: true })}
+                  options={[
+                    { value: "atendimento", label: "Atendimento" },
+                    { value: "whatsapp-oficial", label: "WhatsApp oficial" },
+                  ]}
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className={`flex items-center gap-2 shrink-0 ${visao === "atendimento" ? "" : "hidden"}`}>
               <select
                 value={days}
                 onChange={(e) => {
@@ -173,7 +197,9 @@ export default function RelatoriosAtendimentoPage() {
           </div>
         </Row>
 
-        {loading ? (
+        {visao === "whatsapp-oficial" ? (
+          <WhatsAppOficialRelatorio />
+        ) : loading ? (
           <ReportSkeleton />
         ) : data?.empty ? (
           <Row last>

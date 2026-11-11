@@ -4,6 +4,7 @@ import {
   ChartColumn,
   House,
   LineChart,
+  Megaphone,
   MessageSquare,
   Radio,
   Settings,
@@ -25,6 +26,7 @@ export const OverviewMenuIcon = ({ className }: IconProps) => <House className={
 export const AttentionMenuIcon = ({ className }: IconProps) => <Bell className={className} strokeWidth={SW} />;
 export const AgentsMenuIcon = ({ className }: IconProps) => <WandSparkles className={className} strokeWidth={SW} />;
 export const ConversationsMenuIcon = ({ className }: IconProps) => <MessageSquare className={className} strokeWidth={SW} />;
+export const BroadcastMenuIcon = ({ className }: IconProps) => <Megaphone className={className} strokeWidth={SW} />;
 export const LeadsMenuIcon = ({ className }: IconProps) => <UserPlus className={className} strokeWidth={SW} />;
 export const PlaybooksMenuIcon = ({ className }: IconProps) => <Workflow className={className} strokeWidth={SW} />;
 export const MarketplaceMenuIcon = ({ className }: IconProps) => <Store className={className} strokeWidth={SW} />;

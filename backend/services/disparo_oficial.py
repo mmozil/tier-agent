@@ -286,9 +286,12 @@ async def modelo_do_cache(connector_id: int, cfg: dict, nome: str, idioma: str) 
 # ───────────────────────── o envio entra na conversa ─────────────────────────
 
 
-async def gravar_disparo_na_conversa(db, conn: TaConnector, wa_id: str, texto: str, nome_modelo: str) -> int:
+async def gravar_disparo_na_conversa(
+    db, conn: TaConnector, wa_id: str, texto: str, nome_modelo: str, contact_name: str | None = None
+) -> int:
     """Acha/abre a conversa do contato NAQUELE número e grava o modelo enviado. Não mexe no
-    status da conversa (assumida continua assumida) nem atribui a ninguém. Devolve o id."""
+    status da conversa (assumida continua assumida) nem atribui a ninguém. Devolve o id.
+    `contact_name` (o nome da lista do disparo) só preenche conversa SEM nome."""
     from services import agent_runtime
 
     conv = await agent_runtime.ensure_conversation(
@@ -296,6 +299,7 @@ async def gravar_disparo_na_conversa(db, conn: TaConnector, wa_id: str, texto: s
         agent_id=conn.agent_id,
         connector_kind="whatsapp_cloud",
         external_id=wa_id,
+        contact_name=(contact_name or "").strip()[:120] or None,
         connector_id=conn.id,
         por_numero=True,
     )
@@ -311,6 +315,122 @@ async def gravar_disparo_na_conversa(db, conn: TaConnector, wa_id: str, texto: s
     conv.last_message_at = datetime.utcnow()
     await db.commit()
     return conv.id
+
+
+# ───────────────────────── o envio de UM modelo (serviço comum) ─────────────────────────
+
+
+def detalhe_erro_envio(e: Exception) -> dict:
+    """Erro do envio na forma do contrato com o ERP (11/11/2026). `conta=true` = o erro é do
+    NÚMERO/CONTA (ou do modelo inteiro) e o disparo deve parar; `false` = só deste contato.
+    Erro antes de falar com a Meta (config sem token) também é `conta`: nenhum envio sai."""
+    from services.connectors.base import ConnectorError
+
+    if isinstance(e, ConnectorError):
+        code = getattr(e, "meta_code", None)
+        http = e.status_code
+        conta = True if http is None else erro_e_da_conta(code, http)
+        mensagem = getattr(e, "detalhe", None) or str(e)
+    else:  # rede/timeout: transitório, não é da conta
+        code, conta, mensagem = None, False, f"{type(e).__name__}: {e}"
+    return {"codigo": "meta_error", "meta_code": code, "conta": conta, "mensagem": str(mensagem)[:500]}
+
+
+class ErroDeEnvio(Exception):
+    """A Meta (ou a rede) recusou o envio. `detalhe` = o mesmo dicionário do 502 do send-template."""
+
+    def __init__(self, detalhe: dict):
+        super().__init__(detalhe.get("mensagem") or "falha no envio")
+        self.detalhe = detalhe
+
+
+async def enviar_modelo(
+    db,
+    *,
+    tenant_id: int,
+    conn,
+    cfg: dict,
+    impl,
+    to: str,
+    template_name: str,
+    lang: str,
+    components: list | None,
+    modelo: dict | None = None,
+    contact_name: str | None = None,
+) -> dict:
+    """Envia UM modelo aprovado e faz o que vem depois — o caminho do send-template do ERP e do
+    disparo em lote da tela do Agent (11/11/2026), escrito uma vez só.
+
+    1. Envia. Recusa → `ErroDeEnvio` (131050 entra antes na lista de descadastro do tenant).
+    2. O modelo entra na conversa do contato naquele número (`MARCA_DISPARO`).
+    3. O wamid nasce `accepted` em `ta_wa_envio_status`.
+    Falha em 2 ou 3 NÃO desfaz o envio: loga e segue.
+
+    NÃO confere o descadastro — quem chama confere antes (a rota do ERP devolve 409; o lote
+    marca o contato). `modelo` = `resumo_do_modelo` já em mãos (o lote guarda o do momento da
+    criação); sem ele vem do cache. `cfg` = config do conector já decifrada.
+    """
+    from services.connectors.base import ConnectorConfig
+
+    conn_id = conn.id
+    try:
+        res = await impl.send_template(ConnectorConfig(data=cfg), to, template_name, lang, components)
+    except Exception as e:  # noqa: BLE001
+        detalhe = detalhe_erro_envio(e)
+        logger.warning(
+            "disparo cloud recusado tenant=%s connector=%s meta_code=%s conta=%s",
+            tenant_id,
+            conn_id,
+            detalhe["meta_code"],
+            detalhe["conta"],
+        )
+        # 131050 = o contato parou de receber marketing deste número: entra na lista do tenant,
+        # e o próximo disparo para ele já volta 409 sem gastar chamada na Meta.
+        if detalhe["meta_code"] == CODIGO_PAROU_MARKETING:
+            try:
+                await registrar_descadastro(
+                    db, tenant_id=tenant_id, connector_id=conn_id, numero=to, texto=TEXTO_PAROU_MARKETING
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("disparo cloud: 131050 não entrou na lista tenant=%s", tenant_id)
+                await db.rollback()
+        raise ErroDeEnvio(detalhe) from e
+    msg_id = None
+    wa_id = None
+    try:
+        msg_id = (res.get("messages") or [{}])[0].get("id")
+        # O endereço que a Meta devolve é o que vem nas respostas do contato (com ou sem o 9).
+        wa_id = (res.get("contacts") or [{}])[0].get("wa_id")
+    except Exception:  # noqa: BLE001
+        pass
+    wa_id = wa_id or so_digitos(to)
+
+    conversation_id = None
+    try:
+        if modelo is None:
+            modelo = await modelo_do_cache(conn_id, cfg, template_name, lang)
+        texto = texto_do_disparo(modelo, template_name, components)
+        conversation_id = await gravar_disparo_na_conversa(
+            db, conn, wa_id, texto, template_name, contact_name=contact_name
+        )
+    except Exception:  # noqa: BLE001 — o envio já saiu; a conversa é complemento
+        logger.exception("disparo cloud: enviado mas não entrou na conversa connector=%s", conn_id)
+        await db.rollback()
+    if msg_id:
+        try:
+            await registrar_status(
+                db,
+                wamid=msg_id,
+                status="accepted",
+                tenant_id=tenant_id,
+                connector_id=conn_id,
+                conversation_id=conversation_id,
+                destino=wa_id,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("disparo cloud: status inicial não gravou wamid=%s", msg_id)
+            await db.rollback()
+    return {"ok": True, "message_id": msg_id, "wa_id": wa_id, "conversation_id": conversation_id, "raw": res}
 
 
 # ───────────────────────── descadastro: banco ─────────────────────────
@@ -426,6 +546,46 @@ async def tratar_descadastro(
 ORDEM_STATUS = {"accepted": 0, "sent": 1, "delivered": 2, "read": 3, "failed": 9}
 
 
+def preco_do_status(s: dict | None) -> dict:
+    """Colunas de cobrança a partir de UM item de `statuses` do webhook (12/11/2026). Puro.
+
+    Formato (doc oficial, «status messages webhook»): `pricing = {billable, pricing_model, type,
+    category, subtype?}` e `conversation.origin.type`. O `pricing` aparece UMA vez por mensagem: no
+    `sent` OU em um dos `delivered`/`read` («can only appear in one or the other»), nunca no
+    `failed`; por isso é gravado à parte da ordem do status (ver `registrar_status`). Devolve SÓ o
+    que veio: chave ausente não apaga nada.
+    https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/status
+    """
+    if not isinstance(s, dict):
+        return {}
+    p = s.get("pricing") if isinstance(s.get("pricing"), dict) else {}
+    conv = s.get("conversation") if isinstance(s.get("conversation"), dict) else {}
+    origem = conv.get("origin") if isinstance(conv.get("origin"), dict) else {}
+
+    def _txt(v, n: int) -> str | None:
+        t = str(v).strip().lower() if v is not None else ""
+        return t[:n] or None
+
+    out: dict = {}
+    if isinstance(p.get("billable"), bool):
+        out["cobravel"] = p["billable"]
+    for chave, coluna, n in (
+        ("type", "tipo_preco", 32),
+        ("category", "categoria_preco", 32),
+        ("subtype", "subtipo_preco", 32),
+    ):
+        v = _txt(p.get(chave), n)
+        if v:
+            out[coluna] = v
+    modelo = str(p.get("pricing_model") or "").strip().upper()[:8]
+    if modelo:
+        out["modelo_preco"] = modelo
+    v = _txt(origem.get("type"), 32)
+    if v:
+        out["origem_conversa"] = v
+    return out
+
+
 async def registrar_status(
     db,
     *,
@@ -438,14 +598,19 @@ async def registrar_status(
     em: datetime | None = None,
     conversation_id: int | None = None,
     destino: str | None = None,
+    preco: dict | None = None,
 ) -> bool:
     """Grava/avança o status de um wamid. Idempotente e à prova de ordem: o UPDATE só pega a linha
-    se a ordem nova for MAIOR (atômico, vale entre os dois workers). True = mudou o status."""
+    se a ordem nova for MAIOR (atômico, vale entre os dois workers). True = mudou o status.
+
+    `preco` (de `preco_do_status`) entra SEMPRE que vier, mesmo quando o status não avança: o
+    `pricing` pode chegar no `sent` atrasado, depois do `delivered`."""
     status = (status or "").strip().lower()
     ordem = ORDEM_STATUS.get(status)
     if not wamid or ordem is None:
         return False
     T = TaWaEnvioStatus
+    preco = {k: v for k, v in (preco or {}).items() if v is not None and hasattr(T, k)}
     agora = datetime.utcnow()
     falhou = status == "failed"
     novos = {
@@ -476,6 +641,7 @@ async def registrar_status(
                         destino=(destino or None),
                         criado_em=agora,
                         **novos,
+                        **preco,
                     )
                 )
                 try:
@@ -494,6 +660,8 @@ async def registrar_status(
         ):
             if valor:
                 compl[campo] = func.coalesce(getattr(T, campo), valor)
+        # Cobrança da Meta: o que veio agora vale (o `pricing` vem uma vez por mensagem; repetido, é igual).
+        compl.update(preco)
         if compl:
             await db.execute(
                 update(T).where(T.wamid == wamid).values(**compl).execution_options(synchronize_session=False)
@@ -570,6 +738,7 @@ async def registrar_statuses_do_webhook(db, phone_number_id: str | None, statuse
                 erro=e0.get("title") or e0.get("message"),
                 em=_quando(s.get("timestamp")),
                 destino=s.get("recipient_id"),
+                preco=preco_do_status(s),
             ):
                 n += 1
             if str(s.get("status") or "").lower() == "failed" and codigo == CODIGO_PAROU_MARKETING:

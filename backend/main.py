@@ -123,6 +123,11 @@ app.include_router(whatsapp_oficial.router, prefix="/api/v1")
 app.include_router(secops.router, prefix="/api/v1")
 app.include_router(public_chat.router, prefix="/api/v1")
 
+# Disparo em lote pelo WhatsApp oficial, pela tela do Agent (11/11/2026).
+from routes import disparos_oficiais  # noqa: E402
+
+app.include_router(disparos_oficiais.router, prefix="/api/v1")
+
 
 async def _ensure_message_content_column():
     """Runtime DDL idempotente — adiciona ta_message_log.content (texto da msg,
@@ -592,6 +597,105 @@ async def _ensure_disparo_oficial_tables():
         logger.exception("ensure_disparo_oficial_tables falhou (segue mesmo assim)")
 
 
+async def _ensure_disparo_lote_tables():
+    """Runtime DDL — página «Disparos» (disparo em lote pela tela do Agent, 11/11/2026).
+
+    `ta_disparo_oficial` (um disparo) + `ta_disparo_oficial_envio` (um contato do disparo).
+    Tabelas NOVAS, nascem vazias: os índices saem na hora. Ver services/disparo_lote.py.
+    """
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            for ddl in (
+                "CREATE TABLE IF NOT EXISTS ta_disparo_oficial ("
+                " id SERIAL PRIMARY KEY,"
+                " tenant_id INTEGER NOT NULL,"
+                " connector_id INTEGER NOT NULL,"
+                " nome VARCHAR(120) NOT NULL,"
+                " modelo VARCHAR(512) NOT NULL,"
+                " idioma VARCHAR(16) NOT NULL,"
+                " categoria VARCHAR(32),"
+                " modelo_json JSON,"
+                " variaveis_json JSON,"
+                " intervalo_ms INTEGER NOT NULL DEFAULT 8000,"
+                " variacao_ms INTEGER NOT NULL DEFAULT 2000,"
+                " agendado_para TIMESTAMP,"
+                " status VARCHAR(16) NOT NULL DEFAULT 'rascunho',"
+                " motivo_pausa VARCHAR(500),"
+                " total INTEGER NOT NULL DEFAULT 0,"
+                " proximo_envio_em TIMESTAMP,"
+                " taxa_base_enviados INTEGER NOT NULL DEFAULT 0,"
+                " taxa_base_falhas INTEGER NOT NULL DEFAULT 0,"
+                " criado_por_member_id INTEGER,"
+                " criado_por VARCHAR(120),"
+                " criado_em TIMESTAMP NOT NULL DEFAULT now(),"
+                " iniciado_em TIMESTAMP,"
+                " pausado_em TIMESTAMP,"
+                " concluido_em TIMESTAMP,"
+                " cancelado_em TIMESTAMP)",
+                "CREATE INDEX IF NOT EXISTS ix_ta_disparo_oficial_tenant ON ta_disparo_oficial (tenant_id, id)",
+                "CREATE INDEX IF NOT EXISTS ix_ta_disparo_oficial_fila ON ta_disparo_oficial (proximo_envio_em)"
+                " WHERE status = 'em_andamento'",
+                "CREATE TABLE IF NOT EXISTS ta_disparo_oficial_envio ("
+                " id BIGSERIAL PRIMARY KEY,"
+                " disparo_id INTEGER NOT NULL REFERENCES ta_disparo_oficial(id) ON DELETE CASCADE,"
+                " numero VARCHAR(20) NOT NULL,"
+                " chave VARCHAR(32) NOT NULL,"
+                " nome VARCHAR(120),"
+                " status VARCHAR(16) NOT NULL DEFAULT 'pendente',"
+                " tentativas INTEGER NOT NULL DEFAULT 0,"
+                " reservado_em TIMESTAMP,"
+                " wamid VARCHAR(128),"
+                " wa_id VARCHAR(32),"
+                " conversation_id INTEGER,"
+                " erro_codigo INTEGER,"
+                " erro VARCHAR(500),"
+                " enviado_em TIMESTAMP)",
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_ta_disparo_oficial_envio_chave"
+                " ON ta_disparo_oficial_envio (disparo_id, chave)",
+                "CREATE INDEX IF NOT EXISTS ix_ta_disparo_oficial_envio_fila"
+                " ON ta_disparo_oficial_envio (disparo_id, status, id)",
+            ):
+                await db.execute(_sql_text(ddl))
+            await db.commit()
+        logger.info("ensure_disparo_lote_tables ok")
+    except Exception:
+        logger.exception("ensure_disparo_lote_tables falhou (segue mesmo assim)")
+
+
+async def _ensure_wa_preco_columns():
+    """Runtime DDL — cobrança da Meta por mensagem em `ta_wa_envio_status` (12/11/2026).
+
+    O webhook de status traz o objeto `pricing` (billable, pricing_model, type, category, subtype)
+    e, na janela grátis de anúncio, `conversation.origin.type`. Base do relatório «WhatsApp oficial»
+    (services/relatorio_whatsapp_oficial.py). Só ADD COLUMN nullable, sem índice: a tabela nasceu em
+    11/11 e o relatório filtra pelo índice que já existe (tenant_id, criado_em). Roda DEPOIS de
+    `_ensure_disparo_oficial_tables` (que cria a tabela).
+    """
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            for ddl in (
+                "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS cobravel BOOLEAN",
+                "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS tipo_preco VARCHAR(32)",
+                "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS categoria_preco VARCHAR(32)",
+                "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS modelo_preco VARCHAR(8)",
+                "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS subtipo_preco VARCHAR(32)",
+                "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS origem_conversa VARCHAR(32)",
+            ):
+                await db.execute(_sql_text(ddl))
+            await db.commit()
+        logger.info("ensure_wa_preco_columns ok")
+    except Exception:
+        logger.exception("ensure_wa_preco_columns falhou (segue mesmo assim)")
+
+
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
@@ -604,11 +708,21 @@ async def startup():
     await _ensure_tenant_avatar_column()
     await _ensure_agent_llm_columns()
     await _ensure_disparo_oficial_tables()
+    await _ensure_disparo_lote_tables()
+    await _ensure_wa_preco_columns()
     from services import registro_atividade
 
     registro_atividade.iniciar()
     from scheduler import init_scheduler
     init_scheduler()
+    # Worker do disparo em lote (página «Disparos»): pendurado no MESMO scheduler, sem mexer em
+    # scheduler.py. A trava entre os 2 workers é no banco (services/disparo_lote.py).
+    try:
+        from services import disparo_lote
+
+        disparo_lote.agendar(init_scheduler())
+    except Exception:
+        logger.exception("worker do disparo em lote não agendou (segue sem ele)")
     # Discord Gateway (inbound): task de fundo, líder eleito via Redis (não duplica
     # entre workers). Totalmente opcional — se discord.py/Redis falhar, o backend segue.
     try:

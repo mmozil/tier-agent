@@ -6,6 +6,7 @@ distribuição), conversas por etiqueta e por atendente. Janela em dias.
 
 import logging
 from datetime import datetime, timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
@@ -17,6 +18,10 @@ from models import TaAgent, TaConversation, TaMember, TaNotification
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 logger = logging.getLogger(__name__)
+
+# Dependências como `Annotated` nas rotas novas (sem `Depends(...)` no default — ruff B008).
+Usuario = Annotated[CurrentUser, Depends(get_current_user)]
+Sessao = Annotated[AsyncSession, Depends(get_db)]
 
 # rótulos pt-BR por dia-da-semana (0=segunda, padrão datetime.weekday())
 _DOW_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -127,6 +132,44 @@ async def atendimento(
     except Exception:  # noqa: BLE001
         logger.exception("metricas de atendimento falharam tenant=%s", user.tenant_id)
         out["metricas"] = None
+    return out
+
+
+@router.get("/whatsapp-oficial", response_model=dict, dependencies=[Depends(require_gestor)])
+async def whatsapp_oficial(
+    user: Usuario,
+    db: Sessao,
+    days: int = Query(30, ge=1, le=365),
+    connector_id: int | None = Query(None),
+):
+    """WhatsApp OFICIAL (Cloud API): enviadas/recebidas, funil de entrega, pagas × grátis pelo
+    `pricing` da Meta, chegadas por anúncio e custo estimado. Ver services/relatorio_whatsapp_oficial.py."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    from services import relatorio_whatsapp_oficial as rel
+
+    out = await rel.calcular(db, user.tenant_id, days, connector_id)
+    if out.get("erro") == "numero_nao_encontrado":
+        raise HTTPException(404, "Número oficial não encontrado")
+    return out
+
+
+@router.get("/whatsapp-oficial/meta", response_model=dict, dependencies=[Depends(require_gestor)])
+async def whatsapp_oficial_meta(
+    user: Usuario,
+    db: Sessao,
+    connector_id: int = Query(...),
+    days: int = Query(30, ge=1, le=365),
+):
+    """O número da PRÓPRIA Meta (`pricing_analytics`, só leitura, com cache de 15 min) para pôr ao
+    lado do nosso. Nunca derruba a tela: sem permissão ou Meta fora → `disponivel=False`."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    from services import relatorio_whatsapp_oficial as rel
+
+    out = await rel.da_meta(db, user.tenant_id, connector_id, days)
+    if out.get("motivo") == "numero_nao_encontrado":
+        raise HTTPException(404, "Número oficial não encontrado")
     return out
 
 

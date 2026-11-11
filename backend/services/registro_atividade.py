@@ -52,6 +52,9 @@ FORA = (
 )
 # Rotas de entrada: gravadas mesmo SEM token (a tentativa que falhou também conta).
 ENTRADA = {"/auth/login", "/auth/google", "/auth/signup"}
+# POST que só LÊ (11/11/2026): a prévia da lista do disparo vai no corpo (não cabe na URL) e a
+# tela chama a cada colagem — gravar cada uma enterraria as ações de verdade no registro.
+SO_LEITURA = {"/disparos-oficiais/ler-lista"}
 
 FILA_MAX = 5000
 LOTE_MAX = 200
@@ -75,6 +78,13 @@ ROTULOS: list[tuple[str | None, str, str]] = [
     ("POST", r"^/whatsapp-oficial/modelos$", "Criou modelo de mensagem (oficial)"),
     ("DELETE", r"^/whatsapp-oficial/modelos$", "Apagou modelo de mensagem (oficial)"),
     ("POST", r"^/whatsapp-oficial/iniciar-conversa$", "Iniciou conversa com modelo (oficial)"),
+    # Disparo em lote pela tela (11/11/2026)
+    ("POST", r"^/disparos-oficiais$", "Criou disparo (oficial)"),
+    ("POST", r"^/disparos-oficiais/\d+/iniciar$", "Iniciou disparo (oficial)"),
+    ("POST", r"^/disparos-oficiais/\d+/pausar$", "Pausou disparo (oficial)"),
+    ("POST", r"^/disparos-oficiais/\d+/retomar$", "Retomou disparo (oficial)"),
+    ("POST", r"^/disparos-oficiais/\d+/cancelar$", "Cancelou disparo (oficial)"),
+    ("DELETE", r"^/disparos-oficiais/\d+$", "Apagou rascunho de disparo (oficial)"),
     ("POST", r"^/connectors/\d+/connect$", "Abriu o QR do número"),
     ("POST", r"^/connectors/\d+/disconnect$", "Desconectou número"),
     ("DELETE", r"^/connectors/\d+$", "Removeu número"),
@@ -159,6 +169,7 @@ RECURSOS = {
     "notifications": "aviso",
     "tenants": "empresa",
     "containers": "motor",
+    "disparos-oficiais": "disparo",
 }
 _VERBO = {"POST": "Executou", "PUT": "Alterou", "PATCH": "Alterou", "DELETE": "Apagou"}
 
@@ -392,7 +403,7 @@ class RegistroDeAtividade:
         if metodo not in METODOS or not caminho.startswith(PREFIXO + "/"):
             return await self.app(scope, receive, send)
         rota = caminho[len(PREFIXO) :]
-        if rota.startswith(FORA):
+        if rota.startswith(FORA) or rota in SO_LEITURA:
             return await self.app(scope, receive, send)
 
         h = _cabecalhos(scope)

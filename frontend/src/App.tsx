@@ -43,6 +43,9 @@ import RelatoriosAtendimentoPage from "./pages/admin/RelatoriosAtendimentoPage";
 import EquipePage from "./pages/admin/EquipePage";
 import AtividadesPage from "./pages/admin/AtividadesPage";
 import ModelosWhatsAppPage from "./pages/admin/ModelosWhatsAppPage";
+import DisparosPage from "./pages/admin/DisparosPage";
+import NovoDisparoPage from "./pages/admin/NovoDisparoPage";
+import DisparoDetalhePage from "./pages/admin/DisparoDetalhePage";
 import DesignSystemPage from "./pages/public/DesignSystemPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
@@ -96,6 +99,9 @@ export default function App() {
         <Route path="conversas" element={<ConversasPage />} />
         <Route path="canais" element={<CanaisPage />} />
         <Route path="canais/modelos" element={<ModelosWhatsAppPage />} />
+        <Route path="disparos" element={<DisparosPage />} />
+        <Route path="disparos/novo" element={<NovoDisparoPage />} />
+        <Route path="disparos/:id" element={<DisparoDetalhePage />} />
         <Route path="leads" element={<LeadsPage />} />
         <Route path="relatorios-atendimento" element={<RelatoriosAtendimentoPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />

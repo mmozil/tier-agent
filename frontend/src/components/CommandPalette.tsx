@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Home, Bell, Sparkles, MessageSquare, UserPlus, Workflow, Store, Radio, BookOpen,
   BarChart3, FileText, Settings, Cpu, Plug, Zap, SlidersHorizontal, Users, CreditCard,
-  User, Moon, Search, CornerDownLeft, LifeBuoy,
+  User, Moon, Search, CornerDownLeft, LifeBuoy, Megaphone,
 } from "lucide-react";
 
 interface Cmd {
@@ -22,6 +22,7 @@ const COMMANDS: Cmd[] = [
   { id: "atencao", label: "Precisa de você", group: "Ir para", icon: Bell, keywords: "atencao pendencias handoff", run: (n) => n("/admin/atencao") },
   { id: "agentes", label: "Agentes", group: "Ir para", icon: Sparkles, keywords: "agents ia bot", run: (n) => n("/admin/agentes") },
   { id: "conversas", label: "Conversas", group: "Ir para", icon: MessageSquare, keywords: "inbox chat atendimento", run: (n) => n("/admin/conversas") },
+  { id: "disparos", label: "Disparos", group: "Ir para", icon: Megaphone, keywords: "disparo em massa campanha broadcast modelo whatsapp oficial lista", run: (n) => n("/admin/disparos") },
   { id: "leads", label: "Leads", group: "Ir para", icon: UserPlus, keywords: "contatos clientes", run: (n) => n("/admin/leads") },
   { id: "playbooks", label: "Playbooks", group: "Ir para", icon: Workflow, keywords: "fluxos flows automacao", run: (n) => n("/admin/playbooks") },
   { id: "marketplace", label: "Marketplace", group: "Ir para", icon: Store, keywords: "loja apps", run: (n) => n("/admin/marketplace") },
