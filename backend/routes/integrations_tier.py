@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
@@ -29,6 +30,7 @@ from services.connectors.base import ConnectorConfig
 
 router = APIRouter(prefix="/integrations/tier", tags=["integrations-tier"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def _check_secret(secret: str | None) -> None:
@@ -94,6 +96,23 @@ class CloudSendTemplateIn(BaseModel):
     agent_id: int | None = None
 
 
+def _detalhe_erro_envio(e: Exception) -> dict:
+    """Corpo do 502 do send-template (11/11/2026). `conta=true` = o erro é do NÚMERO/CONTA (ou do
+    modelo inteiro) e o disparo deve parar; `false` = só deste contato, segue para os outros.
+    Erro antes de falar com a Meta (config sem token) também é `conta`: nenhum envio sai."""
+    from services.connectors.base import ConnectorError
+    from services.disparo_oficial import erro_e_da_conta
+
+    if isinstance(e, ConnectorError):
+        code = getattr(e, "meta_code", None)
+        http = e.status_code
+        conta = True if http is None else erro_e_da_conta(code, http)
+        mensagem = getattr(e, "detalhe", None) or str(e)
+    else:  # rede/timeout: transitório, não é da conta
+        code, conta, mensagem = None, False, f"{type(e).__name__}: {e}"
+    return {"codigo": "meta_error", "meta_code": code, "conta": conta, "mensagem": str(mensagem)[:500]}
+
+
 @router.post("/whatsapp-cloud/send-template")
 async def cloud_send_template(
     body: CloudSendTemplateIn,
@@ -101,24 +120,101 @@ async def cloud_send_template(
     db: AsyncSession = Depends(get_db),
 ):
     """Envia 1 template aprovado pra um número (disparo ATIVO via Cloud API oficial).
-    O worker de disparos do ERP chama isto por contato."""
+    O worker de disparos do ERP chama isto por contato.
+
+    11/11/2026 — contrato com o ERP:
+    - contato que pediu para parar (descadastro do tenant) → **409**
+      `{"detail": {"codigo": "opt_out", "mensagem": …}}`, nada é enviado;
+    - Meta recusou → **502** `{"detail": {"codigo": "meta_error", "meta_code", "conta", "mensagem"}}`;
+    - sucesso → `{ok, message_id, wa_id, conversation_id, raw}`: o modelo entra na conversa do
+      contato (o atendente e a IA veem o que foi enviado) e o wamid nasce `accepted` na tabela de
+      status. Falha nessas duas gravações NÃO desfaz o envio: loga e segue.
+    """
+    from services import disparo_oficial
+
     _check_secret(x_tier_integration_secret)
     to = (body.to or "").strip()
     if not to or not body.template_name:
         raise HTTPException(422, "to e template_name são obrigatórios")
+    if await disparo_oficial.esta_descadastrado(db, body.tenant_id, to):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {"codigo": "opt_out", "mensagem": "O contato pediu para não receber mensagens"},
+        )
     conn = await _resolve_cloud_connector(db, body.tenant_id, body.agent_id)
     impl = registry.get("whatsapp_cloud")
-    cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
+    cfg_dict = json.loads(decrypt(conn.config_json_enc))
+    cfg = ConnectorConfig(data=cfg_dict)
     try:
         res = await impl.send_template(cfg, to, body.template_name, body.lang, body.components)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"falha ao enviar template: {e}")
+        detalhe = _detalhe_erro_envio(e)
+        logger.warning(
+            "disparo cloud recusado tenant=%s connector=%s meta_code=%s conta=%s",
+            body.tenant_id, conn.id, detalhe["meta_code"], detalhe["conta"],
+        )
+        # 131050 = o contato parou de receber marketing deste número: entra na lista do tenant,
+        # e o próximo disparo para ele já volta 409 sem gastar chamada na Meta.
+        if detalhe["meta_code"] == disparo_oficial.CODIGO_PAROU_MARKETING:
+            try:
+                await disparo_oficial.registrar_descadastro(
+                    db, tenant_id=body.tenant_id, connector_id=conn.id, numero=to,
+                    texto=disparo_oficial.TEXTO_PAROU_MARKETING,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("disparo cloud: 131050 não entrou na lista tenant=%s", body.tenant_id)
+                await db.rollback()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detalhe) from e
     msg_id = None
+    wa_id = None
     try:
         msg_id = (res.get("messages") or [{}])[0].get("id")
+        # O endereço que a Meta devolve é o que vem nas respostas do contato (com ou sem o 9).
+        wa_id = (res.get("contacts") or [{}])[0].get("wa_id")
     except Exception:  # noqa: BLE001
         pass
-    return {"ok": True, "message_id": msg_id, "raw": res}
+    wa_id = wa_id or disparo_oficial.so_digitos(to)
+
+    conversation_id = None
+    try:
+        modelo = await disparo_oficial.modelo_do_cache(conn.id, cfg_dict, body.template_name, body.lang)
+        texto = disparo_oficial.texto_do_disparo(modelo, body.template_name, body.components)
+        conversation_id = await disparo_oficial.gravar_disparo_na_conversa(db, conn, wa_id, texto, body.template_name)
+    except Exception:  # noqa: BLE001 — o envio já saiu; a conversa é complemento
+        logger.exception("disparo cloud: enviado mas não entrou na conversa connector=%s", conn.id)
+        await db.rollback()
+    if msg_id:
+        try:
+            await disparo_oficial.registrar_status(
+                db, wamid=msg_id, status="accepted", tenant_id=body.tenant_id, connector_id=conn.id,
+                conversation_id=conversation_id, destino=wa_id,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("disparo cloud: status inicial não gravou wamid=%s", msg_id)
+            await db.rollback()
+    return {"ok": True, "message_id": msg_id, "wa_id": wa_id, "conversation_id": conversation_id, "raw": res}
+
+
+class CloudStatusIn(BaseModel):
+    tenant_id: int
+    message_ids: list[str]
+
+
+@router.post("/whatsapp-cloud/status")
+async def cloud_status(
+    body: CloudStatusIn,
+    x_tier_integration_secret: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Entrega das mensagens do disparo (11/11/2026), pelo wamid devolvido no send-template.
+    Até 500 ids por chamada. Resposta: `{"status": {wamid: {status, erro_codigo, erro, em}}}`;
+    id desconhecido (ou de número de outro tenant) não aparece."""
+    from services import disparo_oficial
+
+    _check_secret(x_tier_integration_secret)
+    if len(body.message_ids) > 500:
+        raise HTTPException(422, "no máximo 500 message_ids por chamada")
+    return {"status": await disparo_oficial.status_dos_envios(db, body.tenant_id, body.message_ids)}
 
 
 class ProvisionIn(BaseModel):

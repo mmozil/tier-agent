@@ -50,6 +50,29 @@ def normalize_wa_number(chat_id: str | None) -> str:
     return "".join(c for c in (chat_id or "") if c.isdigit())
 
 
+def erro_da_meta(r: httpx.Response) -> tuple[int | None, str | None]:
+    """(código, texto) do erro que a Graph API devolveu (11/11/2026).
+
+    Formato: `{"error": {"code": 131026, "message": "(#131026) …", "error_user_msg"?,
+    "error_data": {"details": "…"}}}`. O texto prefere o que é escrito para gente
+    (`error_user_msg`), depois o detalhe, depois a mensagem técnica. Resposta que não é JSON
+    devolve (None, None) — quem chama cai no texto cru, como antes.
+    """
+    try:
+        e = (r.json() or {}).get("error") or {}
+    except Exception:  # noqa: BLE001
+        return None, None
+    if not isinstance(e, dict):
+        return None, None
+    try:
+        code = int(e["code"]) if e.get("code") is not None else None
+    except (TypeError, ValueError):
+        code = None
+    det = (e.get("error_data") or {}).get("details") if isinstance(e.get("error_data"), dict) else None
+    texto = e.get("error_user_msg") or det or e.get("message")
+    return code, (str(texto) if texto else None)
+
+
 class WhatsAppCloudConnector:
     kind = "whatsapp_cloud"
 
@@ -101,10 +124,13 @@ class WhatsAppCloudConnector:
             r = await cli.post(url, json=body, headers=headers)
         if r.status_code >= 400:
             # 470/131047 = fora da janela 24h (precisa template). Erro claro pro caller.
+            code, detalhe = erro_da_meta(r)
             raise ConnectorError(
                 f"Cloud API retornou {r.status_code}: {r.text[:300]}",
                 kind=self.kind,
                 status_code=r.status_code,
+                meta_code=code,
+                detalhe=detalhe,
             )
         return r.json()
 
@@ -132,10 +158,13 @@ class WhatsAppCloudConnector:
         async with httpx.AsyncClient(timeout=30) as cli:
             r = await cli.post(url, json=body, headers=headers)
         if r.status_code >= 400:
+            code, detalhe = erro_da_meta(r)
             raise ConnectorError(
                 f"Cloud API template {r.status_code}: {r.text[:300]}",
                 kind=self.kind,
                 status_code=r.status_code,
+                meta_code=code,
+                detalhe=detalhe,
             )
         return r.json()
 

@@ -382,11 +382,15 @@ async def iniciar_conversa(
         connector_id=conn.id,
         por_numero=True,
     )
+    from services.disparo_oficial import MARCA_MODELO
+
     db.add(TaMessageLog(
         conversation_id=conv.id,
         role="agent",
         content=texto_enviado(modelo["corpo"], valores, modelo["rodape"])[:8000],
         member_id=user.member_id,
+        # 11/11/2026 — marca de modelo: «parar» escrito logo depois dele é pedido de descadastro
+        model_used=f"{MARCA_MODELO} · {modelo['nome']}"[:128],
     ))
     if user.member_id and not conv.assigned_member_id:
         conv.assigned_member_id = user.member_id
@@ -397,4 +401,13 @@ async def iniciar_conversa(
         "alvo": f"conversa #{conv.id} · modelo {modelo['nome']} · agente {agente.nome}"[:255],
         "conversation_id": conv.id,
     }
-    return {"conversation_id": conv.id, "message_id": meta_id, "wa_id": wa_id}
+    # 11/11/2026 — o descadastro bloqueia só o DISPARO do ERP. Aqui é a equipe escolhendo falar
+    # com aquele contato: envia, mas avisa a tela que ele pediu para sair da lista de envios.
+    descadastrado = False
+    try:
+        from services.disparo_oficial import esta_descadastrado
+
+        descadastrado = await esta_descadastrado(db, agente.tenant_id, wa_id)
+    except Exception:  # noqa: BLE001 — o aviso é complemento; o envio já saiu
+        logger.exception("iniciar conversa: consulta ao descadastro falhou conv=%s", conv.id)
+    return {"conversation_id": conv.id, "message_id": meta_id, "wa_id": wa_id, "descadastrado": descadastrado}

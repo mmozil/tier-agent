@@ -738,6 +738,8 @@ async def _process_cloud_message_humanized(
     text_content: str,
     attachments: list,
     audio_media_id: str | None = None,
+    descadastro: bool = False,
+    descadastro_de_botao: bool = False,
 ) -> None:
     """Processa 1 mensagem inbound do WhatsApp Cloud com timing humano.
 
@@ -746,6 +748,12 @@ async def _process_cloud_message_humanized(
     2. marca como lido + "digitando…"
     3. o agente gera a resposta (a latência do LLM já é o tempo de digitação)
     4. envia
+
+    `descadastro=True` (11/11/2026): o contato pediu para parar os disparos (botão «Parar
+    Mensagem» do modelo ou «parar»/«sair»/«stop» sozinho). Grava na lista do tenant, deixa a
+    mensagem na conversa, confirma UMA vez e NÃO chama a IA neste turno. Botão vale sempre; a
+    palavra em texto livre só vale se a última mensagem nossa foi um modelo — senão é conversa
+    normal («quer continuar ou parar?») e segue para a IA.
     """
     import asyncio
     import json as _json
@@ -793,6 +801,29 @@ async def _process_cloud_message_humanized(
                                     text_content = "[áudio não compreendido]"
             except Exception:
                 logger.exception("typing/ASR whatsapp-cloud falhou (segue)")
+
+            if descadastro:
+                from services import disparo_oficial
+
+                vale = descadastro_de_botao
+                if not vale:
+                    try:
+                        vale = await disparo_oficial.ultima_nossa_foi_modelo(
+                            db, phone_number_id=phone_number_id, from_id=from_id
+                        )
+                    except Exception:  # na dúvida é conversa normal: a IA atende
+                        logger.exception("descadastro: conferência do último modelo falhou from=%s", from_id)
+                        await db.rollback()
+                        vale = False
+                if vale:
+                    await disparo_oficial.tratar_descadastro(
+                        db,
+                        phone_number_id=phone_number_id,
+                        from_id=from_id,
+                        sender_name=sender_name,
+                        texto=text_content,
+                    )
+                    return
 
             # 3+4. gera e envia (latência do LLM = tempo de digitação percebido)
             await agent_runtime.handle_inbound_message(
@@ -883,6 +914,14 @@ async def whatsapp_cloud_webhook(
                 if not text_content:
                     text_content = f"[{mtype or 'mensagem'}]"
 
+                # 11/11/2026 — descadastro: botão do modelo/interativo com o texto de parar, ou
+                # a palavra curta escrita sozinha (esta só vale depois de um modelo — conferido no
+                # processamento, que tem o banco). Frase longa segue para a IA normalmente.
+                from services.disparo_oficial import eh_descadastro
+
+                de_botao = mtype in ("button", "interactive")
+                descadastro = eh_descadastro(text_content, de_botao=de_botao)
+
                 # Processa em background com timing humanizado (atraso de leitura
                 # + digitar), pra não responder no mesmo instante. O webhook
                 # devolve 200 já; a idempotência acima evita reprocessar retries.
@@ -897,11 +936,27 @@ async def whatsapp_cloud_webhook(
                         text_content=text_content,
                         attachments=attachments,
                         audio_media_id=audio_media_id,
+                        descadastro=descadastro,
+                        descadastro_de_botao=de_botao,
                     )
                 )
                 _BG_TASKS.add(_task)
                 _task.add_done_callback(_BG_TASKS.discard)
                 results.append({"from": from_id, "status": "accepted"})
+
+            # 11/11/2026 — retorno de entrega (sent/delivered/read/failed) por wamid. Antes era
+            # ignorado e o disparo do ERP não sabia o que chegou. Falha aqui nunca derruba o 200
+            # (a Meta reenviaria o lote inteiro, mensagens inclusive).
+            statuses = value.get("statuses") or []
+            if statuses:
+                try:
+                    from services.disparo_oficial import registrar_statuses_do_webhook
+
+                    n = await registrar_statuses_do_webhook(db, phone_number_id, statuses)
+                    results.append({"statuses": len(statuses), "gravados": n})
+                except Exception:
+                    logger.exception("statuses whatsapp-cloud falharam pnid=%s", phone_number_id)
+                    await db.rollback()
 
     logger.info("webhook whatsapp-cloud processed events=%s", len(results))
     return {"status": "ok", "processed": results}

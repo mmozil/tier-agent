@@ -38,6 +38,15 @@ class Msg:
     em: datetime
 
 
+def e_disparo(role: str | None, model_used: str | None) -> bool:
+    """Modelo enviado pelo DISPARO em lote do ERP (11/11/2026). É gravado como `agent` para o
+    atendente ver o que saiu, mas não foi uma pessoa abordando nem atendendo: 5.000 envios
+    não podem virar 5.000 «abordagens». Fica fora das contas de mensagem (a conversa continua)."""
+    from services.disparo_oficial import MARCA_DISPARO
+
+    return role == HUMANO and (model_used or "").startswith(MARCA_DISPARO)
+
+
 @dataclass
 class Resumo:
     conversation_id: int
@@ -232,13 +241,16 @@ async def calcular(db: AsyncSession, tenant_id: int, days: int = 30) -> dict:
         lote = ids[i : i + 2000]
         rows = (
             await db.execute(
-                select(TaMessageLog.conversation_id, TaMessageLog.role, TaMessageLog.member_id, TaMessageLog.created_at)
+                select(
+                    TaMessageLog.conversation_id, TaMessageLog.role, TaMessageLog.member_id, TaMessageLog.created_at,
+                    TaMessageLog.model_used,
+                )
                 .where(TaMessageLog.conversation_id.in_(lote), TaMessageLog.role.in_((HUMANO, CONTATO, IA)))
                 .order_by(TaMessageLog.id.asc())
             )
         ).all()
-        for cid, role, mid, em in rows:
-            if em is not None:
+        for cid, role, mid, em, modelo in rows:
+            if em is not None and not e_disparo(role, modelo):
                 por_conv[cid].append(Msg(role, mid, em))
     resumos = [resumir(c[0], c[1], c[2], c[3], por_conv.get(c[0], [])) for c in convs]
 

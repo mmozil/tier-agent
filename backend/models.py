@@ -781,3 +781,54 @@ class TaToolProvider(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     agent: Mapped["TaAgent"] = relationship(back_populates="tool_providers")
+
+
+# ============================================================
+# 20. WhatsApp oficial (Cloud API) — disparo em lote (11/11/2026)
+# ============================================================
+class TaWaDescadastro(Base):
+    """Contato que pediu para não receber disparo — vale para o TENANT inteiro.
+
+    O colégio inteiro para de mandar modelo para aquele contato (botão «Parar Mensagem» do modelo,
+    ou «parar»/«sair»/«stop» escrito sozinho). Bloqueia só o DISPARO do ERP; o atendimento segue:
+    se o contato escrever depois, a conversa anda normal. `chave` = DDD + 8 últimos dígitos (o
+    mesmo casamento do ERP), para `5511987654321` e `551187654321` serem a mesma pessoa.
+    Tabela criada em runtime (`main._ensure_disparo_oficial_tables`) — o deploy não roda Alembic.
+    """
+
+    __tablename__ = "ta_wa_descadastro"
+    __table_args__ = (UniqueConstraint("tenant_id", "chave", name="uq_ta_wa_descadastro_tenant_chave"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    numero: Mapped[str] = mapped_column(String(32), nullable=False)  # só dígitos, como chegou
+    chave: Mapped[str] = mapped_column(String(32), nullable=False)  # tolerante ao 9º dígito
+    connector_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # por qual número pediu
+    texto: Mapped[str | None] = mapped_column(String(255), nullable=True)  # o que disparou o descadastro
+    criado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class TaWaEnvioStatus(Base):
+    """Situação de entrega de cada mensagem que saiu pela Cloud API, pelo id da Meta (wamid).
+
+    Nasce `accepted` no envio do disparo e avança pelo webhook (`statuses`): sent → delivered →
+    read; `failed` é final e guarda o código/título do erro. Nunca regride: `ordem` só cresce
+    (o webhook pode chegar fora de ordem e repetir). Lida pelo ERP em
+    `POST /integrations/tier/whatsapp-cloud/status`. Runtime DDL, como a de cima.
+    """
+
+    __tablename__ = "ta_wa_envio_status"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    wamid: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    connector_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    destino: Mapped[str | None] = mapped_column(String(32), nullable=True)  # wa_id do contato
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    erro_codigo: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    erro: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # hora do evento (Meta)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -56,12 +56,27 @@ class ConnectorConfig:
 
 
 class ConnectorError(Exception):
-    """Erro genérico do connector."""
+    """Erro genérico do connector.
 
-    def __init__(self, message: str, *, kind: str, status_code: int | None = None):
+    11/11/2026 — `meta_code`/`detalhe`: o código e o texto do erro que a Meta devolveu (Cloud API),
+    para o disparo saber se o erro é do NÚMERO inteiro (parar) ou só daquele contato (seguir).
+    Opcionais: quem só lê a mensagem ou o `status_code` continua igual.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str,
+        status_code: int | None = None,
+        meta_code: int | None = None,
+        detalhe: str | None = None,
+    ):
         super().__init__(message)
         self.kind = kind
         self.status_code = status_code
+        self.meta_code = meta_code
+        self.detalhe = detalhe
 
 
 @runtime_checkable

@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import aliased
 
 from core.db import db_context
@@ -485,6 +485,55 @@ def _sem_atendimento_humano(now):
     )
 
 
+# 11/11/2026 — WhatsApp OFICIAL (Cloud API): texto livre só sai dentro da janela de 24 h que a
+# última mensagem do CONTATO abriu. Fora dela a Meta recusa (131047) — e a conversa aberta por
+# DISPARO de modelo não tem janela nenhuma: o contato ainda não escreveu. Sem este filtro, as
+# conversas de um disparo de 5.000 entravam no follow-up, falhavam na Meta e ocupavam o teto de
+# conversas por ciclo, deixando de fora quem podia de fato receber. Outros canais não mudam.
+JANELA_CLOUD = timedelta(hours=24)
+
+
+def _janela_cloud_aberta(now):
+    """Filtro: conversa que não é do WhatsApp oficial, OU que teve mensagem do contato nas 24 h."""
+    contato_recente = (
+        select(TaMessageLog.id)
+        .where(
+            TaMessageLog.conversation_id == TaConversation.id,
+            TaMessageLog.role == "user",
+            TaMessageLog.created_at >= now - JANELA_CLOUD,
+        )
+        .exists()
+    )
+    return or_(TaConversation.connector_kind != "whatsapp_cloud", contato_recente)
+
+
+async def _avisar_fora_da_janela(db, tenant_id: int, threshold, now) -> None:
+    """Loga quantas conversas do WhatsApp oficial ficaram fora do follow-up por janela fechada.
+    Só aviso: falha aqui nunca para a cadência."""
+    try:
+        n = (
+            await db.execute(
+                select(func.count())
+                .select_from(TaConversation)
+                .where(
+                    TaConversation.agent_id.in_(_agentes_que_falam(tenant_id)),
+                    TaConversation.status == "active",
+                    TaConversation.last_message_at < threshold,
+                    TaConversation.connector_kind == "whatsapp_cloud",
+                    ~_janela_cloud_aberta(now),
+                )
+            )
+        ).scalar()
+        if n:
+            logger.info(
+                "followup: tenant %s — %s conversa(s) do WhatsApp oficial sem mensagem do contato nas "
+                "últimas 24 h: puladas (texto livre seria recusado pela Meta, 131047)",
+                tenant_id, n,
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning("followup: contagem da janela do WhatsApp oficial falhou tenant=%s", tenant_id, exc_info=True)
+
+
 # Tenants com a cascata por origem DESLIGADA. Vazio = todos ligados — a cascata
 # por origem é melhor que a genérica em qualquer caso. A lista existe para poder
 # desligar num tenant específico sem mexer em código.
@@ -663,10 +712,12 @@ async def followup_inactivity_job() -> None:
                                 TaConversation.status == "active",
                                 TaConversation.last_message_at < threshold,
                                 _sem_atendimento_humano(now),
+                                _janela_cloud_aberta(now),
                             )
                             .limit(100)  # cap defensivo por tick
                         )
                     ).scalars().all()
+                    await _avisar_fora_da_janela(db, tid, threshold, now)
                     houve = False
                     for conv in convs:
                         step = conv.followup_step or 0
@@ -790,10 +841,12 @@ async def followup_inactivity_job() -> None:
                                 TaConversation.last_followup_at < TaConversation.last_message_at,
                             ),
                             _sem_atendimento_humano(now),
+                            _janela_cloud_aberta(now),
                         )
                         .limit(50)  # cap defensivo por tick
                     )
                 ).scalars().all()
+                await _avisar_fora_da_janela(db, tid, threshold, now)
                 for conv in convs:
                     if not await _no_horario_da_ia(db, conv):
                         continue  # fora do horário da IA do número: tenta no próximo ciclo

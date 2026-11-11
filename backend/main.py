@@ -538,6 +538,55 @@ async def _ensure_agent_llm_columns():
         logger.exception("ensure_agent_llm_columns falhou (segue mesmo assim)")
 
 
+async def _ensure_disparo_oficial_tables():
+    """Runtime DDL — disparo em lote pelo WhatsApp oficial (11/11/2026).
+
+    `ta_wa_descadastro`: contato que pediu para não receber disparo (por tenant, chave tolerante
+    ao 9º dígito). `ta_wa_envio_status`: entrega de cada mensagem da Cloud API pelo wamid.
+    Tabelas NOVAS (nascem vazias): os índices abaixo saem na hora — nada de índice em tabela
+    grande no startup. Ver services/disparo_oficial.py.
+    """
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            for ddl in (
+                "CREATE TABLE IF NOT EXISTS ta_wa_descadastro ("
+                " id SERIAL PRIMARY KEY,"
+                " tenant_id INTEGER NOT NULL,"
+                " numero VARCHAR(32) NOT NULL,"
+                " chave VARCHAR(32) NOT NULL,"
+                " connector_id INTEGER,"
+                " texto VARCHAR(255),"
+                " criado_em TIMESTAMP NOT NULL DEFAULT now())",
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_ta_wa_descadastro_tenant_chave"
+                " ON ta_wa_descadastro (tenant_id, chave)",
+                "CREATE TABLE IF NOT EXISTS ta_wa_envio_status ("
+                " id BIGSERIAL PRIMARY KEY,"
+                " wamid VARCHAR(128) NOT NULL,"
+                " tenant_id INTEGER,"
+                " connector_id INTEGER,"
+                " conversation_id INTEGER,"
+                " destino VARCHAR(32),"
+                " status VARCHAR(16) NOT NULL,"
+                " ordem INTEGER NOT NULL DEFAULT 0,"
+                " erro_codigo INTEGER,"
+                " erro VARCHAR(500),"
+                " status_em TIMESTAMP,"
+                " criado_em TIMESTAMP NOT NULL DEFAULT now(),"
+                " atualizado_em TIMESTAMP NOT NULL DEFAULT now())",
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_ta_wa_envio_status_wamid ON ta_wa_envio_status (wamid)",
+                "CREATE INDEX IF NOT EXISTS ix_ta_wa_envio_status_tenant ON ta_wa_envio_status (tenant_id, criado_em)",
+            ):
+                await db.execute(_sql_text(ddl))
+            await db.commit()
+        logger.info("ensure_disparo_oficial_tables ok")
+    except Exception:
+        logger.exception("ensure_disparo_oficial_tables falhou (segue mesmo assim)")
+
+
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
@@ -549,6 +598,7 @@ async def startup():
     await _ensure_embedding_provider_table()
     await _ensure_tenant_avatar_column()
     await _ensure_agent_llm_columns()
+    await _ensure_disparo_oficial_tables()
     from services import registro_atividade
 
     registro_atividade.iniciar()

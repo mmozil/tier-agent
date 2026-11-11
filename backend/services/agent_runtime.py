@@ -782,13 +782,22 @@ async def load_history(db: AsyncSession, conversation_id: int, limit: int = 80) 
     modelo. Sem isso o agente trata cada mensagem isolada e "esquece" o cliente
     (responde "nao" com saudação genérica). Exclui a mensagem atual do usuário
     (já gravada antes de chamar o engine) — ela vai separada como user_content.
+
+    11/11/2026 — o modelo enviado pelo DISPARO do ERP (`role="agent"`, `model_used` começando por
+    `disparo_oficial.MARCA_DISPARO`) entra como fala nossa (`assistant`): sem isso o lead
+    respondia «Falar conosco» e a IA não sabia a que mensagem. Mensagem humana comum continua fora.
     """
+    from services.disparo_oficial import MARCA_DISPARO
+
     rows = (
         await db.execute(
             select(TaMessageLog)
             .where(
                 TaMessageLog.conversation_id == conversation_id,
-                TaMessageLog.role.in_(["user", "assistant"]),
+                or_(
+                    TaMessageLog.role.in_(["user", "assistant"]),
+                    and_(TaMessageLog.role == "agent", TaMessageLog.model_used.like(f"{MARCA_DISPARO}%")),
+                ),
                 TaMessageLog.content.isnot(None),
             )
             .order_by(TaMessageLog.id.desc())
@@ -798,7 +807,7 @@ async def load_history(db: AsyncSession, conversation_id: int, limit: int = 80) 
     rows = list(reversed(rows))  # ordem cronológica
     if rows:
         rows = rows[:-1]  # remove o turno atual (acabou de ser logado)
-    return [{"role": r.role, "content": r.content} for r in rows]
+    return [{"role": "assistant" if r.role == "agent" else r.role, "content": r.content} for r in rows]
 
 
 async def _log_deterministic_turn(db, agent, connector_kind, external_id, contact_name, user_text, reply):
