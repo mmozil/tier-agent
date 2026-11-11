@@ -113,11 +113,16 @@ class WhatsAppCloudConnector:
                 "audio": {"link": audio.url},
             }
         else:
+            # Página sem imagem de prévia → link limpo, sem o ícone do site esticado e borrado
+            # (11/11/2026, CCDA). Sem link, ou página que não deu para ler: prévia ligada, como antes.
+            from services.previa_link import pagina_tem_imagem
+
+            previa = (await pagina_tem_imagem(msg.content)) is not False
             body = {
                 "messaging_product": "whatsapp",
                 "to": to,
                 "type": "text",
-                "text": {"preview_url": True, "body": msg.content or ""},
+                "text": {"preview_url": previa, "body": msg.content or ""},
             }
 
         async with httpx.AsyncClient(timeout=30) as cli:

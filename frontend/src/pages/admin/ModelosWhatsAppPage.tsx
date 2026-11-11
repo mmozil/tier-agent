@@ -307,7 +307,7 @@ export default function ModelosWhatsAppPage() {
                     <Field label="Nome" hint={slug ? `Na Meta: ${slug}` : "Só para identificar. Ex.: Boas-vindas"}>
                       <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={200} placeholder="Boas-vindas" />
                     </Field>
-                    <Field label="Categoria" hint={CUSTO[categoria]}>
+                    <Field label="Categoria (sugestão)" hint={`${CUSTO[categoria]} Você sugere; quem decide é a Meta — se ela entender que é propaganda, aprova como Marketing, e categoria de modelo aprovado não muda mais.`}>
                       <SegToggle value={categoria} onChange={setCategoria} options={CATEGORIAS} />
                     </Field>
                     <Field

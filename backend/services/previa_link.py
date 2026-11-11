@@ -317,6 +317,96 @@ async def montar_previa(texto: str | None, *, prazo: float = 15.0) -> dict | Non
         return None
 
 
+
+# ─── a página tem imagem de prévia? (11/11/2026, CCDA) ──────────────────────
+# No WhatsApp OFICIAL quem monta a capinha é o celular de quem RECEBE, lendo as tags `og:` da
+# página. Página sem `og:image` cai no ícone do site (192 px no ccda.com.br) esticado num quadrado
+# — o dono viu «a imagem parece sem qualidade». Antes de mandar texto com link pela Cloud API, o
+# Agent confere: sem imagem de prévia, o link sai limpo (`preview_url: false`), sem o quadrinho
+# borrado. Página que não deu para ler (fora do ar, bloqueio) mantém a prévia: quem decide é o
+# WhatsApp, como antes. Cache curto em memória, por URL.
+_CACHE_IMAGEM: dict[str, tuple[bool | None, float]] = {}
+# Site sem `og:image` numa página quase sempre não tem em nenhuma (falta o plugin de SEO): guarda o
+# «não» por SITE também. A página inicial do ccda.com.br respondeu em 1,5 s; a de agendamento passou
+# de 6 s a frio (medido em 11/11) — sem isto, a primeira resposta com o link sairia borrada.
+_CACHE_SITE_SEM_IMAGEM: dict[str, float] = {}
+_VALIDADE_IMAGEM = 6 * 3600.0
+_PRAZO_NO_ENVIO = 2.5  # nunca segura a resposta mais que isso
+_PRAZO_EM_SEGUNDO_PLANO = 15.0
+_TAREFAS: set = set()
+
+
+def _host(url: str) -> str:
+    return (urlsplit(url if "://" in url else "https://" + url).hostname or "").lower().removeprefix("www.")
+
+
+async def _ler_imagem_de_previa(url: str, prazo: float) -> bool | None:
+    # YouTube: o servidor recebe a página de consentimento (sem og:image), mas o WhatsApp monta a
+    # prévia do vídeo sem problema — não desligar (medido em 11/11: dava False).
+    if _e_youtube(url):
+        return True
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(prazo, connect=min(3.0, prazo)),
+        follow_redirects=False,
+        headers={"User-Agent": _UA, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "pt-BR,pt;q=0.9",
+                 **_cabecalhos_do_host(url)},
+    ) as cli:
+        pagina = await _baixar(cli, url, _MAX_HTML)
+    if not pagina:
+        return None
+    _final, tipo, corpo = pagina
+    if "html" not in tipo.lower():
+        return None  # PDF, imagem etc.: o WhatsApp trata do jeito dele
+    m = _ler_html(corpo, tipo).meta
+    return bool((m.get("og:image") or m.get("og:image:url") or m.get("twitter:image") or "").strip())
+
+
+def _guardar(url: str, tem: bool | None) -> None:
+    import time
+
+    agora = time.monotonic()
+    if len(_CACHE_IMAGEM) > 500:
+        _CACHE_IMAGEM.clear()
+    _CACHE_IMAGEM[url] = (tem, agora + (_VALIDADE_IMAGEM if tem is not None else 600.0))
+    if tem is False:
+        _CACHE_SITE_SEM_IMAGEM[_host(url)] = agora + _VALIDADE_IMAGEM
+
+
+async def _preencher_em_segundo_plano(url: str) -> None:
+    try:
+        _guardar(url, await asyncio.wait_for(_ler_imagem_de_previa(url, _PRAZO_EM_SEGUNDO_PLANO), _PRAZO_EM_SEGUNDO_PLANO + 1))
+    except Exception as e:  # noqa: BLE001
+        logger.info("previa do link nao conferida (2o plano) url=%s motivo=%s", url[:120], e.__class__.__name__)
+        _guardar(url, None)
+
+
+async def pagina_tem_imagem(texto: str | None, *, prazo: float = _PRAZO_NO_ENVIO) -> bool | None:
+    """True/False para o PRIMEIRO link do texto; None quando não há link ou ainda não se sabe.
+    Nunca levanta e nunca segura mais que `prazo` segundos: se a página demorar, responde None
+    (o envio mantém a prévia, como antes) e termina de ler em segundo plano para a próxima vez."""
+    import time
+
+    url = primeira_url(texto)
+    if not url:
+        return None
+    agora = time.monotonic()
+    guardado = _CACHE_IMAGEM.get(url)
+    if guardado and guardado[1] > agora:
+        return guardado[0]
+    if _CACHE_SITE_SEM_IMAGEM.get(_host(url), 0) > agora and not _e_youtube(url):
+        return False
+    try:
+        tem = await asyncio.wait_for(_ler_imagem_de_previa(url, prazo), timeout=prazo + 0.5)
+    except Exception as e:  # noqa: BLE001
+        logger.info("previa do link: demorou, segue com a previa e confere em 2o plano url=%s motivo=%s",
+                    url[:120], e.__class__.__name__)
+        tarefa = asyncio.ensure_future(_preencher_em_segundo_plano(url))
+        _TAREFAS.add(tarefa)
+        tarefa.add_done_callback(_TAREFAS.discard)
+        return None
+    _guardar(url, tem)
+    return tem
+
 # ─── anexos → o que vai para `ta_message_log.attachments_json` ──────────────
 
 _CAMPOS_EXTRAS = ("name", "title", "description", "thumb", "erro")
