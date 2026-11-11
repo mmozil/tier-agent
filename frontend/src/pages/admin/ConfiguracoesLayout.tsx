@@ -4,6 +4,7 @@ import {
   Cpu,
   Database,
   CreditCard,
+  History,
   Plug,
   SlidersHorizontal,
   UserCircle,
@@ -12,11 +13,12 @@ import {
 } from "lucide-react";
 
 import { FC } from "@/components/ds/fc";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Área de Configurações estilo Chatwoot: sub-nav à esquerda + a página de settings à
 // direita (via <Outlet/>). As páginas de config (LLM, Integrações, etc.) usam `-mx-8`
 // + PageFrame/Row (full-bleed), então o conteúdo tem um wrapper px-8 pra acomodar.
-const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: LucideIcon }[] }[] = [
+const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: LucideIcon; soGestor?: boolean }[] }[] = [
   {
     label: "Agente",
     items: [
@@ -31,6 +33,8 @@ const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: L
     label: "Conta",
     items: [
       { to: "/admin/configuracoes/equipe", label: "Equipe", icon: Users },
+      // Registro de atividades (11/11/2026): só dono e administrador — a rota recusa o resto.
+      { to: "/admin/configuracoes/atividades", label: "Registro de atividades", icon: History, soGestor: true },
       { to: "/admin/configuracoes/cobranca", label: "Cobrança", icon: CreditCard },
       { to: "/admin/configuracoes/perfil", label: "Perfil", icon: UserCircle },
     ],
@@ -38,6 +42,8 @@ const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: L
 ];
 
 export default function ConfiguracoesLayout() {
+  const { user } = useAuth();
+  const gestor = !!user?.is_admin || ["owner", "admin"].includes(user?.role ?? "owner");
   return (
     <div className="-mx-8 -mb-8 h-[calc(100vh-60px)] flex bg-white dark:bg-[#0c0e12] border-t border-[#EDEDED] dark:border-[#23272e]">
       {/* sub-nav */}
@@ -52,7 +58,7 @@ export default function ConfiguracoesLayout() {
                 {sec.label}
               </div>
               <div className="space-y-0.5">
-                {sec.items.map((it) => (
+                {sec.items.filter((it) => gestor || !it.soGestor).map((it) => (
                   <NavLink
                     key={it.to}
                     to={it.to}

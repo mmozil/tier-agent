@@ -41,6 +41,7 @@ import AtencaoPage from "./pages/admin/AtencaoPage";
 import MacrosPage from "./pages/admin/MacrosPage";
 import RelatoriosAtendimentoPage from "./pages/admin/RelatoriosAtendimentoPage";
 import EquipePage from "./pages/admin/EquipePage";
+import AtividadesPage from "./pages/admin/AtividadesPage";
 import DesignSystemPage from "./pages/public/DesignSystemPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
@@ -115,6 +116,7 @@ export default function App() {
           <Route path="macros" element={<MacrosPage />} />
           <Route path="parametros" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
           <Route path="equipe" element={<EquipePage />} />
+          <Route path="atividades" element={<AtividadesPage />} />
           <Route path="cobranca" element={<CobrancaPage />} />
           <Route path="perfil" element={<PerfilPage />} />
         </Route>

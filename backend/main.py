@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import acessos, agents, attention, auth, billing, canned_responses, connectors, containers, conversations, embedding_providers, features, health, integrations_pet, integrations_tier, internal, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, public_chat, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks
+from routes import acessos, agents, atividades, attention, auth, billing, canned_responses, connectors, containers, conversations, embedding_providers, features, health, integrations_pet, integrations_tier, internal, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, public_chat, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks
 
 settings = get_settings()
 
@@ -50,6 +50,11 @@ class _NuncaGuardarRespostaDaApi:
         await self.app(scope, receive, _send)
 
 
+# Registro de atividades (11/11/2026): quem fez o quê, quando e de onde — toda ação de
+# todo usuário. É o mais interno dos três, para ver a resposta da rota como ela saiu.
+from services.registro_atividade import RegistroDeAtividade  # noqa: E402
+
+app.add_middleware(RegistroDeAtividade)
 app.add_middleware(_NuncaGuardarRespostaDaApi)
 
 app.add_middleware(
@@ -109,6 +114,7 @@ app.include_router(canned_responses.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(team.router, prefix="/api/v1")
 app.include_router(acessos.router, prefix="/api/v1")
+app.include_router(atividades.router, prefix="/api/v1")
 app.include_router(secops.router, prefix="/api/v1")
 app.include_router(public_chat.router, prefix="/api/v1")
 
@@ -538,6 +544,9 @@ async def startup():
     await _ensure_embedding_provider_table()
     await _ensure_tenant_avatar_column()
     await _ensure_agent_llm_columns()
+    from services import registro_atividade
+
+    registro_atividade.iniciar()
     from scheduler import init_scheduler
     init_scheduler()
     # Discord Gateway (inbound): task de fundo, líder eleito via Redis (não duplica
@@ -553,5 +562,8 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     logger.info("Tier Agent shutting down")
+    from services import registro_atividade
+
+    await registro_atividade.parar()
     from scheduler import shutdown_scheduler
     shutdown_scheduler()

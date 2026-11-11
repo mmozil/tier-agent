@@ -257,8 +257,16 @@ async def sso_mint(
     tenant = await db.get(TaTenant, payload.tenant_id)
     if not tenant or tenant.status != "active":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant não encontrado ou inativo")
+    from services.registro_atividade import registrar_acao
+
     if payload.owner_id:
         member = await _membro_do_erp(db, tenant, payload)
+        # Registro de atividades: a entrada pelo ERP é servidor-a-servidor (o middleware não
+        # vê pessoa nenhuma); é aqui que se sabe QUEM abriu o Atendimento.
+        registrar_acao(
+            ident={"tenant_id": tenant.id, "member_id": member.id, "nome": member.nome, "email": member.email, "papel": member.role},
+            acao="Entrou pelo ERP (Atendimento)",
+        )
         token = create_token(
             str(tenant.id),
             {
@@ -270,6 +278,10 @@ async def sso_mint(
             access_token=token, tenant_id=tenant.id, expires_in_hours=settings.jwt_ttl_hours,
             member_id=member.id, role=member.role,
         )
+    registrar_acao(
+        ident={"tenant_id": tenant.id, "member_id": None, "nome": None, "email": payload.email or tenant.email, "papel": "owner"},
+        acao="Entrou pelo ERP (Atendimento)",
+    )
     token = create_token(
         str(tenant.id),
         {"tenant_id": tenant.id, "email": payload.email or tenant.email, "role": "owner"},

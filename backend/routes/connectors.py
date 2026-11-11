@@ -6,7 +6,7 @@ import logging
 import re as _re
 import secrets as _secrets
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -440,6 +440,7 @@ async def _encerrar_instancia(instance_id: str | None, api_key: str | None) -> N
 @router.post("/whatsapp/provision")
 async def provision_whatsapp(
     payload: WhatsAppProvisionIn,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -488,10 +489,12 @@ async def provision_whatsapp(
         )
         conn = existing.scalars().first()
     antiga: tuple[str | None, str | None] = (None, None)
+    numero_trocado = None
     if conn:
         try:
             _cfg_antiga = json.loads(decrypt(conn.config_json_enc))
             antiga = (_cfg_antiga.get("instance_id"), _cfg_antiga.get("api_key"))
+            numero_trocado = _cfg_antiga.get("phone")
         except Exception:  # noqa: BLE001
             antiga = (None, None)
         conn.config_json_enc = encrypt(json.dumps(cfg))
@@ -506,6 +509,13 @@ async def provision_whatsapp(
     await db.refresh(conn)
     if antiga[0] and antiga[0] != instance_id:
         await _encerrar_instancia(*antiga)
+    # Registro de atividades (11/11/2026): no modo agente o QR novo SUBSTITUI o número que o
+    # agente tinha — foi assim que o número de teste do CCDA caiu. O registro diz qual saiu.
+    request.state.atividade = {
+        "alvo": (f"agente {agent.nome}" + (f" · substituiu o número {numero_trocado}" if numero_trocado else ""))[:255],
+        "connector_id": conn.id,
+        "numero_substituido": numero_trocado,
+    }
     return _serialize(conn)
 
 
@@ -1182,6 +1192,7 @@ async def get_webchat(
 @router.delete("/{connector_id}", status_code=204)
 async def delete_connector(
     connector_id: int,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1198,6 +1209,8 @@ async def delete_connector(
     kind = conn.kind
     phone = cfg.get("phone") or cfg.get("phone_number_id") or "—"
     inst = cfg.get("instance_id")
+    # Registro de atividades: depois do delete o número não existe mais para ser lido.
+    request.state.atividade = {"alvo": f"número {phone} · agente {agent.nome}"[:255], "kind": kind}
 
     # Só deleta a instância no Engine se NENHUM outro conector a usa — evita
     # derrubar um número COMPARTILHADO (ex: DevSecOps reusa a instância dos alertas).
