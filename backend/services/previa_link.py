@@ -361,6 +361,56 @@ async def _ler_imagem_de_previa(url: str, prazo: float) -> bool | None:
     return bool((m.get("og:image") or m.get("og:image:url") or m.get("twitter:image") or "").strip())
 
 
+# 🚨 O Agent roda com 2 processos (uvicorn --workers 2): o cache em memória é de cada um. Às 19:25 de
+# 11/11 o processo que mandou o link do CCDA nunca tinha lido o site (ConnectTimeout intermitente) e a
+# prévia borrada saiu de novo. O «site sem imagem» vai também para o BANCO (`ta_site_previa`), vale
+# para os dois processos e sobrevive à publicação. Só o «não» por site é guardado: «tem imagem» é por
+# página e fica na memória.
+_VALIDADE_SITE_NO_BANCO_DIAS = 7
+
+
+async def _site_sem_imagem_no_banco(host: str) -> bool:
+    try:
+        from sqlalchemy import text as _t
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            r = (
+                await db.execute(
+                    _t(
+                        "SELECT 1 FROM ta_site_previa WHERE host = :h AND tem_imagem = false"
+                        " AND conferido_em >= now() - make_interval(days => :d)"
+                    ),
+                    {"h": host, "d": _VALIDADE_SITE_NO_BANCO_DIAS},
+                )
+            ).first()
+        return r is not None
+    except Exception:  # noqa: BLE001
+        logger.debug("ta_site_previa ilegível (segue sem)", exc_info=True)
+        return False
+
+
+async def gravar_site_sem_imagem(host: str) -> None:
+    """Grava (ou renova) «este site não tem imagem de prévia». Nunca levanta."""
+    try:
+        from sqlalchemy import text as _t
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            await db.execute(
+                _t(
+                    "INSERT INTO ta_site_previa (host, tem_imagem, conferido_em) VALUES (:h, false, now())"
+                    " ON CONFLICT (host) DO UPDATE SET tem_imagem = false, conferido_em = now()"
+                ),
+                {"h": host},
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.debug("ta_site_previa: não gravou %s", host, exc_info=True)
+
+
 def _guardar(url: str, tem: bool | None) -> None:
     import time
 
@@ -372,12 +422,25 @@ def _guardar(url: str, tem: bool | None) -> None:
         _CACHE_SITE_SEM_IMAGEM[_host(url)] = agora + _VALIDADE_IMAGEM
 
 
+_ESPERAS_SEGUNDO_PLANO = (0.0, 20.0, 120.0)  # 3 tentativas: o ccda.com.br falha de vez em quando
+
+
 async def _preencher_em_segundo_plano(url: str) -> None:
-    try:
-        _guardar(url, await asyncio.wait_for(_ler_imagem_de_previa(url, _PRAZO_EM_SEGUNDO_PLANO), _PRAZO_EM_SEGUNDO_PLANO + 1))
-    except Exception as e:  # noqa: BLE001
-        logger.info("previa do link nao conferida (2o plano) url=%s motivo=%s", url[:120], e.__class__.__name__)
-        _guardar(url, None)
+    for i, espera in enumerate(_ESPERAS_SEGUNDO_PLANO):
+        if espera:
+            await asyncio.sleep(espera)
+        try:
+            tem = await asyncio.wait_for(_ler_imagem_de_previa(url, _PRAZO_EM_SEGUNDO_PLANO), _PRAZO_EM_SEGUNDO_PLANO + 1)
+        except Exception as e:  # noqa: BLE001
+            logger.info("previa do link nao conferida (2o plano, tentativa %s) url=%s motivo=%s", i + 1, url[:120], e.__class__.__name__)
+            continue
+        if tem is None:
+            continue
+        _guardar(url, tem)
+        if tem is False:
+            await gravar_site_sem_imagem(_host(url))
+        return
+    _guardar(url, None)
 
 
 async def pagina_tem_imagem(texto: str | None, *, prazo: float = _PRAZO_NO_ENVIO) -> bool | None:
@@ -393,8 +456,12 @@ async def pagina_tem_imagem(texto: str | None, *, prazo: float = _PRAZO_NO_ENVIO
     guardado = _CACHE_IMAGEM.get(url)
     if guardado and guardado[1] > agora:
         return guardado[0]
-    if _CACHE_SITE_SEM_IMAGEM.get(_host(url), 0) > agora and not _e_youtube(url):
-        return False
+    if not _e_youtube(url):
+        if _CACHE_SITE_SEM_IMAGEM.get(_host(url), 0) > agora:
+            return False
+        if await _site_sem_imagem_no_banco(_host(url)):
+            _CACHE_SITE_SEM_IMAGEM[_host(url)] = agora + _VALIDADE_IMAGEM
+            return False
     try:
         tem = await asyncio.wait_for(_ler_imagem_de_previa(url, prazo), timeout=prazo + 0.5)
     except Exception as e:  # noqa: BLE001
@@ -405,6 +472,8 @@ async def pagina_tem_imagem(texto: str | None, *, prazo: float = _PRAZO_NO_ENVIO
         tarefa.add_done_callback(_TAREFAS.discard)
         return None
     _guardar(url, tem)
+    if tem is False:
+        await gravar_site_sem_imagem(_host(url))
     return tem
 
 # ─── anexos → o que vai para `ta_message_log.attachments_json` ──────────────

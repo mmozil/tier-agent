@@ -579,6 +579,11 @@ async def _ensure_disparo_oficial_tables():
                 " atualizado_em TIMESTAMP NOT NULL DEFAULT now())",
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_ta_wa_envio_status_wamid ON ta_wa_envio_status (wamid)",
                 "CREATE INDEX IF NOT EXISTS ix_ta_wa_envio_status_tenant ON ta_wa_envio_status (tenant_id, criado_em)",
+                # 11/11/2026 — «site sem imagem de prévia» compartilhado pelos 2 processos (services/previa_link.py).
+                "CREATE TABLE IF NOT EXISTS ta_site_previa ("
+                " host VARCHAR(255) PRIMARY KEY,"
+                " tem_imagem BOOLEAN NOT NULL,"
+                " conferido_em TIMESTAMP NOT NULL DEFAULT now())",
             ):
                 await db.execute(_sql_text(ddl))
             await db.commit()

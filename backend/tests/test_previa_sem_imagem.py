@@ -7,9 +7,29 @@ antes de mandar e, sem imagem, manda `preview_url: false`.
 
 import asyncio
 
+import pytest
+
 from services import previa_link
 from services.connectors.adapters import whatsapp_cloud
 from services.connectors.base import ConnectorConfig, OutboundMessage
+
+
+@pytest.fixture(autouse=True)
+def _banco_falso(monkeypatch):
+    """O «site sem imagem» também vai para o banco (`ta_site_previa`). Nos testes, um dict —
+    a bateria roda numa cópia DENTRO do contêiner de produção e não pode gravar lá."""
+    sites: set[str] = set()
+
+    async def _ler(host):
+        return host in sites
+
+    async def _gravar(host):
+        sites.add(host)
+
+    monkeypatch.setattr(previa_link, "_site_sem_imagem_no_banco", _ler)
+    monkeypatch.setattr(previa_link, "gravar_site_sem_imagem", _gravar)
+    monkeypatch.setattr(previa_link, "_ESPERAS_SEGUNDO_PLANO", (0.0, 0.01, 0.02))
+    return sites
 
 
 def _rodar(coro):
@@ -143,4 +163,45 @@ def test_pagina_lenta_nao_segura_o_envio_e_termina_em_segundo_plano(monkeypatch)
     assert _rodar(previa_link.pagina_tem_imagem("https://lenta.com.br/p", prazo=0.05)) is None
     _rodar(asyncio.sleep(1.2))  # a conferência em segundo plano termina
     assert _rodar(previa_link.pagina_tem_imagem("https://lenta.com.br/p", prazo=0.05)) is False
+
+
+def test_site_sem_imagem_no_banco_vale_para_o_outro_processo(monkeypatch, _banco_falso):
+    """2 processos: o que leu o site grava no banco; o outro, com a memória vazia, já sabe."""
+    _limpar()
+    monkeypatch.setattr(previa_link, "_baixar", _pagina("<html><head><title>CCDA</title></head></html>"))
+    assert _rodar(previa_link.pagina_tem_imagem("https://www.ccda.com.br/")) is False
+    assert "ccda.com.br" in _banco_falso
+    _limpar()  # «o outro processo»: memória vazia
+
+    async def _nao_deve_ler(*_a):
+        raise AssertionError("o banco já sabe")
+
+    monkeypatch.setattr(previa_link, "_baixar", _nao_deve_ler)
+    assert _rodar(previa_link.pagina_tem_imagem("https://www.ccda.com.br/agendamento-de-visita/")) is False
+
+
+def test_segundo_plano_tenta_de_novo_e_grava_no_banco(monkeypatch, _banco_falso):
+    """O ccda.com.br falha de vez em quando (ConnectTimeout às 19:25 de 11/11)."""
+    _limpar()
+    tentativas = []
+
+    async def _falha_duas_vezes(_cli, url, _limite):
+        tentativas.append(url)
+        if len(tentativas) < 3:
+            await asyncio.sleep(0.8)  # estoura o prazo do envio e o 2º plano tenta de novo
+            return None
+        return url, "text/html", b"<html><head><title>CCDA</title></head></html>"
+
+    monkeypatch.setattr(previa_link, "_baixar", _falha_duas_vezes)
+    assert _rodar(previa_link.pagina_tem_imagem("https://www.ccda.com.br/agendamento-de-visita/", prazo=0.05)) is None
+    _rodar(asyncio.sleep(2.5))
+    assert len(tentativas) == 3 and "ccda.com.br" in _banco_falso
+    assert _rodar(previa_link.pagina_tem_imagem("https://www.ccda.com.br/agendamento-de-visita/")) is False
+
+
+def test_pagina_com_imagem_nao_marca_o_site(monkeypatch, _banco_falso):
+    _limpar()
+    monkeypatch.setattr(previa_link, "_baixar", _pagina('<html><head><meta property="og:image" content="https://x/y.jpg"></head></html>'))
+    assert _rodar(previa_link.pagina_tem_imagem("https://tier.finance/")) is True
+    assert not _banco_falso
 
