@@ -872,6 +872,53 @@ class WhatsAppCloudOnboardIn(BaseModel):
     phone_number_id: str
 
 
+async def ativar_numero_cloud(cli, graph: str, phone_number_id: str, token: str, pin_existente: str | None = None) -> dict:
+    """Passo 4 do Embedded Signup: registrar o número na Cloud API (11/11/2026).
+
+    Sem o `register`, a Meta deixa o número PENDING / NOT_APPLICABLE: ele aparece na conta
+    mas não envia nem recebe. O cadastro do CCDA (9591) ficou assim até o register manual.
+
+    🚨 Só registra número que NÃO está ativo em outra plataforma (`platform_type` =
+    NOT_APPLICABLE) e com o código de verificação confirmado. Registrar um número que roda
+    em outro provedor (ex.: o 8393 no Chatwoot) o puxaria para cá e derrubaria o outro.
+    O PIN de 2 etapas fica no conector (cifrado): a Meta o pede para registrar de novo.
+    """
+
+
+    h = {"Authorization": f"Bearer {token}"}
+    campos = "display_phone_number,verified_name,status,platform_type,code_verification_status"
+    info = (await cli.get(f"{graph}/{phone_number_id}", params={"fields": campos}, headers=h)).json()
+    out: dict = {}
+    if info.get("display_phone_number"):
+        out["phone"] = info["display_phone_number"]
+    if info.get("verified_name"):
+        out["verified_name"] = info["verified_name"]
+    plataforma = info.get("platform_type")
+    if plataforma == "CLOUD_API":
+        out["status"] = "connected"
+        if pin_existente:
+            out["pin"] = pin_existente
+        return out
+    if plataforma != "NOT_APPLICABLE" or info.get("code_verification_status") != "VERIFIED":
+        out["status"] = "pending"
+        out["erro_ativacao"] = (
+            f"número não ativado: plataforma {plataforma or '?'}, verificação "
+            f"{info.get('code_verification_status') or '?'} — pode estar ativo em outro provedor"
+        )
+        return out
+    pin = pin_existente or f"{_secrets.randbelow(10**6):06d}"
+    r = await cli.post(
+        f"{graph}/{phone_number_id}/register",
+        json={"messaging_product": "whatsapp", "pin": pin},
+        headers=h,
+    )
+    if r.status_code < 300:
+        out.update(status="connected", pin=pin)
+    else:
+        out.update(status="pending", erro_ativacao=f"Meta recusou a ativação: {r.text[:250]}")
+    return out
+
+
 @router.post("/whatsapp-cloud/onboard")
 async def onboard_whatsapp_cloud(
     payload: WhatsAppCloudOnboardIn,
@@ -930,23 +977,31 @@ async def onboard_whatsapp_cloud(
         "token": token,
         "waba_id": payload.waba_id,
     }
-    # O número que a pessoa vê. Sem ele a tela de Canais mostrava «—» e parecia que o
-    # cadastro não tinha entrado (11/11/2026). Falha aqui não derruba o cadastro.
+    existing_cfg: dict = {}
+    _anterior = (
+        await db.execute(
+            select(TaConnector).where(TaConnector.agent_id == agent.id, TaConnector.kind == "whatsapp_cloud")
+        )
+    ).scalar_one_or_none()
+    if _anterior is not None:
+        try:
+            existing_cfg = json.loads(decrypt(_anterior.config_json_enc)) or {}
+        except Exception:
+            existing_cfg = {}
+    # 4. ativa o número na Cloud API e grava o número que a pessoa vê. Falha aqui não
+    #    derruba o cadastro: o conector nasce «pending» com o motivo à vista.
     try:
-        async with httpx.AsyncClient(timeout=15) as cli:
-            info = (
-                await cli.get(
-                    f"{graph}/{payload.phone_number_id}",
-                    params={"fields": "display_phone_number,verified_name"},
-                    headers={"Authorization": f"Bearer {token}"},
+        async with httpx.AsyncClient(timeout=30) as cli:
+            cfg.update(
+                await ativar_numero_cloud(
+                    cli, graph, payload.phone_number_id, token,
+                    pin_existente=existing_cfg.get("pin") if existing_cfg.get("phone_number_id") == payload.phone_number_id else None,
                 )
-            ).json()
-        if info.get("display_phone_number"):
-            cfg["phone"] = info["display_phone_number"]
-        if info.get("verified_name"):
-            cfg["verified_name"] = info["verified_name"]
+            )
     except Exception as e:
-        logger.warning("número de exibição não lido (segue): %s", e)
+        logger.warning("ativação do número falhou (segue pending): %s", e)
+        cfg["status"] = "pending"
+        cfg["erro_ativacao"] = str(e)[:300]
     existing = (
         await db.execute(
             select(TaConnector).where(
