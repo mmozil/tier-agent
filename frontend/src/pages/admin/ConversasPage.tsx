@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
-  MessageSquare, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
+  MessageSquare, MessageSquarePlus, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Search, Zap,
   Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone, Mic, FileText,
   CalendarDays,
@@ -571,6 +571,9 @@ export default function ConversasPage() {
   const [openConv, setOpenConv] = useState<Conversation | null>(null);
   // Número aberto pelo CRM que ainda não tem conversa: mostra a «Nova conversa».
   const [novaConversaTel, setNovaConversaTel] = useState<string | null>(null);
+  // 11/11/2026 — «Nova conversa» pelo botão da lista (antes só abria vindo do CRM pelo link).
+  const [pedeTelefone, setPedeTelefone] = useState(false);
+  const [telefoneNovo, setTelefoneNovo] = useState("");
   const [debugMsg, setDebugMsg] = useState<Record<string, any> | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
@@ -1443,6 +1446,47 @@ export default function ConversasPage() {
                 )}
               </div>
               )}
+              <div className="relative">
+                <button onClick={() => setPedeTelefone((v) => !v)} className={iconBtn} title="Nova conversa" aria-label="Nova conversa">
+                  <MessageSquarePlus className="w-4 h-4" />
+                </button>
+                {pedeTelefone && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setPedeTelefone(false)} />
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (telefoneNovo.replace(/\D/g, "").length < 10) {
+                          toast.error("Digite o telefone com DDD");
+                          return;
+                        }
+                        setOpenConv(null);
+                        setOpenId(null);
+                        setNovaConversaTel(telefoneNovo.trim());
+                        setTelefoneNovo("");
+                        setPedeTelefone(false);
+                      }}
+                      className={`absolute right-0 mt-1 z-20 w-64 bg-white dark:bg-[#16191f] border ${FC.hair} rounded-xl shadow-lg p-3`}
+                    >
+                      <label className="block text-[12px] font-medium text-[#262626]/[0.56] dark:text-[#8b93a0] mb-1.5">Telefone do contato</label>
+                      <input
+                        autoFocus
+                        value={telefoneNovo}
+                        onChange={(e) => setTelefoneNovo(e.target.value)}
+                        inputMode="tel"
+                        placeholder="(11) 98765-4321"
+                        className="w-full h-8 px-3 text-[13px] rounded-[8px] bg-[#F1F3F5] dark:bg-[#0c0e12] text-[#262626] dark:text-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff]"
+                      />
+                      <button type="submit" className={`${btnPrimary} mt-2 w-full`}>
+                        Continuar
+                      </button>
+                      <p className="mt-1.5 text-[10.5px] leading-4 text-[#262626]/40 dark:text-[#6b7280]">
+                        No número oficial, a primeira mensagem é um modelo aprovado.
+                      </p>
+                    </form>
+                  </>
+                )}
+              </div>
               <button onClick={() => load()} className={iconBtn} title="Atualizar">
                 <RefreshCw className="w-4 h-4" />
               </button>

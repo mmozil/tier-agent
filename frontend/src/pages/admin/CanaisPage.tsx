@@ -1,7 +1,8 @@
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Copy, ChevronRight, PenLine, Clock } from "lucide-react";
+import { Plus, QrCode, Trash2, X, Unplug, Check, Loader2, Smartphone, Copy, ChevronRight, PenLine, Clock, FileText } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -1223,6 +1224,15 @@ export default function CanaisPage() {
                         </span>
                       )}
                       {/* Horário da IA (10/11/2026): quando a IA responde por este número. */}
+                      {isCloud && (
+                        <Link
+                          to={`/admin/canais/modelos?numero=${c.id}`}
+                          title="Modelos de mensagem: para falar primeiro com quem não escreveu nas últimas 24 h"
+                          className={`inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2.5 text-[12px] font-medium transition-all active:scale-[0.98] border ${FC.ink} ${FC.hair} ${FC.hover}`}
+                        >
+                          <FileText className="w-3 h-3 shrink-0" /> Modelos
+                        </Link>
+                      )}
                       {gestor && c.modo !== "registro" && c.ia_ligada !== false && (
                         <Button
                           variant="secondary"

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import acessos, agents, atividades, attention, auth, billing, canned_responses, connectors, containers, conversations, embedding_providers, features, health, integrations_pet, integrations_tier, internal, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, public_chat, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks
+from routes import acessos, agents, atividades, attention, auth, billing, canned_responses, connectors, containers, conversations, embedding_providers, features, health, integrations_pet, integrations_tier, internal, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, public_chat, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks, whatsapp_oficial
 
 settings = get_settings()
 
@@ -119,6 +119,7 @@ app.include_router(reports.router, prefix="/api/v1")
 app.include_router(team.router, prefix="/api/v1")
 app.include_router(acessos.router, prefix="/api/v1")
 app.include_router(atividades.router, prefix="/api/v1")
+app.include_router(whatsapp_oficial.router, prefix="/api/v1")
 app.include_router(secops.router, prefix="/api/v1")
 app.include_router(public_chat.router, prefix="/api/v1")
 

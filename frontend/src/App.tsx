@@ -42,6 +42,7 @@ import MacrosPage from "./pages/admin/MacrosPage";
 import RelatoriosAtendimentoPage from "./pages/admin/RelatoriosAtendimentoPage";
 import EquipePage from "./pages/admin/EquipePage";
 import AtividadesPage from "./pages/admin/AtividadesPage";
+import ModelosWhatsAppPage from "./pages/admin/ModelosWhatsAppPage";
 import DesignSystemPage from "./pages/public/DesignSystemPage";
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
@@ -94,6 +95,7 @@ export default function App() {
         <Route path="macros" element={<Navigate to="/admin/configuracoes/macros" replace />} />
         <Route path="conversas" element={<ConversasPage />} />
         <Route path="canais" element={<CanaisPage />} />
+        <Route path="canais/modelos" element={<ModelosWhatsAppPage />} />
         <Route path="leads" element={<LeadsPage />} />
         <Route path="relatorios-atendimento" element={<RelatoriosAtendimentoPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />
