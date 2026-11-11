@@ -14,9 +14,10 @@ iniciar uma conversa individual pelo número oficial não existia.
 - `DELETE /whatsapp-oficial/modelos`         — apaga na Meta (dono/admin)
 - `POST /whatsapp-oficial/iniciar-conversa`  — envia um modelo aprovado e abre a conversa
 
-🚨 A conversa nasce ATIVA (a IA do número responde quando o lead responder). Não usa o
-`handed_off` do «Assumir»: a busca da conversa só acha as ativas, e uma conversa assumida
-partiria em duas na resposta do lead (medido em 11/11: conversa 26 → 28, com a IA respondendo).
+🚨 A conversa é a do contato NAQUELE número (`ensure_conversation`, por_numero): sem conversa em curso,
+nasce ATIVA e a IA do número responde quando o lead responder. Se a equipe ASSUMIU a conversa nos
+últimos 7 dias, o modelo entra nela e a IA segue calada — respeita o «Assumir» (corrigido em 11/11:
+antes a assumida não era achada e a resposta do lead abria outra conversa, 26 → 28).
 """
 
 from __future__ import annotations

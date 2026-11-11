@@ -13,9 +13,9 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -603,6 +603,17 @@ async def _atribuir_pelo_numero(db: AsyncSession, conv: TaConversation, connecto
     conv.assigned_to = m.nome
 
 
+# 🚨 11/11/2026 — conversa ASSUMIDA continua sendo a conversa do contato.
+# «Assumir (pausar IA)» grava `status = "handed_off"`, e a busca de `ensure_conversation` só achava
+# conversa `active`. Medido: o cliente escreveu de novo, a conversa assumida (26) não foi achada,
+# nasceu a 28 ativa e a IA respondeu 36 vezes por cima do atendente — o guarda `handed_off` de
+# `handle_inbound_message` nunca disparava. Agora a assumida é achada enquanto teve mensagem nos
+# últimos 7 dias: a MESMA janela que o follow-up usa para calar o bot (`_sem_atendimento_humano` em
+# scheduler.py, caso CCDA 210 × 212). Assumida e parada há mais que isso → abre conversa nova e a
+# IA volta a atender.
+JANELA_CONVERSA_ASSUMIDA = timedelta(days=7)
+
+
 async def ensure_conversation(
     db: AsyncSession,
     agent_id: int,
@@ -612,7 +623,11 @@ async def ensure_conversation(
     connector_id: int | None = None,
     por_numero: bool = False,
 ) -> TaConversation:
-    """Acha a conversa ATIVA deste contato (ou abre uma).
+    """Acha a conversa EM CURSO deste contato (ou abre uma).
+
+    Em curso = `active`, ou `handed_off` com mensagem dentro de `JANELA_CONVERSA_ASSUMIDA`
+    (11/11/2026): a assumida volta como está, e quem chama decide — `handle_inbound_message`
+    vê o `handed_off` e cala a IA.
 
     `por_numero=True` (números em registro, 07/10/2026): a conversa é de UM número.
     Todos os números das consultoras ficam sob o mesmo agente-sistema; procurar só
@@ -623,7 +638,13 @@ async def ensure_conversation(
         TaConversation.agent_id == agent_id,
         TaConversation.connector_kind == connector_kind,
         TaConversation.external_id == external_id,
-        TaConversation.status == "active",
+        or_(
+            TaConversation.status == "active",
+            and_(
+                TaConversation.status == "handed_off",
+                TaConversation.last_message_at >= datetime.utcnow() - JANELA_CONVERSA_ASSUMIDA,
+            ),
+        ),
     ]
     if por_numero and connector_id:
         filtros.append(TaConversation.connector_id == connector_id)
