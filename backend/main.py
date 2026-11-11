@@ -15,6 +15,10 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
 )
 logger = logging.getLogger("tier-agent")
+# 🚨 O httpx loga a URL inteira em INFO — com query string. A troca do code da Meta manda o
+# client_secret na query, e ele ia parar no log do contêiner a cada cadastro (11/11/2026).
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 app = FastAPI(
     title="Tier Agent — Control Plane",

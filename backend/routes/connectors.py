@@ -930,6 +930,23 @@ async def onboard_whatsapp_cloud(
         "token": token,
         "waba_id": payload.waba_id,
     }
+    # O número que a pessoa vê. Sem ele a tela de Canais mostrava «—» e parecia que o
+    # cadastro não tinha entrado (11/11/2026). Falha aqui não derruba o cadastro.
+    try:
+        async with httpx.AsyncClient(timeout=15) as cli:
+            info = (
+                await cli.get(
+                    f"{graph}/{payload.phone_number_id}",
+                    params={"fields": "display_phone_number,verified_name"},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            ).json()
+        if info.get("display_phone_number"):
+            cfg["phone"] = info["display_phone_number"]
+        if info.get("verified_name"):
+            cfg["verified_name"] = info["verified_name"]
+    except Exception as e:
+        logger.warning("número de exibição não lido (segue): %s", e)
     existing = (
         await db.execute(
             select(TaConnector).where(
