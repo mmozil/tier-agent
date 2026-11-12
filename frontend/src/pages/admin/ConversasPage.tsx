@@ -20,7 +20,7 @@ import { EtiquetasDeMencao, ListaDeMencoes, MiniAvatar, useMencoes } from "@/com
 import { COR_FORA_DA_LISTA, SeletorDeEtiquetas, type Etiqueta } from "@/components/inbox/Etiquetas";
 import NumeroNaLateral, { tituloComNumero, type InfoNumero } from "@/components/inbox/NumeroNaLateral";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
-import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
+import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select, campoCls, rotuloCls } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { label: string; cls: string; dot: string }> = {
   active: { label: "IA ativa", cls: "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]", dot: "bg-[#0a8f5a]" },
@@ -521,13 +521,33 @@ function SubNavItem({
   );
 }
 
-function AccordionSection({ title, children, defaultOpen = true }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
+// Seção do painel do contato. 12/11/2026 (revisão no padrão Firecrawl × Tier): cabeçalho de
+// 40 px (era 32, apertado), título 13,5/500, contador em cinza ao lado em vez de «(3)» no
+// texto, e o fundo de 4% ao passar o mouse — o mesmo «hover de célula» do resto do sistema.
+function AccordionSection({
+  title,
+  count,
+  children,
+  defaultOpen = true,
+}: {
+  title: string;
+  count?: number;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className={`border-b ${FC.hair}`}>
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 h-8 text-left group">
-        <span className="text-[13px] font-medium text-[#262626] dark:text-[#e6e8eb]">{title}</span>
-        <ChevronDown className={`w-4 h-4 text-[#262626]/40 dark:text-[#6b7280] transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${open ? "" : "-rotate-90"}`} />
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={`w-full flex items-center justify-between gap-2 px-4 h-10 text-left transition-colors ${FC.hover}`}
+      >
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[13.5px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{title}</span>
+          {!!count && <span className={`text-[12px] tabular-nums ${FC.mut}`}>{count}</span>}
+        </span>
+        <ChevronDown className={`w-4 h-4 shrink-0 text-[#262626]/40 dark:text-[#6b7280] transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${open ? "" : "-rotate-90"}`} />
       </button>
       <AnimatePresence initial={false}>
         {open && (
@@ -544,7 +564,7 @@ function AccordionSection({ title, children, defaultOpen = true }: { title: stri
               animate={{ y: 0 }}
               exit={{ y: -6 }}
               transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-              className="px-4 pb-3.5 -mt-0.5"
+              className="px-4 pb-4 pt-0.5"
             >
               {children}
             </motion.div>
@@ -556,7 +576,17 @@ function AccordionSection({ title, children, defaultOpen = true }: { title: stri
 }
 
 function SoonHint({ text = "Disponível em breve." }: { text?: string }) {
-  return <p className="text-[12px] text-[#262626]/40 dark:text-[#6b7280] italic">{text}</p>;
+  return <p className={`text-[13px] leading-relaxed ${FC.mut}`}>{text}</p>;
+}
+
+/** Linha «rótulo · valor» das seções de informação, separadas por linha fina (padrão FC). */
+function Linha({ rotulo, children, titulo }: { rotulo: string; children: ReactNode; titulo?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0" title={titulo}>
+      <dt className={`shrink-0 ${FC.sub}`}>{rotulo}</dt>
+      <dd className={`min-w-0 truncate text-right ${FC.ink}`}>{children}</dd>
+    </div>
+  );
 }
 
 export default function ConversasPage() {
@@ -2197,7 +2227,8 @@ export default function ConversasPage() {
           <div className="flex-1 overflow-y-auto sidebar-scroll min-h-0">
             {/* cartão do contato */}
             <div className={`px-5 py-6 flex flex-col items-center text-center border-b ${FC.hair}`}>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center text-[22px] font-semibold text-[#003083] dark:text-[#5b9bff] select-none bg-gradient-to-b from-[#003083]/[0.12] to-[#003083]/[0.04] dark:from-[#5b9bff]/[0.20] dark:to-[#5b9bff]/[0.07] ring-1 ring-inset ring-[#003083]/[0.12] dark:ring-[#5b9bff]/[0.20]">
+              {/* Sem degradê nem anel (o design system não usa): cor chapada a 8%, como os avatares da lista. */}
+              <div className="w-14 h-14 rounded-full flex items-center justify-center text-[20px] font-medium text-[#003083] dark:text-[#8ab4ff] select-none bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14]">
                 {(nomeDaConversa(openConv) || "?").trim().charAt(0).toUpperCase()}
               </div>
               <p className="mt-3 text-[16px] font-medium text-[#262626] dark:text-[#e6e8eb] leading-tight">{nomeDaConversa(openConv)}</p>
@@ -2209,7 +2240,7 @@ export default function ConversasPage() {
                     toast.success("Número copiado");
                   }}
                   title="Copiar número"
-                  className={`group mt-1 inline-flex items-center gap-1.5 text-[12.5px] ${FC.sub} hover:text-[#262626] dark:hover:text-[#e6e8eb] transition-colors`}
+                  className={`group mt-1 inline-flex items-center gap-1.5 text-[13px] tabular-nums ${FC.sub} hover:text-[#262626] dark:hover:text-[#e6e8eb] transition-colors`}
                 >
                   {telefoneDaConversa(openConv)}
                   <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -2229,9 +2260,9 @@ export default function ConversasPage() {
                 oferecer o que o servidor nega. */}
             {me?.pode_atribuir !== false && (
             <AccordionSection title="Ações da conversa">
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 <div>
-                  <label className={`block text-[12px] ${FC.sub} mb-1`}>Agente atribuído</label>
+                  <label className={rotuloCls}>Agente atribuído</label>
                   {activeMembers.length > 0 ? (
                     <Select
                       value={openConv.assigned_member_id ?? 0}
@@ -2256,34 +2287,36 @@ export default function ConversasPage() {
                       ]}
                     />
                   ) : (
-                    <a
-                      href="/admin/equipe"
-                      className={`flex items-center justify-between gap-2 h-8 px-2.5 rounded-[8px] border border-dashed ${FC.hair} text-[12px] ${FC.sub} hover:border-[#003083] dark:hover:border-[#5b9bff] hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors`}
-                    >
-                      Adicione atendentes em Equipe <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
+                    <a href="/admin/equipe" className={`${campoCls} flex items-center justify-between gap-2 ${FC.mut}`}>
+                      <span className="truncate">Ninguém na equipe ainda</span>
+                      <span className="inline-flex items-center gap-1 text-[12px] shrink-0 hover:text-[#003083] dark:hover:text-[#5b9bff]">
+                        Adicionar <ArrowUpRight className="w-3.5 h-3.5" />
+                      </span>
                     </a>
                   )}
                 </div>
                 <div>
-                  <label className={`block text-[12px] ${FC.sub} mb-1`}>Time atribuído</label>
+                  <label className={rotuloCls}>Time atribuído</label>
                   {teams.length > 0 ? (
                     <Select
                       value={openConv.team_id ?? 0}
                       onChange={(v) => saveTeam(openConv.id, v === 0 ? null : (v as number))}
-                      placeholder="— nenhum —"
-                      options={[{ value: 0, label: "— nenhum —" }, ...teams.map((t) => ({ value: t.id, label: t.name }))]}
+                      placeholder="Nenhum"
+                      options={[{ value: 0, label: <span className={FC.sub}>Nenhum</span> }, ...teams.map((t) => ({ value: t.id, label: t.name }))]}
                     />
                   ) : (
-                    <a
-                      href="/admin/equipe"
-                      className={`flex items-center justify-between gap-2 h-8 px-2.5 rounded-[8px] border border-dashed ${FC.hair} text-[12px] ${FC.sub} hover:border-[#003083] dark:hover:border-[#5b9bff] hover:text-[#003083] dark:hover:text-[#5b9bff] transition-colors`}
-                    >
-                      Crie times em Equipe <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
+                    // Sem times: um campo como os outros (não a caixa tracejada), dizendo o estado
+                    // e onde resolver.
+                    <a href="/admin/equipe" className={`${campoCls} flex items-center justify-between gap-2 ${FC.mut}`}>
+                      <span className="truncate">Nenhum time criado</span>
+                      <span className="inline-flex items-center gap-1 text-[12px] shrink-0 hover:text-[#003083] dark:hover:text-[#5b9bff]">
+                        Criar <ArrowUpRight className="w-3.5 h-3.5" />
+                      </span>
                     </a>
                   )}
                 </div>
                 <div>
-                  <label className={`block text-[12px] ${FC.sub} mb-1`}>Prioridade</label>
+                  <label className={rotuloCls}>Prioridade</label>
                   <Select
                     value={openConv.priority || "none"}
                     onChange={(v) => savePriority(openConv.id, v as string)}
@@ -2308,10 +2341,11 @@ export default function ConversasPage() {
 
             <AccordionSection title="Macros" defaultOpen={false}>
               {macros.length > 0 ? (
-                <div className="space-y-1">
+                // Lista, alinhada à esquerda (era uma pilha de botões centralizados sem borda).
+                <div className="-mx-2 space-y-0.5">
                   {macros.map((m) => (
-                    <button key={m.id} onClick={() => applyMacro(m.id)} className={`w-full flex items-center justify-center gap-1.5 px-3 h-8 rounded-[10px] text-[12px] font-medium ${FC.dim} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white transition-all active:scale-[0.98]`}>
-                      <Zap className="w-3.5 h-3.5 shrink-0 opacity-70" /> <span className="truncate">{m.name}</span>
+                    <button key={m.id} onClick={() => applyMacro(m.id)} className={`w-full flex items-center gap-2 h-8 px-2 rounded-[8px] text-left text-[13px] ${FC.ink} ${FC.hover} transition-colors active:scale-[0.99]`}>
+                      <Zap className={`w-3.5 h-3.5 shrink-0 ${FC.mut}`} /> <span className="truncate">{m.name}</span>
                     </button>
                   ))}
                 </div>
@@ -2319,28 +2353,30 @@ export default function ConversasPage() {
             </AccordionSection>
 
             <AccordionSection title="Informação da conversa" defaultOpen={false}>
-              <dl className="space-y-2 text-[12.5px]">
-                <div className="flex items-center justify-between"><dt className={FC.sub}>Status</dt><dd><StatusBadge status={openConv.status} /></dd></div>
-                <div className="flex items-center justify-between"><dt className={FC.sub}>Mensagens</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb] font-medium">{openConv.msg_count}</dd></div>
-                <div className="flex items-center justify-between"><dt className={FC.sub}>Última mensagem</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb]">{fmtDate(openConv.last_message_at)}</dd></div>
-                <div className="flex items-center justify-between"><dt className={FC.sub}>Canal</dt><dd className="text-[#262626] dark:text-[#e6e8eb]">{channelLabel(openConv.connector_kind)}</dd></div>
+              <dl className={`divide-y ${FC.hair} text-[13px]`}>
+                <Linha rotulo="Status"><StatusBadge status={openConv.status} /></Linha>
+                <Linha rotulo="Mensagens"><span className="tabular-nums">{openConv.msg_count}</span></Linha>
+                <Linha rotulo="Última mensagem"><span className="tabular-nums">{fmtDate(openConv.last_message_at)}</span></Linha>
+                <Linha rotulo="Canal">{channelLabel(openConv.connector_kind)}</Linha>
                 {openConv.canal_rotulo && (
-                  <div className="flex items-center justify-between"><dt className={FC.sub}>Número</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb]">{openConv.canal_rotulo}{openConv.canal_modo === "registro" ? " · sem IA" : ""}</dd></div>
+                  <Linha rotulo="Número">
+                    <span className="tabular-nums">{openConv.canal_rotulo}{openConv.canal_modo === "registro" ? " · sem IA" : ""}</span>
+                  </Linha>
                 )}
                 {openConv.csat_state === "done" && openConv.csat_score != null && (
-                  <div className="flex items-center justify-between"><dt className={FC.sub}>CSAT</dt><dd className="text-amber-600 dark:text-amber-400 font-medium">⭐ {openConv.csat_score}/5</dd></div>
+                  <Linha rotulo="CSAT"><span className="text-amber-600 dark:text-amber-400 font-medium">⭐ {openConv.csat_score}/5</span></Linha>
                 )}
               </dl>
             </AccordionSection>
 
-            <AccordionSection title={`Conversas anteriores${priorConvs.length ? ` (${priorConvs.length})` : ""}`} defaultOpen={false}>
+            <AccordionSection title="Conversas anteriores" count={priorConvs.length} defaultOpen={false}>
               {priorConvs.length > 0 ? (
-                <div className="space-y-0.5">
+                <div className="-mx-2 space-y-0.5">
                   {priorConvs.map((c) => (
-                    <button key={c.id} onClick={() => openConversation(c)} className="w-full text-left px-2 py-1.5 rounded-[8px] hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors">
+                    <button key={c.id} onClick={() => openConversation(c)} className={`w-full text-left px-2 h-8 rounded-[8px] ${FC.hover} transition-colors`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[12.5px] text-[#262626] dark:text-[#e6e8eb] truncate">{c.last_preview || "Conversa"}</span>
-                        <span className={`text-[10.5px] ${FC.mut} tabular-nums shrink-0`}>{fmtDate(c.last_message_at)}</span>
+                        <span className={`text-[13px] truncate ${FC.ink}`}>{c.last_preview || "Conversa"}</span>
+                        <span className={`text-[12px] ${FC.mut} tabular-nums shrink-0`}>{fmtDate(c.last_message_at)}</span>
                       </div>
                     </button>
                   ))}
@@ -2348,22 +2384,24 @@ export default function ConversasPage() {
               ) : <SoonHint text="Nenhuma conversa anterior deste contato." />}
             </AccordionSection>
 
+            {/* O «Canal» saiu daqui: já está em «Informação da conversa». */}
             <AccordionSection title="Atributos do contato" defaultOpen={false}>
-              <dl className="space-y-2 text-[12.5px]">
-                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Nome</dt><dd className="text-[#262626] dark:text-[#e6e8eb] truncate">{openConv.crm_nome || openConv.contact_name || "—"}</dd></div>
+              <dl className={`divide-y ${FC.hair} text-[13px]`}>
+                <Linha rotulo="Nome">{openConv.crm_nome || openConv.contact_name || "—"}</Linha>
                 {openConv.crm_nome && openConv.contact_name && openConv.contact_name.trim() !== openConv.crm_nome.trim() && (
-                  <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>No WhatsApp</dt><dd className="text-[#262626] dark:text-[#e6e8eb] truncate">{openConv.contact_name}</dd></div>
+                  <Linha rotulo="No WhatsApp">{openConv.contact_name}</Linha>
                 )}
-                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Telefone</dt><dd className="tabular-nums text-[#262626] dark:text-[#e6e8eb]">{telefoneDaConversa(openConv)}</dd></div>
+                <Linha rotulo="Telefone"><span className="tabular-nums">{telefoneDaConversa(openConv)}</span></Linha>
                 {openConv.agenda_nome && openConv.agenda_nome.trim() !== nomeDaConversa(openConv) && (
-                  <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Na agenda</dt><dd className="text-[#262626] dark:text-[#e6e8eb] truncate">{openConv.agenda_nome}</dd></div>
+                  <Linha rotulo="Na agenda">{openConv.agenda_nome}</Linha>
                 )}
-                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>Canal</dt><dd className="text-[#262626] dark:text-[#e6e8eb]">{channelLabel(openConv.connector_kind)}</dd></div>
-                <div className="flex items-center justify-between gap-3"><dt className={FC.sub}>ID externo</dt><dd className="font-mono text-[11px] text-[#262626]/70 dark:text-[#9aa1ab] truncate max-w-[150px]" title={openConv.external_id || ""}>{openConv.external_id || "—"}</dd></div>
+                <Linha rotulo="ID externo" titulo={openConv.external_id || ""}>
+                  <span className={`font-mono text-[11.5px] ${FC.sub}`}>{openConv.external_id || "—"}</span>
+                </Linha>
               </dl>
             </AccordionSection>
             <AccordionSection title="Notas do contato" defaultOpen={false}><SoonHint text="Notas internas aparecem no histórico do chat (modo Nota interna)." /></AccordionSection>
-            <AccordionSection title={`Anexos${attachments.length ? ` (${attachments.length})` : ""}`} defaultOpen={false}>
+            <AccordionSection title="Anexos" count={attachments.length} defaultOpen={false}>
               {attachments.length > 0 ? (
                 <div className="space-y-2">
                   {attachments.some((a) => a.kind === "image") && (
@@ -2382,11 +2420,11 @@ export default function ConversasPage() {
                       target="_blank"
                       rel="noreferrer"
                       title={a.url}
-                      className={`flex items-center gap-2 px-2 h-8 rounded-[8px] text-[12.5px] ${FC.dim} hover:bg-black/[0.04] dark:hover:bg-white/[0.05] hover:text-[#262626] dark:hover:text-white transition-colors`}
+                      className={`-mx-2 flex items-center gap-2 px-2 h-8 rounded-[8px] text-[13px] ${FC.ink} ${FC.hover} transition-colors`}
                     >
-                      <Paperclip className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                      <Paperclip className={`w-3.5 h-3.5 shrink-0 ${FC.mut}`} />
                       <span className="truncate flex-1">{a.label}</span>
-                      <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
+                      <ExternalLink className={`w-3 h-3 shrink-0 ${FC.mut}`} />
                     </a>
                   ))}
                 </div>
@@ -2396,15 +2434,13 @@ export default function ConversasPage() {
             </AccordionSection>
             <AccordionSection title="Participantes da conversa" defaultOpen={false}>
               {assignedMember && (
-                <div className="flex items-center gap-2 mb-2.5">
-                  <span className="w-6 h-6 rounded-full bg-[#003083]/[0.08] dark:bg-[#5b9bff]/[0.14] flex items-center justify-center text-[11px] font-semibold text-[#003083] dark:text-[#5b9bff]">
-                    {assignedMember.nome.charAt(0).toUpperCase()}
-                  </span>
-                  <span className="text-[12.5px] text-[#262626] dark:text-[#e6e8eb] truncate">{assignedMember.nome}</span>
-                  <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] ${FC.sub} shrink-0`}>Atribuído</span>
+                <div className="flex items-center gap-2 mb-3">
+                  <MiniAvatar nome={assignedMember.nome} url={assignedMember.avatar_url} online={assignedMember.online} />
+                  <span className={`text-[13px] truncate ${FC.ink}`}>{assignedMember.nome}</span>
+                  <span className={`ml-auto text-[11px] px-2 h-5 inline-flex items-center rounded-full bg-black/[0.04] dark:bg-white/[0.06] ${FC.sub} shrink-0`}>Atribuído</span>
                 </div>
               )}
-              <p className={`text-[12px] leading-relaxed ${FC.sub}`}>
+              <p className={`text-[13px] leading-relaxed ${FC.sub}`}>
                 Mencione um colega com <b className={FC.ink}>@nome</b> numa <b className={FC.ink}>Nota interna</b> pra adicioná-lo: ele recebe a notificação e a conversa aparece em <b className={FC.ink}>Menções</b>.
               </p>
             </AccordionSection>

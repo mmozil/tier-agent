@@ -72,6 +72,22 @@ export const FC = {
 export const PRIMARY_SHADOW =
   "shadow-[inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-6px_12px_rgba(0,20,60,0.28),0_2px_4px_rgba(0,48,131,0.16),0_1px_1px_rgba(0,48,131,0.14),0_0.5px_0.5px_rgba(0,48,131,0.18),0_0.25px_0.25px_rgba(0,48,131,0.20)]";
 
+// ── Campo, rótulo e pílula de escolha (12/11/2026) ──────────────────────────────
+// O painel do contato tinha 4 jeitos de campo (raio 8/10/cheio, borda #EDEDED e #E4E4E4,
+// texto 12/12,5/14, foco por anel ou por cor da borda). Agora há UM: o mesmo gatilho do
+// <Select/> — 32 px, raio 10, linha fina, texto 14, anel azul no foco. Escolha ativa
+// (pílula) usa o azul 7% da opção selecionada do <Select/>.
+export const campoCls =
+  `w-full h-8 px-3 rounded-[10px] bg-white dark:bg-[#14171c] border border-[#EDEDED] dark:border-[#23272e] text-[14px] text-[#262626] dark:text-[#e6e8eb] outline-none transition-shadow hover:border-[#d8d8d8] dark:hover:border-[#33373e] focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] placeholder:text-[#262626]/40 dark:placeholder:text-[#6b7280] disabled:opacity-50`;
+export const rotuloCls = "block mb-1.5 text-[12px] text-[#262626]/[0.56] dark:text-[#8b93a0]";
+export function pilulaCls(ativa: boolean): string {
+  return `h-7 px-2.5 inline-flex items-center rounded-full border text-[12px] transition-colors ${
+    ativa
+      ? "border-[#003083]/30 bg-[#003083]/[0.07] text-[#003083] font-medium dark:border-[#5b9bff]/40 dark:bg-[#5b9bff]/[0.12] dark:text-[#8ab4ff]"
+      : "border-[#EDEDED] dark:border-[#23272e] text-[#262626]/[0.56] dark:text-[#8b93a0] hover:text-[#262626] dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+  }`;
+}
+
 // btnPrimary — classe única do botão primário (altura h-7, azul Tier + acabamento
 // Firecrawl). Use em <button> crus pra ficarem idênticos ao componente <Button>.
 // Prefixe "w-full" quando precisar largura cheia.
@@ -602,24 +618,30 @@ export function Select<T extends string | number>({
 }
 
 // SegToggle — toggle segmentado (período 7/30/90d) no estilo FC.
+// `compacto` (12/11/2026): 32 px no total, a mesma altura do campo (`campoCls`) — para ficar
+// na mesma linha de um campo sem degrau.
 export function SegToggle<T extends string | number>({
   value,
   options,
   onChange,
+  compacto = false,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
+  compacto?: boolean;
 }) {
   return (
-    <div className={`inline-flex rounded-[10px] border ${FC.hair} p-0.5`}>
+    <div className={`inline-flex shrink-0 rounded-[10px] border ${FC.hair} p-0.5`}>
       {options.map((o) => {
         const active = o.value === value;
         return (
           <button
             key={String(o.value)}
+            type="button"
+            aria-pressed={active}
             onClick={() => onChange(o.value)}
-            className={`h-8 px-3 rounded-[10px] text-[12px] font-medium transition-all active:scale-[0.98] ${
+            className={`${compacto ? "h-[26px] px-2.5 rounded-[8px] tabular-nums" : "h-8 px-3 rounded-[10px]"} text-[12px] font-medium transition-all active:scale-[0.98] ${
               active
                 ? "bg-[#003083] text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]"
                 : `${FC.sub} hover:text-[#262626] dark:hover:text-white ${FC.hover}`
