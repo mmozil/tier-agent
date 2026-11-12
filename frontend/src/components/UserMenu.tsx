@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogOut, Settings, HelpCircle, User as UserIcon } from "lucide-react";
+import { Building2, Check, Loader2, LogOut, Settings, HelpCircle, User as UserIcon } from "lucide-react";
+import toast from "react-hot-toast";
+
+import { api } from "@/lib/api";
 
 import { useAuth } from "@/contexts/AuthContext";
 import Avatar from "./Avatar";
@@ -48,11 +51,48 @@ function ExternalIcon() {
   );
 }
 
+interface Conta {
+  agent_tenant_id: number;
+  nome: string;
+  papel: string | null;
+  cargo: string | null;
+  atual: boolean;
+  ciencia_pendente: boolean;
+}
+
 export default function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // Troca de conta (12/11/2026): a pessoa que está em mais de uma conta (a dela, o CCDA, a M7…)
+  // troca aqui. Quem diz as contas e o papel em cada uma é o CRM. Dentro do CRM (inbox embutido,
+  // sessão `ta_sso`) quem troca de conta é o próprio CRM — o seletor não aparece.
+  const [contas, setContas] = useState<Conta[]>([]);
+  const [trocando, setTrocando] = useState<number | null>(null);
+  const embutido = (() => {
+    try {
+      return !!sessionStorage.getItem("ta_sso");
+    } catch {
+      return false;
+    }
+  })();
+  useEffect(() => {
+    if (!open || embutido) return;
+    api.get<{ contas: Conta[] }>("/auth/contas").then(({ data }) => setContas(data?.contas || [])).catch(() => setContas([]));
+  }, [open, embutido]);
+  async function trocar(c: Conta) {
+    if (c.atual || trocando) return;
+    setTrocando(c.agent_tenant_id);
+    try {
+      await api.post("/auth/trocar-conta", { agent_tenant_id: c.agent_tenant_id });
+      window.location.assign("/admin/conversas");
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Não deu para trocar de conta");
+      setTrocando(null);
+    }
+  }
 
   function go(path: string) {
     setOpen(false);
@@ -88,6 +128,40 @@ export default function UserMenu({ collapsed = false }: { collapsed?: boolean })
               </div>
             </div>
           </div>
+
+          {/* Contas — só quando a pessoa tem mais de uma */}
+          {contas.length > 1 && (
+            <>
+              <div className="px-1 py-1">
+                <p className="text-[10px] uppercase tracking-wide font-medium text-slate-400 px-3 py-1.5">Contas</p>
+                {contas.map((c) => (
+                  <button
+                    key={c.agent_tenant_id}
+                    onClick={() => trocar(c)}
+                    disabled={c.ciencia_pendente && !c.atual}
+                    title={c.ciencia_pendente && !c.atual ? "Confirme a ciência do registro das conversas no CRM antes de abrir esta conta" : undefined}
+                    className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-left ${
+                      c.atual ? "bg-slate-100" : "hover:bg-slate-50"
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    <Building2 className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13px] text-slate-800 truncate">{c.nome}</span>
+                      <span className="block text-[11px] text-slate-500 truncate">
+                        {c.ciencia_pendente && !c.atual ? "Confirme a ciência no CRM" : c.cargo || (c.papel === "admin" ? "Vê todas as conversas" : "Vê as suas conversas")}
+                      </span>
+                    </span>
+                    {trocando === c.agent_tenant_id ? (
+                      <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-slate-400" />
+                    ) : (
+                      c.atual && <Check className="w-3.5 h-3.5 shrink-0 text-[#003083]" />
+                    )}
+                  </button>
+                ))}
+              </div>
+              <div className="h-px bg-slate-100 mx-3" />
+            </>
+          )}
 
           {/* Opções */}
           <div className="px-1 py-1">

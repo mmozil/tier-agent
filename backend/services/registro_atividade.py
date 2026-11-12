@@ -66,6 +66,7 @@ ROTULOS: list[tuple[str | None, str, str]] = [
     ("POST", r"^/auth/google$", "Entrou com Google"),
     ("POST", r"^/auth/signup$", "Criou a conta"),
     ("POST", r"^/auth/logout$", "Saiu do sistema"),
+    ("POST", r"^/auth/trocar-conta$", "Trocou de conta"),
     ("PATCH", r"^/auth/me$", "Alterou o próprio perfil"),
     ("POST", r"^/auth/me/avatar$", "Trocou a foto do perfil"),
     ("DELETE", r"^/auth/me/avatar$", "Tirou a foto do perfil"),

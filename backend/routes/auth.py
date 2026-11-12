@@ -415,3 +415,78 @@ async def setup_status(
         "has_channel": has_channel,
         "ready": has_llm and has_persona,
     }
+
+
+# ── Troca de conta (12/11/2026, pedido do dono) ────────────────────────────────────
+# «No Agent também tem que ter o multicontas»: o Rodrigo entra no agent.tier.finance com a conta dele
+# e não tinha como ir ao CCDA nem à M7, em que ele também está. Quem decide as contas e o papel em
+# cada uma é o CRM (`erp_crm_client.contas_da_pessoa` / `trocar_conta`); aqui só se diz QUEM é a
+# pessoa (o `erp_owner_id` do membro, ou o e-mail do dono da conta) e se grava o cookie da conta
+# escolhida. Dentro do CRM (inbox embutido) a troca é a do próprio CRM: a tela não mostra o seletor.
+
+
+async def _quem_e_no_crm(db: AsyncSession, user) -> tuple[str | None, str | None]:
+    """(owner_id, email) para o CRM reconhecer a pessoa. Membro sem vínculo com o CRM → (None, None)."""
+    if user.member_id:
+        m = await db.get(TaMember, int(user.member_id))
+        return ((m.erp_owner_id or None), None) if m else (None, None)
+    t = await db.get(TaTenant, int(user.tenant_id)) if user.tenant_id else None
+    return (None, (t.email if t else None))
+
+
+@router.get("/contas")
+async def minhas_contas(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
+):
+    """As contas em que a pessoa entra no Agent (vazia se não houver mais de uma ou sem CRM)."""
+    from services import erp_crm_client
+
+    if not user.tenant_id or not erp_crm_client.integracao_ativa():
+        return {"contas": []}
+    owner_id, email = await _quem_e_no_crm(db, user)
+    if not owner_id and not email:
+        return {"contas": []}
+    try:
+        contas = await erp_crm_client.contas_da_pessoa(agent_tenant_id=int(user.tenant_id), owner_id=owner_id, email=email)
+    except erp_crm_client.ErpCrmError:
+        logger.warning("contas da pessoa: CRM não respondeu (tenant %s)", user.tenant_id, exc_info=True)
+        return {"contas": []}
+    return {"contas": contas}
+
+
+class TrocarContaIn(BaseModel):
+    agent_tenant_id: int
+
+
+@router.post("/trocar-conta")
+async def trocar_conta(
+    body: TrocarContaIn,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
+):
+    from core.auth import decode_token
+    from services import erp_crm_client
+
+    if not user.tenant_id or not erp_crm_client.integracao_ativa():
+        raise HTTPException(400, "Troca de conta indisponível.")
+    owner_id, email = await _quem_e_no_crm(db, user)
+    if not owner_id and not email:
+        raise HTTPException(403, "Sua sessão não está ligada ao CRM. O que fazer: entre pelo CRM.")
+    try:
+        r = await erp_crm_client.trocar_conta(
+            agent_tenant_id=int(user.tenant_id), owner_id=owner_id, email=email, destino=int(body.agent_tenant_id)
+        )
+    except erp_crm_client.ErpCrmError as e:
+        raise HTTPException(403, str(e)) from e
+    token = r.get("token") or ""
+    # 🚨 Confere o que veio: o token tem de ser DESTE Agent e da conta pedida.
+    try:
+        claims = decode_token(token)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, "O CRM devolveu uma entrada inválida.") from e
+    if int(claims.get("tenant_id") or 0) != int(body.agent_tenant_id):
+        raise HTTPException(502, "O CRM devolveu a entrada de outra conta.")
+    _set_cookie(response, token)
+    return {"ok": True, "tenant_id": int(body.agent_tenant_id)}

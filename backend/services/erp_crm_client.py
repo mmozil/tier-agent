@@ -323,3 +323,43 @@ async def enviar_historico_whatsapp(*, agent_tenant_id: int, eventos: list[dict]
     if r.status_code >= 400:
         raise _erro_do_erp(r)
     return r.json()
+
+
+# ── Troca de conta (12/11/2026) ────────────────────────────────────────────────────
+# A pessoa que entra no Agent pode estar em várias contas (o Rodrigo: a dele, o CCDA e a M7). Quem
+# sabe quais e com que papel é o CRM; o Agent pergunta e o CRM gera a entrada da conta escolhida com
+# as travas do «abrir o Atendimento» (rotas `/tier-empresas/atendimento/agent/*`).
+
+
+async def contas_da_pessoa(*, agent_tenant_id: int, owner_id: str | None, email: str | None) -> list[dict]:
+    base, headers = _base_e_headers()
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as cli:
+            r = await cli.post(
+                f"{base}/api/tier-empresas/atendimento/agent/contas-da-pessoa",
+                json={"agent_tenant_id": agent_tenant_id, "owner_id": owner_id, "email": email},
+                headers=headers,
+            )
+    except httpx.HTTPError as e:
+        raise ErpCrmError(f"Falha de rede ao ler as contas no CRM: {e}") from e
+    if r.status_code >= 400:
+        raise _erro_do_erp(r)
+    return r.json().get("contas") or []
+
+
+async def trocar_conta(*, agent_tenant_id: int, owner_id: str | None, email: str | None, destino: int) -> dict:
+    """{tenant_id, token, member_id, role} da conta de destino, emitido pelo SSO de sempre."""
+    base, headers = _base_e_headers()
+    try:
+        async with httpx.AsyncClient(timeout=40.0) as cli:
+            r = await cli.post(
+                f"{base}/api/tier-empresas/atendimento/agent/trocar-conta",
+                json={"agent_tenant_id": agent_tenant_id, "owner_id": owner_id, "email": email,
+                      "destino_agent_tenant_id": destino},
+                headers=headers,
+            )
+    except httpx.HTTPError as e:
+        raise ErpCrmError(f"Falha de rede ao trocar de conta: {e}") from e
+    if r.status_code >= 400:
+        raise _erro_do_erp(r)
+    return r.json()
