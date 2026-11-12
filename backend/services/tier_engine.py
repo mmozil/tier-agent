@@ -190,6 +190,19 @@ def _strip_thinking(text: str) -> str:
     return _sem_enclise(_THINK_RE.sub("", text or "").strip())
 
 
+_HORA_CITADA_RE = re.compile(r"\b(\d{1,2}):(\d{2})\b|\b(\d{1,2})\s*h\s*(\d{2})?\b", re.I)
+
+
+def horas_citadas(texto: str | None) -> set[str]:
+    """As horas que um texto cita, normalizadas em HH:MM («8h», «08:00» e «8 h» são a mesma)."""
+    saida: set[str] = set()
+    for h, m, h2, m2 in _HORA_CITADA_RE.findall(texto or ""):
+        hora, minuto = (h, m) if h else (h2, m2 or "00")
+        if int(hora) < 24 and int(minuto) < 60:
+            saida.add(f"{int(hora):02d}:{int(minuto):02d}")
+    return saida
+
+
 @dataclass
 class EngineReply:
     text: str
@@ -962,6 +975,11 @@ async def send_message(
     # Sem esta trava disparavam para qualquer agente com ferramenta: com o Tier Emissor ligado
     # (09/10/2026), «a nota 15 foi confirmada?» mandava o modelo consultar a agenda do pet.
     _agenda_ou_pet = _has_pet_tools or _has_agenda_tools
+    # Horas que o PRÓPRIO agente já ofereceu nesta conversa (turnos anteriores e o
+    # texto que ele escreveu antes de chamar ferramenta neste turno).
+    _horas_ja_ofertadas = horas_citadas(
+        " ".join(m["content"] for m in messages if m.get("role") == "assistant" and isinstance(m.get("content"), str))
+    )
 
     _discipline_msg = None
     _brake = None
@@ -1036,7 +1054,15 @@ async def send_message(
         )
     elif active_tools and text and _agenda_ou_pet and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
         "horario", "disponiv"
-    ):
+    ) and not (_has_agenda_tools and not _has_pet_tools and (_BOOKING_OK or not (horas_citadas(text) - _horas_ja_ofertadas))):
+        # 🚨 Agenda de VISITA (11/11/2026, ensaio do CCDA): o freio disparava (1) na
+        # confirmação logo depois de agendar_visita dar certo — a hora citada é a da
+        # reserva — e (2) quando a família escolhia um horário OFERECIDO no turno
+        # anterior: a resposta que pedia os dados citava «08:00», o freio forçava a
+        # consulta e o agente re-listava os horários em vez de seguir. Pior no turno
+        # seguinte: «tá confirmado?» → consulta → o horário já não aparece (é DELA)
+        # → «não está mais disponível». Hora que o próprio agente já ofereceu na
+        # conversa veio de uma consulta; hora nova continua freada. Pet: inalterado.
         _brake = "offers_slot_no_check"
         _discipline_msg = (
             "(sistema) Você ofereceu horário SEM consultar a agenda. Chame AGORA a ferramenta de "
@@ -1085,7 +1111,12 @@ async def send_message(
             "número pra cadastrar/buscar o cliente e siga (se não houver cadastro, cadastre AGORA com o nome "
             "do WhatsApp + esse número, sem ficar perguntando)."
         )
-    elif active_tools and text and _agenda_ou_pet and _USER_ASKS_BOOKING.search(user_content or "") and not _called("agenda", "historico"):
+    # 🚨 Os dois freios abaixo são do PET (11/11/2026): mandam chamar
+    # pet_consultar_agenda / pet_listar_profissionais, que o agente de VISITA não
+    # tem — e o de agendamento existente ainda manda dizer «não encontrei». A
+    # agenda de visita não lê agendamento existente: com o freio, a família que
+    # acabou de remarcar e pergunta «tá confirmado?» ouviria que não há visita.
+    elif active_tools and text and _has_pet_tools and _USER_ASKS_BOOKING.search(user_content or "") and not _called("agenda", "historico"):
         _brake = "booking_exists_query"
         _discipline_msg = (
             "(sistema) O cliente perguntou sobre um agendamento EXISTENTE (se está confirmado / qual o horário). "
@@ -1093,7 +1124,7 @@ async def send_message(
             "pet_historico_pet do pet) e responda SÓ com o que existir de verdade. Se não houver agendamento "
             "pra esse pet, diga que não encontrou e ofereça agendar — nunca confirme um horário/valor que você não verificou."
         )
-    elif active_tools and text and _agenda_ou_pet and _USER_ASKS_HOURS.search(user_content or "") and not _called("profission"):
+    elif active_tools and text and _has_pet_tools and _USER_ASKS_HOURS.search(user_content or "") and not _called("profission"):
         _brake = "prof_hours"
         _discipline_msg = (
             "(sistema) O cliente perguntou o HORÁRIO/expediente de um profissional (até que horas atende hoje) "

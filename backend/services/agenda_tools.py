@@ -37,6 +37,11 @@ from core.config import get_settings
 logger = logging.getLogger(__name__)
 
 AGENDA_SLUG_PARAM = "agenda_slug"
+# Lista FECHADA de ferramentas da agenda que o agente enxerga (CSV, mesmo escopo do
+# slug). Sem o param, nada muda: o agente ganha todas, como sempre. Existe porque
+# ligar a agenda num agente ligava junto as que MEXEM no card (etapa, perda,
+# campo) — o CCDA (agente 26, 11/11/2026) quer só consultar e marcar visita.
+AGENDA_TOOLS_PARAM = "agenda_tools"
 
 _HTTP_TIMEOUT_S = 10.0  # REGRA DURA do contrato — nunca segurar o turno além disso
 _CONFIG_TTL_S = 300.0
@@ -46,8 +51,15 @@ _config_cache: dict[str, tuple[float, dict]] = {}
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-_MAX_DIAS = 7
-_MAX_SLOTS_POR_DIA = 12
+# O dia pedido + os seguintes com horário. A consulta começa NO dia pedido (`de=`).
+_MAX_DIAS = 4
+# 🚨 Era 12 e cortava a TARDE (11/11/2026): a grade do CCDA tem ~16 horários por
+# dia, e o 13º em diante (14h às 17h) não chegava ao modelo — «de tarde» virava
+# «não tenho». Agora cabe o dia inteiro.
+_MAX_SLOTS_POR_DIA = 24
+# Movimento perto de um horário: visitas da grade ocupadas até 60 min antes/depois.
+_JANELA_MOVIMENTO_MIN = 60
+_TRANQUILOS_POR_PERIODO = 3
 
 PUBLIC_CALENDAR_BASE = "https://crm.tier.finance/calendario"
 
@@ -259,6 +271,52 @@ def _dia_br(iso: str) -> str:
         return iso
 
 
+def _minutos(hora: Any) -> int | None:
+    """'HH:MM' -> minutos do dia; None se não for hora."""
+    try:
+        h, m = str(hora or "").split(":")[:2]
+        return int(h) * 60 + int(m)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _periodos_do_dia(slots_do_dia: list[dict]) -> dict:
+    """Manhã/tarde do dia e, em cada período, os horários com MENOS movimento perto.
+
+    «Ver o que é melhor para o atendimento» (dono, 11/11/2026): no CCDA cada
+    horário fecha quando uma visita começa nele, e a equipe atende em paralelo. Um
+    horário livre cercado de horários ocupados cai numa hora em que as consultoras
+    já estão com outras famílias; um horário com a vizinhança livre espalha a
+    carga. 🚨 É uma APROXIMAÇÃO lida da própria grade (horários `ocupado` até
+    60 min antes ou depois) — o /slots não diz quantas visitas há em cada hora.
+    Desempate pelo mais cedo, e a saída volta em ordem de hora.
+    """
+    ocupados = [
+        m for s in slots_do_dia
+        if s.get("motivo") == "ocupado" and (m := _minutos(s.get("hora"))) is not None
+    ]
+    manha: list[str] = []
+    tarde: list[str] = []
+    movimento: dict[str, int] = {}
+    for s in slots_do_dia:
+        m = _minutos(s.get("hora"))
+        if not s.get("disponivel") or m is None:
+            continue
+        hora = str(s.get("hora"))
+        (manha if m < 12 * 60 else tarde).append(hora)
+        movimento[hora] = sum(1 for o in ocupados if abs(o - m) <= _JANELA_MOVIMENTO_MIN)
+
+    def _tranquilos(horas: list[str]) -> list[str]:
+        escolhidos = sorted(horas, key=lambda h: (movimento.get(h, 0), _minutos(h) or 0))[:_TRANQUILOS_POR_PERIODO]
+        return sorted(escolhidos, key=lambda h: _minutos(h) or 0)
+
+    return {
+        "manha": manha,
+        "tarde": tarde,
+        "mais_tranquilos": {"manha": _tranquilos(manha), "tarde": _tranquilos(tarde)},
+    }
+
+
 def summarize_slots(slots_payload: dict, data_pedida: str) -> dict:
     """Resume a resposta de /slots pro modelo: só horários disponíveis, agrupados por dia.
 
@@ -266,6 +324,10 @@ def summarize_slots(slots_payload: dict, data_pedida: str) -> dict:
     tier_engine (que pega o modelo negando horário quando a ferramenta retornou algum)."""
     slots = (slots_payload or {}).get("slots") or []
     disponiveis = [s for s in slots if s.get("disponivel")]
+    # A grade INTEIRA de cada dia (livres e ocupados) — é dela que sai o movimento.
+    grade_por_dia: dict[str, list[dict]] = {}
+    for s in slots:
+        grade_por_dia.setdefault(s.get("dia") or str(s.get("inicio") or "")[:10], []).append(s)
     dias: dict[str, list[dict]] = {}
     for s in disponiveis:
         dia = s.get("dia") or str(s.get("inicio") or "")[:10]
@@ -287,9 +349,10 @@ def summarize_slots(slots_payload: dict, data_pedida: str) -> dict:
                 "Consulte outra data."
             ),
         }
-    return {
+    saida = {
         "status": f"{total} horários AGENDÁVEIS",
         "data_pedida": data_pedida,
+        "semana_pedida": _dia_da_semana(data_pedida),
         "duracao_min": slots_payload.get("duracao_min"),
         "timezone": slots_payload.get("timezone"),
         # 🚨 `semana` e `dia_br` vêm do SERVIDOR. Sem eles o modelo tinha de
@@ -298,7 +361,13 @@ def summarize_slots(slots_payload: dict, data_pedida: str) -> dict:
         # ofereceu "sábado", errado de novo. Dia da semana é conta, não juízo:
         # quem tem o calendário é o servidor.
         "dias": [
-            {"dia": d, "semana": _dia_da_semana(d), "dia_br": _dia_br(d), "horarios": h}
+            {
+                "dia": d,
+                "semana": _dia_da_semana(d),
+                "dia_br": _dia_br(d),
+                "horarios": h,
+                **_periodos_do_dia(grade_por_dia.get(d) or []),
+            }
             for d, h in sorted(dias.items())
         ],
         "instrucao": (
@@ -306,9 +375,20 @@ def summarize_slots(slots_payload: dict, data_pedida: str) -> dict:
             "'dia_br' como está e NÃO diga o dia da semana ao oferecer visita. "
             "'semana' está aqui só para o caso de a família perguntar diretamente que "
             "dia da semana é; nunca calcule isso você mesmo. "
+            "'manha' e 'tarde' separam os horários livres do dia por período; 'mais_tranquilos' "
+            "traz, em cada período, os horários com menos visitas marcadas perto (a equipe mais "
+            "livre) — quando o cliente não pediu uma hora exata, prefira oferecer esses. "
+            "Se ele pediu uma hora que NÃO está na lista, essa hora não está livre: diga isso e "
+            "ofereça as livres mais próximas do mesmo período. "
             "Para agendar, use o campo 'inicio' EXATO do horário escolhido em agendar_visita."
         ),
     }
+    if data_pedida and data_pedida not in dias:
+        # O dia pedido não tem horário (fechado, lotado ou fora da janela): a
+        # lista começa no próximo dia que tem. Dito com todas as letras, senão o
+        # modelo oferece o dia seguinte como se fosse o pedido.
+        saida["dia_pedido_sem_horario"] = True
+    return saida
 
 
 def _detail_text(resp: httpx.Response) -> str:
@@ -352,6 +432,45 @@ async def get_agenda_slug(db, agent_id: int) -> str | None:
         logger.warning("agenda_tools: agenda_slug inválido agent=%s (%r) — ignorando", agent_id, slug)
         return None
     return slug
+
+
+async def get_agenda_tools_permitidas(db, agent_id: int) -> set[str] | None:
+    """Ferramentas da agenda liberadas para o agente (param `agenda_tools`, CSV).
+
+    `None` = sem o param = todas, o comportamento de sempre."""
+    from sqlalchemy import select
+
+    from models import TaRuntimeParam
+
+    row = (
+        await db.execute(
+            select(TaRuntimeParam.value)
+            .where(
+                TaRuntimeParam.escopo == "agent",
+                TaRuntimeParam.escopo_id == agent_id,
+                TaRuntimeParam.key == AGENDA_TOOLS_PARAM,
+            )
+            .order_by(TaRuntimeParam.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    nomes = {x.strip() for x in str(row or "").split(",") if x.strip()}
+    return nomes or None
+
+
+def filtrar_tools(
+    schemas: list[dict], handlers: dict[str, Callable[[dict], Awaitable[str]]], permitidas: set[str] | None
+) -> tuple[list[dict], dict[str, Callable[[dict], Awaitable[str]]]]:
+    """Fica só com as ferramentas permitidas — schema E handler, juntos.
+
+    🚨 Os dois lados: schema sem handler o modelo chama e quebra; handler sem
+    schema fica executável por nome se o modelo o inventar."""
+    if permitidas is None:
+        return schemas, handlers
+    return (
+        [s for s in schemas if ((s.get("function") or {}).get("name")) in permitidas],
+        {n: h for n, h in handlers.items() if n in permitidas},
+    )
 
 
 def invalidate_config_cache(slug: str | None = None) -> None:
@@ -406,7 +525,11 @@ def _make_consultar_handler(slug: str, turno: dict | None = None) -> Callable[[d
             return "[data inválida — chame de novo com data no formato AAAA-MM-DD, ex.: 2026-08-20]"
         try:
             async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
-                r = await cli.get(f"{_base_url()}/{slug}/slots", params={"data": data})
+                # 🚨 O parâmetro do ERP é `de` (início da janela), NÃO `data`
+                # (11/11/2026). `data` era ignorado e a janela começava sempre
+                # HOJE: o dia pedido só aparecia se caísse nos 6 dias seguintes,
+                # e um pedido para a semana que vem voltava sem o dia.
+                r = await cli.get(f"{_base_url()}/{slug}/slots", params={"de": data})
         except Exception:
             logger.exception("agenda_tools: GET slots %s falhou", slug)
             return _fallback_msg(slug)
@@ -1006,4 +1129,8 @@ async def discover_agenda_tools(
         build_campo_tool_schema(),
         build_serie_tool_schema(),
     ]
+    permitidas = await get_agenda_tools_permitidas(db, agent_id)
+    if permitidas is not None:
+        schemas, handlers = filtrar_tools(schemas, handlers, permitidas)
+        logger.info("agenda_tools: agent=%s com lista fechada %s", agent_id, sorted(handlers))
     return schemas, handlers
