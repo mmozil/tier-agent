@@ -51,8 +51,8 @@ do contato arma o passo em qualquer conversa. Quatro travas, todas na configura�
   (`ccda.com.br/valor-`): é o caminho da proposta, que era onde o robô antigo mandava o tour.
 - `parar_se_agente_disse` ganha as frases de família matriculada e de outra escola (medidas no que o
   agente 26 respondeu de fato, sem as que aparecem em resposta comum de venda).
-- `janela` (por configuração, opcional): `{"inicio": "08:00", "fim": "21:30", "tz": "America/Sao_Paulo"}`.
-  Passo que vence fora dela não sai, como o atrasado: às 08:00 já perdeu o contexto. Necessária porque
+- `janela` (por configuração, opcional): `{"inicio": "08:00", "fim": "21:30", "tz": "America/Sao_Paulo",
+  "dias": [1, 2, 3, 4, 5]}` (`dias` ISO, 1 = segunda; ausente = todos). Passo que vence fora dela não sai, como o atrasado: às 08:00 já perdeu o contexto. Necessária porque
   o horário da IA do número pode ser «sempre» (o do CCDA é).
 """
 
@@ -118,11 +118,13 @@ class Passo:
 
 @dataclass(frozen=True)
 class Janela:
-    """Horário em que callback pode sair (hora local do fuso): `inicio <= agora < fim`."""
+    """Horário em que callback pode sair (hora local do fuso): `inicio <= agora < fim`, nos `dias`
+    (ISO: 1 = segunda … 7 = domingo; None = todos)."""
 
     inicio: time
     fim: time
     tz: str = FUSO_PADRAO
+    dias: frozenset[int] | None = None
 
 
 @dataclass(frozen=True)
@@ -178,7 +180,18 @@ def _ler_janela(v, erros: list[str]) -> tuple[Janela | None, bool]:
     except Exception:  # noqa: BLE001 — ZoneInfoNotFoundError, ValueError, TypeError: qualquer fuso ruim
         erros.append(f"janela.tz: fuso desconhecido «{tz}»")
         return None, False
-    return Janela(inicio=time.fromisoformat(inicio), fim=time.fromisoformat(fim), tz=tz), True
+    # Dias da semana (12/11/2026, CCDA: não manda no fim de semana). Ausente = todos os dias.
+    dias = v.get("dias")
+    if dias is not None:
+        if (
+            not isinstance(dias, list)
+            or not dias
+            or not all(isinstance(d, int) and not isinstance(d, bool) and 1 <= d <= 7 for d in dias)
+        ):
+            erros.append("janela.dias: lista de dias da semana de 1 (segunda) a 7 (domingo), ex.: [1, 2, 3, 4, 5]")
+            return None, False
+        dias = frozenset(dias)
+    return Janela(inicio=time.fromisoformat(inicio), fim=time.fromisoformat(fim), tz=tz, dias=dias), True
 
 
 def carregar_config(bruto) -> tuple[Config | None, list[str]]:
@@ -211,7 +224,8 @@ def carregar_config(bruto) -> tuple[Config | None, list[str]]:
       silêncio arma o passo em qualquer conversa); false em `fala_do_agente`.
     - `exige_passo`: id de outro passo que já tem de ter sido enviado.
     - `exige_fala_do_agente`: lista de textos; a IA já tem de ter dito um deles na conversa.
-    E por configuração, `janela`: {"inicio": "08:00", "fim": "21:30", "tz": "America/Sao_Paulo"}.
+    E por configuração, `janela`: {"inicio": "08:00", "fim": "21:30", "tz": "America/Sao_Paulo",
+    "dias": [1, 2, 3, 4, 5]} — `dias` opcional (ISO 1 = segunda … 7 = domingo, no fuso da janela).
     """
     erros: list[str] = []
     if bruto is None or (isinstance(bruto, str) and not bruto.strip()):
@@ -387,11 +401,14 @@ def aberta_pelo_contato(msgs: list[Msg]) -> bool:
 
 
 def dentro_da_janela(janela: Janela | None, agora: datetime) -> bool:
-    """`agora` em UTC sem fuso (como o ciclo usa). Sem janela, qualquer hora."""
+    """`agora` em UTC sem fuso (como o ciclo usa). Sem janela, qualquer hora. O dia da semana é o do
+    fuso da janela: 22:00 de sexta em Brasília é 01:00 de sábado em UTC."""
     if janela is None:
         return True
-    local = agora.replace(tzinfo=UTC).astimezone(ZoneInfo(janela.tz)).time()
-    return janela.inicio <= local < janela.fim
+    local = agora.replace(tzinfo=UTC).astimezone(ZoneInfo(janela.tz))
+    if janela.dias is not None and local.isoweekday() not in janela.dias:
+        return False
+    return janela.inicio <= local.time() < janela.fim
 
 
 def _ultima(msgs: list[Msg], cond) -> int | None:

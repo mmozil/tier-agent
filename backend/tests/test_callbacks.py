@@ -41,7 +41,7 @@ CCDA = json.loads(
   "ativo": true,
   "tolerancia_min": 30,
   "intervalo_minimo_min": 10,
-  "janela": {"inicio": "08:00", "fim": "21:30", "tz": "America/Sao_Paulo"},
+  "janela": {"inicio": "08:00", "fim": "21:30", "tz": "America/Sao_Paulo", "dias": [1, 2, 3, 4, 5]},
   "parar_se_visita_marcada": true,
   "parar_se_agente_disse": [
     "Trabalhe Conosco",
@@ -86,7 +86,7 @@ CCDA = json.loads(
       "id": "tour",
       "gatilho": {"tipo": "silencio_do_contato"},
       "so_conversa_iniciada_pelo_contato": true,
-      "exige_fala_do_agente": ["ccda.com.br/valor-"],
+      "exige_fala_do_agente": ["ccda.com.br/valor-", "não ficam abaixo de R$2.000"],
       "atraso_min": 60,
       "mensagens": [
         "Temos muitas outras novidades que você conhecerá pessoalmente, mas vou te passar um vídeo com uma completa apresentação do nosso Colégio, é muito importante que assista, lhe esclarecerá algumas dúvidas e é bem rapidinho.",
@@ -157,8 +157,9 @@ def test_configuracao_do_ccda_valida_sem_erro():
     assert cfg.passos[1].mensagens[0].endswith("Conseguiu agendar a sua visita? 🥰")
     # quem recebe: tour e fechamento só em conversa aberta pelo contato; tour só depois do valor
     assert [p.so_conversa_iniciada_pelo_contato for p in cfg.passos] == [False, False, True, True]
-    assert cfg.passos[2].exige_fala_do_agente == ("ccda.com.br/valor-",)
+    assert cfg.passos[2].exige_fala_do_agente == ("ccda.com.br/valor-", "não ficam abaixo de R$2.000")
     assert (str(cfg.janela.inicio), str(cfg.janela.fim), cfg.janela.tz) == ("08:00:00", "21:30:00", "America/Sao_Paulo")
+    assert cfg.janela.dias == frozenset({1, 2, 3, 4, 5})  # regra escrita do CCDA: não manda no fim de semana
 
 
 def test_configuracao_vem_do_banco_como_texto():
@@ -1064,3 +1065,60 @@ def test_ciclo_conversa_longa_confere_quem_abriu_no_banco(sessao, envios, monkey
     )
     r = _rodar(C.rodar_ciclo(_Db(sessao), agora=MEIO_DIA))
     assert (r["enviados"] == 1) is sai
+
+
+# ─── 8. Dias da semana na janela e o tour do Ensino Médio (12/11/2026) ───────
+
+
+def test_tour_do_ccda_tambem_abre_pela_frase_do_valor_do_ensino_medio():
+    """O Ensino Médio não manda link do valor: a frase do preço é o caminho da proposta dele."""
+    fala = "Para que você tenha uma ideia, as mensalidades para o Ensino Médio não ficam abaixo de R$2.000,00."
+    msgs = [_m("user", "e o médio?", 0), _m("assistant", fala, 0.1), _m("user", "vou ver", 5)]
+    msgs.append(_m("assistant", "Combinado!", 5.1))
+    passo, motivos = _vencido(msgs, 65.1, cfg=_cfg(CCDA))
+    assert passo == "tour" and motivos["ensino_medio_video"] == "respondeu_depois"
+
+
+@pytest.mark.parametrize(
+    ("dia", "hhmm", "dentro"),
+    [
+        (12, "12:00", True),  # quinta
+        (13, "21:00", True),  # sexta 21:00 em Brasília = sábado 00:00 em UTC: vale o dia do fuso
+        (13, "21:30", False),  # sexta, fora do horário
+        (14, "12:00", False),  # sábado
+        (15, "12:00", False),  # domingo
+        (16, "08:00", True),  # segunda
+    ],
+)
+def test_janela_do_ccda_so_em_dia_util(dia, hhmm, dentro):
+    assert C.dentro_da_janela(_cfg(CCDA).janela, _brasilia(dia, hhmm)) is dentro
+
+
+def test_janela_sem_dias_vale_todos_os_dias():
+    sem_dias = {k: v for k, v in CCDA["janela"].items() if k != "dias"}
+    janela = _cfg({**CCDA, "janela": sem_dias}).janela
+    assert janela.dias is None
+    assert all(C.dentro_da_janela(janela, _brasilia(d, "12:00")) for d in range(12, 19))
+
+
+def test_passo_que_vence_no_fim_de_semana_nao_sai_nem_na_segunda():
+    """Proposta vence sábado 12:00: não sai; na segunda já passou da tolerância. Não fica guardada."""
+    cfg = _cfg(CCDA)
+    link = _brasilia(14, "11:30")
+    msgs = [C.Msg("user", "7", None, link), C.Msg("assistant", LINK_7, None, link)]
+    av = C.avaliar(cfg, msgs, {}, _brasilia(14, "12:00"))
+    assert av.vencido is None and av.motivos["proposta"] == "fora_da_janela"
+    assert C.avaliar(cfg, msgs, {}, _brasilia(16, "08:00")).motivos["proposta"] == "atrasado"
+
+
+@pytest.mark.parametrize("dias", [[], [0], [8], "1-5", [1, "2"], [True], [1.0], {"seg": 1}])
+def test_dias_ilegiveis_derrubam_a_configuracao(dias):
+    cfg, erros = C.carregar_config({**CCDA, "janela": {**CCDA["janela"], "dias": dias}})
+    assert cfg is None and any("janela.dias" in e for e in erros), erros
+
+
+def test_ciclo_no_sabado_nao_manda_nem_reserva(sessao, envios):
+    sabado = _brasilia(14, "12:00")
+    _semear(sessao, falas=[("user", "7 ano", 31), ("assistant", LINK_7, 30.9)], cfg=CCDA, agora=sabado)
+    r = _rodar(C.rodar_ciclo(_Db(sessao), agora=sabado))
+    assert r["enviados"] == 0 and envios["textos"] == [] and _linhas(sessao) == []
