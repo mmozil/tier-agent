@@ -290,3 +290,36 @@ async def fotos_da_equipe(*, agent_tenant_id: int, nomes: list[str], timeout: fl
     if r.status_code >= 400:
         raise _erro_do_erp(r)
     return {str(k): str(v) for k, v in (r.json().get("fotos") or {}).items() if v}
+
+
+# ── Mensagens automáticas no histórico do card (12/11/2026, CCDA) ──────────────
+# Disparo, modelo e callback pelo WhatsApp oficial: o envio e o que a Meta disse depois (entregue,
+# lida, não entregue) viram linhas na trilha do card da família. Ver services/crm_historico_whatsapp.py.
+
+
+async def enviar_historico_whatsapp(*, agent_tenant_id: int, eventos: list[dict], timeout: float = 20.0) -> dict:
+    """Leva os eventos ao ERP. `{"nao_vinculado": True}` quando o tenant não tem conta no ERP (404):
+    não há card para escrever, e quem chama marca como levado para não tentar para sempre."""
+    base, headers = _base_e_headers()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as cli:
+            r = await cli.post(
+                f"{base}/api/tier-empresas/vendas/crm/agent/whatsapp-historico",
+                json={"agent_tenant_id": agent_tenant_id, "eventos": eventos},
+                headers=headers,
+            )
+    except httpx.HTTPError as e:
+        raise ErpCrmError(f"Falha de rede ao gravar o histórico no CRM: {e}") from e
+    if r.status_code == 404:
+        # 🚨 Dois 404 diferentes: o ERP sem esta rota (deploy fora de ordem — «Not Found») tem de
+        # tentar de novo; só o «tenant não vinculado» é definitivo.
+        try:
+            detalhe = str(r.json().get("detail") or "")
+        except Exception:  # noqa: BLE001
+            detalhe = ""
+        if "vinculado" in detalhe.lower():
+            return {"nao_vinculado": True}
+        raise ErpCrmError(f"ERP sem a rota do histórico (404 {detalhe or 'Not Found'})")
+    if r.status_code >= 400:
+        raise _erro_do_erp(r)
+    return r.json()

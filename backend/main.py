@@ -701,6 +701,9 @@ async def _ensure_wa_preco_columns():
                 "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS categoria_preco VARCHAR(32)",
                 "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS modelo_preco VARCHAR(8)",
                 "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS subtipo_preco VARCHAR(32)",
+                # 12/11/2026: até onde o status desta mensagem já foi levado ao histórico do card no CRM
+                # (-1 nada · 0 enviada · 2 entregue · 3 lida · 9 não entregue). Ver services/crm_historico_whatsapp.py.
+                "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS crm_hist_ordem INTEGER NOT NULL DEFAULT -1",
                 "ALTER TABLE ta_wa_envio_status ADD COLUMN IF NOT EXISTS origem_conversa VARCHAR(32)",
             ):
                 await db.execute(_sql_text(ddl))

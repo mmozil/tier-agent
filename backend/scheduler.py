@@ -885,6 +885,20 @@ async def callbacks_job() -> None:
         logger.exception("callbacks_job falhou")
 
 
+async def crm_historico_whatsapp_job() -> None:
+    """Mensagens automáticas do WhatsApp oficial (disparo, modelo, callback) e se a família recebeu e
+    LEU — no histórico do card do CRM (12/11/2026). Regras em services/crm_historico_whatsapp.py."""
+    try:
+        from services import crm_historico_whatsapp
+
+        async with db_context() as db:
+            r = await crm_historico_whatsapp.rodar_ciclo(db)
+        if r.get("levados"):
+            logger.info("crm_historico_whatsapp: %s status levado(s) ao CRM", r["levados"])
+    except Exception:
+        logger.exception("crm_historico_whatsapp_job falhou")
+
+
 async def _job_lock(name: str, ttl: int) -> bool:
     """Lock Redis por tick — com >1 worker, só quem pega o lock roda o job.
     TTL < intervalo do job → próximo tick re-disputa (auto-recupera se 1 worker cai).
@@ -970,6 +984,13 @@ def init_scheduler() -> AsyncIOScheduler:
         _locked(callbacks_job, "callbacks", 50),
         trigger=IntervalTrigger(seconds=60),
         id="callbacks",
+        replace_existing=True,
+        max_instances=1,
+    )
+    sched.add_job(
+        _locked(crm_historico_whatsapp_job, "crm_historico_whatsapp", 100),
+        trigger=IntervalTrigger(seconds=120),
+        id="crm_historico_whatsapp",
         replace_existing=True,
         max_instances=1,
     )

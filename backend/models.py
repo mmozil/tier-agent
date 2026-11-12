@@ -933,5 +933,8 @@ class TaWaEnvioStatus(Base):
     tipo_preco: Mapped[str | None] = mapped_column(String(32), nullable=True)  # regular · free_customer_service · free_entry_point…
     categoria_preco: Mapped[str | None] = mapped_column(String(32), nullable=True)  # marketing · utility · service…
     modelo_preco: Mapped[str | None] = mapped_column(String(8), nullable=True)  # PMP (CBP só antes de 01/07/2025)
+    # Até onde este status já foi levado ao histórico do card no CRM (12/11/2026): -1 nada · 0 enviada ·
+    # 2 entregue · 3 lida · 9 não entregue. Ver services/crm_historico_whatsapp.py.
+    crm_hist_ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=-1, server_default="-1")
     subtipo_preco: Mapped[str | None] = mapped_column(String(32), nullable=True)  # paid_exempt (governo/ONG)
     origem_conversa: Mapped[str | None] = mapped_column(String(32), nullable=True)  # conversation.origin.type
