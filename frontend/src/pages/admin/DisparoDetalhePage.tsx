@@ -41,7 +41,9 @@ import {
 const POR_PAGINA = 100;
 
 // Os filtros da lista contato a contato (contagem exclusiva: «Enviado» = saiu e ainda sem confirmação).
-const FILTROS: { valor: Situacao | null; rotulo: string; conta: (d: DisparoDetalhe) => number }[] = [
+// «Respondeu» atravessa os outros (quem respondeu também está em Lido) — por isso fica por último.
+type Filtro = Situacao | "respondeu";
+const FILTROS: { valor: Filtro | null; rotulo: string; conta: (d: DisparoDetalhe) => number }[] = [
   { valor: null, rotulo: "Todos", conta: (d) => d.total },
   { valor: "pendente", rotulo: "Na fila", conta: (d) => d.contagens.pendentes },
   { valor: "enviado", rotulo: "Enviado", conta: (d) => d.contagens.enviados - d.contagens.entregues },
@@ -51,6 +53,7 @@ const FILTROS: { valor: Situacao | null; rotulo: string; conta: (d: DisparoDetal
   { valor: "descadastrado", rotulo: "Pediu para não receber", conta: (d) => d.contagens.descadastrados },
   { valor: "sem_nome", rotulo: "Sem nome", conta: (d) => d.contagens.sem_nome },
   { valor: "cancelado", rotulo: "Cancelado", conta: (d) => d.contagens.cancelados },
+  { valor: "respondeu", rotulo: "Respondeu", conta: (d) => d.contagens.respondidos ?? 0 },
 ];
 
 function pct(parte: number, total: number) {
@@ -65,7 +68,7 @@ export default function DisparoDetalhePage() {
   const [naoAchou, setNaoAchou] = useState(false);
   const [envios, setEnvios] = useState<Envio[] | null>(null);
   const [totalEnvios, setTotalEnvios] = useState(0);
-  const [filtro, setFiltro] = useState<Situacao | null>(null);
+  const [filtro, setFiltro] = useState<Filtro | null>(null);
   const [busca, setBusca] = useState("");
   const [buscaAplicada, setBuscaAplicada] = useState("");
   const [pagina, setPagina] = useState(0);
@@ -308,11 +311,16 @@ export default function DisparoDetalhePage() {
         </Row>
 
         <Row>
-          <HairCells cols={5}>
+          <HairCells cols={6}>
             {[
               { rotulo: "Enviados", valor: c.enviados, nota: `${pct(c.enviados, d.total)} da lista` },
               { rotulo: "Entregues", valor: c.entregues, nota: `${pct(c.entregues, c.enviados)} dos enviados` },
               { rotulo: "Lidos", valor: c.lidos, nota: `${pct(c.lidos, c.entregues)} dos entregues` },
+              {
+                rotulo: "Responderam",
+                valor: c.respondidos ?? 0,
+                nota: `${pct(c.respondidos ?? 0, c.entregues)} dos entregues`,
+              },
               { rotulo: "Falharam", valor: c.falhas, nota: c.falhas ? "veja o motivo na lista" : "nenhuma falha" },
               {
                 rotulo: "Custo até agora",
@@ -385,6 +393,7 @@ export default function DisparoDetalhePage() {
                             <span className={`tabular-nums ${FC.ink}`}>{formatPhone(e.numero)}</span>
                             {e.nome && <span className={`truncate ${FC.sub}`}>{e.nome}</span>}
                             <Pilula texto={s.texto} tom={s.tom} />
+                            {e.respondeu_em && <Pilula texto={`Respondeu ${quando(e.respondeu_em)}`} tom="ok" />}
                           </p>
                           {e.motivo && (
                             <p
@@ -400,13 +409,28 @@ export default function DisparoDetalhePage() {
                           <p className={`text-[11.5px] tabular-nums ${FC.mut}`}>
                             {e.status_em && e.situacao !== "enviado" ? quando(e.status_em) : quando(e.enviado_em)}
                           </p>
-                          {e.conversation_id && (
-                            <a
-                              href={`/admin/conversas?open=${e.conversation_id}`}
-                              className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline"
-                            >
-                              Conversa <ExternalLink className="w-3 h-3" />
-                            </a>
+                          {(e.conversation_id || e.crm_url) && (
+                            <p className="flex items-center justify-end gap-3">
+                              {e.conversation_id && (
+                                <a
+                                  href={`/admin/conversas?open=${e.conversation_id}`}
+                                  className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline"
+                                >
+                                  Conversa <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                              {e.crm_url && (
+                                <a
+                                  href={e.crm_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Abre o card da família no CRM"
+                                  className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline"
+                                >
+                                  Card no CRM <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                            </p>
                           )}
                         </div>
                       </li>

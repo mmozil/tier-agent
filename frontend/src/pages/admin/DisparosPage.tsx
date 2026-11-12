@@ -89,6 +89,9 @@ export default function DisparosPage() {
                     <th className="px-3 py-3 font-medium min-w-[180px]">Andamento</th>
                     <th className="px-3 py-3 font-medium text-right">Entregues</th>
                     <th className="px-3 py-3 font-medium text-right">Lidos</th>
+                    <th className="px-3 py-3 font-medium text-right" title="Mandaram mensagem na conversa depois do envio">
+                      Responderam
+                    </th>
                     <th className="px-3 py-3 font-medium text-right">Falhas</th>
                     <th className="px-3 py-3 font-medium text-right" title="Pediram para não receber + sem nome na lista">
                       Fora
@@ -131,6 +134,9 @@ export default function DisparosPage() {
                         </td>
                         <td className={`px-3 py-3.5 text-right text-[13px] tabular-nums ${FC.ink}`}>{inteiro(c.entregues)}</td>
                         <td className={`px-3 py-3.5 text-right text-[13px] tabular-nums ${FC.ink}`}>{inteiro(c.lidos)}</td>
+                        <td className={`px-3 py-3.5 text-right text-[13px] tabular-nums ${FC.ink}`}>
+                          {inteiro(c.respondidos ?? 0)}
+                        </td>
                         <td className={`px-3 py-3.5 text-right text-[13px] tabular-nums ${c.falhas ? "text-red-700 dark:text-red-400" : FC.ink}`}>
                           {inteiro(c.falhas)}
                         </td>

@@ -269,6 +269,13 @@ async def logout(response: Response, tier_session: str | None = Cookie(default=N
 @router.get("/me")
 async def me(db: AsyncSession = Depends(get_db), user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user)):
     tenant = await db.get(TaTenant, user.tenant_id) if user.tenant_id else None
+    # 12/11/2026: sessão de MEMBRO (entrou pelo CRM ou trocou de conta) — o menu mostrava o nome
+    # e a foto do DONO da conta («entrou no e-mail do Augusto»). A pessoa vem do membro.
+    membro = None
+    if user.member_id:
+        m = await db.get(TaMember, int(user.member_id))
+        if m is not None and m.tenant_id == user.tenant_id:
+            membro = {"id": m.id, "nome": m.nome, "email": m.email, "cargo": m.cargo, "role": m.role}
     return {
         "user_id": user.user_id,
         "email": user.email,
@@ -278,6 +285,7 @@ async def me(db: AsyncSession = Depends(get_db), user=Depends(__import__("core.a
         # quem não é dono/admin o que o servidor já recusa (criar, desconectar, apagar).
         "role": user.role,
         "member_id": user.member_id,
+        "member": membro,
         "tenant": {
             "id": tenant.id,
             "nome": tenant.nome,
@@ -305,7 +313,16 @@ async def update_me(
     tenant = await db.get(TaTenant, user.tenant_id)
     if not tenant:
         raise HTTPException(404, "Tenant não encontrado")
-    if payload.nome_pessoa is not None:
+    if user.member_id:
+        # 12/11/2026: antes o «Meu perfil» de um membro reescrevia o nome do DONO da conta.
+        m = await db.get(TaMember, int(user.member_id))
+        if payload.nome_pessoa is not None and m is not None and m.tenant_id == user.tenant_id:
+            novo = payload.nome_pessoa.strip()
+            if novo:
+                m.nome = novo[:120]
+        if payload.nome is not None and (user.role or "") not in ("owner", "admin"):
+            raise HTTPException(403, "Só o dono ou um administrador muda o nome da empresa.")
+    elif payload.nome_pessoa is not None:
         tenant.nome_pessoa = payload.nome_pessoa.strip() or None
     if payload.nome is not None:
         nome_limpo = payload.nome.strip()
@@ -332,6 +349,8 @@ async def upload_avatar(
     user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
 ):
     """Upload da foto de perfil → R2 → salva avatar_url no tenant."""
+    if user.member_id:
+        raise HTTPException(403, "A foto do perfil é a do dono da conta.")
     if not user.tenant_id:
         raise HTTPException(404, "Tenant não encontrado")
     tenant = await db.get(TaTenant, user.tenant_id)
@@ -356,6 +375,8 @@ async def delete_avatar(
     db: AsyncSession = Depends(get_db),
     user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
 ):
+    if user.member_id:
+        raise HTTPException(403, "A foto do perfil é a do dono da conta.")
     if not user.tenant_id:
         raise HTTPException(404, "Tenant não encontrado")
     tenant = await db.get(TaTenant, user.tenant_id)

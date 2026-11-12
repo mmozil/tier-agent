@@ -275,6 +275,27 @@ async def nomes_dos_contatos(*, agent_tenant_id: int, telefones: list[str], time
     return {str(k): str(v) for k, v in (r.json().get("nomes") or {}).items() if v}
 
 
+async def cards_dos_contatos(
+    *, agent_tenant_id: int, telefones: list[str], timeout: float = 6.0
+) -> tuple[dict[str, int], str | None]:
+    """({telefone: id do card no CRM}, modelo do endereço do card com «{id}») — 12/11/2026."""
+    base, headers = _base_e_headers()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as cli:
+            r = await cli.post(
+                f"{base}/api/tier-empresas/vendas/crm/agent/cards-dos-contatos",
+                json={"agent_tenant_id": agent_tenant_id, "telefones": telefones[:200]},
+                headers=headers,
+            )
+    except httpx.HTTPError as e:
+        raise ErpCrmError(f"Falha de rede ao ler os cards do CRM: {e}") from e
+    if r.status_code >= 400:
+        raise _erro_do_erp(r)
+    dados = r.json() or {}
+    cards = {str(k): int(v) for k, v in (dados.get("cards") or {}).items() if v}
+    return cards, dados.get("url_do_card")
+
+
 async def fotos_da_equipe(*, agent_tenant_id: int, nomes: list[str], timeout: float = 4.0) -> dict[str, str]:
     """{nome: url da foto} das pessoas da equipe que têm foto no CRM (09/11/2026, M7)."""
     base, headers = _base_e_headers()

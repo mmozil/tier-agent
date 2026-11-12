@@ -9,6 +9,8 @@ interface User {
   /** owner | admin | atendente — o servidor decide; a tela só esconde o que ele recusa. */
   role?: string;
   member_id?: number | null;
+  /** A pessoa da sessão quando é membro (entrou pelo CRM ou trocou de conta). */
+  member?: { id: number; nome: string; email: string; cargo?: string | null; role?: string } | null;
   tenant?: {
     id: number;
     nome: string;

@@ -34,13 +34,14 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, insert, or_, select, update
+from sqlalchemy import delete, exists, func, insert, or_, select, update
 
 from models import (
     TaAgent,
     TaConnector,
     TaDisparoOficial,
     TaDisparoOficialEnvio,
+    TaMessageLog,
     TaWaDescadastro,
     TaWaEnvioStatus,
 )
@@ -399,7 +400,44 @@ async def contagens(db, ids: list[int]) -> dict[int, dict]:
     por: dict[int, list] = {i: [] for i in ids}
     for did, st, meta, n in rows:
         por.setdefault(did, []).append((st, meta, n))
-    return {did: contar(linhas) for did, linhas in por.items()}
+    resp = await respondidos(db, ids)
+    return {did: {**contar(linhas), "respondidos": resp.get(did, 0)} for did, linhas in por.items()}
+
+
+def respondeu():
+    """Condição «o contato respondeu»: mensagem DELE na conversa do envio, depois do envio
+    (12/11/2026). Vale qualquer resposta — texto, áudio, botão do modelo. A conversa é a do
+    número oficial (`E.conversation_id`), então resposta noutro número não conta."""
+    M = TaMessageLog
+    return (
+        E.conversation_id.isnot(None)
+        & E.enviado_em.isnot(None)
+        & exists().where(M.conversation_id == E.conversation_id, M.role == "user", M.created_at > E.enviado_em)
+    )
+
+
+def primeira_resposta():
+    """Quando o contato respondeu pela primeira vez depois do envio (subconsulta por envio)."""
+    M = TaMessageLog
+    return (
+        select(func.min(M.created_at))
+        .where(M.conversation_id == E.conversation_id, M.role == "user", M.created_at > E.enviado_em)
+        .correlate(E)
+        .scalar_subquery()
+    )
+
+
+async def respondidos(db, ids: list[int]) -> dict[int, int]:
+    """{disparo: quantos contatos responderam}."""
+    ids = [int(i) for i in ids or []]
+    if not ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(E.disparo_id, func.count()).where(E.disparo_id.in_(ids), respondeu()).group_by(E.disparo_id)
+        )
+    ).all()
+    return {int(did): int(n) for did, n in rows}
 
 
 async def descadastrados_da_lista(db, tenant_id: int, chaves: list[str]) -> set[str]:

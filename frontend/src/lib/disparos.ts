@@ -23,6 +23,8 @@ export interface Contagens {
   descadastrados: number;
   sem_nome: number;
   cancelados: number;
+  /** Contatos que mandaram mensagem na conversa depois do envio (12/11/2026). */
+  respondidos?: number;
 }
 
 export interface Disparo {
@@ -80,6 +82,10 @@ export interface Envio {
   enviado_em: string | null;
   status_em: string | null;
   conversation_id: number | null;
+  /** Primeira mensagem do contato depois do envio (null = não respondeu). */
+  respondeu_em?: string | null;
+  /** O card da família no CRM (null = sem card ou CRM fora do ar). */
+  crm_url?: string | null;
 }
 
 // Preço por mensagem ENTREGUE (a Meta cobra o modelo entregue, não o enviado). Fonte: rate card

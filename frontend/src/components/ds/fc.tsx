@@ -307,16 +307,18 @@ export function HairCells({
   className = "",
 }: {
   children: ReactNode;
-  cols?: 2 | 3 | 4 | 5;
+  cols?: 2 | 3 | 4 | 5 | 6;
   gridLines?: boolean; // true = também border-b (grids multi-linha de cards)
   className?: string;
 }) {
   const items = (Array.isArray(children) ? children : [children]).flat().filter(Boolean);
   const lg =
-    cols === 5 ? "lg:grid-cols-5" : cols === 4 ? "lg:grid-cols-4" : cols === 3 ? "lg:grid-cols-3" : "lg:grid-cols-2";
+    cols === 6 ? "lg:grid-cols-6" : cols === 5 ? "lg:grid-cols-5" : cols === 4 ? "lg:grid-cols-4" : cols === 3 ? "lg:grid-cols-3" : "lg:grid-cols-2";
   // remove a border-r da última coluna em cada breakpoint pra não dobrar com a borda do frame
   const cellBorder =
-    cols === 5
+    cols === 6
+      ? "[&:nth-child(2n)]:border-r-0 lg:[&:nth-child(2n)]:border-r lg:[&:nth-child(6n)]:border-r-0"
+      : cols === 5
       ? "[&:nth-child(2n)]:border-r-0 lg:[&:nth-child(2n)]:border-r lg:[&:nth-child(5n)]:border-r-0"
       : cols === 4
         ? "[&:nth-child(2n)]:border-r-0 lg:[&:nth-child(2n)]:border-r lg:[&:nth-child(4n)]:border-r-0"

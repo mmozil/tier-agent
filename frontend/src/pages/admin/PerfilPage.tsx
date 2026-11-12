@@ -9,7 +9,11 @@ import Avatar from "@/components/Avatar";
 
 export default function PerfilPage() {
   const { user, refresh } = useAuth();
-  const [nomePessoa, setNomePessoa] = useState(user?.tenant?.nome_pessoa || "");
+  // Membro (entrou pelo CRM ou trocou de conta): o perfil é o DELE — não o do dono da conta
+  // (12/11/2026). Foto é do dono; nome da empresa, só dono/admin muda.
+  const membro = user?.member ?? null;
+  const podeMudarEmpresa = !membro || user?.role === "owner" || user?.role === "admin";
+  const [nomePessoa, setNomePessoa] = useState(membro?.nome || user?.tenant?.nome_pessoa || "");
   const [nome, setNome] = useState(user?.tenant?.nome || "");
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -56,7 +60,7 @@ export default function PerfilPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.patch("/auth/me", { nome_pessoa: nomePessoa, nome });
+      await api.patch("/auth/me", podeMudarEmpresa ? { nome_pessoa: nomePessoa, nome } : { nome_pessoa: nomePessoa });
       toast.success("Perfil atualizado");
       await refresh();
     } catch (err: any) {
@@ -75,6 +79,7 @@ export default function PerfilPage() {
 
         <Row last>
           <form onSubmit={onSubmit} className="p-6 space-y-6">
+            {!membro && (
             <Field label="Foto" icon={<ImageIcon className={`w-4 h-4 ${FC.mut}`} />} hint="Aparece no menu do topo e no rodapé da barra lateral.">
               <div className="flex items-center gap-4">
                 <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onAvatarChange} className="hidden" />
@@ -122,17 +127,29 @@ export default function PerfilPage() {
                 </div>
               </div>
             </Field>
+            )}
 
             <Field label="Seu nome" icon={<User className={`w-4 h-4 ${FC.mut}`} />}>
               <input type="text" value={nomePessoa} onChange={(e) => setNomePessoa(e.target.value)} required className={inputCls} />
             </Field>
 
-            <Field label="Empresa" icon={<Building2 className={`w-4 h-4 ${FC.mut}`} />}>
-              <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} required className={inputCls} />
+            <Field
+              label="Empresa"
+              icon={<Building2 className={`w-4 h-4 ${FC.mut}`} />}
+              hint={podeMudarEmpresa ? undefined : "Só o dono ou um administrador da conta muda o nome da empresa."}
+            >
+              <input
+                type="text"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                required
+                readOnly={!podeMudarEmpresa}
+                className={podeMudarEmpresa ? inputCls : `${inputCls} bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626]/[0.56] cursor-not-allowed`}
+              />
             </Field>
 
             <Field label="E-mail" icon={<Mail className={`w-4 h-4 ${FC.mut}`} />} hint="O e-mail é usado pra login e não pode ser alterado.">
-              <input type="email" value={user?.email || ""} readOnly className={`${inputCls} bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626]/[0.56] cursor-not-allowed`} />
+              <input type="email" value={membro?.email || user?.email || ""} readOnly className={`${inputCls} bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626]/[0.56] cursor-not-allowed`} />
             </Field>
 
             <div className="pt-2 flex justify-end">

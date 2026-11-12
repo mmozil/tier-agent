@@ -20,6 +20,7 @@ Quem vê: dono e admin, todos os disparos do tenant; atendente, os disparos dos 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from typing import Annotated
@@ -38,6 +39,7 @@ from services import disparo_lote
 from services import visao_conversas as visao
 
 router = APIRouter(prefix="/disparos-oficiais", tags=["disparos-oficiais"])
+logger = logging.getLogger(__name__)
 
 Usuario = Annotated[CurrentUser, Depends(get_current_user)]
 Banco = Annotated[AsyncSession, Depends(get_db)]
@@ -292,6 +294,7 @@ def _filtro_situacao(situacao: str):
         "descadastrado": E.status == disparo_lote.DESCADASTRADO,
         "sem_nome": E.status == disparo_lote.SEM_NOME,
         "cancelado": E.status == disparo_lote.ENVIO_CANCELADO,
+        "respondeu": disparo_lote.respondeu(),
     }.get(situacao)
 
 
@@ -321,7 +324,7 @@ async def envios(
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
     rows = (
         await db.execute(
-            select(E, S.status, S.erro, S.erro_codigo, S.status_em)
+            select(E, S.status, S.erro, S.erro_codigo, S.status_em, disparo_lote.primeira_resposta())
             .outerjoin(S, S.wamid == E.wamid)
             .where(*conds)
             .order_by(E.id)
@@ -330,7 +333,7 @@ async def envios(
         )
     ).all()
     out = []
-    for e, meta, meta_erro, meta_codigo, meta_em in rows:
+    for e, meta, meta_erro, meta_codigo, meta_em, resposta_em in rows:
         sit = disparo_lote.situacao(e.status, meta)
         motivo = e.erro
         if e.status == disparo_lote.ENVIADO and sit == "falhou":
@@ -348,9 +351,34 @@ async def envios(
                 "enviado_em": _iso(e.enviado_em),
                 "status_em": _iso(meta_em) if e.status == disparo_lote.ENVIADO else None,
                 "conversation_id": e.conversation_id,
+                "respondeu_em": _iso(resposta_em),
+                "crm_url": None,
             }
         )
+    await _cards_no_crm(int(user.tenant_id), out)
     return {"envios": out, "total": total, "offset": offset, "limite": limite}
+
+
+async def _cards_no_crm(tenant_id: int, envios: list[dict]) -> None:
+    """Preenche `crm_url` (o card da família no CRM) de cada envio da página (12/11/2026).
+    O CRM escolhe o card — o mesmo em que o envio já entra no histórico. CRM fora do ar ou
+    conta sem CRM: a lista sai sem o link, nunca com erro."""
+    from services import erp_crm_client
+
+    numeros = [e["numero"] for e in envios if e.get("numero")]
+    if not numeros or not erp_crm_client.integracao_ativa():
+        return
+    try:
+        cards, modelo_url = await erp_crm_client.cards_dos_contatos(agent_tenant_id=tenant_id, telefones=numeros)
+    except erp_crm_client.ErpCrmError:
+        logger.warning("disparo: CRM não devolveu os cards (tenant %s)", tenant_id, exc_info=True)
+        return
+    if not modelo_url or "{id}" not in modelo_url:
+        return
+    for e in envios:
+        op = cards.get(e.get("numero") or "")
+        if op:
+            e["crm_url"] = modelo_url.replace("{id}", str(int(op)))
 
 
 async def _numero_ligado(db: AsyncSession, d: TaDisparoOficial, user: CurrentUser) -> None:
