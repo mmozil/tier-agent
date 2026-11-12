@@ -550,8 +550,13 @@ async def _ultima_fala_do_agente(db, conversation_id: int) -> str | None:
     É o que identifica onde a família parou: o script é literal (a "Regra zero"
     da persona), então o texto da última fala diz qual pergunta ficou sem
     resposta.
+
+    11/11/2026 — callback (services/callbacks.py) não conta: o fechamento «Antes de
+    matricular…» sai sozinho 90 min depois e não diz onde a família parou. Sem este
+    filtro a cascata leria o fechamento e cairia sempre na origem neutra.
     """
     from models import TaMessageLog
+    from services.callbacks import MARCA_CALLBACK
 
     return (
         await db.execute(
@@ -559,6 +564,7 @@ async def _ultima_fala_do_agente(db, conversation_id: int) -> str | None:
             .where(
                 TaMessageLog.conversation_id == conversation_id,
                 TaMessageLog.role == "assistant",
+                or_(TaMessageLog.model_used.is_(None), ~TaMessageLog.model_used.like(f"{MARCA_CALLBACK}%")),
             )
             .order_by(TaMessageLog.id.desc())
             .limit(1)
@@ -863,6 +869,22 @@ async def followup_inactivity_job() -> None:
         logger.exception("followup_inactivity_job falhou")
 
 
+async def callbacks_job() -> None:
+    """Callbacks por agente (11/11/2026, CCDA): mensagens com hora marcada depois de uma fala do
+    agente — «a proposta fez sentido?» 30 min depois do link do valor, o vídeo do tour depois de 1 h
+    sem resposta, o fechamento. Configuração e regras em services/callbacks.py. Agente sem a chave
+    `callbacks` não entra: o ciclo termina numa consulta."""
+    try:
+        from services import callbacks
+
+        async with db_context() as db:
+            r = await callbacks.rodar_ciclo(db)
+        if r.get("enviados"):
+            logger.info("callbacks: %s passo(s) enviado(s) — bloqueados %s", r["enviados"], r.get("bloqueados"))
+    except Exception:
+        logger.exception("callbacks_job falhou")
+
+
 async def _job_lock(name: str, ttl: int) -> bool:
     """Lock Redis por tick — com >1 worker, só quem pega o lock roda o job.
     TTL < intervalo do job → próximo tick re-disputa (auto-recupera se 1 worker cai).
@@ -944,10 +966,17 @@ def init_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         max_instances=1,
     )
+    sched.add_job(
+        _locked(callbacks_job, "callbacks", 50),
+        trigger=IntervalTrigger(seconds=60),
+        id="callbacks",
+        replace_existing=True,
+        max_instances=1,
+    )
     sched.start()
     logger.info(
         "Scheduler iniciado: resume_waiting (30s) + fire_cron (60s) + sla_watch (120s) "
-        "+ mirror_pet (60s) + followup_inactivity (300s) [lock Redis por tick]"
+        "+ mirror_pet (60s) + followup_inactivity (300s) + callbacks (60s) [lock Redis por tick]"
     )
     _scheduler = sched
     return sched

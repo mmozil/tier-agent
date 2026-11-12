@@ -696,6 +696,39 @@ async def _ensure_wa_preco_columns():
         logger.exception("ensure_wa_preco_columns falhou (segue mesmo assim)")
 
 
+async def _ensure_callback_tables():
+    """Runtime DDL — callbacks por agente (11/11/2026, CCDA).
+
+    `ta_callback_envio`: um passo de callback por conversa (único conversa+passo, gravado antes de
+    enviar). Tabela NOVA (nasce vazia): o índice sai na hora. Ver services/callbacks.py.
+    """
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            for ddl in (
+                "CREATE TABLE IF NOT EXISTS ta_callback_envio ("
+                " id SERIAL PRIMARY KEY,"
+                " conversation_id INTEGER NOT NULL,"
+                " agent_id INTEGER NOT NULL,"
+                " passo VARCHAR(64) NOT NULL,"
+                " ancora_em TIMESTAMP,"
+                " status VARCHAR(16) NOT NULL,"
+                " motivo VARCHAR(64),"
+                " enviado_em TIMESTAMP,"
+                " criado_em TIMESTAMP NOT NULL DEFAULT now())",
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_ta_callback_envio_conv_passo"
+                " ON ta_callback_envio (conversation_id, passo)",
+            ):
+                await db.execute(_sql_text(ddl))
+            await db.commit()
+        logger.info("ensure_callback_tables ok")
+    except Exception:
+        logger.exception("ensure_callback_tables falhou (segue mesmo assim)")
+
+
 @app.on_event("startup")
 async def startup():
     logger.info("Tier Agent starting — env=%s port=%s", settings.environment, settings.app_port)
@@ -710,6 +743,7 @@ async def startup():
     await _ensure_disparo_oficial_tables()
     await _ensure_disparo_lote_tables()
     await _ensure_wa_preco_columns()
+    await _ensure_callback_tables()
     from services import registro_atividade
 
     registro_atividade.iniciar()

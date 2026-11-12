@@ -879,6 +879,29 @@ class TaWaDescadastro(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class TaCallbackEnvio(Base):
+    """Passo de callback já decidido numa conversa (11/11/2026) — uma linha por (conversa, passo).
+
+    Gravada ANTES do envio (`enviando`), por isso o único garante «uma vez por conversa por passo» até
+    com dois containers no ar durante o deploy. `enviado` | `falhou` são finais: falha não se repete
+    (o link nunca sai sem o texto que o apresenta). FK lógica para a conversa, como as vizinhas.
+    Runtime DDL em `main._ensure_callback_tables`. Ver services/callbacks.py.
+    """
+
+    __tablename__ = "ta_callback_envio"
+    __table_args__ = (UniqueConstraint("conversation_id", "passo", name="uq_ta_callback_envio_conv_passo"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    agent_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    passo: Mapped[str] = mapped_column(String(64), nullable=False)
+    ancora_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # de quando o relógio contou
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # enviando | enviado | falhou
+    motivo: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    enviado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class TaWaEnvioStatus(Base):
     """Situação de entrega de cada mensagem que saiu pela Cloud API, pelo id da Meta (wamid).
 
