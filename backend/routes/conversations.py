@@ -152,6 +152,16 @@ async def list_conversations(
         stmt = stmt.where(TaConversation.agent_id == agent_id)
     if status:
         stmt = stmt.where(TaConversation.status == status)
+    # 12/11/2026 — etiqueta escolhida na lateral: o filtro é do SERVIDOR. Antes a tela filtrava só
+    # as 200 conversas carregadas, e a conversa mais antiga com a etiqueta não aparecia.
+    if tag and tag.strip():
+        from sqlalchemy import text as _sql_text
+
+        stmt = stmt.where(
+            _sql_text("ta_conversation.tags @> CAST(:tag_json AS jsonb)").bindparams(
+                tag_json=json.dumps([tag.strip().lower()])
+            )
+        )
     now = datetime.utcnow()
     if scope == "unassigned":
         stmt = stmt.where(TaConversation.assigned_member_id.is_(None))
@@ -634,17 +644,23 @@ async def set_tags(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Define as etiquetas da conversa (substitui a lista)."""
+    """Define as etiquetas da conversa (substitui a lista).
+
+    12/11/2026: com a lista de etiquetas da conta criada, só entra etiqueta da lista (a que a
+    conversa já tinha passa). Conta sem lista segue com texto livre. Ver `services/etiquetas.py`."""
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
     conv = await _get_owned_conversation(db, conversation_id, user)
-    # normaliza: trim, sem vazios, sem duplicatas, minúsculas, max 8
-    seen: list[str] = []
-    for t in body.tags or []:
-        tt = (t or "").strip().lower()[:24]
-        if tt and tt not in seen:
-            seen.append(tt)
-    conv.tags = seen[:8]
+    from routes.etiquetas import nomes_da_conta
+    from services import etiquetas as reg
+
+    final, fora = reg.validar_tags(body.tags, await nomes_da_conta(db, user.tenant_id), conv.tags or [])
+    if fora:
+        raise HTTPException(
+            422,
+            f"A etiqueta «{fora[0]}» não está na lista da conta. Quem é administrador cria em Configurações › Etiquetas.",
+        )
+    conv.tags = final
     await db.commit()
     return {"conversation_id": conv.id, "tags": conv.tags}
 

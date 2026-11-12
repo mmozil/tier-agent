@@ -39,6 +39,7 @@ import LeadsPage from "./pages/admin/LeadsPage";
 import ConversasPage from "./pages/admin/ConversasPage";
 import AtencaoPage from "./pages/admin/AtencaoPage";
 import MacrosPage from "./pages/admin/MacrosPage";
+import EtiquetasPage from "./pages/admin/EtiquetasPage";
 import RelatoriosAtendimentoPage from "./pages/admin/RelatoriosAtendimentoPage";
 import EquipePage from "./pages/admin/EquipePage";
 import AtividadesPage from "./pages/admin/AtividadesPage";
@@ -122,6 +123,7 @@ export default function App() {
           <Route path="embedding" element={<EmbeddingProvidersPage />} />
           <Route path="integracoes" element={<FontesDadosPage />} />
           <Route path="macros" element={<MacrosPage />} />
+          <Route path="etiquetas" element={<EtiquetasPage />} />
           <Route path="parametros" element={<Placeholder title="Parâmetros" desc="Tunings runtime (em breve)." />} />
           <Route path="equipe" element={<EquipePage />} />
           <Route path="atividades" element={<AtividadesPage />} />

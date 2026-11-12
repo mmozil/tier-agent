@@ -108,6 +108,9 @@ app.include_router(integrations_tier.router, prefix="/api/v1")
 app.include_router(internal.router, prefix="/api/v1")
 app.include_router(attention.router, prefix="/api/v1")
 app.include_router(macros.router, prefix="/api/v1")
+from routes import etiquetas  # noqa: E402
+
+app.include_router(etiquetas.router, prefix="/api/v1")
 app.include_router(metrics.router, prefix="/api/v1")
 app.include_router(skills.router, prefix="/api/v1")
 app.include_router(tier_pay.router, prefix="/api/v1")
@@ -202,6 +205,17 @@ async def _ensure_message_content_column():
                 " created_at TIMESTAMP DEFAULT now(),"
                 " PRIMARY KEY (connector_id, member_id))",
                 "CREATE INDEX IF NOT EXISTS ix_ta_connector_membro_member ON ta_connector_membro (member_id)",
+                # 12/11/2026: lista fixa de etiquetas da conta (padrão Chatwoot) — a equipe
+                # escolhe na lista em vez de digitar. Regras em `services/etiquetas.py`.
+                "CREATE TABLE IF NOT EXISTS ta_etiqueta ("
+                " id SERIAL PRIMARY KEY,"
+                " tenant_id INTEGER NOT NULL REFERENCES ta_tenant(id) ON DELETE CASCADE,"
+                " nome VARCHAR(24) NOT NULL,"
+                " descricao VARCHAR(200),"
+                " cor VARCHAR(7) NOT NULL DEFAULT '#6B7280',"
+                " na_lateral BOOLEAN NOT NULL DEFAULT TRUE,"
+                " created_at TIMESTAMP DEFAULT now(),"
+                " UNIQUE (tenant_id, nome))",
                 # 31/10/2026 — pente fino do incidente da M7 (conversas vistas por quem não devia):
                 # perfil do WhatsApp de cada número (conferir de quem é o chip)…
                 "ALTER TABLE ta_connector ADD COLUMN IF NOT EXISTS perfil_whatsapp VARCHAR(200)",

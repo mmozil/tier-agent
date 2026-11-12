@@ -7,6 +7,7 @@ import {
   History,
   Plug,
   SlidersHorizontal,
+  Tag,
   UserCircle,
   Users,
   Zap,
@@ -26,6 +27,8 @@ const SETTINGS_NAV: { label: string; items: { to: string; label: string; icon: L
       { to: "/admin/configuracoes/embedding", label: "Embedding (RAG)", icon: Database },
       { to: "/admin/configuracoes/integracoes", label: "Integrações", icon: Plug },
       { to: "/admin/configuracoes/macros", label: "Macros", icon: Zap },
+      // 12/11/2026: lista fixa de etiquetas (padrão Chatwoot) — a equipe escolhe na conversa.
+      { to: "/admin/configuracoes/etiquetas", label: "Etiquetas", icon: Tag },
       { to: "/admin/configuracoes/parametros", label: "Parâmetros", icon: SlidersHorizontal },
     ],
   },

@@ -17,6 +17,7 @@ import { BarraDeReacao, ChipsDeReacao, type Reacoes } from "@/components/inbox/R
 import { BotaoEditar, EditorDoBalao, podeEditarMensagem } from "@/components/inbox/Edicao";
 import NovaConversa from "@/components/inbox/NovaConversa";
 import { EtiquetasDeMencao, ListaDeMencoes, MiniAvatar, useMencoes } from "@/components/inbox/Mencoes";
+import { COR_FORA_DA_LISTA, SeletorDeEtiquetas, type Etiqueta } from "@/components/inbox/Etiquetas";
 import NumeroNaLateral, { tituloComNumero, type InfoNumero } from "@/components/inbox/NumeroNaLateral";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select } from "@/components/ds/fc";
@@ -577,7 +578,10 @@ export default function ConversasPage() {
   const [debugMsg, setDebugMsg] = useState<Record<string, any> | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
-  const [tagInput, setTagInput] = useState("");
+  // Lista de etiquetas da conta (12/11/2026, padrão Chatwoot). Vazia = conta sem lista (texto livre).
+  const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
+  const etiquetaPorNome = new Map(etiquetas.map((e) => [e.nome, e]));
+  const corEtiqueta = (t: string) => etiquetaPorNome.get(t)?.cor || (etiquetas.length ? COR_FORA_DA_LISTA : tagColor(t));
   const [noteMode, setNoteMode] = useState(false);
   // Clipe e microfone da caixa de resposta (07/10/2026) — o mesmo que a atendente tem no WhatsApp.
   const [anexo, setAnexo] = useState<File | null>(null);
@@ -716,6 +720,8 @@ export default function ConversasPage() {
       if (j.de) params.de = j.de;
       if (j.ate) params.ate = j.ate;
       if (f.responsavel !== TODOS_RESPONSAVEIS) params.responsavel = f.responsavel;
+      // Etiqueta escolhida na lateral: o servidor filtra (antes eram só as 200 carregadas).
+      if (etiquetaRef.current) params.tag = etiquetaRef.current;
       const { data } = await api.get<Conversation[]>("/conversations", { params });
       setConvs(data);
     } catch (e) {
@@ -740,6 +746,7 @@ export default function ConversasPage() {
     setMarcadas: setMentions,
   });
   const viewRef = useRef<"mentions" | "participating" | null>(null);
+  const etiquetaRef = useRef<string | null>(null);
 
   useEffect(() => {
     msgsEndRef.current?.scrollIntoView({ block: "end" });
@@ -773,6 +780,7 @@ export default function ConversasPage() {
     api.get<Team[]>("/team/teams").then(({ data }) => setTeams(data)).catch(() => {});
     api.get<{ role: string; member_id: number | null; ve_tudo?: boolean; pode_atribuir?: boolean }>("/team/me").then(({ data }) => setMe(data)).catch(() => {});
     api.get<{ id: number; name: string }[]>("/macros").then(({ data }) => setMacros(data)).catch(() => {});
+    api.get<Etiqueta[]>("/etiquetas").then(({ data }) => setEtiquetas(data || [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -913,12 +921,20 @@ export default function ConversasPage() {
       if (tt && !norm.includes(tt)) norm.push(tt);
     }
     const next = norm.slice(0, 8);
-    setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, tags: next } : prev));
-    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, tags: next } : c)));
+    const antes = convs.find((c) => c.id === convId)?.tags ?? openConv?.tags ?? [];
+    const aplicar = (lista: string[]) => {
+      setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, tags: lista } : prev));
+      setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, tags: lista } : c)));
+    };
+    aplicar(next);
     try {
-      await api.put(`/conversations/${convId}/tags`, { tags: next });
-    } catch {
-      toast.error("Erro ao salvar etiquetas");
+      const { data } = await api.put<{ tags: string[] }>(`/conversations/${convId}/tags`, { tags: next });
+      if (data?.tags) aplicar(data.tags);
+    } catch (e) {
+      // Volta ao que era: a tela não pode mostrar uma etiqueta que o servidor não gravou.
+      aplicar(antes);
+      const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Erro ao salvar etiquetas");
     }
   }
 
@@ -1129,16 +1145,23 @@ export default function ConversasPage() {
   }
 
   // Troca de folder na sub-nav: define o filtro + o view do backend (menções/participação)
-  // e recarrega. Os demais (all/unattended/canal/etiqueta) filtram client-side.
+  // e recarrega. Os demais (all/unattended/canal) filtram client-side. A etiqueta, na conta que tem
+  // a lista de etiquetas, é filtrada no SERVIDOR (12/11/2026) — sem lista, segue client-side.
   function selectNav(nav: NavFilter) {
     setNavFilter(nav);
     const v = nav.type === "mentions" ? "mentions" : nav.type === "participants" ? "participating" : null;
     viewRef.current = v;
+    etiquetaRef.current = nav.type === "tag" && etiquetas.length > 0 ? nav.value : null;
     load(scope, false, v);
   }
 
   // ─── Derivados ───
   const allTags = Array.from(new Set(convs.flatMap((c) => c.tags || []))).sort();
+  // Lateral: com lista, as etiquetas da lista (marcadas «na lateral») — sempre as mesmas, como no
+  // Chatwoot — mais alguma antiga que apareça nas conversas. Sem lista, as que aparecem nas conversas.
+  const tagsDaLateral = etiquetas.length
+    ? [...etiquetas.filter((e) => e.na_lateral).map((e) => e.nome), ...allTags.filter((t) => !etiquetaPorNome.has(t))]
+    : allTags;
   const channels = Array.from(new Set(convs.map((c) => c.connector_kind || "outro")));
   const agentsList = Array.from(new Set(convs.map((c) => c.agent_nome).filter(Boolean) as string[])).sort();
   // Números (um por conector): só vale a pena listar quando há mais de um.
@@ -1318,14 +1341,15 @@ export default function ConversasPage() {
           ))}
         </SubNavGroup>
       )}
-      {allTags.length > 0 && (
+      {tagsDaLateral.length > 0 && (
         <SubNavGroup title="Etiquetas" icon={Tag}>
-          {allTags.map((t) => (
+          {tagsDaLateral.map((t) => (
             <SubNavItem
               key={t}
               label={t}
-              dotColor={tagColor(t)}
-              count={convs.filter((c) => (c.tags || []).includes(t)).length}
+              dotColor={corEtiqueta(t)}
+              // Com a lista, o filtro é do servidor: contar só as carregadas mostraria um número errado.
+              count={etiquetas.length ? undefined : convs.filter((c) => (c.tags || []).includes(t)).length}
               active={navFilter.type === "tag" && navFilter.value === t}
               onClick={() => selectNav({ type: "tag", value: t })}
             />
@@ -1682,7 +1706,7 @@ export default function ConversasPage() {
                           )}
                           {(c.tags || []).slice(0, 2).map((t) => (
                             <span key={t} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] bg-black/[0.04] dark:bg-white/[0.06] text-[#262626]/[0.72] dark:text-[#9aa1ab]">
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: tagColor(t) }} />{t}
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: corEtiqueta(t) }} />{t}
                             </span>
                           ))}
                           {(c.tags || []).length > 2 && <span className={`text-[10px] ${FC.mut}`}>+{(c.tags || []).length - 2}</span>}
@@ -2271,21 +2295,15 @@ export default function ConversasPage() {
             )}
 
             <AccordionSection title="Etiquetas da conversa">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {(openConv.tags || []).map((t) => (
-                  <span key={t} className="inline-flex items-center gap-1.5 text-[11px] pl-1.5 pr-1 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[#262626]/[0.78] dark:text-[#cdd2da]">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: tagColor(t) }} />{t}
-                    <button onClick={() => saveTags(openConv.id, (openConv.tags || []).filter((x) => x !== t))} className="hover:text-[#c0362c] dark:hover:text-[#ff6b5e]"><X className="w-3 h-3" /></button>
-                  </span>
-                ))}
-                <input
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && tagInput.trim()) { e.preventDefault(); saveTags(openConv.id, [...(openConv.tags || []), tagInput]); setTagInput(""); } }}
-                  placeholder="+ etiqueta"
-                  className={`text-[12px] px-2 py-0.5 w-20 rounded-full border border-dashed ${FC.hair} bg-transparent ${FC.dim} outline-none focus:border-[#003083] dark:focus:border-[#5b9bff]`}
-                />
-              </div>
+              {/* 12/11/2026 (CCDA): escolher numa lista larga, no padrão do Chatwoot — o campo
+                  tracejado de 80 px era apertado demais para escolher. */}
+              <SeletorDeEtiquetas
+                etiquetas={etiquetas}
+                aplicadas={openConv.tags || []}
+                corDe={corEtiqueta}
+                podeGerenciar={["owner", "admin"].includes(me?.role ?? "")}
+                onChange={(proximas) => saveTags(openConv.id, proximas)}
+              />
             </AccordionSection>
 
             <AccordionSection title="Macros" defaultOpen={false}>
