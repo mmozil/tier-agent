@@ -6,7 +6,7 @@ import {
   MessageSquare, MessageSquarePlus, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Search, Zap,
   Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone, Mic, FileText,
-  CalendarDays,
+  CalendarDays, Columns2, Layers,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -648,6 +648,17 @@ export default function ConversasPage() {
     try {
       const v = localStorage.getItem("ta-conversas-menu");
       return v === "aberto" || v === "recolhido" ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  // 12/11/2026 (vídeo do Augusto): o contato abria POR CIMA do chat em toda tela abaixo de 1.280 px e
+  // cobria a conversa no notebook dele, que tinha espaço para os dois. Agora a conta é o que SOBRA
+  // para o chat (abaixo); e a pessoa pode fixar «ao lado» ou «por cima» no cabeçalho do contato.
+  const [contatoEscolha, setContatoEscolha] = useState<"lado" | "cima" | null>(() => {
+    try {
+      const v = localStorage.getItem("ta-conversas-contato");
+      return v === "lado" || v === "cima" ? v : null;
     } catch {
       return null;
     }
@@ -1320,6 +1331,22 @@ export default function ConversasPage() {
   // Em modo EMBED (?embed=1, ex: inbox dentro do Tier Empresas), o sidebar do Agent
   // é escondido → renderizamos a sub-nav como COLUNA aqui dentro (senão ela some).
   const embed = new URLSearchParams(window.location.search).get("embed") === "1";
+  // Contato ao lado × por cima (12/11/2026). Painel de 320 px abaixo de 1.280 (384 acima) e ao lado
+  // sempre que o chat fica com pelo menos 380 px; menos que isso, por cima — a regra de 09/11 (M7,
+  // notebook com zoom de 125–150%, chat com ~90 px) continua valendo onde ela era necessária.
+  const painelLargura = largura >= 1280 ? 384 : 320;
+  const sobraChat =
+    largura - (embed ? (menuRecolhido ? 60 : 208) : 0) - (listaRecolhida && openConv ? 0 : 340) - painelLargura;
+  const contatoPorCima = contatoEscolha ? contatoEscolha === "cima" : sobraChat < 380;
+  function alternarContatoModo() {
+    const v = contatoPorCima ? "lado" : "cima";
+    setContatoEscolha(v);
+    try {
+      localStorage.setItem("ta-conversas-contato", v);
+    } catch {
+      /* navegador sem armazenamento: vale só nesta sessão */
+    }
+  }
   const [subNavSlot, setSubNavSlot] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (!embed) setSubNavSlot(document.getElementById("ta-conversas-subnav"));
@@ -2214,14 +2241,24 @@ export default function ConversasPage() {
       {/* ═══════════ ZONA 4 — contato / ações ═══════════ */}
       {openConv && showContact && (
         <aside
-          className={`w-[384px] shrink-0 border-l ${FC.hair} flex flex-col min-h-0 bg-white dark:bg-[#0c0e12] ${
-            // Tela estreita: por cima do chat, com sombra — espremer deixava o chat sem largura.
-            estreito ? "absolute inset-y-0 right-0 z-30 max-w-[92%] shadow-[-12px_0_32px_rgba(0,0,0,0.12)]" : ""
+          className={`${painelLargura === 384 ? "w-[384px]" : "w-[320px]"} shrink-0 border-l ${FC.hair} flex flex-col min-h-0 bg-white dark:bg-[#0c0e12] ${
+            // Sem espaço para o chat (ou a pessoa escolheu): por cima do chat, com sombra.
+            contatoPorCima ? "absolute inset-y-0 right-0 z-30 max-w-[92%] shadow-[-12px_0_32px_rgba(0,0,0,0.12)]" : ""
           }`}
         >
-          <div className={`h-14 shrink-0 flex items-center justify-between px-4 border-b ${FC.hair}`}>
+          <div className={`h-14 shrink-0 flex items-center justify-between gap-1 px-4 border-b ${FC.hair}`}>
             <h3 className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb]">Contato</h3>
-            <button onClick={() => setShowContact(false)} className={iconBtn} title="Fechar"><X className="w-4 h-4" /></button>
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={alternarContatoModo}
+                className={iconBtn}
+                title={contatoPorCima ? "Abrir ao lado do chat" : "Abrir por cima do chat"}
+                aria-label={contatoPorCima ? "Abrir ao lado do chat" : "Abrir por cima do chat"}
+              >
+                {contatoPorCima ? <Columns2 className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
+              </button>
+              <button onClick={() => setShowContact(false)} className={iconBtn} title="Fechar"><X className="w-4 h-4" /></button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto sidebar-scroll min-h-0">
