@@ -27,8 +27,6 @@ export const MAX_ETIQUETAS = 8;
 export const COR_FORA_DA_LISTA = "#9CA3AF";
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-/** Busca + rodapé da lista solta (para o cálculo da altura). */
-const CABECA_E_PE = 44 + 36;
 
 export function ChipEtiqueta({ nome, cor, onRemover }: { nome: string; cor: string; onRemover?: () => void }) {
   return (
@@ -82,7 +80,10 @@ export function SeletorDeEtiquetas({
     const abaixo = window.innerHeight - b.bottom - 8;
     const acima = b.top - 8;
     const paraCima = abaixo < 300 && acima > abaixo;
-    const max = Math.max(160, Math.min(400, (paraCima ? acima : abaixo) - 4));
+    // 🚨 12/11/2026 (print do dono): `max` é a altura do CONJUNTO (busca + lista + rodapé), não só
+    // da lista. Antes a busca e o rodapé (80 px) eram somados POR FORA do espaço livre e, dentro do
+    // CRM, a lista passava do topo do Atendimento — a busca sumia atrás da barra do CRM.
+    const max = Math.max(200, Math.min(480, (paraCima ? acima : abaixo) - 4));
     const width = Math.max(b.width, 280);
     const left = Math.min(b.left, window.innerWidth - width - 8);
     setPos(paraCima ? { left, width, bottom: window.innerHeight - b.top + 4, max } : { left, width, top: b.bottom + 4, max });
@@ -195,7 +196,7 @@ export function SeletorDeEtiquetas({
             ref={menuRef}
             role="listbox"
             aria-multiselectable="true"
-            style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.max + CABECA_E_PE, zIndex: 1000 }}
+            style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.max, zIndex: 1000 }}
             className={`flex flex-col rounded-[10px] border ${FC.hair} bg-white dark:bg-[#14171c] shadow-[0_8px_28px_rgba(0,0,0,0.12)]`}
           >
             <div className={`shrink-0 border-b ${FC.hair} p-1.5`}>
