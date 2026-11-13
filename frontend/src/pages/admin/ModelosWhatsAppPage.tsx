@@ -191,6 +191,13 @@ export default function ModelosWhatsAppPage() {
 
   const slug = nomeTecnico(titulo);
   const podeEnviar = !!slug && !!corpo.trim() && exemplos.every((e) => e.trim()) && !enviando;
+  // 13/11/2026 (CCDA, o Marcos): o botão ficava cinza sem dizer por quê — quase sempre o exemplo
+  // de uma variável em branco. Mesmo «Falta: …» do Novo disparo.
+  const pendencias = [
+    !slug && "dê um nome ao modelo",
+    !corpo.trim() && "escreva o texto",
+    ...nums.filter((_, i) => !(exemplos[i] ?? "").trim()).map((n) => `preencha o exemplo de {{${n}}}`),
+  ].filter(Boolean) as string[];
   const atual = numeros?.find((n) => n.id === numeroId);
 
   return (
@@ -375,6 +382,9 @@ export default function ModelosWhatsAppPage() {
                     <Button onClick={() => void enviar()} disabled={!podeEnviar} className="w-full justify-center">
                       {enviando ? "Enviando…" : "Enviar para aprovação"}
                     </Button>
+                    {pendencias.length > 0 && !enviando && (
+                      <p className={`text-[11.5px] leading-4 ${FC.mut}`}>Falta: {pendencias.join(" · ")}.</p>
+                    )}
                     <p className={`text-[11px] leading-4 ${FC.mut}`}>
                       A Meta costuma responder em minutos, às vezes em horas. O status aparece na lista ao lado.
                     </p>
