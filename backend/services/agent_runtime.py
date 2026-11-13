@@ -1076,6 +1076,7 @@ async def handle_inbound_message(
     attachments: list | None = None,
     modo_voz: bool = False,
     origem_canal: dict | None = None,
+    digitando_desde: float | None = None,
 ) -> dict:
     """Pipeline completo: webhook → Engine → resposta no canal.
 
@@ -1083,6 +1084,10 @@ async def handle_inbound_message(
     porque em voz o texto comprido é ruim duas vezes: demora mais pra gerar (o
     tempo cresce com o número de tokens) e ninguém quer ouvir um parágrafo.
     WhatsApp e demais canais não passam por aqui — o default é desligado.
+
+    `digitando_desde` (13/11/2026): `time.monotonic()` de quando o webhook do WhatsApp pediu o
+    «digitando…». Com ele, a resposta da IA respeita o «digitando» mínimo do agente
+    (`services.digitando`, param `digitando_minimo`). Sem ele — e sem o param — nada muda.
     """
     _cron = _Cronometro()
     connector = await resolve_connector_by_instance(db, connector_kind, instance_id)
@@ -1656,6 +1661,14 @@ async def handle_inbound_message(
         _bubbles = _baloes_do_canal(_clean, connector_kind)
         # Sem delay aditivo aqui: o timing humano (pausa de leitura + '…digitando'
         # enquanto o LLM gera) é feito no handler do webhook, antes desta etapa.
+        # Exceção (13/11/2026, CCDA): agente com «digitando» mínimo configurado completa o
+        # que faltar dele antes do 1º balão — só o que FALTA, nunca por cima de um modelo
+        # lento. Sem `digitando_desde` ou sem o param, não espera. Nunca levanta.
+        if digitando_desde is not None:
+            from services import digitando
+
+            await digitando.aguardar(agent.id, digitando_desde, _bubbles[0] if _bubbles else _clean)
+            _cron.marca("digitando")
         if connector_kind == "webchat" or len(_bubbles) <= 1:
             # Webchat: a fila do Redis é drenada numa resposta HTTP só — split
             # com pausa aqui não simula digitação, só ATRASA a resposta (até
