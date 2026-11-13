@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
-  MessageSquare, MessageSquareDot, MessageSquarePlus, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
+  Check, CheckCheck, CircleAlert, MessageSquare, MessageSquareDot, MessageSquarePlus, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Search, Zap,
   Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone, Mic, FileText,
   CalendarDays, Columns2, Layers,
@@ -224,6 +224,27 @@ interface Message {
   /** 21/10/2026 — edição: só a resposta própria, enviada pelo painel (`wa_from_me`). */
   wa_from_me?: boolean | null;
   editada_em?: string | null;
+  /** 13/11/2026 — número oficial: o que a Meta disse desta mensagem nossa (+ o motivo da falha). */
+  entrega?: "enviada" | "entregue" | "lida" | "falhou" | null;
+  entrega_erro?: string | null;
+}
+
+/** Tiques como no WhatsApp: ✓ enviada · ✓✓ entregue · ✓✓ azul lida · «Não entregue» com o motivo. */
+function TiqueDeEntrega({ estado, erro }: { estado?: Message["entrega"]; erro?: string | null }) {
+  if (!estado) return null;
+  if (estado === "falhou") {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400" title={erro || "A Meta não entregou"}>
+        <CircleAlert className="w-3 h-3" /> Não entregue{erro ? ` · ${erro}` : ""}
+      </span>
+    );
+  }
+  if (estado === "enviada") return <span title="Enviada"><Check className="w-3 h-3" /></span>;
+  return (
+    <span title={estado === "lida" ? "Lida" : "Entregue"} className={estado === "lida" ? "text-[#53bdeb]" : undefined}>
+      <CheckCheck className="w-3 h-3" />
+    </span>
+  );
 }
 
 type NavFilter =
@@ -2053,6 +2074,7 @@ export default function ConversasPage() {
                       {isAgent ? <><User className="w-2.5 h-2.5" /> {(m.member_id && m.member_id !== me?.member_id && members.find((x) => x.id === m.member_id)?.nome) || "Você"}</> : isUser ? null : <><Bot className="w-2.5 h-2.5" /> IA</>}
                       {fmtTime(m.created_at) && <span>{isUser ? "" : "· "}{fmtTime(m.created_at)}</span>}
                       {m.editada_em && <span title="A mensagem foi editada">· Editada</span>}
+                      {!isUser && <TiqueDeEntrega estado={m.entrega} erro={m.entrega_erro} />}
                       {!isUser && !isAgent && (
                         <>
                           <button

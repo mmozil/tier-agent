@@ -100,6 +100,9 @@ class MessageOut(BaseModel):
     # (mensagem própria, com chave, texto, até 15 min); a rota confere de novo.
     wa_from_me: bool | None = None
     editada_em: datetime | None = None
+    # 13/11/2026 — tiques do número oficial: enviada · entregue · lida · falhou (+ o motivo em português)
+    entrega: str | None = None
+    entrega_erro: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -573,9 +576,17 @@ async def conversation_detail(
             crm_nome=(await nome_crm.nomes_do_crm(user.tenant_id, [conv.external_id])).get(conv.external_id),
         )
     await _completar_com_agenda(db, user.tenant_id, [saida])
+    entregas: dict[int, dict] = {}
+    try:
+        from services import entrega_whatsapp
+
+        entregas = await entrega_whatsapp.da_conversa(db, conv, msgs)
+    except Exception:  # noqa: BLE001 — tique é luxo: a conversa abre sem ele
+        logger.warning("tiques de entrega falharam conv=%s", conv.id, exc_info=True)
+        await db.rollback()
     return {
         "conversation": saida.model_dump(),
-        "messages": [MessageOut.model_validate(m).model_dump() for m in msgs],
+        "messages": [{**MessageOut.model_validate(m).model_dump(), **entregas.get(m.id, {})} for m in msgs],
     }
 
 
