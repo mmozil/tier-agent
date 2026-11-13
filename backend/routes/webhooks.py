@@ -618,10 +618,12 @@ async def _process_engine_message(
 
     Timing humano (igual ao path Cloud): pausa curta de leitura → mostra '…digitando'
     no WhatsApp do cliente → o agente gera (a latência do LLM é o tempo de digitação)
-    → envia. Sem delay aditivo (era o 'demora demais')."""
+    → envia. Sem delay aditivo (era o 'demora demais') — salvo o «digitando» mínimo do agente
+    (param `digitando_minimo`, 13/11/2026), que só completa o que faltar se o modelo for rápido."""
     import asyncio
     import json as _json
     import random
+    import time
 
     from core.db import db_context
     from core.encryption import decrypt
@@ -630,6 +632,7 @@ async def _process_engine_message(
     from services.connectors.registry import registry as _reg
 
     wa_chave.definir(chave_wa, "user")
+    digitando_desde: float | None = None  # ver services/digitando.py
     try:
         # 1. pausa curta de "leitura" ANTES do "…digitando" — dá um respiro humano
         #    (a msg ser "lida" antes dos 3 pontinhos) sem atrasar a resposta. A latência
@@ -650,11 +653,14 @@ async def _process_engine_message(
                     wa = _reg.get("whatsapp")
                     cfg = ConnectorConfig(data=_json.loads(decrypt(conn.config_json_enc)))
                     await wa.send_typing(cfg, external_chat_id, "composing")
+                    digitando_desde = time.monotonic()
             except Exception:
                 wa = cfg = None
+                digitando_desde = None
                 logger.debug("typing whatsapp-engine falhou (segue)")
 
-            # 3+4. gera e envia (latência do LLM = tempo de digitação percebido)
+            # 3+4. gera e envia (latência do LLM = tempo de digitação percebido; se o agente
+            #      tem «digitando» mínimo, o runtime completa o que faltar antes de enviar)
             result = await agent_runtime.handle_inbound_message(
                 db,
                 connector_kind="whatsapp",
@@ -664,6 +670,7 @@ async def _process_engine_message(
                 text_content=text_content,
                 attachments=attachments,
                 origem_canal=origem_canal,
+                digitando_desde=digitando_desde,
             )
             logger.info(
                 "Engine msg processada: agent=%s status=%s",
@@ -841,7 +848,8 @@ async def _process_cloud_message_humanized(
     Roda em background (asyncio.create_task) pra não segurar o 200 do webhook:
     1. espera um intervalo curto (leitura) — não responde no mesmo instante
     2. marca como lido + "digitando…"
-    3. o agente gera a resposta (a latência do LLM já é o tempo de digitação)
+    3. o agente gera a resposta (a latência do LLM já é o tempo de digitação; com o param
+       `digitando_minimo` do agente, completa o que faltar do mínimo — services/digitando.py)
     4. envia
 
     `descadastro=True` (11/11/2026): o contato pediu para parar os disparos (botão «Parar
@@ -854,6 +862,7 @@ async def _process_cloud_message_humanized(
     import json as _json
     import os as _os
     import random
+    import time
 
     from core.db import db_context
     from core.encryption import decrypt
@@ -861,6 +870,9 @@ async def _process_cloud_message_humanized(
     from services.connectors.base import ConnectorConfig
     from services.connectors.registry import registry as _reg
 
+    # quando o «digitando…» foi pedido — a partir daqui conta o «digitando» mínimo do agente
+    # (services/digitando.py). Fica None se não chegou a pedir: aí não há espera extra.
+    digitando_desde: float | None = None
     try:
         # 1. atraso de leitura — não responder no mesmo instante
         await asyncio.sleep(random.uniform(_CLOUD_READ_DELAY_MIN, _CLOUD_READ_DELAY_MAX))
@@ -875,6 +887,7 @@ async def _process_cloud_message_humanized(
                     cloud = _reg.get("whatsapp_cloud")
                     cfg = ConnectorConfig(data=_json.loads(decrypt(conn.config_json_enc)))
                     await cloud.mark_read_and_typing(cfg, mid)
+                    digitando_desde = time.monotonic()
 
                     # STT: áudio do cliente → texto (baixa com token + whisper local)
                     if audio_media_id:
@@ -927,7 +940,8 @@ async def _process_cloud_message_humanized(
                     )
                     return
 
-            # 3+4. gera e envia (latência do LLM = tempo de digitação percebido)
+            # 3+4. gera e envia (latência do LLM = tempo de digitação percebido; se o agente
+            #      tem «digitando» mínimo, o runtime completa o que faltar antes de enviar)
             await agent_runtime.handle_inbound_message(
                 db,
                 connector_kind="whatsapp_cloud",
@@ -936,6 +950,7 @@ async def _process_cloud_message_humanized(
                 sender_name=sender_name,
                 text_content=text_content,
                 attachments=attachments,
+                digitando_desde=digitando_desde,
             )
     except Exception:
         logger.exception("processamento humanizado whatsapp-cloud falhou from=%s", from_id)
