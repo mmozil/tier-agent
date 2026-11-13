@@ -729,6 +729,100 @@ _CLOUD_READ_DELAY_MAX = 3.2  # segundos
 _BG_TASKS: set = set()
 
 
+async def _baixar_midia_cloud(db, phone_number_id: str | None, midia: dict):
+    """Mídia recebida no número oficial → arquivo no armazenamento, como ConnectorAttachment.
+    Nunca levanta: sem token, sem download ou sem armazenamento, devolve o anexo marcado."""
+    import json as _json
+    import os as _os
+
+    from core.encryption import decrypt
+    from services import agent_runtime
+    from services.connectors.base import ConnectorAttachment
+    from services.connectors.registry import registry as _reg
+
+    kind = midia.get("kind") or "document"
+    mime = midia.get("mime")
+    nome = midia.get("name")
+    try:
+        conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp_cloud", phone_number_id)
+        token = None
+        if conn:
+            token = _json.loads(decrypt(conn.config_json_enc)).get("token")
+        token = token or _os.getenv("WHATSAPP_CLOUD_TOKEN")
+        conteudo = None
+        if token and midia.get("id"):
+            conteudo = await _reg.get("whatsapp_cloud").download_media(token, midia["id"])
+        if conteudo:
+            from services.storage_service import storage
+
+            ext = (mime or "").split("/")[-1].split(";")[0].strip() or "bin"
+            up = await asyncio.to_thread(
+                storage.upload,
+                conteudo,
+                folder="inbound/whatsapp-cloud",
+                filename=nome or f"{kind}.{ext}",
+                content_type=mime or "application/octet-stream",
+            )
+            if str(up.get("url") or "").startswith("http"):
+                return ConnectorAttachment(kind=kind, url=up["url"], mime=mime, size_bytes=len(conteudo), name=nome)
+            logger.warning("mídia cloud sem armazenamento público (%s): entra marcada", up.get("storage"))
+    except Exception:
+        logger.exception("mídia whatsapp-cloud não baixou kind=%s", kind)
+    return ConnectorAttachment(kind=kind, mime=mime, name=nome, erro="nao_baixada")
+
+
+@_com_vaga
+async def _registrar_reacao_cloud(
+    *, phone_number_id: str | None, from_id: str | None, alvo_id: str | None, emoji: str
+) -> None:
+    """Reação recebida no número oficial, gravada na mensagem-alvo (pelo wamid). A mensagem do
+    modelo e parte das respostas não guardam o wamid — sem achar o alvo, a reação vai para a
+    última mensagem NOSSA da conversa desse contato (é nela que a pessoa reage, quase sempre).
+    Emoji vazio = tirou a reação. Nunca chama a IA."""
+    from core.db import db_context
+    from models import TaConversation, TaMessageLog
+    from services import agent_runtime
+
+    try:
+        async with db_context() as db:
+            conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp_cloud", phone_number_id)
+            if not conn:
+                return
+            base = select(TaMessageLog).join(TaConversation, TaConversation.id == TaMessageLog.conversation_id)
+            alvo = None
+            if alvo_id:
+                alvo = (
+                    await db.execute(
+                        base.where(TaConversation.connector_id == conn.id, TaMessageLog.wa_message_id == alvo_id)
+                        .order_by(TaMessageLog.id.desc())
+                        .limit(1)
+                    )
+                ).scalars().first()
+            if alvo is None and from_id:
+                alvo = (
+                    await db.execute(
+                        base.where(
+                            TaConversation.connector_id == conn.id,
+                            TaConversation.external_id == from_id,
+                            TaMessageLog.role.in_(("assistant", "agent")),
+                        )
+                        .order_by(TaMessageLog.id.desc())
+                        .limit(1)
+                    )
+                ).scalars().first()
+            if alvo is None:
+                return
+            reacoes = dict(alvo.reacoes_json or {})
+            if emoji:
+                reacoes["contato"] = {"emoji": emoji, "em": datetime.utcnow().isoformat()}
+            else:
+                reacoes.pop("contato", None)
+            alvo.reacoes_json = reacoes or None
+            await db.commit()
+    except Exception:
+        logger.exception("reação whatsapp-cloud não gravada alvo=%s", alvo_id)
+
+
 async def _process_cloud_message_humanized(
     *,
     phone_number_id: str | None,
@@ -738,6 +832,7 @@ async def _process_cloud_message_humanized(
     text_content: str,
     attachments: list,
     audio_media_id: str | None = None,
+    midia: dict | None = None,
     descadastro: bool = False,
     descadastro_de_botao: bool = False,
 ) -> None:
@@ -801,6 +896,13 @@ async def _process_cloud_message_humanized(
                                     text_content = "[áudio não compreendido]"
             except Exception:
                 logger.exception("typing/ASR whatsapp-cloud falhou (segue)")
+
+            # 13/11/2026 — foto, vídeo, documento e figurinha: baixa da Meta com o token e guarda,
+            # para o painel abrir e a IA ver. Não baixou → entra marcada («não foi possível baixar»),
+            # igual ao outro WhatsApp, em vez de sumir.
+            if midia:
+                attachments = list(attachments or [])
+                attachments.append(await _baixar_midia_cloud(db, phone_number_id, midia))
 
             if descadastro:
                 from services import disparo_oficial
@@ -892,6 +994,25 @@ async def whatsapp_cloud_webhook(
                 text_content = ""
                 attachments: list[ConnectorAttachment] = []
                 audio_media_id = None
+                midia: dict | None = None
+
+                # 13/11/2026 (CCDA, o Marcos) — REAÇÃO (emoji embaixo de um balão) não é fala:
+                # marca a mensagem-alvo e NÃO chama a IA. Antes virava a mensagem «[reaction]» e a
+                # IA respondia «não posso abrir anexos» a quem só reagiu ao «tenha um ótimo dia».
+                if mtype == "reaction":
+                    rx = m.get("reaction") or {}
+                    _tr = asyncio.create_task(
+                        _registrar_reacao_cloud(
+                            phone_number_id=phone_number_id,
+                            from_id=from_id,
+                            alvo_id=rx.get("message_id"),
+                            emoji=rx.get("emoji") or "",
+                        )
+                    )
+                    _BG_TASKS.add(_tr)
+                    _tr.add_done_callback(_BG_TASKS.discard)
+                    results.append({"from": from_id, "status": "reaction"})
+                    continue
 
                 if mtype == "text":
                     text_content = (m.get("text") or {}).get("body") or ""
@@ -901,15 +1022,25 @@ async def whatsapp_cloud_webhook(
                     text_content = br.get("title") or br.get("id") or ""
                 elif mtype == "button":
                     text_content = (m.get("button") or {}).get("text") or ""
-                elif mtype in ("image", "audio", "video", "document"):
+                elif mtype in ("image", "audio", "video", "document", "sticker"):
                     media = m.get(mtype) or {}
                     text_content = media.get("caption") or ""
+                    kind = "image" if mtype == "sticker" else mtype
                     # Áudio: guarda o media_id pra transcrever no processor (baixa
-                    # com token → whisper local). Demais mídias: placeholder por ora.
+                    # com token → whisper local). 13/11/2026: foto, vídeo, documento e
+                    # figurinha também baixam (no processor, com o token) e vão para o
+                    # armazenamento — antes ficavam só «[image]», e ninguém conseguia abrir.
                     if mtype == "audio":
                         audio_media_id = media.get("id")
+                    else:
+                        midia = {
+                            "kind": kind,
+                            "id": media.get("id"),
+                            "mime": media.get("mime_type"),
+                            "name": media.get("filename"),
+                        }
                     if not text_content:
-                        text_content = f"[{mtype}]"
+                        text_content = f"[{kind}]"
 
                 if not text_content:
                     text_content = f"[{mtype or 'mensagem'}]"
@@ -936,6 +1067,7 @@ async def whatsapp_cloud_webhook(
                         text_content=text_content,
                         attachments=attachments,
                         audio_media_id=audio_media_id,
+                        midia=midia,
                         descadastro=descadastro,
                         descadastro_de_botao=de_botao,
                     )
