@@ -327,7 +327,7 @@ export default function ModelosWhatsAppPage() {
                         onChange={(e) => setCorpo(e.target.value)}
                         maxLength={1024}
                         rows={5}
-                        placeholder="Olá {{1}}, aqui é a Cinthia, do CCDA. Recebemos seu interesse em conhecer a escola. Posso te ajudar?"
+                        placeholder="Olá {{1}}, aqui é a Nathalia, do CCDA. Recebemos seu interesse em conhecer a escola. Posso te ajudar?"
                       />
                       <button type="button" onClick={inserirVariavel} className={`mt-1.5 text-[12px] text-[#003083] dark:text-[#5b9bff] hover:underline`}>
                         + Inserir variável
