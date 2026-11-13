@@ -333,6 +333,10 @@ class TaConversation(Base):
     # "Enviar para CRM": id da oportunidade criada no ERP (Tier Empresas) a partir
     # desta conversa. Marcador "já enviado" (idempotente). Runtime DDL em main.py.
     connector_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 13/11/2026 (CCDA, o Marcos) — quando alguém da EQUIPE viu a conversa pela última vez (abriu ou
+    # estava com ela aberta). «Não lidas» = mensagens do contato depois disso. Resposta da IA não
+    # conta como vista: o disparo responde sozinho e a equipe precisa saber quem interagiu.
+    visto_equipe_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # FK lógica pra ta_connector.id — por QUAL número a conversa entrou. Antes só
     # havia `connector_kind` ("whatsapp" para todas as instâncias). Runtime DDL.
 

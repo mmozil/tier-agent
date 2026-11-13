@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,6 +68,8 @@ class ConversationOut(BaseModel):
     # telefone por trás de um código oculto (`@lid`), quando o WhatsApp já o revelou.
     agenda_nome: str | None = None
     telefone_oculto: str | None = None
+    # 13/11/2026 (CCDA): mensagens do contato que ninguém da equipe viu ainda (ver `visto_equipe_em`).
+    nao_lidas: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -231,6 +233,8 @@ async def list_conversations(
         canal_por_conector = {}
         dono_por_conector = {}
 
+    nao_lidas = await _nao_lidas(db, [c.id for c in convs])
+
     out: list[ConversationOut] = []
     for c in convs:
         ctags = c.tags or []
@@ -276,6 +280,7 @@ async def list_conversations(
                 started_at=c.started_at,
                 responsavel_member_id=resp_id,
                 responsavel_origem=resp_origem,
+                nao_lidas=nao_lidas.get(c.id, 0),
             )
         )
     nomes = await nome_crm.nomes_do_crm(user.tenant_id, [o.external_id for o in out])
@@ -283,6 +288,49 @@ async def list_conversations(
         o.crm_nome = nomes.get(o.external_id)
     await _completar_com_agenda(db, user.tenant_id, out)
     return out
+
+
+async def _nao_lidas(db: AsyncSession, ids: list[int]) -> dict[int, int]:
+    """Quantas mensagens do CONTATO chegaram depois que a equipe viu a conversa (13/11/2026, CCDA).
+    Uma consulta para a página inteira. Nunca derruba a lista: sem a coluna, tudo zero."""
+    if not ids:
+        return {}
+    try:
+        rows = (
+            await db.execute(
+                select(TaMessageLog.conversation_id, func.count())
+                .join(TaConversation, TaConversation.id == TaMessageLog.conversation_id)
+                .where(
+                    TaMessageLog.conversation_id.in_(ids),
+                    TaMessageLog.role == "user",
+                    or_(
+                        TaConversation.visto_equipe_em.is_(None),
+                        TaMessageLog.created_at > TaConversation.visto_equipe_em,
+                    ),
+                )
+                .group_by(TaMessageLog.conversation_id)
+            )
+        ).all()
+        return {int(cid): int(n) for cid, n in rows}
+    except Exception:  # noqa: BLE001
+        logger.warning("contagem de não lidas falhou", exc_info=True)
+        await db.rollback()
+        return {}
+
+
+@router.post("/{conversation_id}/visto", response_model=dict)
+async def marcar_visto(
+    conversation_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """A equipe viu a conversa (abriu, ou está com ela aberta na tela): zera as «não lidas»."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conv = await _get_owned_conversation(db, conversation_id, user)
+    conv.visto_equipe_em = datetime.utcnow()
+    await db.commit()
+    return {"ok": True, "visto_equipe_em": conv.visto_equipe_em.isoformat()}
 
 
 async def _completar_com_agenda(db: AsyncSession, tenant_id: int | None, outs: list[ConversationOut]) -> None:

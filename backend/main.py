@@ -680,6 +680,36 @@ async def _ensure_disparo_lote_tables():
         logger.exception("ensure_disparo_lote_tables falhou (segue mesmo assim)")
 
 
+async def _ensure_visto_equipe_column():
+    """Runtime DDL — «não lidas» no inbox (13/11/2026, CCDA). Na PRIMEIRA vez a coluna nasce e todas
+    as conversas que já existem ficam vistas até a última mensagem: sem isso, a lista inteira
+    acenderia como não lida no dia da publicação. Conversa nova nasce com NULL = tudo não lido.
+    A tranca faz os 2 workers do uvicorn não marcarem duas vezes."""
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            await db.execute(_sql_text("SELECT pg_advisory_xact_lock(913112026)"))
+            existe = (
+                await db.execute(
+                    _sql_text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name = 'ta_conversation' AND column_name = 'visto_equipe_em'"
+                    )
+                )
+            ).first()
+            if not existe:
+                await db.execute(_sql_text("ALTER TABLE ta_conversation ADD COLUMN IF NOT EXISTS visto_equipe_em TIMESTAMP"))
+                await db.execute(
+                    _sql_text("UPDATE ta_conversation SET visto_equipe_em = COALESCE(last_message_at, NOW())")
+                )
+            await db.commit()
+    except Exception:
+        logger.exception("coluna visto_equipe_em não foi criada (a lista segue sem «não lidas»)")
+
+
 async def _ensure_wa_preco_columns():
     """Runtime DDL — cobrança da Meta por mensagem em `ta_wa_envio_status` (12/11/2026).
 
@@ -760,6 +790,7 @@ async def startup():
     await _ensure_disparo_oficial_tables()
     await _ensure_disparo_lote_tables()
     await _ensure_wa_preco_columns()
+    await _ensure_visto_equipe_column()
     await _ensure_callback_tables()
     from services import registro_atividade
 

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
-  MessageSquare, MessageSquarePlus, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
+  MessageSquare, MessageSquareDot, MessageSquarePlus, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Search, Zap,
   Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone, Mic, FileText,
   CalendarDays, Columns2, Layers,
@@ -152,6 +152,8 @@ interface Conversation {
   msg_count: number;
   last_message_at: string | null;
   last_preview: string | null;
+  // 13/11/2026 (CCDA): mensagens do contato que ninguém da equipe viu ainda
+  nao_lidas?: number;
   tags: string[];
   assigned_to: string | null;
   assigned_member_id: number | null;
@@ -227,6 +229,7 @@ interface Message {
 type NavFilter =
   | { type: "all" }
   | { type: "unattended" }
+  | { type: "unread" }
   | { type: "mentions" }
   | { type: "participants" }
   | { type: "channel"; value: string }
@@ -838,6 +841,8 @@ export default function ConversasPage() {
 
   useEffect(() => {
     const id = setInterval(() => {
+      // conversa aberta e a aba à vista: o que chegou nela já foi visto
+      if (openId && document.visibilityState === "visible") marcarVisto(openId);
       load(scope, true);
       if (openId) {
         api.get<{ messages: Message[] }>(`/conversations/${openId}`)
@@ -886,9 +891,17 @@ export default function ConversasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convs]);
 
+  // 13/11/2026 (CCDA, o Marcos): «não lidas», igual ao WhatsApp. Abrir a conversa — ou estar com ela
+  // aberta na tela quando chega mensagem — conta como visto para a equipe toda.
+  function marcarVisto(id: number) {
+    setConvs((prev) => prev.map((x) => (x.id === id && x.nao_lidas ? { ...x, nao_lidas: 0 } : x)));
+    api.post(`/conversations/${id}/visto`).catch(() => {});
+  }
+
   async function openConversation(c: Conversation) {
     setOpenId(c.id);
     setOpenConv(c);
+    marcarVisto(c.id);
     setNoteMode(false);
     setMentions([]);
     setLoadingMsgs(true);
@@ -1243,6 +1256,8 @@ export default function ConversasPage() {
     if (navFilter.type === "tag" && !(c.tags || []).includes(navFilter.value)) return false;
     if (navFilter.type === "team" && c.team_id !== navFilter.value) return false;
     if (navFilter.type === "unattended" && (c.status === "closed" || c.assigned_member_id)) return false;
+    // a conversa aberta fica na lista mesmo depois de vista, para não sumir debaixo de quem está lendo
+    if (navFilter.type === "unread" && !(c.nao_lidas || 0) && c.id !== openId) return false;
     // menções/participantes já vêm filtradas do backend (view=…); aqui só a busca
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -1254,9 +1269,11 @@ export default function ConversasPage() {
   });
 
   const unattendedCount = convs.filter((c) => c.status !== "closed" && !c.assigned_member_id).length;
+  const naoLidasCount = convs.filter((c) => (c.nao_lidas || 0) > 0 && c.id !== openId).length;
   const navTitle =
     navFilter.type === "all" ? "Todas as conversas"
     : navFilter.type === "unattended" ? "Não atendidas"
+    : navFilter.type === "unread" ? "Não lidas"
     : navFilter.type === "mentions" ? "Menções"
     : navFilter.type === "participants" ? "Participantes"
     : navFilter.type === "channel" ? channelLabel(navFilter.value === "outro" ? null : navFilter.value)
@@ -1354,6 +1371,7 @@ export default function ConversasPage() {
   const subNav = (
     <div className="space-y-0.5">
       <SubNavItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
+      <SubNavItem icon={MessageSquareDot} label="Não lidas" count={naoLidasCount} active={navFilter.type === "unread"} onClick={() => selectNav({ type: "unread" })} />
       <SubNavItem icon={Clock} label="Não atendidas" count={unattendedCount} active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
       <SubNavItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
       <SubNavItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => selectNav({ type: "participants" })} />
@@ -1434,6 +1452,7 @@ export default function ConversasPage() {
   const subNavRecolhido = (
     <div className="flex flex-col items-center gap-0.5">
       <RailItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
+      <RailItem icon={MessageSquareDot} label="Não lidas" count={naoLidasCount} destaque active={navFilter.type === "unread"} onClick={() => selectNav({ type: "unread" })} />
       <RailItem icon={Clock} label="Não atendidas" count={unattendedCount} destaque active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
       <RailItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
       <RailItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => selectNav({ type: "participants" })} />
@@ -1703,6 +1722,7 @@ export default function ConversasPage() {
                 const name = nomeDaConversa(c);
                 const selected = c.id === openId;
                 const dot = STATUS_META[c.status]?.dot || STATUS_META.active.dot;
+                const naoLidas = selected ? 0 : c.nao_lidas || 0;
                 return (
                   <button
                     key={c.id}
@@ -1719,8 +1739,14 @@ export default function ConversasPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{name}</span>
-                        <span className={`ml-auto shrink-0 text-[11px] ${FC.sub} tabular-nums`}>{fmtDate(c.last_message_at)}</span>
+                        <span className={`text-[14px] ${naoLidas ? "font-semibold" : "font-medium"} text-[#262626] dark:text-[#e6e8eb] truncate`}>{name}</span>
+                        <span
+                          className={`ml-auto shrink-0 text-[11px] tabular-nums ${
+                            naoLidas ? "font-medium text-[#003083] dark:text-[#5b9bff]" : FC.sub
+                          }`}
+                        >
+                          {fmtDate(c.last_message_at)}
+                        </span>
                       </div>
                       {/* a data de criação mora na linha da prévia, alinhada com a hora da última mensagem —
                           como etiqueta, empurrava as outras para uma segunda linha e cada conversa crescia */}
@@ -1734,6 +1760,14 @@ export default function ConversasPage() {
                             title={`Criada em ${fmtCriada(c.started_at).longa}`}
                           >
                             <CalendarDays className="w-2.5 h-2.5" /> criada {fmtCriada(c.started_at).curta}
+                          </span>
+                        )}
+                        {naoLidas > 0 && (
+                          <span
+                            className="shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#003083] dark:bg-[#5b9bff] text-white dark:text-[#0c0e12] text-[11px] font-semibold tabular-nums inline-flex items-center justify-center"
+                            title={`${naoLidas} ${naoLidas === 1 ? "mensagem não lida" : "mensagens não lidas"}`}
+                          >
+                            {naoLidas > 99 ? "99+" : naoLidas}
                           </span>
                         )}
                       </div>
