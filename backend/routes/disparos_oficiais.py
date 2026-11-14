@@ -25,7 +25,7 @@ import re
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -215,6 +215,51 @@ async def ler_lista(body: LerListaIn, user: Usuario, db: Banco):
             for c in contatos[:6]
         ],
     }
+
+
+# ───────────────────────── lista por arquivo (14/11/2026) ─────────────────────────
+
+
+@router.post("/importar-lista")
+async def importar_lista(user: Usuario, arquivo: UploadFile = File(...)):
+    """Planilha (.xlsx/.xls) ou CSV → o texto da caixa da lista, uma linha por contato. Não grava
+    nada: o texto volta para a tela e passa pela MESMA leitura da lista colada (`/ler-lista`)."""
+    from services import lista_arquivo
+
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    visao.exigir_gestor(user, "criar disparos")
+    dados = await arquivo.read(lista_arquivo.LIMITE_BYTES + 1)
+    try:
+        linhas = lista_arquivo.ler_arquivo(arquivo.filename or "", dados)
+    except lista_arquivo.ArquivoInvalido as e:
+        raise HTTPException(422, str(e)) from e
+    out = lista_arquivo.para_texto(linhas)
+    if not out["linhas"]:
+        raise HTTPException(422, "Não achei nenhuma linha com dados no arquivo")
+    if len(out["texto"]) > LISTA_MAX_CARACTERES:
+        raise HTTPException(413, "O arquivo passa do tamanho de uma lista de disparo — divida em partes")
+    out["arquivo"] = (arquivo.filename or "")[:120]
+    return out
+
+
+@router.get("/modelo-lista")
+async def modelo_lista(user: Usuario, formato: str = Query("xlsx", pattern="^(xlsx|csv)$")):
+    """O arquivo-modelo da lista: colunas «nome» e «telefone» com exemplos."""
+    from services import lista_arquivo
+
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    if formato == "csv":
+        corpo, tipo = lista_arquivo.modelo_csv(), "text/csv; charset=utf-8"
+    else:
+        corpo = lista_arquivo.modelo_xlsx()
+        tipo = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return Response(
+        content=corpo,
+        media_type=tipo,
+        headers={"Content-Disposition": f'attachment; filename="modelo-lista-disparo.{formato}"'},
+    )
 
 
 # ───────────────────────── criar ─────────────────────────

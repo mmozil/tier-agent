@@ -50,6 +50,7 @@ croniter==3.0.4
 # Doc processing (Fase 5 — knowledge upload)
 pdfplumber==0.11.4
 openpyxl==3.1.5
+xlrd==2.0.1  # 14/11/2026: lista do disparo em .xls antigo (lista_arquivo.py)
 
 # Dev
 pytest==8.3.4

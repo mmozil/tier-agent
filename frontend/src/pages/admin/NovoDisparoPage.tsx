@@ -9,6 +9,7 @@ import { ArrowLeft, Megaphone } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/phone";
 import BalaoDoModelo from "@/components/whatsapp/BalaoDoModelo";
+import ListaPorArquivo from "@/components/disparos/ListaPorArquivo";
 import {
   Button,
   EmptyHint,
@@ -346,8 +347,9 @@ export default function NovoDisparoPage() {
                   <Field
                     label="Contatos"
                     right={previa ? `${inteiro(previa.validos)}/${inteiro(previa.limite)}` : undefined}
-                    hint="Uma linha por contato: nome e telefone (coluna copiada da planilha, ou «Maria Silva 11 98765-4321») ou só o número. Número repetido sai uma vez."
+                    hint="Uma linha por contato: nome e telefone com DDD, em qualquer ordem (colado da planilha, «Maria Silva, 11 98765-4321» ou só o número). Número repetido sai uma vez."
                   >
+                    <ListaPorArquivo onTexto={setLista} />
                     <Textarea
                       value={lista}
                       onChange={(e) => setLista(e.target.value)}
