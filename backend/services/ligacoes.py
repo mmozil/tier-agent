@@ -70,6 +70,8 @@ DDL = (
     "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS gravacao_url TEXT",
     "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS gravacao_key TEXT",
     "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS crm_ligacao_id INTEGER",
+    # 14/11/2026 — quem gravou: «meta» (pedido no accept, vale para qualquer aba) ou «navegador».
+    "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS gravacao_por VARCHAR(16)",
 )
 
 
@@ -86,6 +88,72 @@ async def ligado_na_conta(db, tenant_id: int) -> bool:
         )
     ).scalar()
     return str(v or "").strip() in ("1", "true", "sim")
+
+
+# 🚨 14/11/2026 — a gravação feita pelo NAVEGADOR dependia da versão da aba: aba aberta antes da
+# publicação atendia sem gravar (4 ligações do dono, nenhuma gravada). Agora o SERVIDOR pede a gravação
+# no «accept» — vale para qualquer aba, velha ou nova. A Meta toca o aviso (em português) para as duas
+# pontas, grava e avisa no webhook `calls` (event = call_recording_available); o áudio vem para o NOSSO
+# armazenamento e segue para «Ligações QA» (transcrição e nota são nossas, não da Meta).
+GRAVACAO_META = {"status": "ENABLED", "purpose": "melhorar o nosso atendimento", "announcement_language": "pt"}
+
+
+def audio_da_gravacao(call: dict) -> dict | None:
+    """`calls[].call_recording.audio` do webhook (id, mime_type, url, sha256). Puro."""
+    if str(call.get("event") or "").lower() != "call_recording_available":
+        return None
+    audio = ((call.get("call_recording") or {}).get("audio")) or {}
+    return audio if audio.get("id") else None
+
+
+_TAREFAS: set = set()
+
+
+async def baixar_gravacao_meta(call_id: str, connector_id: int, audio: dict) -> None:
+    """Em segundo plano: baixa a gravação da Meta (com o token do número), guarda e manda ao CRM."""
+    import asyncio
+
+    from core.db import SessionLocal
+    from services.connectors.registry import registry as _reg
+    from services.storage_service import storage
+
+    try:
+        async with SessionLocal() as db:
+            lig = (
+                await db.execute(
+                    sa_text("SELECT id, tenant_id, gravacao_url FROM ta_ligacao WHERE call_id = :c"), {"c": call_id}
+                )
+            ).first()
+            if not lig:
+                logger.warning("gravação da Meta para ligação desconhecida call=%s", call_id)
+                return
+            if lig.gravacao_url:
+                return
+            _pnid, token = await _credenciais(db, connector_id)
+            conteudo = await _reg.get("whatsapp_cloud").download_media(token, audio["id"])
+            if not conteudo:
+                logger.warning("gravação da Meta não baixou ligação=%s", lig.id)
+                return
+            mime = (audio.get("mime_type") or "audio/ogg").split(";")[0].strip()
+            up = await asyncio.to_thread(
+                storage.upload,
+                conteudo,
+                folder=f"ligacoes/{lig.tenant_id}",
+                filename="gravacao.ogg",
+                content_type=mime,
+            )
+            await db.execute(
+                sa_text(
+                    "UPDATE ta_ligacao SET gravacao_url = :u, gravacao_key = :k, gravacao_por = 'meta'"
+                    " WHERE id = :i AND gravacao_url IS NULL"
+                ),
+                {"u": up.get("url"), "k": up.get("key"), "i": lig.id},
+            )
+            await db.commit()
+            logger.info("ligação %s: gravação da Meta guardada (%s bytes)", lig.id, len(conteudo))
+        await mandar_para_o_crm(lig.id)
+    except Exception:  # noqa: BLE001
+        logger.exception("gravação da Meta falhou call=%s", call_id)
 
 
 def _quando(ts) -> datetime | None:
@@ -192,6 +260,15 @@ async def registrar_evento_de_chamada(db, phone_number_id: str | None, value: di
                 )
                 await db.commit()
                 n += 1
+            elif evento == "call_recording_available":
+                audio = audio_da_gravacao(call)
+                if audio:
+                    import asyncio
+
+                    t = asyncio.create_task(baixar_gravacao_meta(call["id"], connector_id, audio))
+                    _TAREFAS.add(t)
+                    t.add_done_callback(_TAREFAS.discard)
+                    n += 1
             elif evento == "terminate":
                 atual = (
                     await db.execute(sa_text("SELECT estado FROM ta_ligacao WHERE call_id = :cid"), {"cid": call["id"]})

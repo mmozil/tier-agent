@@ -319,7 +319,7 @@ export default function LigacoesWhatsApp() {
       await pc.setLocalDescription(resposta);
       await esperarIce(pc, 2500);
       const sdp = pc.localDescription?.sdp || resposta.sdp || "";
-      await api.post(`/ligacoes/${l.id}/atender`, { sdp });
+      const { data: resp } = await api.post<{ ok: boolean; gravacao?: string }>(`/ligacoes/${l.id}/atender`, { sdp });
       trilha.enabled = true;
       await ctx.resume().catch(() => {});
       pcRef.current = pc;
@@ -328,6 +328,16 @@ export default function LigacoesWhatsApp() {
       setEmCurso({ id: l.id, nome: nomeDe(l), desde: Date.now() });
       setTocando(null);
 
+      // A Meta grava (pedido do servidor no accept) e toca o aviso dela: aqui só abre o microfone.
+      if (resp?.gravacao === "meta") {
+        diag(l.id, "atendida", "gravacao=meta");
+        micGain.gain.value = mudoRef.current ? 0 : 1;
+        setGravando(true);
+        pc = null;
+        mic = null;
+        ch = null;
+        return;
+      }
       // Aviso → só então grava e abre o microfone. Sem aviso: atende sem gravar.
       diag(l.id, "atendida", `aviso_baixado=${!!avisoRef.current} ctx=${ctx.state}`);
       let aviso: AudioBuffer | null = null;

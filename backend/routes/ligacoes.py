@@ -183,13 +183,19 @@ async def atender(
     if not pegou:
         raise HTTPException(409, "Essa ligação já foi atendida ou parou de tocar")
     sessao = {"sdp_type": "answer", "sdp": body.sdp}
+    gravacao_por = "meta"
     try:
         await ligacoes.acao_na_meta(
             db, lig.connector_id, {"call_id": lig.call_id, "action": "pre_accept", "session": sessao}
         )
-        await ligacoes.acao_na_meta(
-            db, lig.connector_id, {"call_id": lig.call_id, "action": "accept", "session": sessao}
-        )
+        aceite = {"call_id": lig.call_id, "action": "accept", "session": sessao}
+        try:
+            # A gravação é pedida AQUI, no servidor: vale para qualquer aba (velha ou nova).
+            await ligacoes.acao_na_meta(db, lig.connector_id, {**aceite, "recording": ligacoes.GRAVACAO_META})
+        except Exception as e_grav:  # noqa: BLE001 — a Meta recusou a gravação: atende sem ela
+            logger.warning("ligação %s: Meta recusou gravar (%s) — atendendo sem", lig.id, e_grav)
+            gravacao_por = "navegador"
+            await ligacoes.acao_na_meta(db, lig.connector_id, aceite)
     except Exception as e:  # noqa: BLE001
         logger.warning("ligação %s: atender falhou: %s", lig.id, e)
         await db.execute(
@@ -200,12 +206,14 @@ async def atender(
         raise HTTPException(502, f"A Meta não completou o atendimento: {e}") from e
     await db.execute(
         sa_text(
-            "UPDATE ta_ligacao SET estado = 'em_curso', atendida_em = now() WHERE id = :i AND estado = 'atendendo'"
+            "UPDATE ta_ligacao SET estado = 'em_curso', atendida_em = now(), gravacao_por = :g"
+            " WHERE id = :i AND estado = 'atendendo'"
         ),
-        {"i": lig.id},
+        {"i": lig.id, "g": gravacao_por},
     )
     await db.commit()
-    return {"ok": True}
+    # «meta» = o navegador NÃO grava nem toca aviso (a Meta faz as duas coisas).
+    return {"ok": True, "gravacao": gravacao_por}
 
 
 class DiagIn(BaseModel):
@@ -253,7 +261,10 @@ async def gravacao(
         content_type=(arquivo.content_type or "audio/webm").split(";")[0],
     )
     await db.execute(
-        sa_text("UPDATE ta_ligacao SET gravacao_url = :u, gravacao_key = :k WHERE id = :i AND gravacao_url IS NULL"),
+        sa_text(
+            "UPDATE ta_ligacao SET gravacao_url = :u, gravacao_key = :k, gravacao_por = 'navegador'"
+            " WHERE id = :i AND gravacao_url IS NULL"
+        ),
         {"u": up.get("url"), "k": up.get("key"), "i": lig.id},
     )
     await db.commit()

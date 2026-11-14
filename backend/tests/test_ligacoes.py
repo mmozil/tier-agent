@@ -159,3 +159,17 @@ def test_erro_da_meta_vira_motivo_em_portugues():
     assert "(código 131042)" in explicar_erro_meta("(#131042) Business eligibility payment issue")
     assert "não existe" in explicar_erro_meta("Meta 132001: Template name does not exist in the translation")
     assert explicar_erro_meta("falha sem código") == "falha sem código"
+
+
+def test_gravacao_da_meta_no_webhook():
+    """`calls[].call_recording.audio` com `event = call_recording_available` → o áudio a baixar."""
+    call = {
+        "id": "wacid.X",
+        "event": "call_recording_available",
+        "call_recording": {"type": "audio", "audio": {"id": "1002", "mime_type": "audio/ogg; codecs=opus"}},
+    }
+    assert ligacoes.audio_da_gravacao(call)["id"] == "1002"
+    assert ligacoes.audio_da_gravacao({**call, "event": "terminate"}) is None
+    assert ligacoes.audio_da_gravacao({"event": "call_recording_available"}) is None
+    assert ligacoes.GRAVACAO_META["status"] == "ENABLED"
+    assert ligacoes.GRAVACAO_META["announcement_language"] == "pt"
