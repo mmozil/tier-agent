@@ -215,6 +215,11 @@ export default function LigacoesWhatsApp() {
     return () => clearInterval(t);
   }, [tocandoId, atendendo, temEmCurso]);
 
+  // A atualização automática do painel nunca recarrega com ligação tocando ou em andamento.
+  useEffect(() => {
+    (window as any).__tierLigacaoAtiva = !!(tocando || emCurso || atendendo);
+  }, [tocando, emCurso, atendendo]);
+
   // Relógio da ligação.
   useEffect(() => {
     if (!emCurso) return;

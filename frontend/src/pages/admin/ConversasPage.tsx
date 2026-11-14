@@ -2241,6 +2241,7 @@ export default function ConversasPage() {
                   )}
                   <textarea
                     ref={taRef}
+                    data-rascunho="1"
                     value={replyText}
                     onChange={(e) => { setReplyText(e.target.value); autoGrowTextarea(e.target); requestAnimationFrame(mencao.atualizar); }}
                     onClick={() => mencao.atualizar()}

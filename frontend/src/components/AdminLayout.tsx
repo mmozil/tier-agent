@@ -10,6 +10,7 @@ import ThemeToggle from "./ThemeToggle";
 import ErrorBoundary from "./ErrorBoundary";
 import CommandPalette from "./CommandPalette";
 import LigacoesWhatsApp from "./inbox/LigacoesWhatsApp";
+import AtualizacaoAutomatica from "./AtualizacaoAutomatica";
 
 const CMDK_LABEL = typeof navigator !== "undefined" && /mac/i.test(navigator.userAgent) ? "⌘K" : "Ctrl K";
 
@@ -218,6 +219,7 @@ export default function AdminLayout() {
         <ErrorBoundary key={location.pathname}>
           <Outlet />
         </ErrorBoundary>
+        <AtualizacaoAutomatica />
       </div>
     );
   }
@@ -450,6 +452,8 @@ export default function AdminLayout() {
       <CommandPalette />
       {/* 14/11/2026 — ligação pelo WhatsApp oficial toca em qualquer tela do painel. */}
       <LigacoesWhatsApp />
+      {/* 14/11/2026 — versão nova publicada: a aba recarrega sozinha no primeiro momento seguro. */}
+      <AtualizacaoAutomatica />
     </div>
   );
 }
