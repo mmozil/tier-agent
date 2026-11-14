@@ -33,8 +33,17 @@ type Card = {
   funil: string | null;
   etapa: string | null;
   desta_conversa: boolean;
+  /** A conta (empresa) dona do card no CRM — vai no link para o CRM abrir nela (14/11/2026). */
+  conta?: number | null;
   tarefas: Tarefa[];
 };
+
+/** Link do card no CRM. Com a conta, o CRM troca para a empresa certa antes de abrir:
+ *  sem ela, quem tem várias empresas caía no painel da que estava ativa (Esneper → M7). */
+function linkDoCard(c: Card): string {
+  const base = `${baseDoCrm()}/tier-empresas/vendas/crm/negocio/${c.id}`;
+  return c.conta ? `${base}?conta=${c.conta}` : base;
+}
 
 const TIPOS = [
   { v: "LIGACAO", t: "Ligação" },
@@ -210,7 +219,7 @@ export default function TarefasCrm({ conversaId, crmOpportunityId }: { conversaI
               }`}
             >
               <a
-                href={`${baseDoCrm()}/tier-empresas/vendas/crm/negocio/${c.id}`}
+                href={linkDoCard(c)}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
