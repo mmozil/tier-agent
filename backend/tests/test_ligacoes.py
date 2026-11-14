@@ -43,3 +43,57 @@ def test_erro_da_meta_legivel():
     call = {"errors": [{"code": 138021, "message": "Call failed", "error_data": {"details": "timeout"}}]}
     assert ligacoes._erro_de(call) == "138021 · Call failed · timeout"
     assert ligacoes._erro_de({}) is None
+
+
+def test_envio_ao_crm_monta_o_pedido(monkeypatch):
+    """A gravação vai para «Ligações QA» do ERP com o id estável (idempotência no ERP)."""
+    import asyncio
+
+    from services import erp_crm_client
+
+    pedidos = []
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"id": 7}
+
+    class _Cli:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            pedidos.append((url, json, headers))
+            return _Resp()
+
+    monkeypatch.setattr(
+        erp_crm_client, "_base_e_headers", lambda: ("https://erp.x", {"X-Tier-Integration-Secret": "s"})
+    )
+    monkeypatch.setattr(erp_crm_client.httpx, "AsyncClient", _Cli)
+    loop = asyncio.new_event_loop()
+    try:
+        r = loop.run_until_complete(
+            erp_crm_client.enviar_ligacao_whatsapp(
+                agent_tenant_id=3,
+                external_id="wa-agent-2",
+                audio_url="https://pub.r2.dev/ligacoes/3/abc.webm",
+                direcao="in",
+                numero="5511999990000",
+                atendente_nome="Marcelo",
+                duracao_seg=21,
+            )
+        )
+    finally:
+        loop.close()
+    assert r == {"id": 7}
+    url, corpo, cab = pedidos[0]
+    assert url == "https://erp.x/api/tier-empresas/crm/ligacoes/agent-whatsapp"
+    assert corpo["external_id"] == "wa-agent-2" and corpo["agent_tenant_id"] == 3 and corpo["duracao_seg"] == 21
+    assert cab["X-Tier-Integration-Secret"] == "s"

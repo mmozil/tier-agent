@@ -212,6 +212,38 @@ def _base_e_headers() -> tuple[str, dict]:
     return base, {"X-Tier-Integration-Secret": secret, "X-Sync-Source": "tier-agent"}
 
 
+async def enviar_ligacao_whatsapp(
+    *,
+    agent_tenant_id: int,
+    external_id: str,
+    audio_url: str,
+    direcao: str,
+    numero: str | None,
+    atendente_nome: str | None,
+    duracao_seg: int | None,
+) -> dict:
+    """Ligação do WhatsApp oficial gravada no painel → página «Ligações QA» do CRM (14/11/2026).
+    O ERP é idempotente pelo `external_id`: reenviar não duplica."""
+    base, headers = _base_e_headers()
+    async with httpx.AsyncClient(timeout=20) as cli:
+        r = await cli.post(
+            f"{base}/api/tier-empresas/crm/ligacoes/agent-whatsapp",
+            json={
+                "agent_tenant_id": agent_tenant_id,
+                "external_id": external_id,
+                "audio_url": audio_url,
+                "direcao": direcao,
+                "numero": numero,
+                "atendente_nome": atendente_nome,
+                "duracao_seg": duracao_seg,
+            },
+            headers=headers,
+        )
+    if r.status_code >= 400:
+        raise _erro_do_erp(r)
+    return r.json()
+
+
 def _erro_do_erp(r: httpx.Response) -> ErpCrmError:
     try:
         detail = r.json().get("detail")

@@ -1,11 +1,11 @@
 """Ligações pelo WhatsApp oficial — atender pelo painel (14/11/2026). Regra e fluxo: services/ligacoes.py."""
 
-from __future__ import annotations
-
+# Sem `from __future__ import annotations`: rota com UploadFile quebra com anotação em texto.
+import asyncio
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -148,6 +148,43 @@ async def atender(
     )
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/{ligacao_id}/gravacao")
+async def gravacao(
+    ligacao_id: int,
+    background_tasks: BackgroundTasks,
+    arquivo: UploadFile = File(...),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """O navegador sobe a gravação ao desligar. Guarda no R2 (chave não-enumerável) e manda para o CRM."""
+    tenant_id = _tenant(user)
+    lig = await _da_conta(db, ligacao_id, tenant_id)
+    ja = (await db.execute(sa_text("SELECT gravacao_url FROM ta_ligacao WHERE id = :i"), {"i": lig.id})).scalar()
+    if ja:
+        return {"ok": True, "url": ja, "ja_existia": True}
+    conteudo = await arquivo.read()
+    if not conteudo:
+        raise HTTPException(400, "Gravação vazia")
+    if len(conteudo) > ligacoes.LIMITE_GRAVACAO_BYTES:
+        raise HTTPException(413, "Gravação grande demais")
+    from services.storage_service import storage
+
+    up = await asyncio.to_thread(
+        storage.upload,
+        conteudo,
+        folder=f"ligacoes/{tenant_id}",
+        filename="gravacao.webm",
+        content_type=(arquivo.content_type or "audio/webm").split(";")[0],
+    )
+    await db.execute(
+        sa_text("UPDATE ta_ligacao SET gravacao_url = :u, gravacao_key = :k WHERE id = :i AND gravacao_url IS NULL"),
+        {"u": up.get("url"), "k": up.get("key"), "i": lig.id},
+    )
+    await db.commit()
+    background_tasks.add_task(ligacoes.mandar_para_o_crm, lig.id)
+    return {"ok": True, "url": up.get("url")}
 
 
 @router.post("/{ligacao_id}/recusar")

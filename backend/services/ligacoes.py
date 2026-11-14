@@ -66,6 +66,10 @@ DDL = (
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_ta_ligacao_call_id ON ta_ligacao (call_id)",
     "CREATE INDEX IF NOT EXISTS ix_ta_ligacao_tenant_estado ON ta_ligacao (tenant_id, estado, criada_em)",
     "CREATE INDEX IF NOT EXISTS ix_ta_ligacao_conversa ON ta_ligacao (conversation_id)",
+    # 14/11/2026 — gravação feita no NAVEGADOR (sem Meta): as duas vozes, com o aviso no começo.
+    "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS gravacao_url TEXT",
+    "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS gravacao_key TEXT",
+    "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS crm_ligacao_id INTEGER",
 )
 
 
@@ -289,6 +293,54 @@ async def acao_na_meta(db, connector_id: int, corpo: dict) -> dict:
     return j
 
 
+# ── gravação (navegador → R2 → CRM «Ligações QA») ──────────────────────────────────────────
+
+LIMITE_GRAVACAO_BYTES = 80 * 1024 * 1024  # ~2 h a 64 kbit/s
+
+
+async def mandar_para_o_crm(ligacao_id: int) -> None:
+    """Em segundo plano: a gravação entra na página «Ligações QA» do ERP (transcrição + nota pelo roteiro).
+    Falha aqui não perde nada: o áudio já está guardado e a conversa já toca a gravação."""
+    from core.db import SessionLocal
+    from services import erp_crm_client
+
+    try:
+        async with SessionLocal() as db:
+            r = (
+                await db.execute(
+                    sa_text(
+                        "SELECT l.id, l.tenant_id, l.contato, l.atendida_por, l.duracao_s, l.gravacao_url, l.direcao,"
+                        " l.crm_ligacao_id, m.nome AS membro FROM ta_ligacao l"
+                        " LEFT JOIN ta_member m ON m.id = l.member_id WHERE l.id = :i"
+                    ),
+                    {"i": ligacao_id},
+                )
+            ).first()
+            if not r or not r.gravacao_url or r.crm_ligacao_id:
+                return
+            if not str(r.gravacao_url).startswith("https://"):
+                logger.warning("ligação %s: gravação sem URL pública — não vai ao CRM", ligacao_id)
+                return
+            resp = await erp_crm_client.enviar_ligacao_whatsapp(
+                agent_tenant_id=r.tenant_id,
+                external_id=f"wa-agent-{r.id}",
+                audio_url=r.gravacao_url,
+                direcao="in" if r.direcao == "entrada" else "out",
+                numero=r.contato,
+                atendente_nome=r.membro or r.atendida_por,
+                duracao_seg=r.duracao_s,
+            )
+            crm_id = (resp or {}).get("id")
+            if crm_id:
+                await db.execute(
+                    sa_text("UPDATE ta_ligacao SET crm_ligacao_id = :c WHERE id = :i"),
+                    {"c": int(crm_id), "i": ligacao_id},
+                )
+                await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("ligação %s: envio ao CRM falhou", ligacao_id)
+
+
 # ── leitura para o painel ────────────────────────────────────────────────────────────────────
 
 
@@ -315,7 +367,7 @@ async def linhas_da_conversa(db, conversation_id: int) -> list[dict]:
     rows = (
         await db.execute(
             sa_text(
-                "SELECT id, direcao, estado, duracao_s, atendida_por, criada_em, erro FROM ta_ligacao"
+                "SELECT id, direcao, estado, duracao_s, atendida_por, criada_em, erro, gravacao_url FROM ta_ligacao"
                 " WHERE conversation_id = :c ORDER BY criada_em"
             ),
             {"c": conversation_id},
@@ -327,6 +379,10 @@ async def linhas_da_conversa(db, conversation_id: int) -> list[dict]:
             "role": "ligacao",
             "content": _rotulo(r.estado, r.direcao, r.duracao_s, r.atendida_por),
             "created_at": r.criada_em,
+            # Gravação = o mesmo player de áudio das mensagens.
+            "attachments_json": [{"kind": "audio", "url": r.gravacao_url, "mime": "audio/webm"}]
+            if r.gravacao_url
+            else None,
         }
         for r in rows
     ]

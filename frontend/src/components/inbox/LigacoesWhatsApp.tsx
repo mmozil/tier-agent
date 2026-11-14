@@ -10,7 +10,25 @@ import { api } from "@/lib/api";
  * conta, 60 s sem — cabeçalho próprio não passaria pelo CORS). Tocando → cartão com «Atender» e «Recusar». Atender monta a conexão de voz (WebRTC)
  * com a OFERTA que a Meta mandou, envia a RESPOSTA ao servidor (pre_accept + accept na Meta) e só
  * então abre o microfone — a Meta pede que a voz da empresa não saia antes do «accept».
+ *
+ * GRAVAÇÃO (14/11/2026, sem Meta): ao atender toca um AVISO («esta ligação será gravada…») para as
+ * duas pontas e só depois abre o microfone. O navegador grava em ESTÉREO — esquerda = família,
+ * direita = atendente (com o aviso) — e ao desligar sobe o arquivo; o servidor guarda e manda para a
+ * página «Ligações QA» do CRM (transcrição + nota pelo roteiro).
+ * Sem o aviso carregado, NÃO grava: gravar sem avisar não é opção.
  */
+
+const AVISO_URL = "/aviso-gravacao-ligacao-1.mp3";
+
+type Chamada = {
+  ctx: AudioContext;
+  micGain: GainNode;
+  saida: GainNode;
+  merger: ChannelMergerNode;
+  gravador: MediaRecorder | null;
+  pedacos: Blob[];
+  remotoLigado: boolean;
+};
 
 type Ligacao = {
   id: number;
@@ -77,6 +95,8 @@ export default function LigacoesWhatsApp() {
   const [emCurso, setEmCurso] = useState<EmCurso | null>(null);
   const [atendendo, setAtendendo] = useState(false);
   const [mudo, setMudo] = useState(false);
+  const [avisando, setAvisando] = useState(false);
+  const [gravando, setGravando] = useState(false);
   const [agora, setAgora] = useState(Date.now());
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -85,9 +105,51 @@ export default function LigacoesWhatsApp() {
   const somRef = useRef<AudioContext | null>(null);
   const emCursoRef = useRef<EmCurso | null>(null);
   const recusadasRef = useRef<Set<number>>(new Set());
+  const chamadaRef = useRef<Chamada | null>(null);
+  const avisoRef = useRef<ArrayBuffer | null>(null);
+  const mudoRef = useRef(false);
   emCursoRef.current = emCurso;
+  mudoRef.current = mudo;
+
+  // O aviso vem antes: baixado uma vez, decodificado a cada ligação.
+  useEffect(() => {
+    fetch(AVISO_URL)
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then((b) => {
+        avisoRef.current = b;
+      })
+      .catch(() => {});
+  }, []);
+
+  const subirGravacao = useCallback(async (ligacaoId: number, pedacos: Blob[], mime: string) => {
+    const blob = new Blob(pedacos, { type: mime || "audio/webm" });
+    if (blob.size < 2000) return; // nada útil gravado
+    const fd = new FormData();
+    fd.append("arquivo", blob, `ligacao-${ligacaoId}.webm`);
+    try {
+      await api.post(`/ligacoes/${ligacaoId}/gravacao`, fd);
+      toast.success("Gravação salva — vai para Ligações QA");
+    } catch (e: any) {
+      const d = e?.response?.data?.detail;
+      toast.error(typeof d === "string" ? d : "Não consegui salvar a gravação");
+    }
+  }, []);
 
   const limpar = useCallback(() => {
+    const ch = chamadaRef.current;
+    const atual = emCursoRef.current;
+    chamadaRef.current = null;
+    if (ch?.gravador && ch.gravador.state !== "inactive" && atual) {
+      const g = ch.gravador;
+      const id = atual.id;
+      g.onstop = () => {
+        subirGravacao(id, ch.pedacos, g.mimeType);
+        ch.ctx.close().catch(() => {});
+      };
+      g.stop();
+    } else {
+      ch?.ctx.close().catch(() => {});
+    }
     pcRef.current?.close();
     pcRef.current = null;
     micRef.current?.getTracks().forEach((t) => t.stop());
@@ -95,7 +157,9 @@ export default function LigacoesWhatsApp() {
     if (audioRef.current) audioRef.current.srcObject = null;
     setEmCurso(null);
     setMudo(false);
-  }, []);
+    setAvisando(false);
+    setGravando(false);
+  }, [subirGravacao]);
 
   // Sondagem — o servidor dita o intervalo pelo cabeçalho.
   useEffect(() => {
@@ -177,6 +241,7 @@ export default function LigacoesWhatsApp() {
     setAtendendo(true);
     let mic: MediaStream | null = null;
     let pc: RTCPeerConnection | null = null;
+    let ch: Chamada | null = null;
     try {
       try {
         mic = await navigator.mediaDevices.getUserMedia({
@@ -186,15 +251,35 @@ export default function LigacoesWhatsApp() {
         toast.error("Libere o microfone do navegador para atender");
         return;
       }
+      // Grafo de áudio da ligação: microfone (com porta) + aviso → «saida» → vai para a ligação e para o
+      // canal direito da gravação; a voz da família → canal esquerdo.
+      const ctx = new AudioContext();
+      const micGain = ctx.createGain();
+      micGain.gain.value = 0; // fechado até o aviso terminar
+      ctx.createMediaStreamSource(mic).connect(micGain);
+      const saida = ctx.createGain();
+      micGain.connect(saida);
+      const paraLigacao = ctx.createMediaStreamDestination();
+      saida.connect(paraLigacao);
+      const merger = ctx.createChannelMerger(2);
+      saida.connect(merger, 0, 1);
+      ch = { ctx, micGain, saida, merger, gravador: null, pedacos: [], remotoLigado: false };
+      const chAtual = ch;
+
       pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-      mic.getAudioTracks().forEach((t) => {
-        t.enabled = false; // só fala depois do «accept» da Meta
-        pc!.addTrack(t, mic!);
-      });
+      const trilha = paraLigacao.stream.getAudioTracks()[0];
+      trilha.enabled = false; // só fala depois do «accept» da Meta
+      pc.addTrack(trilha, paraLigacao.stream);
       pc.ontrack = (e) => {
+        const remoto = e.streams[0] || new MediaStream([e.track]);
         if (audioRef.current) {
-          audioRef.current.srcObject = e.streams[0] || new MediaStream([e.track]);
+          // O Chrome só entrega o áudio remoto ao grafo se ele também tocar num <audio>.
+          audioRef.current.srcObject = remoto;
           audioRef.current.play().catch(() => {});
+        }
+        if (!chAtual.remotoLigado) {
+          chAtual.remotoLigado = true;
+          ctx.createMediaStreamSource(remoto).connect(merger, 0, 0);
         }
       };
       pc.onconnectionstatechange = () => {
@@ -213,13 +298,50 @@ export default function LigacoesWhatsApp() {
       await esperarIce(pc, 2500);
       const sdp = pc.localDescription?.sdp || resposta.sdp || "";
       await api.post(`/ligacoes/${l.id}/atender`, { sdp });
-      mic.getAudioTracks().forEach((t) => (t.enabled = true));
+      trilha.enabled = true;
+      await ctx.resume().catch(() => {});
       pcRef.current = pc;
       micRef.current = mic;
+      chamadaRef.current = ch;
       setEmCurso({ id: l.id, nome: nomeDe(l), desde: Date.now() });
       setTocando(null);
+
+      // Aviso → só então grava e abre o microfone. Sem aviso: atende sem gravar.
+      let aviso: AudioBuffer | null = null;
+      try {
+        aviso = avisoRef.current ? await ctx.decodeAudioData(avisoRef.current.slice(0)) : null;
+      } catch {
+        aviso = null;
+      }
+      const abrirMicrofone = () => {
+        micGain.gain.value = mudoRef.current ? 0 : 1;
+        setAvisando(false);
+      };
+      if (aviso) {
+        const gravDestino = ctx.createMediaStreamDestination();
+        merger.connect(gravDestino);
+        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+        const g = new MediaRecorder(gravDestino.stream, { mimeType: mime, audioBitsPerSecond: 64000 });
+        g.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size) chAtual.pedacos.push(ev.data);
+        };
+        g.start(1000);
+        chAtual.gravador = g;
+        setGravando(true);
+        const fonte = ctx.createBufferSource();
+        fonte.buffer = aviso;
+        fonte.connect(saida); // a família ouve e fica na gravação
+        fonte.connect(ctx.destination); // o atendente ouve também
+        setAvisando(true);
+        fonte.onended = abrirMicrofone;
+        fonte.start();
+      } else {
+        toast("Aviso de gravação indisponível — esta ligação não será gravada");
+        abrirMicrofone();
+      }
       pc = null;
       mic = null;
+      ch = null;
     } catch (e: any) {
       const d = e?.response?.data?.detail;
       toast.error(typeof d === "string" ? d : "Não consegui atender a ligação");
@@ -227,6 +349,7 @@ export default function LigacoesWhatsApp() {
       // Deu errado no meio: nada fica aberto.
       pc?.close();
       mic?.getTracks().forEach((t) => t.stop());
+      ch?.ctx.close().catch(() => {});
       setAtendendo(false);
     }
   };
@@ -252,7 +375,8 @@ export default function LigacoesWhatsApp() {
 
   const alternarMudo = () => {
     const novo = !mudo;
-    micRef.current?.getAudioTracks().forEach((t) => (t.enabled = !novo));
+    // A porta é o ganho do microfone (a trilha que sai carrega também o aviso).
+    if (chamadaRef.current && !avisando) chamadaRef.current.micGain.gain.value = novo ? 0 : 1;
     setMudo(novo);
   };
 
@@ -274,6 +398,12 @@ export default function LigacoesWhatsApp() {
                 Em ligação · {tempo(Math.max(0, Math.floor((agora - emCurso.desde) / 1000)))}
                 {mudo ? " · mudo" : ""}
               </div>
+              {(avisando || gravando) && (
+                <div className="mt-0.5 inline-flex items-center gap-1.5 text-[11px] text-[#e5484d]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#e5484d]" />
+                  {avisando ? "Avisando que a ligação é gravada…" : "Gravando"}
+                </div>
+              )}
             </div>
           </div>
           <div className="mt-3 flex gap-2">
