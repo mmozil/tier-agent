@@ -1,29 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Mic, MicOff, Phone, PhoneOff } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "@/lib/api";
+import { FC, PRIMARY_SHADOW } from "@/components/ds/fc";
+import { WhatsAppIcon } from "@/components/icons/channelIcons";
 
 /**
  * Ligações pelo WhatsApp oficial (14/11/2026) — a família liga e a equipe atende pelo navegador.
  *
  * O painel sonda `/ligacoes/ativas` (o servidor diz o intervalo no corpo: 3 s com o recurso ligado na
- * conta, 60 s sem — cabeçalho próprio não passaria pelo CORS). Tocando → cartão com «Atender» e «Recusar». Atender monta a conexão de voz (WebRTC)
+ * conta, 60 s sem). Tocando → cartão com «Atender» e «Recusar». Atender monta a conexão de voz (WebRTC)
  * com a OFERTA que a Meta mandou, envia a RESPOSTA ao servidor (pre_accept + accept na Meta) e só
  * então abre o microfone — a Meta pede que a voz da empresa não saia antes do «accept».
  *
- * GRAVAÇÃO (14/11/2026, sem Meta): ao atender toca um AVISO («esta ligação será gravada…») para as
- * duas pontas e só depois abre o microfone. O navegador grava em ESTÉREO — esquerda = família,
- * direita = atendente (com o aviso) — e ao desligar sobe o arquivo; o servidor guarda e manda para a
- * página «Ligações QA» do CRM (transcrição + nota pelo roteiro).
- * Sem o aviso carregado, NÃO grava: gravar sem avisar não é opção.
+ * GRAVAÇÃO: o servidor diz quem grava. Padrão = o NAVEGADOR, SEM aviso falado (decisão do dono, 14/11:
+ * a voz da Meta saiu). Grava em ESTÉREO — esquerda = família, direita = atendente — e ao desligar sobe o
+ * arquivo; o servidor guarda, põe na conversa e manda ao CRM (histórico do card + «Ligações QA»).
+ * Conta com `ligacoes_gravacao_meta` = 1: a Meta grava (com a voz dela) e aqui não se grava nada.
  */
-
-const AVISO_URL = "/aviso-gravacao-ligacao-1.mp3";
 
 type Chamada = {
   ctx: AudioContext;
   micGain: GainNode;
-  saida: GainNode;
   merger: ChannelMergerNode;
   gravador: MediaRecorder | null;
   pedacos: Blob[];
@@ -44,11 +43,18 @@ type Ligacao = {
   sdp_oferta?: string | null;
 };
 
-type EmCurso = { id: number; nome: string; desde: number };
+type EmCurso = { id: number; nome: string; numero: string; desde: number };
 
-const PACOTE = (Array.from(document.scripts)
-  .map((x) => x.src)
-  .find((x) => /\/assets\/index-[^/]+\.js/.test(x)) || "dev").split("/").pop();
+// Spring canônico do Animate UI (o mesmo do AdminLayout).
+const SPRING = { type: "spring", stiffness: 350, damping: 35 } as const;
+
+const PACOTE = (
+  Array.from(document.scripts)
+    .map((x) => x.src)
+    .find((x) => /\/assets\/index-[^/]+\.js/.test(x)) || "dev"
+)
+  .split("/")
+  .pop();
 
 /** Passo a passo da gravação para o log do servidor (não atrapalha nada se falhar). */
 function diag(id: number, etapa: string, detalhe = "") {
@@ -60,6 +66,12 @@ function formatarNumero(n?: string | null): string {
   if (d.length === 13 && d.startsWith("55")) return `(${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
   if (d.length === 12 && d.startsWith("55")) return `(${d.slice(2, 4)}) ${d.slice(4, 8)}-${d.slice(8)}`;
   return n || "";
+}
+
+function iniciais(nome: string): string {
+  const p = nome.replace(/[^\p{L}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
+  if (!p.length) return "";
+  return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
 }
 
 function tempo(s: number): string {
@@ -99,12 +111,17 @@ function tocarBipe(ctx: AudioContext) {
   }
 }
 
+// Botões no padrão do painel (animate-ui): 32 px, raio 10, texto 12 médio.
+const BTN = "h-8 px-3 flex-1 rounded-[10px] text-[12px] font-medium inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-[#003083]/30 disabled:opacity-50 disabled:pointer-events-none";
+const BTN_CONTORNO = `${BTN} border ${FC.hair} bg-white dark:bg-[#14171c] ${FC.ink} hover:bg-black/[0.04] dark:hover:bg-white/[0.04]`;
+const BTN_PRIMARIO = `${BTN} text-white bg-[#003083] hover:bg-[#002a73] dark:bg-[#5b9bff] dark:text-[#0c0e12] dark:hover:bg-[#7eb0ff] ${PRIMARY_SHADOW}`;
+const BTN_PERIGO = `${BTN} text-white bg-[#e5484d] hover:bg-[#d93d42]`;
+
 export default function LigacoesWhatsApp() {
   const [tocando, setTocando] = useState<Ligacao | null>(null);
   const [emCurso, setEmCurso] = useState<EmCurso | null>(null);
   const [atendendo, setAtendendo] = useState(false);
   const [mudo, setMudo] = useState(false);
-  const [avisando, setAvisando] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [agora, setAgora] = useState(Date.now());
 
@@ -115,20 +132,9 @@ export default function LigacoesWhatsApp() {
   const emCursoRef = useRef<EmCurso | null>(null);
   const recusadasRef = useRef<Set<number>>(new Set());
   const chamadaRef = useRef<Chamada | null>(null);
-  const avisoRef = useRef<ArrayBuffer | null>(null);
   const mudoRef = useRef(false);
   emCursoRef.current = emCurso;
   mudoRef.current = mudo;
-
-  // O aviso vem antes: baixado uma vez, decodificado a cada ligação.
-  useEffect(() => {
-    fetch(AVISO_URL)
-      .then((r) => (r.ok ? r.arrayBuffer() : null))
-      .then((b) => {
-        avisoRef.current = b;
-      })
-      .catch(() => {});
-  }, []);
 
   const subirGravacao = useCallback(async (ligacaoId: number, pedacos: Blob[], mime: string) => {
     const blob = new Blob(pedacos, { type: mime || "audio/webm" });
@@ -138,7 +144,7 @@ export default function LigacoesWhatsApp() {
     fd.append("arquivo", blob, `ligacao-${ligacaoId}.webm`);
     try {
       await api.post(`/ligacoes/${ligacaoId}/gravacao`, fd);
-      toast.success("Gravação salva — vai para Ligações QA");
+      toast.success("Gravação salva — vai para o CRM");
     } catch (e: any) {
       const d = e?.response?.data?.detail;
       diag(ligacaoId, "envio_falhou", `${e?.response?.status || ""} ${typeof d === "string" ? d : e?.message || ""}`);
@@ -150,7 +156,9 @@ export default function LigacoesWhatsApp() {
     const ch = chamadaRef.current;
     const atual = emCursoRef.current;
     chamadaRef.current = null;
-    if (atual) diag(atual.id, "encerrando", `chamada=${!!ch} gravador=${ch?.gravador?.state || "nenhum"} pedacos=${ch?.pedacos.length ?? 0}`);
+    if (atual) {
+      diag(atual.id, "encerrando", `chamada=${!!ch} gravador=${ch?.gravador?.state || "nenhum"} pedacos=${ch?.pedacos.length ?? 0}`);
+    }
     if (ch?.gravador && ch.gravador.state !== "inactive" && atual) {
       const g = ch.gravador;
       const id = atual.id;
@@ -169,11 +177,10 @@ export default function LigacoesWhatsApp() {
     if (audioRef.current) audioRef.current.srcObject = null;
     setEmCurso(null);
     setMudo(false);
-    setAvisando(false);
     setGravando(false);
   }, [subirGravacao]);
 
-  // Sondagem — o servidor dita o intervalo pelo cabeçalho.
+  // Sondagem — o servidor dita o intervalo.
   useEffect(() => {
     let vivo = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -268,19 +275,17 @@ export default function LigacoesWhatsApp() {
         toast.error("Libere o microfone do navegador para atender");
         return;
       }
-      // Grafo de áudio da ligação: microfone (com porta) + aviso → «saida» → vai para a ligação e para o
-      // canal direito da gravação; a voz da família → canal esquerdo.
+      // Grafo de áudio: microfone (com porta) → vai para a ligação e para o canal DIREITO da gravação;
+      // a voz da família → canal ESQUERDO.
       const ctx = new AudioContext();
       const micGain = ctx.createGain();
-      micGain.gain.value = 0; // fechado até o aviso terminar
+      micGain.gain.value = 0; // fechado até o «accept»
       ctx.createMediaStreamSource(mic).connect(micGain);
-      const saida = ctx.createGain();
-      micGain.connect(saida);
       const paraLigacao = ctx.createMediaStreamDestination();
-      saida.connect(paraLigacao);
+      micGain.connect(paraLigacao);
       const merger = ctx.createChannelMerger(2);
-      saida.connect(merger, 0, 1);
-      ch = { ctx, micGain, saida, merger, gravador: null, pedacos: [], remotoLigado: false };
+      micGain.connect(merger, 0, 1);
+      ch = { ctx, micGain, merger, gravador: null, pedacos: [], remotoLigado: false };
       const chAtual = ch;
 
       pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
@@ -299,8 +304,7 @@ export default function LigacoesWhatsApp() {
           ctx.createMediaStreamSource(remoto).connect(merger, 0, 0);
         }
       };
-      // 🚨 A conexão é lida pela constante — a variável `pc` é zerada ao fim do atender, e o aviso de
-      // «voz caiu» nunca disparava.
+      // A conexão é lida pela constante — a variável `pc` é zerada ao fim do atender.
       const conexao = pc;
       conexao.onconnectionstatechange = () => {
         const st = conexao.connectionState;
@@ -319,61 +323,34 @@ export default function LigacoesWhatsApp() {
       await pc.setLocalDescription(resposta);
       await esperarIce(pc, 2500);
       const sdp = pc.localDescription?.sdp || resposta.sdp || "";
-      const { data: resp } = await api.post<{ ok: boolean; gravacao?: string }>(`/ligacoes/${l.id}/atender`, { sdp });
+      const { data: resp } = await api.post<{ ok: boolean; gravacao?: string }>(`/ligacoes/${l.id}/atender`, {
+        sdp,
+      });
       trilha.enabled = true;
       await ctx.resume().catch(() => {});
       pcRef.current = pc;
       micRef.current = mic;
       chamadaRef.current = ch;
-      setEmCurso({ id: l.id, nome: nomeDe(l), desde: Date.now() });
+      setEmCurso({ id: l.id, nome: nomeDe(l), numero: formatarNumero(l.contato), desde: Date.now() });
       setTocando(null);
+      micGain.gain.value = mudoRef.current ? 0 : 1;
 
-      // A Meta grava (pedido do servidor no accept) e toca o aviso dela: aqui só abre o microfone.
       if (resp?.gravacao === "meta") {
+        // A Meta grava (com a voz de aviso dela): aqui não se grava nada.
         diag(l.id, "atendida", "gravacao=meta");
-        micGain.gain.value = mudoRef.current ? 0 : 1;
-        setGravando(true);
-        pc = null;
-        mic = null;
-        ch = null;
-        return;
-      }
-      // Aviso → só então grava e abre o microfone. Sem aviso: atende sem gravar.
-      diag(l.id, "atendida", `aviso_baixado=${!!avisoRef.current} ctx=${ctx.state}`);
-      let aviso: AudioBuffer | null = null;
-      try {
-        aviso = avisoRef.current ? await ctx.decodeAudioData(avisoRef.current.slice(0)) : null;
-      } catch (err: any) {
-        diag(l.id, "aviso_falhou", String(err?.message || err));
-        aviso = null;
-      }
-      const abrirMicrofone = () => {
-        micGain.gain.value = mudoRef.current ? 0 : 1;
-        setAvisando(false);
-      };
-      if (aviso) {
-        const gravDestino = ctx.createMediaStreamDestination();
-        merger.connect(gravDestino);
+      } else {
+        const destino = ctx.createMediaStreamDestination();
+        merger.connect(destino);
         const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
-        const g = new MediaRecorder(gravDestino.stream, { mimeType: mime, audioBitsPerSecond: 64000 });
+        const g = new MediaRecorder(destino.stream, { mimeType: mime, audioBitsPerSecond: 64000 });
         g.ondataavailable = (ev) => {
           if (ev.data && ev.data.size) chAtual.pedacos.push(ev.data);
         };
         g.start(1000);
         chAtual.gravador = g;
-        setGravando(true);
-        diag(l.id, "gravando", `mime=${mime} remoto=${chAtual.remotoLigado}`);
-        const fonte = ctx.createBufferSource();
-        fonte.buffer = aviso;
-        fonte.connect(saida); // a família ouve e fica na gravação
-        fonte.connect(ctx.destination); // o atendente ouve também
-        setAvisando(true);
-        fonte.onended = abrirMicrofone;
-        fonte.start();
-      } else {
-        toast("Aviso de gravação indisponível — esta ligação não será gravada");
-        abrirMicrofone();
+        diag(l.id, "gravando", `navegador mime=${mime} ctx=${ctx.state}`);
       }
+      setGravando(true);
       pc = null;
       mic = null;
       ch = null;
@@ -410,89 +387,91 @@ export default function LigacoesWhatsApp() {
 
   const alternarMudo = () => {
     const novo = !mudo;
-    // A porta é o ganho do microfone (a trilha que sai carrega também o aviso).
-    if (chamadaRef.current && !avisando) chamadaRef.current.micGain.gain.value = novo ? 0 : 1;
+    if (chamadaRef.current) chamadaRef.current.micGain.gain.value = novo ? 0 : 1;
     setMudo(novo);
   };
 
-  const cartao =
-    "fixed right-5 bottom-5 z-[80] w-[320px] rounded-2xl border border-[#EDEDED] dark:border-[#23272e] bg-white dark:bg-[#14171c] shadow-[0_12px_32px_rgba(0,0,0,0.14)] p-4";
+  const pessoa = emCurso
+    ? { nome: emCurso.nome, numero: emCurso.numero }
+    : tocando
+      ? { nome: nomeDe(tocando), numero: tocando.contato_nome ? formatarNumero(tocando.contato) : "" }
+      : null;
 
   return (
     <>
       <audio ref={audioRef} autoPlay className="hidden" />
-      {emCurso ? (
-        <div className={cartao} role="status" aria-live="polite">
-          <div className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-full bg-[#25D366]/15 text-[#128C4B] dark:text-[#4ade80] inline-flex items-center justify-center">
-              <Phone className="w-5 h-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{emCurso.nome}</div>
-              <div className="text-[12px] text-[#262626]/[0.56] dark:text-[#8b93a0]">
-                Em ligação · {tempo(Math.max(0, Math.floor((agora - emCurso.desde) / 1000)))}
-                {mudo ? " · mudo" : ""}
-              </div>
-              {(avisando || gravando) && (
-                <div className="mt-0.5 inline-flex items-center gap-1.5 text-[11px] text-[#e5484d]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#e5484d]" />
-                  {avisando ? "Avisando que a ligação é gravada…" : "Gravando"}
+      <AnimatePresence>
+        {pessoa && (
+          <motion.div
+            key={emCurso ? `em-${emCurso.id}` : `toca-${tocando?.id}`}
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
+            transition={SPRING}
+            role={emCurso ? "status" : "alertdialog"}
+            aria-label={emCurso ? "Ligação em andamento" : "Ligação recebida no WhatsApp"}
+            className={`fixed right-5 bottom-5 z-[80] w-[340px] rounded-2xl border ${FC.hair} bg-white dark:bg-[#14171c] shadow-[0_12px_32px_rgba(0,0,0,0.12)] p-4`}
+          >
+            <div className={`flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.06em] ${FC.mut}`}>
+              <WhatsAppIcon className="w-3.5 h-3.5" />
+              {emCurso ? "Em ligação" : "Ligação no WhatsApp"}
+              {emCurso && gravando && (
+                <span className="ml-auto inline-flex items-center gap-1.5 normal-case tracking-normal text-[#e5484d]">
+                  <span className="relative inline-flex w-1.5 h-1.5">
+                    <span className="absolute inset-0 rounded-full bg-[#e5484d] animate-ping opacity-60 motion-reduce:animate-none" />
+                    <span className="relative w-1.5 h-1.5 rounded-full bg-[#e5484d]" />
+                  </span>
+                  Gravando
+                </span>
+              )}
+            </div>
+
+            <div className="mt-3 flex items-center gap-3">
+              <span className="relative shrink-0">
+                {!emCurso && (
+                  <span className="absolute -inset-1 rounded-full bg-[#003083]/15 dark:bg-[#5b9bff]/20 animate-ping motion-reduce:animate-none" />
+                )}
+                <span
+                  className={`relative w-10 h-10 rounded-full inline-flex items-center justify-center text-[13px] font-medium bg-[#262626]/[0.06] dark:bg-white/[0.08] ${FC.ink}`}
+                >
+                  {iniciais(pessoa.nome) || <Phone className="w-4 h-4" />}
+                </span>
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className={`text-[14px] font-medium truncate ${FC.ink}`}>{pessoa.nome}</div>
+                <div className={`text-[12px] tabular-nums ${FC.sub}`}>
+                  {emCurso
+                    ? `${tempo(Math.max(0, Math.floor((agora - emCurso.desde) / 1000)))}${mudo ? " · mudo" : ""}`
+                    : pessoa.numero || "Tocando…"}
                 </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              {emCurso ? (
+                <>
+                  <button type="button" onClick={alternarMudo} className={BTN_CONTORNO}>
+                    {mudo ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    {mudo ? "Ativar som" : "Mudo"}
+                  </button>
+                  <button type="button" onClick={desligar} className={BTN_PERIGO}>
+                    <PhoneOff className="w-3.5 h-3.5" /> Desligar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={recusar} disabled={atendendo} className={`${BTN_CONTORNO} !text-[#e5484d]`}>
+                    <PhoneOff className="w-3.5 h-3.5" /> Recusar
+                  </button>
+                  <button type="button" onClick={atender} disabled={atendendo} className={BTN_PRIMARIO}>
+                    <Phone className="w-3.5 h-3.5" /> {atendendo ? "Conectando…" : "Atender"}
+                  </button>
+                </>
               )}
             </div>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              onClick={alternarMudo}
-              className="flex-1 h-8 rounded-[10px] border border-[#EDEDED] dark:border-[#23272e] text-[13px] text-[#262626] dark:text-[#e6e8eb] inline-flex items-center justify-center gap-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-            >
-              {mudo ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />} {mudo ? "Ativar som" : "Mudo"}
-            </button>
-            <button
-              type="button"
-              onClick={desligar}
-              className="flex-1 h-8 rounded-[10px] bg-[#e5484d] hover:bg-[#d93d42] text-white text-[13px] font-medium inline-flex items-center justify-center gap-1.5"
-            >
-              <PhoneOff className="w-4 h-4" /> Desligar
-            </button>
-          </div>
-        </div>
-      ) : tocando ? (
-        <div className={cartao} role="alertdialog" aria-label="Ligação recebida no WhatsApp">
-          <div className="flex items-center gap-3">
-            <span className="relative w-10 h-10 rounded-full bg-[#25D366]/15 text-[#128C4B] dark:text-[#4ade80] inline-flex items-center justify-center">
-              <span className="absolute inset-0 rounded-full bg-[#25D366]/25 animate-ping" />
-              <Phone className="w-5 h-5 relative" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-[12px] text-[#262626]/[0.56] dark:text-[#8b93a0]">Ligação no WhatsApp</div>
-              <div className="text-[14px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{nomeDe(tocando)}</div>
-              {tocando.contato_nome && (
-                <div className="text-[12px] text-[#262626]/40 dark:text-[#6b7280]">{formatarNumero(tocando.contato)}</div>
-              )}
-            </div>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              onClick={recusar}
-              disabled={atendendo}
-              className="flex-1 h-8 rounded-[10px] border border-[#EDEDED] dark:border-[#23272e] text-[13px] text-[#e5484d] inline-flex items-center justify-center gap-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:opacity-50"
-            >
-              <PhoneOff className="w-4 h-4" /> Recusar
-            </button>
-            <button
-              type="button"
-              onClick={atender}
-              disabled={atendendo}
-              className="flex-1 h-8 rounded-[10px] bg-[#128C4B] hover:bg-[#0f7a41] text-white text-[13px] font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
-            >
-              <Phone className="w-4 h-4" /> {atendendo ? "Conectando…" : "Atender"}
-            </button>
-          </div>
-        </div>
-      ) : null}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

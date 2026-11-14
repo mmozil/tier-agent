@@ -216,11 +216,13 @@ async def enviar_ligacao_whatsapp(
     *,
     agent_tenant_id: int,
     external_id: str,
-    audio_url: str,
+    audio_url: str | None,
     direcao: str,
     numero: str | None,
     atendente_nome: str | None,
     duracao_seg: int | None,
+    estado: str = "encerrada",
+    em: str | None = None,
 ) -> dict:
     """Ligação do WhatsApp oficial gravada no painel → página «Ligações QA» do CRM (14/11/2026).
     O ERP é idempotente pelo `external_id`: reenviar não duplica."""
@@ -236,6 +238,8 @@ async def enviar_ligacao_whatsapp(
                 "numero": numero,
                 "atendente_nome": atendente_nome,
                 "duracao_seg": duracao_seg,
+                "estado": estado,
+                "em": em,
             },
             headers=headers,
         )
@@ -260,7 +264,9 @@ async def tarefas_do_contato(*, agent_tenant_id: int, conversa_externa_id: str, 
         params["telefone"] = telefone
     try:
         async with httpx.AsyncClient(timeout=15.0) as cli:
-            r = await cli.get(f"{base}/api/tier-empresas/vendas/crm/agent/tarefas-do-contato", params=params, headers=headers)
+            r = await cli.get(
+                f"{base}/api/tier-empresas/vendas/crm/agent/tarefas-do-contato", params=params, headers=headers
+            )
     except httpx.HTTPError as e:
         raise ErpCrmError(f"Falha de rede ao ler os cards do CRM: {e}") from e
     if r.status_code >= 400:
@@ -407,8 +413,12 @@ async def trocar_conta(*, agent_tenant_id: int, owner_id: str | None, email: str
         async with httpx.AsyncClient(timeout=40.0) as cli:
             r = await cli.post(
                 f"{base}/api/tier-empresas/atendimento/agent/trocar-conta",
-                json={"agent_tenant_id": agent_tenant_id, "owner_id": owner_id, "email": email,
-                      "destino_agent_tenant_id": destino},
+                json={
+                    "agent_tenant_id": agent_tenant_id,
+                    "owner_id": owner_id,
+                    "email": email,
+                    "destino_agent_tenant_id": destino,
+                },
                 headers=headers,
             )
     except httpx.HTTPError as e:

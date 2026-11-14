@@ -183,18 +183,21 @@ async def atender(
     if not pegou:
         raise HTTPException(409, "Essa ligação já foi atendida ou parou de tocar")
     sessao = {"sdp_type": "answer", "sdp": body.sdp}
-    gravacao_por = "meta"
+    gravacao_por = "meta" if await ligacoes.gravacao_pela_meta(db, tenant_id) else "navegador"
     try:
         await ligacoes.acao_na_meta(
             db, lig.connector_id, {"call_id": lig.call_id, "action": "pre_accept", "session": sessao}
         )
         aceite = {"call_id": lig.call_id, "action": "accept", "session": sessao}
-        try:
-            # A gravação é pedida AQUI, no servidor: vale para qualquer aba (velha ou nova).
-            await ligacoes.acao_na_meta(db, lig.connector_id, {**aceite, "recording": ligacoes.GRAVACAO_META})
-        except Exception as e_grav:  # noqa: BLE001 — a Meta recusou a gravação: atende sem ela
-            logger.warning("ligação %s: Meta recusou gravar (%s) — atendendo sem", lig.id, e_grav)
-            gravacao_por = "navegador"
+        if gravacao_por == "meta":
+            try:
+                # Conta que pediu gravação da Meta (com a voz de aviso dela): pedida no servidor.
+                await ligacoes.acao_na_meta(db, lig.connector_id, {**aceite, "recording": ligacoes.GRAVACAO_META})
+            except Exception as e_grav:  # noqa: BLE001 — a Meta recusou a gravação: atende sem ela
+                logger.warning("ligação %s: Meta recusou gravar (%s) — atendendo sem", lig.id, e_grav)
+                gravacao_por = "navegador"
+                await ligacoes.acao_na_meta(db, lig.connector_id, aceite)
+        else:
             await ligacoes.acao_na_meta(db, lig.connector_id, aceite)
     except Exception as e:  # noqa: BLE001
         logger.warning("ligação %s: atender falhou: %s", lig.id, e)

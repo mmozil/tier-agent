@@ -72,6 +72,8 @@ DDL = (
     "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS crm_ligacao_id INTEGER",
     # 14/11/2026 — quem gravou: «meta» (pedido no accept, vale para qualquer aba) ou «navegador».
     "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS gravacao_por VARCHAR(16)",
+    # 14/11/2026 — a linha do histórico do card já foi mandada ao CRM (mesmo sem gravação).
+    "ALTER TABLE ta_ligacao ADD COLUMN IF NOT EXISTS crm_historico_em TIMESTAMP",
 )
 
 
@@ -95,6 +97,22 @@ async def ligado_na_conta(db, tenant_id: int) -> bool:
 # no «accept» — vale para qualquer aba, velha ou nova. A Meta toca o aviso (em português) para as duas
 # pontas, grava e avisa no webhook `calls` (event = call_recording_available); o áudio vem para o NOSSO
 # armazenamento e segue para «Ligações QA» (transcrição e nota são nossas, não da Meta).
+# 14/11/2026 (dono): a VOZ da Meta («o áudio será gravado para a seguinte finalidade…») SAI. Ela é obrigatória
+# quando a Meta grava — então, por padrão, quem grava é o NAVEGADOR (sem aviso falado). A gravação da Meta só
+# liga na conta que pedir: `ta_runtime_param` (escopo tenant, key `ligacoes_gravacao_meta`, value `1`).
+async def gravacao_pela_meta(db, tenant_id: int) -> bool:
+    v = (
+        await db.execute(
+            sa_text(
+                "SELECT value FROM ta_runtime_param WHERE escopo = 'tenant' AND escopo_id = :t"
+                " AND key = 'ligacoes_gravacao_meta'"
+            ),
+            {"t": tenant_id},
+        )
+    ).scalar()
+    return str(v or "").strip() in ("1", "true", "sim")
+
+
 GRAVACAO_META = {"status": "ENABLED", "purpose": "melhorar o nosso atendimento", "announcement_language": "pt"}
 
 
@@ -276,6 +294,7 @@ async def registrar_evento_de_chamada(db, phone_number_id: str | None, value: di
                 if atual is None:
                     continue
                 dur = call.get("duration")
+                final = estado_final(atual, call)
                 await db.execute(
                     sa_text(
                         "UPDATE ta_ligacao SET estado = :e, encerrada_em = COALESCE(:fim, now()),"
@@ -283,7 +302,7 @@ async def registrar_evento_de_chamada(db, phone_number_id: str | None, value: di
                         " atendida_em = COALESCE(atendida_em, :ini) WHERE call_id = :cid"
                     ),
                     {
-                        "e": estado_final(atual, call),
+                        "e": final,
                         "fim": _quando(call.get("end_time")) or _quando(call.get("timestamp")),
                         "dur": int(dur) if str(dur or "").isdigit() else None,
                         "erro": _erro_de(call),
@@ -293,6 +312,19 @@ async def registrar_evento_de_chamada(db, phone_number_id: str | None, value: di
                 )
                 await db.commit()
                 n += 1
+                lid = (
+                    await db.execute(sa_text("SELECT id FROM ta_ligacao WHERE call_id = :c"), {"c": call["id"]})
+                ).scalar()
+                if lid:
+                    import asyncio
+
+                    # Perdida/recusada: a linha vai já. Atendida: espera a gravação (4 min) e, se ela não vier,
+                    # manda a linha do histórico assim mesmo — a ligação nunca some do card.
+                    t = asyncio.create_task(
+                        mandar_para_o_crm(lid, sem_audio_ok=True, esperar_s=0 if final != "encerrada" else 240)
+                    )
+                    _TAREFAS.add(t)
+                    t.add_done_callback(_TAREFAS.discard)
         except Exception:  # noqa: BLE001
             logger.exception("evento de ligação falhou call=%s", call.get("id"))
             await db.rollback()
@@ -476,9 +508,15 @@ async def ligar_no_cadastro(db, connector_id: int, tenant_id: int) -> dict:
 LIMITE_GRAVACAO_BYTES = 80 * 1024 * 1024  # ~2 h a 64 kbit/s
 
 
-async def mandar_para_o_crm(ligacao_id: int) -> None:
-    """Em segundo plano: a gravação entra na página «Ligações QA» do ERP (transcrição + nota pelo roteiro).
+async def mandar_para_o_crm(ligacao_id: int, sem_audio_ok: bool = False, esperar_s: int = 0) -> None:
+    """Em segundo plano: a ligação vai para o CRM — linha no HISTÓRICO DO CARD do contato e, se gravada, a página
+    «Ligações QA» (transcrição + nota pelo roteiro). `sem_audio_ok`: manda só a linha do histórico (perdida,
+    recusada, ou atendida cuja gravação não chegou). `esperar_s`: dá tempo de a gravação chegar antes.
     Falha aqui não perde nada: o áudio já está guardado e a conversa já toca a gravação."""
+    if esperar_s:
+        import asyncio
+
+        await asyncio.sleep(esperar_s)
     from core.db import SessionLocal
     from services import erp_crm_client
 
@@ -488,33 +526,37 @@ async def mandar_para_o_crm(ligacao_id: int) -> None:
                 await db.execute(
                     sa_text(
                         "SELECT l.id, l.tenant_id, l.contato, l.atendida_por, l.duracao_s, l.gravacao_url, l.direcao,"
-                        " l.crm_ligacao_id, m.nome AS membro FROM ta_ligacao l"
-                        " LEFT JOIN ta_member m ON m.id = l.member_id WHERE l.id = :i"
+                        " l.crm_ligacao_id, l.crm_historico_em, l.estado, l.criada_em, m.nome AS membro"
+                        " FROM ta_ligacao l LEFT JOIN ta_member m ON m.id = l.member_id WHERE l.id = :i"
                     ),
                     {"i": ligacao_id},
                 )
             ).first()
-            if not r or not r.gravacao_url or r.crm_ligacao_id:
-                return
-            if not str(r.gravacao_url).startswith("https://"):
-                logger.warning("ligação %s: gravação sem URL pública — não vai ao CRM", ligacao_id)
-                return
+            if not r or r.crm_ligacao_id or r.estado in ESTADOS_ATIVOS:
+                return  # já foi com a gravação, ou ainda está em andamento
+            audio = r.gravacao_url if str(r.gravacao_url or "").startswith("https://") else None
+            if not audio and (not sem_audio_ok or r.crm_historico_em):
+                return  # sem gravação: só manda a linha do histórico uma vez, e só quando pedido
             resp = await erp_crm_client.enviar_ligacao_whatsapp(
                 agent_tenant_id=r.tenant_id,
                 external_id=f"wa-agent-{r.id}",
-                audio_url=r.gravacao_url,
+                audio_url=audio,
                 direcao="in" if r.direcao == "entrada" else "out",
                 numero=r.contato,
                 atendente_nome=r.membro or r.atendida_por,
                 duracao_seg=r.duracao_s,
+                estado=r.estado,
+                em=(r.criada_em.isoformat() + "Z") if r.criada_em else None,
             )
             crm_id = (resp or {}).get("id")
-            if crm_id:
-                await db.execute(
-                    sa_text("UPDATE ta_ligacao SET crm_ligacao_id = :c WHERE id = :i"),
-                    {"c": int(crm_id), "i": ligacao_id},
-                )
-                await db.commit()
+            await db.execute(
+                sa_text(
+                    "UPDATE ta_ligacao SET crm_ligacao_id = COALESCE(:c, crm_ligacao_id), crm_historico_em = now()"
+                    " WHERE id = :i"
+                ),
+                {"c": int(crm_id) if crm_id else None, "i": ligacao_id},
+            )
+            await db.commit()
     except Exception:  # noqa: BLE001
         logger.exception("ligação %s: envio ao CRM falhou", ligacao_id)
 
