@@ -5,6 +5,7 @@ import { FileText, Plus, RefreshCw, Trash2, X } from "lucide-react";
 
 import { api } from "@/lib/api";
 import BalaoDoModelo from "@/components/whatsapp/BalaoDoModelo";
+import AnaliseCategoria from "@/components/whatsapp/AnaliseCategoria";
 import { formatPhone } from "@/lib/phone";
 import {
   Button,
@@ -314,8 +315,18 @@ export default function ModelosWhatsAppPage() {
                     <Field label="Nome" hint={slug ? `Na Meta: ${slug}` : "Só para identificar. Ex.: Boas-vindas"}>
                       <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={200} placeholder="Boas-vindas" />
                     </Field>
-                    <Field label="Categoria (sugestão)" hint={`${CUSTO[categoria]} Você sugere; quem decide é a Meta — se ela entender que é propaganda, aprova como Marketing, e categoria de modelo aprovado não muda mais.`}>
+                    <Field
+                      label="Categoria (sugestão)"
+                      hint={`${CUSTO[categoria]} Você sugere; quem decide é a Meta, pelo texto — e categoria de modelo aprovado não muda mais.`}
+                    >
                       <SegToggle value={categoria} onChange={setCategoria} options={CATEGORIAS} />
+                      <AnaliseCategoria
+                        categoria={categoria}
+                        corpo={corpo}
+                        rodape={rodape}
+                        botoes={botoes}
+                        onTrocar={setCategoria}
+                      />
                     </Field>
                     <Field
                       label="Texto"
