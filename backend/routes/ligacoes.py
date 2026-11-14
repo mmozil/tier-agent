@@ -102,6 +102,64 @@ async def _da_conta(db: AsyncSession, ligacao_id: int, tenant_id: int):
     return r
 
 
+class NumeroLigacoesOut(BaseModel):
+    connector_id: int
+    ligado: bool
+    estado: str
+    motivo: str | None = None
+
+
+class NumeroLigacoesIn(BaseModel):
+    ligado: bool
+
+
+async def _numero_da_conta(db: AsyncSession, connector_id: int, tenant_id: int):
+    from models import TaAgent, TaConnector
+
+    c = await db.get(TaConnector, connector_id)
+    if not c or c.kind != "whatsapp_cloud":
+        raise HTTPException(404, "Número oficial não encontrado")
+    ag = await db.get(TaAgent, c.agent_id)
+    if not ag or ag.tenant_id != tenant_id:
+        raise HTTPException(404, "Número oficial não encontrado")
+    return c
+
+
+@router.get("/numeros/{connector_id}", response_model=NumeroLigacoesOut)
+async def ligacoes_do_numero(
+    connector_id: int, user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """Chave «Receber ligações» na tela do número: o que a Meta diz agora."""
+    c = await _numero_da_conta(db, connector_id, _tenant(user))
+    try:
+        pnid, token = await ligacoes._credenciais(db, c.id)
+    except Exception as e:  # noqa: BLE001
+        return NumeroLigacoesOut(connector_id=c.id, ligado=False, estado="desconhecido", motivo=str(e))
+    est = await ligacoes.estado_na_meta(pnid, token)
+    return NumeroLigacoesOut(connector_id=c.id, ligado=est["ligado"], estado=est["estado"], motivo=est.get("motivo"))
+
+
+@router.put("/numeros/{connector_id}", response_model=NumeroLigacoesOut)
+async def mudar_ligacoes_do_numero(
+    connector_id: int,
+    body: NumeroLigacoesIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Liga/desliga. Só quem administra a conta (dono/admin)."""
+    tenant_id = _tenant(user)
+    if not (user.is_admin or user.role in ("owner", "admin")):
+        raise HTTPException(403, "Só quem administra a conta muda isso")
+    c = await _numero_da_conta(db, connector_id, tenant_id)
+    pnid, token = await ligacoes._credenciais(db, c.id)
+    res = await ligacoes.mudar_na_meta(pnid, token, body.ligado)
+    if not res["ok"]:
+        raise HTTPException(422, f"A Meta não aceitou: {res['motivo']}")
+    await ligacoes.acertar_interruptor_da_conta(db, tenant_id)
+    est = await ligacoes.estado_na_meta(pnid, token)
+    return NumeroLigacoesOut(connector_id=c.id, ligado=est["ligado"], estado=est["estado"], motivo=est.get("motivo"))
+
+
 @router.post("/{ligacao_id}/atender")
 async def atender(
     ligacao_id: int,

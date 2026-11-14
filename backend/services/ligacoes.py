@@ -293,6 +293,107 @@ async def acao_na_meta(db, connector_id: int, corpo: dict) -> dict:
     return j
 
 
+# ── ligar/desligar no número (14/11/2026) ─────────────────────────────────────────────────
+# Decisão do dono: número oficial CADASTRADO já nasce com ligação ligada; a chave «Receber ligações»
+# na tela do número desliga depois. Ligar = a Meta mostra o botão de ligar para TODOS os contatos do
+# número, e a conta passa a sondar ligação a cada 3 s (o interruptor da conta, `ligacoes_whatsapp`).
+
+
+def _motivo_meta(r: httpx.Response) -> str:
+    try:
+        err = (r.json() or {}).get("error") or {}
+    except Exception:  # noqa: BLE001
+        err = {}
+    msg = err.get("error_user_msg") or err.get("message") or (r.text or "")[:200]
+    return f"{err.get('code') or r.status_code}: {msg}"[:300]
+
+
+async def estado_na_meta(pnid: str, token: str) -> dict:
+    """Como a Meta está agora para este número. `ligado` = ligações ENABLED."""
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
+        r = await cli.get(f"{GRAPH_CALLS}/{pnid}/settings", headers={"Authorization": f"Bearer {token}"})
+    if r.status_code >= 400:
+        return {"ligado": False, "estado": "desconhecido", "motivo": _motivo_meta(r)}
+    c = (r.json() or {}).get("calling") or {}
+    return {
+        "ligado": str(c.get("status") or "").upper() == "ENABLED",
+        "estado": c.get("status") or "NOT_SET",
+        "botao_visivel": str(c.get("call_icon_visibility") or "").upper() != "DISABLE_ALL",
+    }
+
+
+async def mudar_na_meta(pnid: str, token: str, ligado: bool) -> dict:
+    """Liga (com o botão de ligar visível) ou desliga. Devolve {ok, motivo}: a Meta recusa quando o número
+    não cumpre os requisitos (limite de 2.000 contatos/dia, conta, webhook) — o motivo dela vai para a tela."""
+    corpo = (
+        {"calling": {"status": "ENABLED", "call_icon_visibility": "DEFAULT"}}
+        if ligado
+        else {"calling": {"status": "DISABLED"}}
+    )
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
+        r = await cli.post(f"{GRAPH_CALLS}/{pnid}/settings", headers={"Authorization": f"Bearer {token}"}, json=corpo)
+    if r.status_code >= 400:
+        return {"ok": False, "motivo": _motivo_meta(r)}
+    return {"ok": True, "motivo": None}
+
+
+async def acertar_interruptor_da_conta(db, tenant_id: int) -> bool:
+    """A conta sonda ligação (3 s) se ALGUM número dela está com ligação ligada na Meta. Devolve o valor."""
+    from sqlalchemy import select
+
+    from core.encryption import decrypt
+    from models import TaAgent, TaConnector
+    from services.connectors.adapters.whatsapp_cloud import resolve_cloud_creds
+    from services.connectors.base import ConnectorConfig
+
+    conns = (
+        (
+            await db.execute(
+                select(TaConnector)
+                .join(TaAgent, TaAgent.id == TaConnector.agent_id)
+                .where(
+                    TaAgent.tenant_id == tenant_id, TaConnector.kind == "whatsapp_cloud", TaConnector.enabled.is_(True)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    algum = False
+    for c in conns:
+        try:
+            pnid, token = resolve_cloud_creds(ConnectorConfig(data=json.loads(decrypt(c.config_json_enc))))
+            if pnid and token and (await estado_na_meta(pnid, token)).get("ligado"):
+                algum = True
+                break
+        except Exception:  # noqa: BLE001
+            logger.warning("interruptor de ligações: número %s não lido", c.id, exc_info=True)
+    await db.execute(
+        sa_text(
+            "INSERT INTO ta_runtime_param (escopo, escopo_id, key, value) VALUES ('tenant', :t, 'ligacoes_whatsapp', :v)"
+            " ON CONFLICT (escopo, escopo_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()"
+        ),
+        {"t": tenant_id, "v": "1" if algum else "0"},
+    )
+    await db.commit()
+    return algum
+
+
+async def ligar_no_cadastro(db, connector_id: int, tenant_id: int) -> dict:
+    """Chamado ao conectar o número oficial. NUNCA derruba o cadastro: falha vira motivo no log."""
+    try:
+        pnid, token = await _credenciais(db, connector_id)
+        res = await mudar_na_meta(pnid, token, True)
+        if res["ok"]:
+            await acertar_interruptor_da_conta(db, tenant_id)
+        else:
+            logger.warning("ligações não ligadas no cadastro conector=%s: %s", connector_id, res["motivo"])
+        return res
+    except Exception as e:  # noqa: BLE001
+        logger.exception("ligações no cadastro falharam conector=%s", connector_id)
+        return {"ok": False, "motivo": str(e)[:300]}
+
+
 # ── gravação (navegador → R2 → CRM «Ligações QA») ──────────────────────────────────────────
 
 LIMITE_GRAVACAO_BYTES = 80 * 1024 * 1024  # ~2 h a 64 kbit/s

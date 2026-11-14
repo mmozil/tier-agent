@@ -97,3 +97,54 @@ def test_envio_ao_crm_monta_o_pedido(monkeypatch):
     assert url == "https://erp.x/api/tier-empresas/crm/ligacoes/agent-whatsapp"
     assert corpo["external_id"] == "wa-agent-2" and corpo["agent_tenant_id"] == 3 and corpo["duracao_seg"] == 21
     assert cab["X-Tier-Integration-Secret"] == "s"
+
+
+def test_ligar_no_numero_pede_o_botao_visivel_e_traz_o_motivo_da_meta(monkeypatch):
+    """Ligar = ENABLED + botão visível; desligar = DISABLED; recusa da Meta volta com o motivo dela."""
+    import asyncio
+
+    from services import ligacoes
+
+    enviados = []
+
+    class _Resp:
+        def __init__(self, code, corpo):
+            self.status_code = code
+            self._c = corpo
+            self.text = str(corpo)
+
+        def json(self):
+            return self._c
+
+    respostas = [
+        _Resp(200, {"success": True}),
+        _Resp(200, {"success": True}),
+        _Resp(400, {"error": {"code": 138018, "error_user_msg": "Configure webhooks"}}),
+    ]
+
+    class _Cli:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            enviados.append(json)
+            return respostas.pop(0)
+
+    monkeypatch.setattr(ligacoes.httpx, "AsyncClient", _Cli)
+    loop = asyncio.new_event_loop()
+    try:
+        r1 = loop.run_until_complete(ligacoes.mudar_na_meta("1", "t", True))
+        r2 = loop.run_until_complete(ligacoes.mudar_na_meta("1", "t", False))
+        r3 = loop.run_until_complete(ligacoes.mudar_na_meta("1", "t", True))
+    finally:
+        loop.close()
+    assert enviados[0] == {"calling": {"status": "ENABLED", "call_icon_visibility": "DEFAULT"}}
+    assert enviados[1] == {"calling": {"status": "DISABLED"}}
+    assert r1["ok"] and r2["ok"]
+    assert not r3["ok"] and "138018" in r3["motivo"] and "Configure webhooks" in r3["motivo"]

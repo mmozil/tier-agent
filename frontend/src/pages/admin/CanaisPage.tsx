@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatPhone } from "@/lib/phone";
 import { WhatsAppIcon, ChannelLogo, CHANNEL_META } from "@/components/icons/channelIcons";
 import ConnectWhatsAppCloud from "@/components/ConnectWhatsAppCloud";
+import LigacoesDoNumero from "@/components/whatsapp/LigacoesDoNumero";
 import { FC, PageFrame, PageHero, Row, Select, Button, EmptyHint, SkeletonBar, iconBtn, Interruptor, useConfirmar, SegToggle } from "@/components/ds/fc";
 
 const STATUS_META: Record<string, { color: string; label: string; tip: string }> = {
@@ -1579,6 +1580,9 @@ export default function CanaisPage() {
                       <div><div className={`text-[11px] ${FC.sub}`}>Último evento</div><div className={`tabular-nums ${FC.ink}`}>{detail.last_event_at ? new Date(detail.last_event_at).toLocaleString("pt-BR") : "—"}</div></div>
                     </div>
                   </div>
+
+                  {/* 14/11/2026 — ligações pelo WhatsApp oficial (nasce ligado; aqui desliga). */}
+                  {isCloud && <LigacoesDoNumero connectorId={detail.id} gestor={gestor} />}
 
                   {/* Técnico */}
                   <div>

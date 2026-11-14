@@ -1024,6 +1024,12 @@ async def onboard_whatsapp_cloud(
     await db.commit()
     await db.refresh(conn)
     logger.info("whatsapp-cloud onboard ok agent=%s waba=%s", agent.id, payload.waba_id)
+    # 14/11/2026 — decisão do dono: número cadastrado já nasce recebendo ligação (a chave «Receber
+    # ligações» na tela do número desliga). Só com o número ATIVO; falha nunca derruba o cadastro.
+    if cfg.get("status") != "pending":
+        from services import ligacoes
+
+        await ligacoes.ligar_no_cadastro(db, conn.id, agent.tenant_id)
     return _serialize(conn)
 
 
