@@ -34,7 +34,31 @@ MOTIVOS = {
     131056: "muitas mensagens seguidas para o mesmo número — espere um pouco",
     132000: "as variáveis do modelo não batem com o modelo aprovado",
     132001: "o modelo não existe ou não está aprovado neste idioma",
+    # 14/11/2026 — os que travam número recém-cadastrado (o dono viu só «Não consegui enviar»).
+    131042: "a conta da Meta está sem forma de pagamento válida — cadastre no Gerenciador do WhatsApp",
+    131030: "o número de destino não está na lista de teste deste número",
+    131031: "a conta da Meta está bloqueada ou restrita",
+    131045: "o número ainda não terminou o registro na Meta",
+    133010: "o número ainda não está registrado na Meta",
+    131005: "o acesso à conta da Meta foi negado (permissão do app)",
+    131008: "faltou um dado obrigatório na mensagem",
+    131009: "um dos dados da mensagem é inválido",
+    132015: "o modelo está pausado pela Meta (qualidade baixa)",
+    132016: "o modelo foi desativado pela Meta",
+    368: "a conta foi bloqueada temporariamente por política da Meta",
 }
+
+
+def explicar_erro_meta(texto: str) -> str:
+    """Texto cru de erro da Meta → motivo em português + o código. Sem código conhecido, o texto cru."""
+    import re
+
+    t = str(texto or "")
+    for m in re.finditer(r"\b(\d{3,6})\b", t):
+        cod = int(m.group(1))
+        if cod in MOTIVOS:
+            return f"{MOTIVOS[cod]} (código {cod})"
+    return t[:300]
 
 
 def motivo(codigo: int | None, erro: str | None) -> str:

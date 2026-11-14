@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Loader2, SendHorizontal } from "lucide-react";
+import { motivoDoErro } from "@/lib/erro";
 import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/phone";
 import { FC, Input, Select } from "@/components/ds/fc";
@@ -130,8 +131,7 @@ export default function NovaConversa({
         toast.success("Modelo enviado — a conversa começou");
         onCriada(data.conversation_id);
       } catch (e: any) {
-        const d = e?.response?.data?.detail;
-        toast.error(typeof d === "string" ? d : "Não consegui enviar");
+        toast.error(motivoDoErro(e, "Não consegui enviar o modelo"), { duration: 8000 });
       } finally {
         setEnviando(false);
       }
@@ -149,8 +149,7 @@ export default function NovaConversa({
       toast.success("Conversa iniciada");
       onCriada(data.id);
     } catch (e: any) {
-      const d = e?.response?.data?.detail;
-      toast.error(typeof d === "string" ? d : "Não consegui enviar");
+      toast.error(motivoDoErro(e, "Não consegui enviar"), { duration: 8000 });
     } finally {
       setEnviando(false);
     }

@@ -148,3 +148,14 @@ def test_ligar_no_numero_pede_o_botao_visivel_e_traz_o_motivo_da_meta(monkeypatc
     assert enviados[1] == {"calling": {"status": "DISABLED"}}
     assert r1["ok"] and r2["ok"]
     assert not r3["ok"] and "138018" in r3["motivo"] and "Configure webhooks" in r3["motivo"]
+
+
+def test_erro_da_meta_vira_motivo_em_portugues():
+    from services.entrega_whatsapp import explicar_erro_meta
+
+    assert "forma de pagamento" in explicar_erro_meta(
+        "WhatsApp Cloud 400: (#131042) Business eligibility payment issue"
+    )
+    assert "(código 131042)" in explicar_erro_meta("(#131042) Business eligibility payment issue")
+    assert "não existe" in explicar_erro_meta("Meta 132001: Template name does not exist in the translation")
+    assert explicar_erro_meta("falha sem código") == "falha sem código"

@@ -369,7 +369,9 @@ async def iniciar_conversa(
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("iniciar conversa oficial falhou connector=%s: %s", conn.id, e)
-        raise HTTPException(502, f"A Meta não enviou: {e}") from e
+        from services.entrega_whatsapp import explicar_erro_meta
+
+        raise HTTPException(502, f"A Meta não enviou: {explicar_erro_meta(str(e))}") from e
     # O endereço que a Meta devolve é o que vem nas respostas do contato (com ou sem o 9).
     wa_id = ((res.get("contacts") or [{}])[0].get("wa_id")) or numero
     meta_id = ((res.get("messages") or [{}])[0].get("id"))

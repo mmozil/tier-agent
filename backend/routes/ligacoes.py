@@ -208,6 +208,22 @@ async def atender(
     return {"ok": True}
 
 
+class DiagIn(BaseModel):
+    etapa: str = Field(max_length=40)
+    detalhe: str = Field(default="", max_length=400)
+
+
+@router.post("/{ligacao_id}/diag")
+async def diagnostico(
+    ligacao_id: int, body: DiagIn, user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """Passo a passo da gravação contado pelo navegador (aviso, gravando, parou, enviou) — só vai para o log.
+    Sem isso, «não chegou gravação» não diz se a aba era velha, se o aviso falhou ou se o envio caiu."""
+    await _da_conta(db, ligacao_id, _tenant(user))
+    logger.info("ligação %s diag [%s] %s", ligacao_id, body.etapa, body.detalhe)
+    return {"ok": True}
+
+
 @router.post("/{ligacao_id}/gravacao")
 async def gravacao(
     ligacao_id: int,

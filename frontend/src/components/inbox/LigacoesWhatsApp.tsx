@@ -46,6 +46,15 @@ type Ligacao = {
 
 type EmCurso = { id: number; nome: string; desde: number };
 
+const PACOTE = (Array.from(document.scripts)
+  .map((x) => x.src)
+  .find((x) => /\/assets\/index-[^/]+\.js/.test(x)) || "dev").split("/").pop();
+
+/** Passo a passo da gravação para o log do servidor (não atrapalha nada se falhar). */
+function diag(id: number, etapa: string, detalhe = "") {
+  api.post(`/ligacoes/${id}/diag`, { etapa, detalhe: `${detalhe} · ${PACOTE}`.slice(0, 400) }).catch(() => {});
+}
+
 function formatarNumero(n?: string | null): string {
   const d = (n || "").replace(/\D/g, "");
   if (d.length === 13 && d.startsWith("55")) return `(${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
@@ -123,6 +132,7 @@ export default function LigacoesWhatsApp() {
 
   const subirGravacao = useCallback(async (ligacaoId: number, pedacos: Blob[], mime: string) => {
     const blob = new Blob(pedacos, { type: mime || "audio/webm" });
+    diag(ligacaoId, "parou", `pedacos=${pedacos.length} bytes=${blob.size}`);
     if (blob.size < 2000) return; // nada útil gravado
     const fd = new FormData();
     fd.append("arquivo", blob, `ligacao-${ligacaoId}.webm`);
@@ -131,6 +141,7 @@ export default function LigacoesWhatsApp() {
       toast.success("Gravação salva — vai para Ligações QA");
     } catch (e: any) {
       const d = e?.response?.data?.detail;
+      diag(ligacaoId, "envio_falhou", `${e?.response?.status || ""} ${typeof d === "string" ? d : e?.message || ""}`);
       toast.error(typeof d === "string" ? d : "Não consegui salvar a gravação");
     }
   }, []);
@@ -139,6 +150,7 @@ export default function LigacoesWhatsApp() {
     const ch = chamadaRef.current;
     const atual = emCursoRef.current;
     chamadaRef.current = null;
+    if (atual) diag(atual.id, "encerrando", `chamada=${!!ch} gravador=${ch?.gravador?.state || "nenhum"} pedacos=${ch?.pedacos.length ?? 0}`);
     if (ch?.gravador && ch.gravador.state !== "inactive" && atual) {
       const g = ch.gravador;
       const id = atual.id;
@@ -287,13 +299,18 @@ export default function LigacoesWhatsApp() {
           ctx.createMediaStreamSource(remoto).connect(merger, 0, 0);
         }
       };
-      pc.onconnectionstatechange = () => {
-        if (pc && (pc.connectionState === "failed" || pc.connectionState === "closed")) {
+      // 🚨 A conexão é lida pela constante — a variável `pc` é zerada ao fim do atender, e o aviso de
+      // «voz caiu» nunca disparava.
+      const conexao = pc;
+      conexao.onconnectionstatechange = () => {
+        const st = conexao.connectionState;
+        if (st === "failed" || st === "closed") {
           const atual = emCursoRef.current;
-          if (atual) {
+          if (atual && pcRef.current === conexao) {
+            diag(atual.id, "conexao", st);
             api.post(`/ligacoes/${atual.id}/encerrar`).catch(() => {});
             limpar();
-            if (pc.connectionState === "failed") toast.error("A conexão de voz caiu");
+            if (st === "failed") toast.error("A conexão de voz caiu");
           }
         }
       };
@@ -312,10 +329,12 @@ export default function LigacoesWhatsApp() {
       setTocando(null);
 
       // Aviso → só então grava e abre o microfone. Sem aviso: atende sem gravar.
+      diag(l.id, "atendida", `aviso_baixado=${!!avisoRef.current} ctx=${ctx.state}`);
       let aviso: AudioBuffer | null = null;
       try {
         aviso = avisoRef.current ? await ctx.decodeAudioData(avisoRef.current.slice(0)) : null;
-      } catch {
+      } catch (err: any) {
+        diag(l.id, "aviso_falhou", String(err?.message || err));
         aviso = null;
       }
       const abrirMicrofone = () => {
@@ -333,6 +352,7 @@ export default function LigacoesWhatsApp() {
         g.start(1000);
         chAtual.gravador = g;
         setGravando(true);
+        diag(l.id, "gravando", `mime=${mime} remoto=${chAtual.remotoLigado}`);
         const fonte = ctx.createBufferSource();
         fonte.buffer = aviso;
         fonte.connect(saida); // a família ouve e fica na gravação
