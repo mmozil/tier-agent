@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from routes import acessos, agents, atividades, attention, auth, billing, canned_responses, connectors, containers, conversations, embedding_providers, features, health, integrations_pet, integrations_tier, internal, knowledge, llm, macros, mcp_server, metrics, notifications, playbooks, public_chat, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks, whatsapp_oficial
+from routes import acessos, agents, atividades, attention, auth, billing, canned_responses, connectors, containers, conversations, embedding_providers, features, health, integrations_pet, integrations_tier, internal, knowledge, ligacoes, llm, macros, mcp_server, metrics, notifications, playbooks, public_chat, reports, secops, skills, team, templates, tenants, tier_pay, tool_providers, webhooks, whatsapp_oficial
 
 settings = get_settings()
 
@@ -103,6 +103,7 @@ app.include_router(webhooks.router, prefix="/api/v1")
 app.include_router(playbooks.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api/v1")
+app.include_router(ligacoes.router, prefix="/api/v1")
 app.include_router(integrations_pet.router, prefix="/api/v1")
 app.include_router(integrations_tier.router, prefix="/api/v1")
 app.include_router(internal.router, prefix="/api/v1")
@@ -743,6 +744,24 @@ async def _ensure_wa_preco_columns():
         logger.exception("ensure_wa_preco_columns falhou (segue mesmo assim)")
 
 
+async def _ensure_ligacao_table():
+    """Runtime DDL — ligações do WhatsApp oficial (14/11/2026). Tabela NOVA: índices saem na hora."""
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+        from services.ligacoes import DDL
+
+        async with db_context() as db:
+            # Tranca: os 2 workers do uvicorn sobem juntos e o CREATE TABLE concorrente colide.
+            await db.execute(_sql_text("SELECT pg_advisory_xact_lock(914112026)"))
+            for ddl in DDL:
+                await db.execute(_sql_text(ddl))
+            await db.commit()
+    except Exception:
+        logger.exception("tabela ta_ligacao não foi criada (ligações ficam desligadas)")
+
+
 async def _ensure_callback_tables():
     """Runtime DDL — callbacks por agente (11/11/2026, CCDA).
 
@@ -792,6 +811,7 @@ async def startup():
     await _ensure_wa_preco_columns()
     await _ensure_visto_equipe_column()
     await _ensure_callback_tables()
+    await _ensure_ligacao_table()
     from services import registro_atividade
 
     registro_atividade.iniciar()

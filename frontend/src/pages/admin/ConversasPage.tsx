@@ -1997,6 +1997,19 @@ export default function ConversasPage() {
                 const isUser = m.role === "user";
                 const isAgent = m.role === "agent";
                 const isNote = m.role === "note";
+                if (m.role === "ligacao") {
+                  // 14/11/2026 — ligação pelo WhatsApp oficial (montada na leitura, não é mensagem).
+                  return (
+                    <div key={m.id} className="flex justify-center">
+                      <div className={`rounded-full px-3 py-1 text-[12px] border ${FC.hair} ${FC.sub} bg-white dark:bg-[#16191f]`}>
+                        {m.content}
+                        <span className={`ml-1.5 ${FC.mut}`}>
+                          {fmtTime(m.created_at)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
                 if (isNote) {
                   return (
                     <div key={m.id} className="flex justify-center">

@@ -1094,7 +1094,30 @@ async def whatsapp_cloud_webhook(
             # 11/11/2026 — retorno de entrega (sent/delivered/read/failed) por wamid. Antes era
             # ignorado e o disparo do ERP não sabia o que chegou. Falha aqui nunca derruba o 200
             # (a Meta reenviaria o lote inteiro, mensagens inclusive).
+            # 14/11/2026 — LIGAÇÕES (Calling API): o campo `calls` traz a família ligando (com a
+            # oferta SDP) e o fim da ligação. Falha aqui nunca derruba o 200.
+            if value.get("calls"):
+                try:
+                    from services import ligacoes as _ligacoes
+
+                    nl = await _ligacoes.registrar_evento_de_chamada(db, phone_number_id, value)
+                    results.append({"calls": len(value.get("calls") or []), "gravados": nl})
+                except Exception:
+                    logger.exception("ligação whatsapp-cloud falhou pnid=%s", phone_number_id)
+                    await db.rollback()
+
             statuses = value.get("statuses") or []
+            if statuses:
+                # Status de LIGAÇÃO (`type: "call"`) não é tique de mensagem.
+                from services import ligacoes as _ligacoes
+
+                statuses, de_ligacao = _ligacoes.separar_statuses(statuses)
+                if de_ligacao:
+                    try:
+                        await _ligacoes.registrar_status_de_chamada(db, de_ligacao)
+                    except Exception:
+                        logger.exception("status de ligação falhou pnid=%s", phone_number_id)
+                        await db.rollback()
             if statuses:
                 try:
                     from services.disparo_oficial import registrar_statuses_do_webhook

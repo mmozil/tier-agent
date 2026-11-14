@@ -1,0 +1,332 @@
+"""Ligações pelo WhatsApp oficial (Calling API da Meta) — 14/11/2026.
+
+Etapa 1: a FAMÍLIA liga para o número e a equipe atende pelo painel (navegador, WebRTC).
+
+Fluxo:
+  webhook `calls` (event=connect, USER_INITIATED, com a oferta SDP)
+      → `ta_ligacao` estado «tocando» (+ conversa do contato garantida)
+  painel (sondagem curta) vê a ligação tocando → «Atender»
+      → o navegador monta a resposta SDP → POST /ligacoes/{id}/atender
+      → Meta: pre_accept e accept com a MESMA resposta → estado «em_curso»
+  webhook `calls` (event=terminate) → «encerrada» (com duração) · «perdida» · «recusada» · «falhou»
+
+🚨 A ligação NÃO vira linha de `ta_message_log`: a IA monta o histórico, o follow-up olha «quem
+falou por último» e as métricas contam mensagens daquela tabela — um registro de ligação ali mudaria
+os três. A conversa mostra a ligação por montagem na leitura (`linhas_da_conversa`).
+
+🚨 Atender é DISPUTA: dois atendentes podem clicar ao mesmo tempo. A troca «tocando → atendendo» é
+um UPDATE condicional — quem perde recebe «já atendida».
+
+Custo (rate card da Meta, 01/10/2026): ligação feita pela família é GRÁTIS. Ligação feita pela empresa
+(etapa 2, exige permissão do contato) custa R$ 0,0556/min no Brasil, cobrada da conta do cliente.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timedelta
+
+import httpx
+from sqlalchemy import text as sa_text
+
+logger = logging.getLogger(__name__)
+
+# A Calling API é recente: usa versão nova da Graph, independente da v21 do resto do conector.
+GRAPH_CALLS = "https://graph.facebook.com/v23.0"
+_HTTP_TIMEOUT_S = 15.0
+
+ESTADOS_ATIVOS = ("tocando", "atendendo", "em_curso")
+# Sem o aviso de encerramento (webhook perdido), «tocando» não pode ficar para sempre na tela: a Meta
+# desiste em 30–60 s. Passou disso, a ligação não aparece mais como tocando.
+TOCANDO_VALE_S = 75
+# Em curso sem aviso de fim: some da barra depois de 3 h (ninguém fala 3 h numa visita escolar).
+EM_CURSO_VALE = timedelta(hours=3)
+
+DDL = (
+    "CREATE TABLE IF NOT EXISTS ta_ligacao ("
+    " id SERIAL PRIMARY KEY,"
+    " call_id VARCHAR(200) NOT NULL,"
+    " tenant_id INTEGER NOT NULL,"
+    " connector_id INTEGER NOT NULL,"
+    " conversation_id INTEGER,"
+    " direcao VARCHAR(16) NOT NULL,"
+    " contato VARCHAR(40),"
+    " contato_nome VARCHAR(200),"
+    " estado VARCHAR(16) NOT NULL,"
+    " sdp_oferta TEXT,"
+    " sdp_resposta TEXT,"
+    " member_id INTEGER,"
+    " atendida_por VARCHAR(120),"
+    " criada_em TIMESTAMP NOT NULL DEFAULT now(),"
+    " atendida_em TIMESTAMP,"
+    " encerrada_em TIMESTAMP,"
+    " duracao_s INTEGER,"
+    " erro TEXT)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_ta_ligacao_call_id ON ta_ligacao (call_id)",
+    "CREATE INDEX IF NOT EXISTS ix_ta_ligacao_tenant_estado ON ta_ligacao (tenant_id, estado, criada_em)",
+    "CREATE INDEX IF NOT EXISTS ix_ta_ligacao_conversa ON ta_ligacao (conversation_id)",
+)
+
+
+async def ligado_na_conta(db, tenant_id: int) -> bool:
+    """Liga a sondagem curta do painel por CONTA: `ta_runtime_param` (escopo 'tenant', key
+    'ligacoes_whatsapp', value '1'). Sem isso o painel pergunta a cada 60 s — as contas que não usam
+    ligação não pagam a sondagem de 3 s."""
+    v = (
+        await db.execute(
+            sa_text(
+                "SELECT value FROM ta_runtime_param WHERE escopo = 'tenant' AND escopo_id = :t AND key = 'ligacoes_whatsapp'"
+            ),
+            {"t": tenant_id},
+        )
+    ).scalar()
+    return str(v or "").strip() in ("1", "true", "sim")
+
+
+def _quando(ts) -> datetime | None:
+    try:
+        return datetime.utcfromtimestamp(int(ts))
+    except (TypeError, ValueError):
+        return None
+
+
+def _erro_de(call: dict) -> str | None:
+    erros = call.get("errors") or []
+    e0 = erros[0] if erros and isinstance(erros[0], dict) else {}
+    if not e0:
+        return None
+    det = ((e0.get("error_data") or {}).get("details")) or ""
+    return " · ".join(str(x) for x in (e0.get("code"), e0.get("message") or e0.get("title"), det) if x)[:500]
+
+
+def estado_final(atual: str | None, call: dict) -> str:
+    """Estado depois do aviso de encerramento. Puro (testável).
+
+    COMPLETED com duração = conversa aconteceu · COMPLETED sem duração = ninguém atendeu (ou foi
+    recusada por nós — aí o «recusada» que gravamos fica) · FAILED = falhou."""
+    status = str(call.get("status") or "").upper()
+    if status == "FAILED":
+        return "falhou"
+    if call.get("duration") not in (None, "", 0, "0") or call.get("start_time"):
+        return "encerrada"
+    if atual == "recusada":
+        return "recusada"
+    return "perdida"
+
+
+async def registrar_evento_de_chamada(db, phone_number_id: str | None, value: dict) -> int:
+    """`value.calls` do webhook da Cloud. Um item com defeito não derruba os outros. Devolve quantos gravou."""
+    from models import TaConnector
+    from services import agent_runtime
+    from services.disparo_oficial import conector_do_numero
+
+    alvo = await conector_do_numero(db, phone_number_id)
+    if not alvo:
+        return 0
+    connector_id, tenant_id = alvo
+    contatos = value.get("contacts") or []
+    nome_por_wa = {
+        str(c.get("wa_id") or ""): ((c.get("profile") or {}).get("name") or None)
+        for c in contatos
+        if isinstance(c, dict)
+    }
+    n = 0
+    for call in value.get("calls") or []:
+        if not isinstance(call, dict) or not call.get("id"):
+            continue
+        try:
+            evento = str(call.get("event") or "").lower()
+            direcao = "entrada" if str(call.get("direction") or "").upper() != "BUSINESS_INITIATED" else "saida"
+            if evento == "connect" and direcao == "entrada":
+                contato = str(call.get("from") or "")
+                nome = nome_por_wa.get(contato) or (next(iter(nome_por_wa.values())) if len(nome_por_wa) == 1 else None)
+                conv_id = None
+                conn = await db.get(TaConnector, connector_id)
+                if conn and contato:
+                    try:
+                        conv = await agent_runtime.ensure_conversation(
+                            db,
+                            agent_id=conn.agent_id,
+                            connector_kind="whatsapp_cloud",
+                            external_id=contato,
+                            contact_name=nome,
+                            connector_id=connector_id,
+                            por_numero=True,
+                        )
+                        conv_id = conv.id
+                    except Exception:  # noqa: BLE001 — a ligação toca mesmo sem a conversa
+                        logger.exception("ligação: conversa não garantida call=%s", call.get("id"))
+                        await db.rollback()
+                sessao = call.get("session") or {}
+                r = await db.execute(
+                    sa_text(
+                        "INSERT INTO ta_ligacao (call_id, tenant_id, connector_id, conversation_id, direcao, contato,"
+                        " contato_nome, estado, sdp_oferta, criada_em)"
+                        " VALUES (:cid, :t, :c, :conv, 'entrada', :de, :nome, 'tocando', :sdp, COALESCE(:em, now()))"
+                        " ON CONFLICT (call_id) DO NOTHING"
+                    ),
+                    {
+                        "cid": call["id"],
+                        "t": tenant_id,
+                        "c": connector_id,
+                        "conv": conv_id,
+                        "de": contato[:40],
+                        "nome": (nome or "")[:200] or None,
+                        "sdp": sessao.get("sdp"),
+                        "em": _quando(call.get("timestamp")),
+                    },
+                )
+                await db.commit()
+                n += r.rowcount or 0
+            elif evento == "connect" and direcao == "saida":
+                # Etapa 2 (a empresa liga): a Meta devolve a RESPOSTA SDP do contato.
+                sessao = call.get("session") or {}
+                await db.execute(
+                    sa_text("UPDATE ta_ligacao SET sdp_resposta = :sdp WHERE call_id = :cid"),
+                    {"sdp": sessao.get("sdp"), "cid": call["id"]},
+                )
+                await db.commit()
+                n += 1
+            elif evento == "terminate":
+                atual = (
+                    await db.execute(sa_text("SELECT estado FROM ta_ligacao WHERE call_id = :cid"), {"cid": call["id"]})
+                ).scalar()
+                if atual is None:
+                    continue
+                dur = call.get("duration")
+                await db.execute(
+                    sa_text(
+                        "UPDATE ta_ligacao SET estado = :e, encerrada_em = COALESCE(:fim, now()),"
+                        " duracao_s = COALESCE(:dur, duracao_s), erro = COALESCE(:erro, erro),"
+                        " atendida_em = COALESCE(atendida_em, :ini) WHERE call_id = :cid"
+                    ),
+                    {
+                        "e": estado_final(atual, call),
+                        "fim": _quando(call.get("end_time")) or _quando(call.get("timestamp")),
+                        "dur": int(dur) if str(dur or "").isdigit() else None,
+                        "erro": _erro_de(call),
+                        "ini": _quando(call.get("start_time")),
+                        "cid": call["id"],
+                    },
+                )
+                await db.commit()
+                n += 1
+        except Exception:  # noqa: BLE001
+            logger.exception("evento de ligação falhou call=%s", call.get("id"))
+            await db.rollback()
+    return n
+
+
+async def registrar_status_de_chamada(db, statuses: list) -> int:
+    """`value.statuses` com `type: "call"` (RINGING · ACCEPTED · REJECTED da ligação feita pela empresa).
+    Não vão para os tiques de mensagem (`ta_wa_envio_status`)."""
+    mapa = {"RINGING": "tocando", "ACCEPTED": "em_curso", "REJECTED": "recusada"}
+    n = 0
+    for s in statuses or []:
+        e = mapa.get(str(s.get("status") or "").upper())
+        if not e or not s.get("id"):
+            continue
+        try:
+            await db.execute(
+                sa_text(
+                    "UPDATE ta_ligacao SET estado = :e WHERE call_id = :cid"
+                    " AND estado NOT IN ('encerrada', 'perdida', 'recusada', 'falhou')"
+                ),
+                {"e": e, "cid": s["id"]},
+            )
+            await db.commit()
+            n += 1
+        except Exception:  # noqa: BLE001
+            logger.exception("status de ligação falhou call=%s", s.get("id"))
+            await db.rollback()
+    return n
+
+
+def separar_statuses(statuses: list) -> tuple[list, list]:
+    """(de mensagem, de ligação). Puro."""
+    msg, lig = [], []
+    for s in statuses or []:
+        (lig if isinstance(s, dict) and str(s.get("type") or "").lower() == "call" else msg).append(s)
+    return msg, lig
+
+
+# ── ações na Meta ────────────────────────────────────────────────────────────────────────────
+
+
+async def _credenciais(db, connector_id: int) -> tuple[str, str]:
+    from core.encryption import decrypt
+    from models import TaConnector
+    from services.connectors.adapters.whatsapp_cloud import resolve_cloud_creds
+    from services.connectors.base import ConnectorConfig
+
+    conn = await db.get(TaConnector, connector_id)
+    if not conn:
+        raise RuntimeError("número não encontrado")
+    pnid, token = resolve_cloud_creds(ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc))))
+    if not pnid or not token:
+        raise RuntimeError("número sem credencial")
+    return pnid, token
+
+
+async def acao_na_meta(db, connector_id: int, corpo: dict) -> dict:
+    """POST /{phone_number_id}/calls. Erro da Meta vira RuntimeError com a mensagem dela."""
+    pnid, token = await _credenciais(db, connector_id)
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
+        r = await cli.post(
+            f"{GRAPH_CALLS}/{pnid}/calls",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"messaging_product": "whatsapp", **corpo},
+        )
+    try:
+        j = r.json()
+    except Exception:  # noqa: BLE001
+        j = {}
+    if r.status_code >= 400:
+        err = j.get("error") or {}
+        msg = err.get("error_user_msg") or err.get("message") or r.text[:200]
+        raise RuntimeError(f"{err.get('code') or r.status_code}: {msg}")
+    return j
+
+
+# ── leitura para o painel ────────────────────────────────────────────────────────────────────
+
+
+def _rotulo(estado: str, direcao: str, duracao_s: int | None, quem: str | None) -> str:
+    """Linha da conversa. Puro."""
+    sentido = "recebida" if direcao == "entrada" else "feita"
+    if estado == "encerrada":
+        m, s = divmod(int(duracao_s or 0), 60)
+        tempo = f"{m} min {s:02d} s" if m else f"{s} s"
+        return f"📞 Ligação {sentido} · {tempo}" + (f" · atendida por {quem}" if quem and direcao == "entrada" else "")
+    if estado == "perdida":
+        return "📞 Ligação perdida" if direcao == "entrada" else "📞 Ligação não atendida"
+    if estado == "recusada":
+        return "📞 Ligação recusada"
+    if estado == "falhou":
+        return "📞 Ligação não completada"
+    if estado == "tocando":
+        return "📞 Ligação tocando…"
+    return "📞 Ligação em andamento" + (f" · {quem}" if quem else "")
+
+
+async def linhas_da_conversa(db, conversation_id: int) -> list[dict]:
+    """Ligações da conversa no formato das mensagens (id NEGATIVO, role «ligacao»). Só leitura."""
+    rows = (
+        await db.execute(
+            sa_text(
+                "SELECT id, direcao, estado, duracao_s, atendida_por, criada_em, erro FROM ta_ligacao"
+                " WHERE conversation_id = :c ORDER BY criada_em"
+            ),
+            {"c": conversation_id},
+        )
+    ).all()
+    return [
+        {
+            "id": -int(r.id),
+            "role": "ligacao",
+            "content": _rotulo(r.estado, r.direcao, r.duracao_s, r.atendida_por),
+            "created_at": r.criada_em,
+        }
+        for r in rows
+    ]

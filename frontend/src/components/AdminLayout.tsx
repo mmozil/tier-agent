@@ -9,6 +9,7 @@ import OnlineToggle from "./OnlineToggle";
 import ThemeToggle from "./ThemeToggle";
 import ErrorBoundary from "./ErrorBoundary";
 import CommandPalette from "./CommandPalette";
+import LigacoesWhatsApp from "./inbox/LigacoesWhatsApp";
 
 const CMDK_LABEL = typeof navigator !== "undefined" && /mac/i.test(navigator.userAgent) ? "⌘K" : "Ctrl K";
 
@@ -447,6 +448,8 @@ export default function AdminLayout() {
         </div>
       </main>
       <CommandPalette />
+      {/* 14/11/2026 — ligação pelo WhatsApp oficial toca em qualquer tela do painel. */}
+      <LigacoesWhatsApp />
     </div>
   );
 }

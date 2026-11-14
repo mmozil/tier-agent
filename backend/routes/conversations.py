@@ -584,10 +584,19 @@ async def conversation_detail(
     except Exception:  # noqa: BLE001 — tique é luxo: a conversa abre sem ele
         logger.warning("tiques de entrega falharam conv=%s", conv.id, exc_info=True)
         await db.rollback()
-    return {
-        "conversation": saida.model_dump(),
-        "messages": [{**MessageOut.model_validate(m).model_dump(), **entregas.get(m.id, {})} for m in msgs],
-    }
+    mensagens = [{**MessageOut.model_validate(m).model_dump(), **entregas.get(m.id, {})} for m in msgs]
+    # 14/11/2026 — ligações do WhatsApp oficial entram na linha do tempo (montadas na leitura, nunca
+    # gravadas como mensagem: a IA, o follow-up e as métricas leem ta_message_log).
+    try:
+        from services import ligacoes
+
+        extra = [MessageOut(**x).model_dump() for x in await ligacoes.linhas_da_conversa(db, conv.id)]
+        if extra:
+            mensagens = sorted(mensagens + extra, key=lambda x: x["created_at"])
+    except Exception:  # noqa: BLE001 — a conversa abre sem as ligações
+        logger.warning("ligações da conversa falharam conv=%s", conv.id, exc_info=True)
+        await db.rollback()
+    return {"conversation": saida.model_dump(), "messages": mensagens}
 
 
 class EnviarCrmResponse(BaseModel):
