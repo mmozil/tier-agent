@@ -90,6 +90,8 @@ class WhatsAppCloudConnector:
         image = next((a for a in msg.attachments if a.kind == "image" and a.url), None)
         document = next((a for a in msg.attachments if a.kind == "document" and a.url), None)
         audio = next((a for a in msg.attachments if a.kind == "audio" and a.url), None)
+        # 14/11/2026 — vídeo pelo painel (anexo no número oficial); antes caía no texto vazio.
+        video = next((a for a in msg.attachments if a.kind == "video" and a.url), None)
 
         if image:
             body = {
@@ -99,11 +101,22 @@ class WhatsAppCloudConnector:
                 "image": {"link": image.url, "caption": msg.content or ""},
             }
         elif document:
+            doc = {"link": document.url, "caption": msg.content or ""}
+            if document.name:
+                # sem `filename` o contato recebe «Sem título» — o nome do arquivo vai junto
+                doc["filename"] = document.name
             body = {
                 "messaging_product": "whatsapp",
                 "to": to,
                 "type": "document",
-                "document": {"link": document.url, "caption": msg.content or ""},
+                "document": doc,
+            }
+        elif video:
+            body = {
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "video",
+                "video": {"link": video.url, "caption": msg.content or ""},
             }
         elif audio:
             body = {

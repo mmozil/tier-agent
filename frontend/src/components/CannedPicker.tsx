@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Zap, Plus, Trash2, X } from "lucide-react";
+import { Zap, Plus, Trash2, X, Pencil } from "lucide-react";
 
 import { api } from "@/lib/api";
 
@@ -14,6 +14,9 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Canned[]>([]);
   const [creating, setCreating] = useState(false);
+  // 14/11/2026 — editar a resposta salva (antes só dava para criar e apagar). O mesmo
+  // formulário da «Nova resposta», preenchido; salvar grava por cima (PUT).
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [shortcut, setShortcut] = useState("");
   const [content, setContent] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -36,23 +39,44 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
         setCreating(false);
+        setEditingId(null);
+        setShortcut("");
+        setContent("");
       }
     }
     if (open) document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
-  async function create() {
+  function fecharForm() {
+    setCreating(false);
+    setEditingId(null);
+    setShortcut("");
+    setContent("");
+  }
+
+  function editar(it: Canned) {
+    setEditingId(it.id);
+    setShortcut(it.shortcut);
+    setContent(it.content);
+    setCreating(true);
+  }
+
+  async function salvar() {
     const s = shortcut.trim();
     const c = content.trim();
     if (!s || !c) return;
     try {
-      await api.post("/canned-responses", { shortcut: s, content: c });
-      setShortcut("");
-      setContent("");
-      setCreating(false);
-      load();
-      toast.success("Resposta pronta salva");
+      if (editingId != null) {
+        const { data } = await api.put<Canned>(`/canned-responses/${editingId}`, { shortcut: s, content: c });
+        setItems((prev) => prev.map((i) => (i.id === data.id ? data : i)));
+        toast.success("Resposta pronta atualizada");
+      } else {
+        await api.post("/canned-responses", { shortcut: s, content: c });
+        load();
+        toast.success("Resposta pronta salva");
+      }
+      fecharForm();
     } catch {
       toast.error("Erro ao salvar");
     }
@@ -106,6 +130,14 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
                   <p className="text-[12px] text-slate-600 line-clamp-2">{it.content}</p>
                 </button>
                 <button
+                  onClick={() => editar(it)}
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 h-8 px-1 rounded text-slate-300 hover:text-[#003083] hover:bg-slate-100"
+                  title="Editar"
+                  aria-label={`Editar /${it.shortcut}`}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
                   onClick={() => remove(it.id)}
                   className="opacity-0 group-hover:opacity-100 h-8 px-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50"
                   title="Excluir"
@@ -118,6 +150,9 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
 
           {creating ? (
             <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/60">
+              {editingId != null && (
+                <div className="text-[11px] font-medium text-slate-500">Editando a resposta</div>
+              )}
               <input
                 value={shortcut}
                 onChange={(e) => setShortcut(e.target.value)}
@@ -133,13 +168,13 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
               />
               <div className="flex gap-2">
                 <button
-                  onClick={create}
+                  onClick={salvar}
                   className="h-8 px-3 text-[12px] rounded-md bg-[#003083] text-white hover:bg-[#002266]"
                 >
                   Salvar
                 </button>
                 <button
-                  onClick={() => setCreating(false)}
+                  onClick={fecharForm}
                   className="h-8 px-3 text-[12px] rounded-md text-slate-500 hover:bg-slate-100"
                 >
                   Cancelar
@@ -148,7 +183,10 @@ export default function CannedPicker({ onInsert }: { onInsert: (content: string)
             </div>
           ) : (
             <button
-              onClick={() => setCreating(true)}
+              onClick={() => {
+                fecharForm();
+                setCreating(true);
+              }}
               className="w-full h-8 px-3 text-[12px] text-[#003083] font-medium hover:bg-slate-50 inline-flex items-center justify-center gap-1 border-t border-slate-100"
             >
               <Plus className="w-3.5 h-3.5" /> Nova resposta

@@ -1232,10 +1232,18 @@ async def reply_anexo(
     Foto vai como foto (com a legenda), áudio gravado vira MENSAGEM DE VOZ
     (ogg/opus — o navegador grava webm ou mp4), o resto vai como documento. A
     legenda de documento e de áudio sai numa mensagem logo depois: o Engine não
-    aceita legenda nesses dois."""
+    aceita legenda nesses dois.
+
+    14/11/2026 — também no número OFICIAL (API da Meta), que recusava com 422 (caso
+    Esneper). Lá os limites da Meta decidem o tipo (`services/anexo_oficial.py`), a
+    legenda vai no mesmo balão em foto/vídeo/documento, e passar da janela de 24 h
+    volta como 422 com o caminho do modelo, não como «falha»."""
+    from services.anexo_oficial import legenda_vai_junto, mensagem_de_erro, tipo_no_oficial
+
     conv, conn, registro = await _canal_da_resposta(db, conversation_id, user)
-    if conn.kind != "whatsapp":
-        raise HTTPException(422, "Anexo pelo painel só existe, por enquanto, no WhatsApp conectado por QR")
+    if conn.kind not in ("whatsapp", "whatsapp_cloud"):
+        raise HTTPException(422, "Anexo pelo painel só existe no WhatsApp")
+    oficial = conn.kind == "whatsapp_cloud"
 
     dados = await arquivo.read(_LIMITE_ANEXO + 1)
     if not dados:
@@ -1261,6 +1269,10 @@ async def reply_anexo(
         kind = "video"
     else:
         kind = "document"
+    if oficial:
+        kind = tipo_no_oficial(kind, mime, len(dados))
+        if kind == "document" and nome == "voz.ogg":
+            nome = "audio.ogg"
 
     from services.storage_service import storage
 
@@ -1287,23 +1299,27 @@ async def reply_anexo(
         legenda_canal = f"*{quem}*" if quem else ""
 
     enviado_em = datetime.utcnow()
-    impl = registry.get("whatsapp")
+    impl = registry.get(conn.kind)
     cfg = ConnectorConfig(data=json.loads(decrypt(conn.config_json_enc)))
+    junto = legenda_vai_junto(oficial, kind)
     try:
         resultado = await impl.send(
             cfg,
             OutboundMessage(
                 external_chat_id=conv.external_id,
-                content=legenda_canal if kind == "image" else "",
+                content=legenda_canal if junto else "",
                 attachments=[anexo],
             ),
         )
     except Exception as e:
         logger.exception("resposta com anexo falhou conv=%s kind=%s", conversation_id, kind)
-        raise HTTPException(502, f"Falha ao enviar: {e}") from e
+        status, texto_erro = mensagem_de_erro(
+            getattr(e, "meta_code", None), getattr(e, "detalhe", None), str(e)
+        )
+        raise HTTPException(status, texto_erro) from e
     await marcar_eco_do_envio(db, conn, resultado)
 
-    if legenda and kind != "image":
+    if legenda and not junto:
         try:
             resultado2 = await impl.send(
                 cfg, OutboundMessage(external_chat_id=conv.external_id, content=legenda_canal)
