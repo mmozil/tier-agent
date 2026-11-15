@@ -438,6 +438,12 @@ def _sem_travessao(text: str) -> str:
     telefone 4043-0461, CNPJ e datas ficam intactos."""
     if not text or ("—" not in text and "–" not in text):
         return text
+    # 15/11/2026 — traço ENTRE NÚMEROS é telefone/intervalo, não travessão de frase: vira hífen. As instruções do
+    # CCDA escrevem «(11) 4043–0461» com traço longo de propósito (com hífen comum o filtro de dados pessoais
+    # troca o número por {TELEFONE_1} antes do modelo) — e a regra abaixo transformava em «4043, 0461».
+    text = _re.sub(r"(?<=\d)[ \t]*[—–][ \t]*(?=\d)", "-", text)
+    if "—" not in text and "–" not in text:
+        return text
     text = _re.sub(r"(?m)^[ \t]*[—–][ \t]*", "", text)
     text = _re.sub(r"[ \t]*[—–][ \t]*", ", ", text)
     text = _re.sub(r",[ \t]*,", ", ", text)

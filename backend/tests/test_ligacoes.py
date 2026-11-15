@@ -191,3 +191,13 @@ def test_status_de_ligacao_usa_um_parametro_por_papel():
 
     fonte = inspect.getsource(ligacoes.registrar_status_de_chamada)
     assert "CASE WHEN :atendeu" in fonte and "CASE WHEN :e" not in fonte
+
+
+def test_telefone_com_traco_longo_sai_com_hifen():
+    """«(11) 4043–0461» (traço longo nas instruções, para o filtro de dados pessoais não trocar o número) sai
+    «(11) 4043-0461» — a regra do travessão virava «4043, 0461» (CCDA, 15/11/2026)."""
+    from services.agent_runtime import _sem_travessao
+
+    assert _sem_travessao("secretaria: (11) 4043\u20130461. Se preferir") == "secretaria: (11) 4043-0461. Se preferir"
+    assert _sem_travessao("das 8 \u2013 17h") == "das 8-17h"
+    assert _sem_travessao("Visitas \u2014 de segunda a sexta") == "Visitas, de segunda a sexta"
