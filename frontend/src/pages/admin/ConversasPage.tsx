@@ -6,8 +6,9 @@ import {
   Check, CheckCheck, CircleAlert, MessageSquare, MessageSquareDot, MessageSquarePlus, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
   AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Search, Zap,
   Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone, Mic, FileText,
-  CalendarDays, Columns2, Layers,
+  CalendarDays, Columns2, Layers, Phone,
 } from "lucide-react";
+import { pedirLigacao } from "@/components/inbox/LigacoesWhatsApp";
 
 import { api } from "@/lib/api";
 import CannedPicker from "@/components/CannedPicker";
@@ -1933,6 +1934,16 @@ export default function ConversasPage() {
                 )}
                 {/* 09/11/2026 (M7): só administrador apaga — o servidor já recusava os demais, e o
                     atendente via a lixeira e levava erro ao clicar. */}
+                {/* 14/11/2026 — ligar pelo WhatsApp oficial (o cartão da ligação aparece no canto). */}
+                {openConv.connector_kind === "whatsapp_cloud" && (
+                  <button
+                    onClick={() => pedirLigacao({ conversation_id: openConv.id, nome: openConv.contact_name || undefined })}
+                    title="Ligar pelo WhatsApp"
+                    className={iconBtn}
+                  >
+                    <Phone className="w-4 h-4" />
+                  </button>
+                )}
                 {me?.ve_tudo && (
                   <button onClick={() => deleteConv(openConv.id)} title="Excluir conversa" className={`${iconBtn} hover:text-[#c0362c] hover:bg-[#c0362c]/[0.06] dark:hover:text-[#ff6b5e] dark:hover:bg-[#ff6b5e]/[0.10]`}>
                     <Trash2 className="w-4 h-4" />

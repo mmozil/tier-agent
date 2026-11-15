@@ -220,6 +220,8 @@ export default function AdminLayout() {
           <Outlet />
         </ErrorBoundary>
         <AtualizacaoAutomatica />
+        {/* 14/11/2026 — no Atendimento do CRM/ERP (moldura) a ligação também toca e sai. */}
+        <LigacoesWhatsApp />
       </div>
     );
   }

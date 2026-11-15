@@ -173,3 +173,13 @@ def test_gravacao_da_meta_no_webhook():
     assert ligacoes.audio_da_gravacao({"event": "call_recording_available"}) is None
     assert ligacoes.GRAVACAO_META["status"] == "ENABLED"
     assert ligacoes.GRAVACAO_META["announcement_language"] == "pt"
+
+
+def test_ligar_pelo_whatsapp_regras_puras():
+    assert ligacoes.numero_br("(11) 99999-0000") == "5511999990000"
+    assert ligacoes.numero_br("5511999990000") == "5511999990000"
+    assert ligacoes.sem_permissao("WhatsApp Cloud 400: (#138006) No approved call permission")
+    assert not ligacoes.sem_permissao("(#131047) Re-engagement message")
+    assert "chamando" in ligacoes.ESTADOS_ATIVOS
+    assert ligacoes._rotulo("chamando", "saida", None, None) == "📞 Chamando…"
+    assert ligacoes._rotulo("encerrada", "saida", 75, "Marcelo").startswith("📞 Ligação feita · 1 min 15 s")

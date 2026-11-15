@@ -36,7 +36,10 @@ logger = logging.getLogger(__name__)
 GRAPH_CALLS = "https://graph.facebook.com/v23.0"
 _HTTP_TIMEOUT_S = 15.0
 
-ESTADOS_ATIVOS = ("tocando", "atendendo", "em_curso")
+# «chamando» = a EMPRESA ligou e o contato ainda não atendeu (14/11/2026, ligar pelo WhatsApp).
+ESTADOS_ATIVOS = ("tocando", "atendendo", "em_curso", "chamando")
+# A Meta desiste da ligação feita pela empresa em ~60 s sem resposta.
+CHAMANDO_VALE_S = 90
 # Sem o aviso de encerramento (webhook perdido), «tocando» não pode ficar para sempre na tela: a Meta
 # desiste em 30–60 s. Passou disso, a ligação não aparece mais como tocando.
 TOCANDO_VALE_S = 75
@@ -334,7 +337,8 @@ async def registrar_evento_de_chamada(db, phone_number_id: str | None, value: di
 async def registrar_status_de_chamada(db, statuses: list) -> int:
     """`value.statuses` com `type: "call"` (RINGING · ACCEPTED · REJECTED da ligação feita pela empresa).
     Não vão para os tiques de mensagem (`ta_wa_envio_status`)."""
-    mapa = {"RINGING": "tocando", "ACCEPTED": "em_curso", "REJECTED": "recusada"}
+    # RINGING de ligação que a EMPRESA fez continua «chamando» (o painel não confunde com ligação entrando).
+    mapa = {"RINGING": "chamando", "ACCEPTED": "em_curso", "REJECTED": "recusada"}
     n = 0
     for s in statuses or []:
         e = mapa.get(str(s.get("status") or "").upper())
@@ -343,8 +347,9 @@ async def registrar_status_de_chamada(db, statuses: list) -> int:
         try:
             await db.execute(
                 sa_text(
-                    "UPDATE ta_ligacao SET estado = :e WHERE call_id = :cid"
-                    " AND estado NOT IN ('encerrada', 'perdida', 'recusada', 'falhou')"
+                    "UPDATE ta_ligacao SET estado = :e,"
+                    " atendida_em = CASE WHEN :e = 'em_curso' THEN COALESCE(atendida_em, now()) ELSE atendida_em END"
+                    " WHERE call_id = :cid AND estado NOT IN ('encerrada', 'perdida', 'recusada', 'falhou')"
                 ),
                 {"e": e, "cid": s["id"]},
             )
@@ -400,6 +405,47 @@ async def acao_na_meta(db, connector_id: int, corpo: dict) -> dict:
         msg = err.get("error_user_msg") or err.get("message") or r.text[:200]
         raise RuntimeError(f"{err.get('code') or r.status_code}: {msg}")
     return j
+
+
+# ── a EMPRESA liga pelo WhatsApp (14/11/2026) ──────────────────────────────────────────────
+# Pedido do dono: o «Ligar» do CRM e do Agent sai pelo WhatsApp oficial (por enquanto, no lugar da telefonia).
+# A Meta só completa ligação para quem deu PERMISSÃO (pedido na conversa: 1 a cada 24 h, 2 em 7 dias).
+
+
+def numero_br(bruto: str | None) -> str:
+    """Só dígitos, com 55 na frente quando vier com DDD e sem país. Puro."""
+    d = "".join(ch for ch in str(bruto or "") if ch.isdigit())
+    if len(d) in (10, 11):
+        d = "55" + d
+    return d
+
+
+def sem_permissao(erro: str) -> bool:
+    """A Meta recusou porque o contato não autorizou ligação (138006). Puro."""
+    t = str(erro or "")
+    return "138006" in t or ("permission" in t.lower() and "call" in t.lower())
+
+
+async def pedir_permissao(db, connector_id: int, numero: str) -> dict:
+    """Manda o pedido oficial de permissão de ligação (mensagem interativa da Meta). Só dentro da janela de
+    24 h da conversa; fora dela a Meta recusa (131047) e o motivo volta para a tela."""
+    pnid, token = await _credenciais(db, connector_id)
+    corpo = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": numero,
+        "type": "interactive",
+        "interactive": {
+            "type": "call_permission_request",
+            "action": {"name": "call_permission_request"},
+            "body": {"text": "Podemos te ligar por aqui, pelo WhatsApp?"},
+        },
+    }
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as cli:
+        r = await cli.post(f"{GRAPH_CALLS}/{pnid}/messages", headers={"Authorization": f"Bearer {token}"}, json=corpo)
+    if r.status_code >= 400:
+        return {"ok": False, "motivo": _motivo_meta(r)}
+    return {"ok": True, "motivo": None}
 
 
 # ── ligar/desligar no número (14/11/2026) ─────────────────────────────────────────────────
@@ -565,6 +611,8 @@ async def mandar_para_o_crm(ligacao_id: int, sem_audio_ok: bool = False, esperar
 
 
 def _rotulo(estado: str, direcao: str, duracao_s: int | None, quem: str | None) -> str:
+    if estado == "chamando":
+        return "📞 Chamando…"
     """Linha da conversa. Puro."""
     sentido = "recebida" if direcao == "entrada" else "feita"
     if estado == "encerrada":

@@ -61,7 +61,8 @@ async def ligacoes_ativas(user: CurrentUser = Depends(get_current_user), db: Asy
             sa_text(
                 "SELECT id, conversation_id, contato, contato_nome, estado, direcao, criada_em, atendida_em,"
                 " atendida_por, member_id, sdp_oferta FROM ta_ligacao"
-                " WHERE tenant_id = :t AND estado IN ('tocando', 'atendendo', 'em_curso') AND criada_em >= :desde"
+                " WHERE tenant_id = :t AND estado IN ('tocando', 'atendendo', 'em_curso', 'chamando')"
+                " AND criada_em >= :desde"
                 " ORDER BY criada_em DESC LIMIT 10"
             ),
             {"t": tenant_id, "desde": agora - ligacoes.EM_CURSO_VALE},
@@ -71,6 +72,8 @@ async def ligacoes_ativas(user: CurrentUser = Depends(get_current_user), db: Asy
     for r in rows:
         if r.estado == "tocando" and (agora - r.criada_em).total_seconds() > ligacoes.TOCANDO_VALE_S:
             continue  # a Meta já desistiu; o aviso de fim é que se perdeu
+        if r.estado == "chamando" and (agora - r.criada_em).total_seconds() > ligacoes.CHAMANDO_VALE_S:
+            continue
         saida.append(
             LigacaoOut(
                 id=r.id,
@@ -309,5 +312,156 @@ async def encerrar(ligacao_id: int, user: CurrentUser = Depends(get_current_user
         ),
         {"i": lig.id},
     )
+    # Ligação feita pela empresa, desligada antes de o contato atender.
+    await db.execute(
+        sa_text("UPDATE ta_ligacao SET estado = 'perdida', encerrada_em = now() WHERE id = :i AND estado = 'chamando'"),
+        {"i": lig.id},
+    )
     await db.commit()
     return {"ok": True}
+
+
+# ── a EMPRESA liga (14/11/2026) ───────────────────────────────────────────────────────────────
+
+
+class LigarIn(BaseModel):
+    sdp: str = Field(min_length=20, max_length=20000)
+    conversation_id: int | None = None
+    telefone: str | None = Field(default=None, max_length=40)
+    connector_id: int | None = None
+    nome: str | None = Field(default=None, max_length=200)
+
+
+class DestinoIn(BaseModel):
+    conversation_id: int | None = None
+    telefone: str | None = Field(default=None, max_length=40)
+    connector_id: int | None = None
+    nome: str | None = Field(default=None, max_length=200)
+
+
+async def _destino(db: AsyncSession, tenant_id: int, d) -> tuple[int, str, int | None, str | None]:
+    """(connector_id, número, conversation_id, nome) — pela conversa, ou pelo telefone (vindo do CRM)."""
+    from models import TaAgent, TaConnector, TaConversation
+    from services import agent_runtime
+
+    if d.conversation_id:
+        conv = await db.get(TaConversation, d.conversation_id)
+        ag = await db.get(TaAgent, conv.agent_id) if conv else None
+        if not conv or not ag or ag.tenant_id != tenant_id:
+            raise HTTPException(404, "Conversa não encontrada")
+        if conv.connector_kind != "whatsapp_cloud" or not conv.connector_id:
+            raise HTTPException(422, "Ligação pelo WhatsApp só sai do número OFICIAL")
+        return conv.connector_id, ligacoes.numero_br(conv.external_id), conv.id, conv.contact_name
+    numero = ligacoes.numero_br(d.telefone)
+    if len(numero) < 12:
+        raise HTTPException(422, "Telefone inválido para ligar")
+    from sqlalchemy import select
+
+    q = (
+        select(TaConnector)
+        .join(TaAgent, TaAgent.id == TaConnector.agent_id)
+        .where(TaAgent.tenant_id == tenant_id, TaConnector.kind == "whatsapp_cloud", TaConnector.enabled.is_(True))
+        .order_by(TaConnector.id)
+    )
+    if d.connector_id:
+        q = q.where(TaConnector.id == d.connector_id)
+    conn = (await db.execute(q)).scalars().first()
+    if not conn:
+        raise HTTPException(422, "Esta conta não tem número oficial do WhatsApp para ligar")
+    conv = await agent_runtime.ensure_conversation(
+        db,
+        agent_id=conn.agent_id,
+        connector_kind="whatsapp_cloud",
+        external_id=numero,
+        contact_name=d.nome or None,
+        connector_id=conn.id,
+        por_numero=True,
+    )
+    return conn.id, numero, conv.id, d.nome or conv.contact_name
+
+
+@router.post("/ligar")
+async def ligar(body: LigarIn, user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """A empresa liga pelo WhatsApp: o navegador manda a OFERTA, a Meta toca no celular do contato. A RESPOSTA
+    chega pelo webhook (`calls` connect) e o navegador busca em GET /ligacoes/{id}."""
+    tenant_id = _tenant(user)
+    connector_id, numero, conv_id, nome = await _destino(db, tenant_id, body)
+    try:
+        res = await ligacoes.acao_na_meta(
+            db, connector_id, {"to": numero, "action": "connect", "session": {"sdp_type": "offer", "sdp": body.sdp}}
+        )
+    except Exception as e:  # noqa: BLE001
+        if ligacoes.sem_permissao(str(e)):
+            raise HTTPException(
+                409, "sem_permissao: o contato ainda não autorizou receber ligação pelo WhatsApp"
+            ) from e
+        from services.entrega_whatsapp import explicar_erro_meta
+
+        raise HTTPException(502, f"A Meta não completou a ligação: {explicar_erro_meta(str(e))}") from e
+    call_id = (((res or {}).get("calls") or [{}])[0] or {}).get("id")
+    if not call_id:
+        raise HTTPException(502, "A Meta não devolveu o id da ligação")
+    lid = (
+        await db.execute(
+            sa_text(
+                "INSERT INTO ta_ligacao (call_id, tenant_id, connector_id, conversation_id, direcao, contato,"
+                " contato_nome, estado, sdp_oferta, member_id, atendida_por)"
+                " VALUES (:cid, :t, :c, :conv, 'saida', :n, :nome, 'chamando', :sdp, :m, :quem)"
+                " ON CONFLICT (call_id) DO NOTHING RETURNING id"
+            ),
+            {
+                "cid": call_id,
+                "t": tenant_id,
+                "c": connector_id,
+                "conv": conv_id,
+                "n": numero,
+                "nome": (nome or "")[:200] or None,
+                "sdp": body.sdp,
+                "m": user.member_id,
+                "quem": (user.member_name or user.email or "")[:120],
+            },
+        )
+    ).scalar()
+    await db.commit()
+    return {"id": lid, "conversation_id": conv_id, "numero": numero, "nome": nome}
+
+
+@router.post("/pedir-permissao")
+async def pedir_permissao(
+    body: DestinoIn, user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """Pedido oficial de permissão de ligação, na conversa do contato."""
+    tenant_id = _tenant(user)
+    connector_id, numero, _conv, _nome = await _destino(db, tenant_id, body)
+    res = await ligacoes.pedir_permissao(db, connector_id, numero)
+    if not res["ok"]:
+        from services.entrega_whatsapp import explicar_erro_meta
+
+        raise HTTPException(422, f"A Meta não mandou o pedido: {explicar_erro_meta(res['motivo'])}")
+    return {"ok": True}
+
+
+@router.get("/{ligacao_id}")
+async def uma_ligacao(
+    ligacao_id: int, user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """O navegador que ligou acompanha a própria ligação: estado e a RESPOSTA SDP do contato."""
+    r = (
+        await db.execute(
+            sa_text(
+                "SELECT id, estado, direcao, sdp_resposta, duracao_s, atendida_em FROM ta_ligacao"
+                " WHERE id = :i AND tenant_id = :t"
+            ),
+            {"i": ligacao_id, "t": _tenant(user)},
+        )
+    ).first()
+    if not r:
+        raise HTTPException(404, "Ligação não encontrada")
+    return {
+        "id": r.id,
+        "estado": r.estado,
+        "direcao": r.direcao,
+        "sdp_resposta": r.sdp_resposta,
+        "duracao_s": r.duracao_s,
+        "atendida_em": r.atendida_em,
+    }
