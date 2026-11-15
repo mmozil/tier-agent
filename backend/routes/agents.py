@@ -549,6 +549,20 @@ async def agent_playground(
     # cliente recebia texto formatado em até 4 mensagens.
     # 15/11/2026 — faltava o `_sem_travessao` que a produção aplica: o teste mostrava «(11) 4043–0461»
     # enquanto o WhatsApp recebia «4043, 0461», e o defeito não aparecia no painel.
+    # Silêncio de propósito (15/11/2026): no WhatsApp nada seria enviado — o teste mostra isso
+    # em vez do sinal cru, senão quem testa vê «[SILENCIO]» e acha que é defeito.
+    if tier_engine.eh_silencio(reply.text):
+        aviso = "(Em silêncio: a regra da persona manda não responder agora. A conversa fica para a equipe.)"
+        return {
+            "text": aviso,
+            "bubbles": [aviso],
+            "silencio": True,
+            "model_used": getattr(reply, "model_used", None),
+            "canal": kind,
+            "rag_fontes": rag_fontes,
+            "rag_usado": bool(rag_bloco),
+        }
+
     limpo = agent_runtime._sem_travessao(agent_runtime._sanitize_reply(reply.text))
     if kind in ("whatsapp", "whatsapp_cloud"):
         limpo = agent_runtime._format_for_whatsapp(limpo)

@@ -346,6 +346,13 @@ def build_base_directives(agent, *, connector_kind: str, extra_block: str = "") 
     # Diretrizes GENÉRICAS + guidelines do TEMPLATE do agente (definidas em
     # services/templates.py — o runtime não conhece nenhum nicho).
     base = date_block + _templates.GENERIC_GUIDELINES
+    # Silêncio de propósito (15/11/2026, M7): só vale quando a PERSONA manda calar.
+    base += (
+        "\n\n# Quando a sua persona mandar não responder\n"
+        "- Se as regras da sua persona disserem para você NÃO enviar mensagem agora (ficar em "
+        "silêncio, deixar para o atendimento humano), responda exatamente [SILENCIO] e nada mais. "
+        "Nunca use isso por conta própria: só quando a persona mandar."
+    )
     tmpl = _templates.get_template(agent.template_kind or "")
     if tmpl is not None and tmpl.guidelines:
         base = f"{base}\n\n{tmpl.guidelines}"
@@ -1619,6 +1626,21 @@ async def handle_inbound_message(
         )
         return {"status": "engine_error", "error": str(e)}
     _cron.marca("llm")
+
+    # Silêncio de propósito (15/11/2026, M7): a persona mandou não responder. Nada vai ao
+    # cliente; a mensagem dele segue para o CRM como sem resposta do agente, para a equipe
+    # assumir. Sem log de resposta do assistente — não houve resposta.
+    if tier_engine.eh_silencio(reply.text):
+        logger.info(
+            "agente em silêncio por regra da persona tenant=%s agent=%s conv=%s",
+            agent.tenant_id, agent.id, conv.id,
+        )
+        await _espelhar_no_crm(
+            db, agent=agent, conv=conv, connector=connector, connector_kind=connector_kind,
+            external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
+            origem_canal=origem_canal, agente_respondeu=False,
+        )
+        return {"status": "silencio", "agent_id": agent.id}
 
     # Calcula custo real via TaLlmProvider lookup
     from services import cost_calculator

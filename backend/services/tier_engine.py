@@ -216,6 +216,22 @@ class EngineReply:
     brakes_fired: list = field(default_factory=list)  # nomes dos freios que dispararam no turno (observabilidade/eval)
 
 
+# ── Silêncio de propósito (15/11/2026, M7) ─────────────────────────────────────
+# Há persona que manda NÃO responder (M7: «depois que a pessoa responder, não envie mais
+# nada e transfira para o atendimento humano»). O modelo que obedece devolve vazio — e o
+# guard de texto vazio trocava isso por «Certo! Me avisa se precisar…», o pior dos mundos:
+# o cliente recebia uma frase sem sentido justo quando a regra era calar. Agora o modelo
+# devolve este sinal (instruído em `build_base_directives`) e QUEM ENVIA decide não enviar.
+# O vazio continua caindo no fallback: vazio é falha, o sinal é decisão.
+SILENCIO = "[SILENCIO]"
+_SILENCIO_RE = re.compile(r"^\W*\[\s*sil[eê]ncio\s*\]\W*$", re.IGNORECASE)
+
+
+def eh_silencio(texto: str | None) -> bool:
+    """A resposta é o sinal de silêncio (e nada mais)?"""
+    return bool(texto) and bool(_SILENCIO_RE.match(texto.strip()))
+
+
 # Registry de ferramentas (function calling). Cada handler: (args:dict) -> str.
 # Populado por register_tool() — o agent_runtime/playbook registram as do Tier.
 _TOOL_REGISTRY: dict[str, Callable[[dict], Awaitable[str]]] = {}
@@ -363,6 +379,10 @@ async def _call_openai_compatible(
 ) -> dict:
     payload: dict[str, Any] = {"model": model, "messages": messages,
                                "temperature": temperature, "max_tokens": max_tokens}
+    # Claude 5.x pela OpenRouter pensa antes de responder; no atendimento, pensar POUCO
+    # (15/11/2026): mais rápido, mais barato, e o raciocínio não come o limite de tokens.
+    if model.startswith("anthropic/") and "openrouter" in base_url:
+        payload["reasoning"] = {"effort": "low"}
     if tools:
         payload["tools"] = tools
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -1264,7 +1284,11 @@ async def send_message(
     # (se sobrar só CJK, vira "" e cai no fallback — nunca manda balão vazio nem chinês).
     if text:
         text = _CJK_RE.sub("", text).strip()
-    if not text:
+    if eh_silencio(text):
+        # Decisão de calar (persona) — normaliza o sinal; quem envia não envia.
+        text = SILENCIO
+        brakes_fired.append("silencio_da_persona")
+    elif not text:
         # 🚨 O PADRÃO é NEUTRO de propósito. Isto serve TODO tenant, e a versão
         # anterior ("Prontinho! 🐾") era linguagem de petshop saindo na boca de
         # uma assistente de colégio. Fallback é o texto de quando tudo falhou —
@@ -1291,7 +1315,7 @@ async def send_message(
         text = pii_redactor.restore(text, pii_mapping)
 
     # 6. Salva no cache (nunca quando há histórico — resposta é contextual)
-    if use_cache and not has_attachments and not has_history and text:
+    if use_cache and not has_attachments and not has_history and text and not eh_silencio(text):
         from services import llm_cache
 
         await llm_cache.put(
