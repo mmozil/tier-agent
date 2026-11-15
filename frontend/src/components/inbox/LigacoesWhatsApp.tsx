@@ -526,7 +526,10 @@ export default function LigacoesWhatsApp() {
             diag(saidaId, "resposta_falhou", String(err?.message || err));
           });
         }
-        if (data.estado === "em_curso" && emCursoRef.current?.fase === "chamando" && ch) {
+        // Atendeu = o servidor diz «em_curso» OU a voz já conectou (segunda garantia: se o aviso da Meta se
+        // perder, o microfone não fica fechado com o contato na linha).
+        const vozConectada = pcRef.current?.connectionState === "connected";
+        if ((data.estado === "em_curso" || vozConectada) && emCursoRef.current?.fase === "chamando" && ch) {
           ch.micGain.gain.value = mudoRef.current ? 0 : 1;
           comecarGravacao(ch, saidaId);
           setEmCurso((prev) => (prev ? { ...prev, fase: "em_curso", desde: Date.now() } : prev));

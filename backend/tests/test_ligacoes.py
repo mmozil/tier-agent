@@ -183,3 +183,11 @@ def test_ligar_pelo_whatsapp_regras_puras():
     assert "chamando" in ligacoes.ESTADOS_ATIVOS
     assert ligacoes._rotulo("chamando", "saida", None, None) == "📞 Chamando…"
     assert ligacoes._rotulo("encerrada", "saida", 75, "Marcelo").startswith("📞 Ligação feita · 1 min 15 s")
+
+
+def test_status_de_ligacao_usa_um_parametro_por_papel():
+    """asyncpg recusa o MESMO parâmetro com dois tipos (AmbiguousParameterError) — o «atendeu» nunca gravava."""
+    import inspect
+
+    fonte = inspect.getsource(ligacoes.registrar_status_de_chamada)
+    assert "CASE WHEN :atendeu" in fonte and "CASE WHEN :e" not in fonte

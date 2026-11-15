@@ -345,13 +345,16 @@ async def registrar_status_de_chamada(db, statuses: list) -> int:
         if not e or not s.get("id"):
             continue
         try:
+            # 🚨 15/11/2026 — o mesmo parâmetro (:e) no SET e no CASE dava AmbiguousParameterError no asyncpg:
+            # o «atendeu» da ligação feita pela empresa nunca gravava, o painel ficava em «chamando», o microfone
+            # fechado (o contato não ouvia) e nada era gravado. Um parâmetro por papel.
             await db.execute(
                 sa_text(
                     "UPDATE ta_ligacao SET estado = :e,"
-                    " atendida_em = CASE WHEN :e = 'em_curso' THEN COALESCE(atendida_em, now()) ELSE atendida_em END"
+                    " atendida_em = CASE WHEN :atendeu THEN COALESCE(atendida_em, now()) ELSE atendida_em END"
                     " WHERE call_id = :cid AND estado NOT IN ('encerrada', 'perdida', 'recusada', 'falhou')"
                 ),
-                {"e": e, "cid": s["id"]},
+                {"e": e, "atendeu": e == "em_curso", "cid": s["id"]},
             )
             await db.commit()
             n += 1
