@@ -57,6 +57,17 @@ def origem_da_mensagem(model_used: str | None, nome_disparo: str | None) -> str:
     return "Mensagem automática"
 
 
+def nome_do_modelo(model_used: str | None, modelo_do_disparo: str | None) -> str | None:
+    """O modelo da Meta que saiu (16/11/2026): o do disparo, ou o que a marca da conversa guarda
+    («Disparo · nome» / «Modelo · nome»). Retorno programado não diz o modelo → None. Puro."""
+    if modelo_do_disparo:
+        return modelo_do_disparo.strip() or None
+    m = (model_used or "").strip()
+    if (m.startswith(MARCA_DISPARO) or m.startswith(MARCA_MODELO)) and "·" in m:
+        return m.split("·", 1)[1].strip() or None
+    return None
+
+
 def eventos_pendentes(*, ordem_atual: int, levado: int) -> list[str]:
     """Quais eventos ainda faltam levar ao card. Puro.
 
@@ -99,7 +110,8 @@ async def _modelos_pendentes(db) -> list[dict]:
     rows = (
         await db.execute(
             select(S.id, S.wamid, S.ordem, S.status_em, S.criado_em, S.erro_codigo, S.erro, S.destino,
-                   S.crm_hist_ordem, S.tenant_id, S.conversation_id, TaConversation.external_id, D.nome)
+                   S.crm_hist_ordem, S.tenant_id, S.conversation_id, TaConversation.external_id, D.nome,
+                   D.modelo)
             .join(TaConversation, TaConversation.id == S.conversation_id)
             .outerjoin(E, E.wamid == S.wamid)
             .outerjoin(D, D.id == E.disparo_id)
@@ -133,6 +145,7 @@ async def _modelos_pendentes(db) -> list[dict]:
             "origem": origem_da_mensagem(m.model_used if m else None, r.nome),
             "texto": (m.content if m else None), "enviada_em": (m.created_at if m else r.criado_em),
             "status_em": r.status_em, "erro_codigo": r.erro_codigo, "erro": r.erro,
+            "modelo": nome_do_modelo(m.model_used if m else None, r.modelo),
         })
     return saida
 
@@ -184,6 +197,8 @@ async def rodar_ciclo(db) -> dict:
                     "texto": (it["texto"] or "")[:4000] if ev == "enviada" else None,
                     "erro_codigo": it["erro_codigo"] if ev == "falhou" else None,
                     "erro": it["erro"] if ev == "falhou" else None,
+                    # o CRM move o card pela regra «modelo entregue» (16/11/2026)
+                    "modelo": it.get("modelo"),
                 })
         try:
             if eventos:
