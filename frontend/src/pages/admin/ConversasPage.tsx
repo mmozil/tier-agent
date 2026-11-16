@@ -344,6 +344,15 @@ function fmtDate(iso: string | null): string {
   }
 }
 
+/** 16/11/2026 — a Meta só aceita texto livre até 24 h depois da última mensagem DO CONTATO. */
+function janelaFechada(msgs: { role: string; created_at: string }[]): boolean {
+  const ultima = [...msgs].reverse().find((m) => m.role === "user")?.created_at;
+  if (!ultima) return msgs.length > 0;
+  const norm = /[zZ]|[+-]\d\d:?\d\d$/.test(ultima) ? ultima : `${ultima}Z`;
+  const t = new Date(norm).getTime();
+  return Number.isFinite(t) && Date.now() - t > 24 * 3600 * 1000;
+}
+
 function fmtTime(iso: string | null): string {
   if (!iso) return "";
   try {
@@ -627,6 +636,8 @@ export default function ConversasPage() {
   const [openConv, setOpenConv] = useState<Conversation | null>(null);
   // Número aberto pelo CRM que ainda não tem conversa: mostra a «Nova conversa».
   const [novaConversaTel, setNovaConversaTel] = useState<string | null>(null);
+  // 16/11/2026 (CCDA) — retomar a conversa ABERTA com modelo aprovado (número oficial, janela de 24 h fechada).
+  const [modeloNaConversa, setModeloNaConversa] = useState<number | null>(null);
   // 11/11/2026 — «Nova conversa» pelo botão da lista (antes só abria vindo do CRM pelo link).
   const [pedeTelefone, setPedeTelefone] = useState(false);
   const [telefoneNovo, setTelefoneNovo] = useState("");
@@ -1836,7 +1847,23 @@ export default function ConversasPage() {
 
       {/* ═══════════ ZONA 3 — chat ═══════════ */}
       <section className={`flex-1 flex flex-col min-w-0 min-h-0 ${FC.base}`}>
-        {!openConv && novaConversaTel ? (
+        {openConv && modeloNaConversa === openConv.id ? (
+          <NovaConversa
+            telefone={openConv.external_id}
+            connectorId={openConv.connector_id ?? null}
+            onCancelar={() => setModeloNaConversa(null)}
+            onCriada={async (id) => {
+              setModeloNaConversa(null);
+              try {
+                const det = await api.get<{ conversation?: Conversation }>(`/conversations/${id}`);
+                if (det.data.conversation) await openConversation(det.data.conversation);
+              } catch {
+                /* o modelo já saiu; a conversa atualiza na próxima leitura */
+              }
+              void load(scope, true);
+            }}
+          />
+        ) : !openConv && novaConversaTel ? (
           <NovaConversa
             telefone={novaConversaTel}
             onCancelar={() => setNovaConversaTel(null)}
@@ -1935,6 +1962,13 @@ export default function ConversasPage() {
                 {/* 09/11/2026 (M7): só administrador apaga — o servidor já recusava os demais, e o
                     atendente via a lixeira e levava erro ao clicar. */}
                 {/* 14/11/2026 — ligar pelo WhatsApp oficial (o cartão da ligação aparece no canto). */}
+                {/* 16/11/2026 (CCDA) — retomar com modelo aprovado: depois de 24 h sem mensagem do contato,
+                    é o único jeito que a Meta aceita. Antes só existia em «Nova conversa». */}
+                {openConv.connector_kind === "whatsapp_cloud" && (
+                  <Button variant="secondary" size="sm" onClick={() => setModeloNaConversa(openConv.id)} title="Enviar um modelo aprovado nesta conversa">
+                    <FileText className="w-3.5 h-3.5" /> Enviar modelo
+                  </Button>
+                )}
                 {openConv.connector_kind === "whatsapp_cloud" && (
                   <button
                     onClick={() => pedirLigacao({ conversation_id: openConv.id, nome: openConv.contact_name || undefined })}
@@ -2207,6 +2241,16 @@ export default function ConversasPage() {
               document.body,
             )}
 
+            {openConv.connector_kind === "whatsapp_cloud" && janelaFechada(msgs) && (
+              <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t ${FC.hair} px-5 py-2.5 bg-amber-50/60 dark:bg-amber-500/[0.06] shrink-0`}>
+                <p className="flex-1 min-w-[220px] text-[12.5px] text-amber-800 dark:text-amber-300">
+                  Faz mais de 24 horas que o contato não escreve: pelo WhatsApp oficial, a conversa só volta com um modelo aprovado.
+                </p>
+                <Button size="sm" onClick={() => setModeloNaConversa(openConv.id)}>
+                  <FileText className="w-3.5 h-3.5" /> Enviar modelo
+                </Button>
+              </div>
+            )}
             {openConv.status !== "closed" && (
               <div className={`border-t ${FC.hair} px-5 py-3 bg-white dark:bg-[#0c0e12] shrink-0`}>
                 <div className="flex items-center gap-1 mb-2">

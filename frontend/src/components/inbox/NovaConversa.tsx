@@ -45,11 +45,15 @@ export default function NovaConversa({
   telefone,
   onCriada,
   onCancelar,
+  connectorId,
 }: {
   telefone: string;
   onCriada: (conversaId: number) => void;
   onCancelar: () => void;
+  /** 16/11/2026 (CCDA) — RETOMAR uma conversa que já existe: só o número dela, só modelo aprovado. */
+  connectorId?: number | null;
 }) {
+  const retomar = connectorId != null;
   const [numeros, setNumeros] = useState<Numero[] | null>(null);
   const [escolhido, setEscolhido] = useState<number | null>(null);
   const [texto, setTexto] = useState("");
@@ -79,10 +83,12 @@ export default function NovaConversa({
       const oficiais: Numero[] = (oficial.data?.numeros || [])
         .filter((n) => n.ativo)
         .map((n) => ({ id: n.id, kind: "whatsapp_cloud", telefone: n.telefone, agente: n.agente }));
-      const todos = [...porQr, ...oficiais];
+      // Retomar: a conversa já é de um número — o modelo sai por ele, não pelo primeiro da lista.
+      const todos = retomar ? oficiais.filter((n) => n.id === connectorId) : [...porQr, ...oficiais];
       setNumeros(todos);
       setEscolhido(todos[0]?.id ?? null);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const atual = numeros?.find((n) => n.id === escolhido) ?? null;
@@ -168,7 +174,8 @@ export default function NovaConversa({
           <div className="min-w-0">
             <p className={`text-[14px] font-medium truncate ${FC.ink}`}>{nome || <span className="tabular-nums">{rotulo}</span>}</p>
             <p className={`text-[12px] ${FC.sub}`}>
-              {nome && <span className="tabular-nums">{rotulo} · </span>}Nova conversa
+              {nome && <span className="tabular-nums">{rotulo} · </span>}
+              {retomar ? "Retomar a conversa com um modelo" : "Nova conversa"}
             </p>
           </div>
         </div>
@@ -185,7 +192,9 @@ export default function NovaConversa({
           </div>
         ) : (
           <p className={`text-[13px] ${FC.sub} max-w-[360px]`}>
-            {oficial
+            {retomar
+              ? "Passadas 24 horas da última mensagem do contato, o WhatsApp oficial só deixa retomar com um modelo aprovado pela Meta. Quando ele responder, a conversa segue normal."
+              : oficial
               ? "No WhatsApp oficial a primeira mensagem é um modelo aprovado pela Meta. Quando o contato responder, a conversa segue normal."
               : "Escreva a primeira mensagem. Ela sai pelo número escolhido e a conversa aparece na lista, com o seu nome."}
           </p>
@@ -199,8 +208,9 @@ export default function NovaConversa({
           </p>
         ) : numeros.length === 0 ? (
           <p className="text-[12.5px] text-amber-700 dark:text-amber-400">
-            Você não tem número do WhatsApp conectado para começar a conversa. Peça ao administrador para colocar
-            você como responsável de um número.
+            {retomar
+              ? "Você não pode enviar pelo número desta conversa. Peça ao administrador para colocar você como responsável dele."
+              : "Você não tem número do WhatsApp conectado para começar a conversa. Peça ao administrador para colocar você como responsável de um número."}
           </p>
         ) : (
           <>
