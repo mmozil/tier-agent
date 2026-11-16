@@ -24,6 +24,9 @@ import { BordaArrastavel, useLarguraArrastavel } from "@/components/inbox/BordaA
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select, campoCls, rotuloCls } from "@/components/ds/fc";
 
+/** Onde fica guardado «contato ao lado/por cima» escolhido pela pessoa (v2 desde 16/11/2026). */
+const CHAVE_CONTATO = "ta-conversas-contato-v2";
+
 const STATUS_META: Record<string, { label: string; cls: string; dot: string }> = {
   active: { label: "IA ativa", cls: "bg-[#0a8f5a]/[0.12] text-[#0a8f5a]", dot: "bg-[#0a8f5a]" },
   handed_off: { label: "Humano no controle", cls: "bg-[#003083]/[0.10] text-[#003083] dark:bg-[#5b9bff]/[0.16] dark:text-[#8ab4ff]", dot: "bg-[#003083] dark:bg-[#5b9bff]" },
@@ -735,7 +738,10 @@ export default function ConversasPage() {
   // para o chat (abaixo); e a pessoa pode fixar «ao lado» ou «por cima» no cabeçalho do contato.
   const [contatoEscolha, setContatoEscolha] = useState<"lado" | "cima" | null>(() => {
     try {
-      const v = localStorage.getItem("ta-conversas-contato");
+      // 16/11/2026 (dono): chave nova — o padrão passou a ser AO LADO, e quem tinha fixado «por cima»
+      // antes (o navegador da M7 do print do dono) continuava por cima. A escolha antiga é ignorada
+      // uma vez; quem quiser por cima de novo clica no ícone do cabeçalho do contato.
+      const v = localStorage.getItem(CHAVE_CONTATO);
       return v === "lado" || v === "cima" ? v : null;
     } catch {
       return null;
@@ -1477,7 +1483,7 @@ export default function ConversasPage() {
     const v = contatoPorCima ? "lado" : "cima";
     setContatoEscolha(v);
     try {
-      localStorage.setItem("ta-conversas-contato", v);
+      localStorage.setItem(CHAVE_CONTATO, v);
     } catch {
       /* navegador sem armazenamento: vale só nesta sessão */
     }
