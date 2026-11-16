@@ -119,7 +119,7 @@ function Linha({ rotulo, children }: { rotulo: string; children: ReactNode }) {
   );
 }
 
-function Cartao({ info, conversas, rect }: { info: InfoNumero; conversas: number; rect: DOMRect }) {
+function Cartao({ info, conversas, naoLidas, rect }: { info: InfoNumero; conversas: number; naoLidas: number; rect: DOMRect }) {
   const p = principal(info);
   const outros = info.cadastros.filter((c) => c !== p);
   const ALT = 300;
@@ -158,6 +158,7 @@ function Cartao({ info, conversas, rect }: { info: InfoNumero; conversas: number
           <Linha rotulo="Também veem">{p.tambem.map((x) => x.nome.split(" ")[0]).join(", ")}</Linha>
         )}
         <Linha rotulo="Conversas"><span className="tabular-nums">{conversas}</span></Linha>
+        <Linha rotulo="Não lidas"><span className="tabular-nums">{naoLidas}</span></Linha>
       </dl>
       {outros.length > 0 && (
         <div className="mt-3 border-t border-[#EDEDED] pt-2.5 dark:border-[#23272e]">
@@ -180,10 +181,13 @@ function Cartao({ info, conversas, rect }: { info: InfoNumero; conversas: number
 }
 
 export default function NumeroNaLateral({
-  info, conversas, active, onClick, compacto = false,
+  info, conversas, naoLidas = 0, active, onClick, compacto = false,
 }: {
   info: InfoNumero;
   conversas: number;
+  /** 16/11/2026 (CCDA): o número ao lado é o de NÃO LIDAS (como em toda a lateral) — o total
+   *  aparecia ali e era lido como «10 não lidas». O total segue no cartão do hover. */
+  naoLidas?: number;
   active: boolean;
   onClick: () => void;
   /** Menu recolhido (09/11/2026): só a foto, com o mesmo cartão no hover. */
@@ -230,8 +234,13 @@ export default function NumeroNaLateral({
           {alerta && (
             <span className="absolute bottom-1 right-1 z-10 h-2 w-2 rounded-full ring-2 ring-white dark:ring-[#0c0e12]" style={{ background: alerta }} />
           )}
+          {naoLidas > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 z-10 min-w-[16px] rounded-full bg-[#003083] px-1 text-center text-[9.5px] font-semibold leading-[16px] tabular-nums text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]">
+              {naoLidas > 99 ? "99+" : naoLidas}
+            </span>
+          )}
         </button>
-        {rect && createPortal(<Cartao info={info} conversas={conversas} rect={rect} />, document.body)}
+        {rect && createPortal(<Cartao info={info} conversas={conversas} naoLidas={naoLidas} rect={rect} />, document.body)}
       </>
     );
   }
@@ -263,11 +272,16 @@ export default function NumeroNaLateral({
         <span className="relative z-10 flex-1 break-words text-left">{tituloDoNumero(info)}</span>
         {/* Ponto só quando algo não está bem: desconectado (vermelho), aguardando (âmbar), desligado (cinza). */}
         {alerta && <span className="relative z-10 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: alerta }} />}
-        {conversas > 0 && (
-          <span className="relative z-10 shrink-0 text-[11px] tabular-nums text-[#262626]/[0.5] dark:text-[#8b93a0]">{conversas}</span>
+        {naoLidas > 0 && (
+          <span
+            title={`${naoLidas} ${naoLidas === 1 ? "conversa não lida" : "conversas não lidas"}`}
+            className="relative z-10 shrink-0 text-[11px] font-semibold tabular-nums text-[#003083] dark:text-[#8ab4ff]"
+          >
+            {naoLidas}
+          </span>
         )}
       </button>
-      {rect && createPortal(<Cartao info={info} conversas={conversas} rect={rect} />, document.body)}
+      {rect && createPortal(<Cartao info={info} conversas={conversas} naoLidas={naoLidas} rect={rect} />, document.body)}
     </>
   );
 }

@@ -519,7 +519,7 @@ function RailItem({
 }
 
 function SubNavItem({
-  icon: Icon, label, count, active, onClick, dotColor, soon,
+  icon: Icon, label, count, active, onClick, dotColor, soon, naoLidas,
 }: {
   icon?: ComponentType<{ className?: string }>;
   label: string;
@@ -528,10 +528,13 @@ function SubNavItem({
   onClick?: () => void;
   dotColor?: string;
   soon?: boolean;
+  /** 16/11/2026 (CCDA): a contagem é de conversas NÃO LIDAS — sai em azul, como na lista. */
+  naoLidas?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
+      title={naoLidas && count ? `${label} · ${count} ${count === 1 ? "conversa não lida" : "conversas não lidas"}` : undefined}
       // 09/11/2026 (M7): sem reticências — o texto quebra em até duas linhas («Todas as conversas»,
       // «Registro (sem IA)»), em vez de «Todas as conve…».
       className={`group relative w-full flex items-center gap-2.5 min-h-8 py-1.5 px-2.5 rounded-[8px] text-[13px] leading-[1.25] transition-colors ${
@@ -557,7 +560,13 @@ function SubNavItem({
       {soon ? (
         <span className="relative z-10 text-[9.5px] uppercase tracking-wide text-[#262626]/35 dark:text-[#6b7280] shrink-0">em breve</span>
       ) : count != null && count > 0 ? (
-        <span className="relative z-10 text-[11px] tabular-nums text-[#262626]/[0.5] dark:text-[#8b93a0] shrink-0">{count}</span>
+        <span
+          className={`relative z-10 text-[11px] tabular-nums shrink-0 ${
+            naoLidas ? "font-semibold text-[#003083] dark:text-[#8ab4ff]" : "text-[#262626]/[0.5] dark:text-[#8b93a0]"
+          }`}
+        >
+          {count}
+        </span>
       ) : null}
     </button>
   );
@@ -1339,6 +1348,10 @@ export default function ConversasPage() {
   const unattendedCount = convs.filter((c) => c.status !== "closed" && !c.assigned_member_id).length;
   const naoLidasCount = convs.filter((c) => (c.nao_lidas || 0) > 0 && c.id !== openId).length;
   const aguardandoCount = convs.filter(aguardando).length;
+  // 16/11/2026 (CCDA): na lateral, o número de cada grupo é de conversas NÃO LIDAS (padrão Gmail/Chatwoot).
+  // Antes era o total do grupo, e «Débora 10» era lido como «10 não lidas».
+  const naoLidasOnde = (f: (c: Conversation) => boolean) =>
+    convs.filter((c) => f(c) && (c.nao_lidas || 0) > 0 && c.id !== openId).length;
   const navTitle =
     navFilter.type === "all" ? "Todas as conversas"
     : navFilter.type === "unattended" ? "Não atendidas"
@@ -1441,7 +1454,7 @@ export default function ConversasPage() {
   const subNav = (
     <div className="space-y-0.5">
       <SubNavItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
-      <SubNavItem icon={MessageSquareDot} label="Não lidas" count={naoLidasCount} active={navFilter.type === "unread"} onClick={() => selectNav({ type: "unread" })} />
+      <SubNavItem icon={MessageSquareDot} label="Não lidas" count={naoLidasCount} naoLidas active={navFilter.type === "unread"} onClick={() => selectNav({ type: "unread" })} />
       <SubNavItem icon={Hourglass} label="Aguardando resposta" count={aguardandoCount} active={navFilter.type === "waiting"} onClick={() => selectNav({ type: "waiting" })} />
       <SubNavItem icon={Clock} label="Não atendidas" count={unattendedCount} active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
       <SubNavItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
@@ -1453,7 +1466,8 @@ export default function ConversasPage() {
               key={ch}
               icon={MessageSquare}
               label={channelLabel(ch === "outro" ? null : ch)}
-              count={convs.filter((c) => (c.connector_kind || "outro") === ch).length}
+              count={naoLidasOnde((c) => (c.connector_kind || "outro") === ch)}
+              naoLidas
               active={navFilter.type === "channel" && navFilter.value === ch}
               onClick={() => selectNav({ type: "channel", value: ch })}
             />
@@ -1467,6 +1481,7 @@ export default function ConversasPage() {
               key={n}
               info={infoDoNumero(n)}
               conversas={convs.filter((c) => c.canal_rotulo === n).length}
+              naoLidas={naoLidasOnde((c) => c.canal_rotulo === n)}
               active={navFilter.type === "numero" && navFilter.value === n}
               onClick={() => selectNav({ type: "numero", value: n })}
             />
@@ -1480,7 +1495,8 @@ export default function ConversasPage() {
               key={ag}
               icon={Bot}
               label={ag}
-              count={convs.filter((c) => c.agent_nome === ag).length}
+              count={naoLidasOnde((c) => c.agent_nome === ag)}
+              naoLidas
               active={navFilter.type === "agent" && navFilter.value === ag}
               onClick={() => selectNav({ type: "agent", value: ag })}
             />
@@ -1494,8 +1510,10 @@ export default function ConversasPage() {
               key={t}
               label={t}
               dotColor={corEtiqueta(t)}
-              // Com a lista, o filtro é do servidor: contar só as carregadas mostraria um número errado.
-              count={etiquetas.length ? undefined : convs.filter((c) => (c.tags || []).includes(t)).length}
+              // Não lidas entre as carregadas: conversa não lida é recente, então está entre elas
+              // (o TOTAL por etiqueta é que sairia errado com o filtro do servidor — por isso não aparece).
+              count={naoLidasOnde((c) => (c.tags || []).includes(t))}
+              naoLidas
               active={navFilter.type === "tag" && navFilter.value === t}
               onClick={() => selectNav({ type: "tag", value: t })}
             />
@@ -1509,7 +1527,8 @@ export default function ConversasPage() {
               key={tm.id}
               icon={Users}
               label={tm.name}
-              count={convs.filter((c) => c.team_id === tm.id).length}
+              count={naoLidasOnde((c) => c.team_id === tm.id)}
+              naoLidas
               active={navFilter.type === "team" && navFilter.value === tm.id}
               onClick={() => selectNav({ type: "team", value: tm.id })}
             />
@@ -1537,6 +1556,7 @@ export default function ConversasPage() {
               compacto
               info={infoDoNumero(n)}
               conversas={convs.filter((c) => c.canal_rotulo === n).length}
+              naoLidas={naoLidasOnde((c) => c.canal_rotulo === n)}
               active={navFilter.type === "numero" && navFilter.value === n}
               onClick={() => selectNav({ type: "numero", value: n })}
             />
@@ -1551,7 +1571,8 @@ export default function ConversasPage() {
               key={ag}
               icon={Bot}
               label={ag}
-              count={convs.filter((c) => c.agent_nome === ag).length}
+              count={naoLidasOnde((c) => c.agent_nome === ag)}
+              destaque
               active={navFilter.type === "agent" && navFilter.value === ag}
               onClick={() => selectNav({ type: "agent", value: ag })}
             />
