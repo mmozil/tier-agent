@@ -54,6 +54,19 @@ do contato arma o passo em qualquer conversa. Quatro travas, todas na configura�
 - `janela` (por configuração, opcional): `{"inicio": "08:00", "fim": "21:30", "tz": "America/Sao_Paulo",
   "dias": [1, 2, 3, 4, 5]}` (`dias` ISO, 1 = segunda; ausente = todos). Passo que vence fora dela não sai, como o atrasado: às 08:00 já perdeu o contexto. Necessária porque
   o horário da IA do número pode ser «sempre» (o do CCDA é).
+
+Quem só recebeu a saudação (16/11/2026, pedido do CCDA): família que escreveu, recebeu a 1ª mensagem
+da IA («Oi meu nome é Nathalia… Para qual ano vc gostaria de informações?») e não respondeu mais —
+provável clique errado no anúncio. Repete a saudação em 1 h, de novo 1 h depois e, 3 h depois, avisa
+que entendemos que não há interesse. Duas peças novas:
+- `gatilho.primeira_resposta` (só em `fala_do_agente`): a frase tem de estar na PRIMEIRA resposta da
+  IA, e o contato (ou a equipe) não pode ter escrito nada desde ela. Sem isso, a Nathalia se
+  apresentando de novo no meio da conversa repetiria «Para qual ano…?» a quem já disse o ano.
+- `pular_se_ja_enviado` aceita LISTA: a saudação não volta se a IA já mandou o valor na mesma resposta.
+E o ciclo passou a olhar só conversa com mensagem do CONTATO nas últimas 26 h: em dia de disparo grande
+as conversas do disparo sem resposta (último toque = o modelo) ocupavam as 200 vagas do ciclo e
+empurravam para fora justamente quem esperava o passo de 5 h (medido: 166 candidatas em 16/11, 234 no
+pico de 13/11). Todo gatilho precisa de mensagem do contato, então a conversa sem ela nunca dispara.
 """
 
 from __future__ import annotations
@@ -102,6 +115,7 @@ class Gatilho:
     contem: tuple[str, ...] = ()
     nao_contem: tuple[str, ...] = ()
     passo: str | None = None
+    primeira_resposta: bool = False
 
 
 @dataclass(frozen=True)
@@ -110,7 +124,7 @@ class Passo:
     gatilho: Gatilho
     atraso_min: float
     mensagens: tuple[str, ...]
-    pular_se_ja_enviado: str | None = None
+    pular_se_ja_enviado: tuple[str, ...] = ()
     so_conversa_iniciada_pelo_contato: bool = False
     exige_passo: str | None = None
     exige_fala_do_agente: tuple[str, ...] = ()
@@ -215,8 +229,12 @@ def carregar_config(bruto) -> tuple[Config | None, list[str]]:
     - `silencio_do_contato`: a IA respondeu e o contato não escreveu mais. Conta da última mensagem do
       contato.
     - `depois_do_passo`: conta do envio do passo citado; cancela se o contato ou a equipe escreveu depois.
-    Comparação de texto sem acento e sem caixa. `pular_se_ja_enviado`: texto (ex.: o link do vídeo)
-    que, já presente em mensagem nossa na conversa, faz o passo não sair — não repete o que já foi.
+    `fala_do_agente` com `"primeira_resposta": true` (16/11/2026): a frase tem de estar na 1ª resposta
+    da IA na conversa e ninguém (contato ou equipe) pode ter escrito desde ela — «recebeu a 1ª mensagem
+    e não respondeu mais».
+    Comparação de texto sem acento e sem caixa. `pular_se_ja_enviado`: texto ou lista de textos (ex.: o
+    link do vídeo) que, já presente em mensagem nossa na conversa, faz o passo não sair — não repete o
+    que já foi.
 
     Quem recebe (12/11/2026), por passo:
     - `so_conversa_iniciada_pelo_contato` (true/false): só sai em conversa que o CONTATO abriu e que
@@ -281,6 +299,12 @@ def carregar_config(bruto) -> tuple[Config | None, list[str]]:
             g.get("contem"), f"{nome}.gatilho.contem", erros, obrigatoria=tipo == "fala_do_agente"
         )
         nao_contem = _lista_de_textos(g.get("nao_contem"), f"{nome}.gatilho.nao_contem", erros)
+        # 16/11/2026: a frase tem de estar na 1ª resposta da IA, sem o contato ter escrito depois.
+        primeira = g.get("primeira_resposta", False)
+        if not isinstance(primeira, bool):
+            erros.append(f"{nome}.gatilho.primeira_resposta: true ou false")
+        elif primeira and tipo != "fala_do_agente":
+            erros.append(f"{nome}.gatilho.primeira_resposta: só vale no gatilho fala_do_agente")
         ref = g.get("passo")
         if tipo == "depois_do_passo" and (not isinstance(ref, str) or ref == pid or ref not in ids):
             erros.append(f"{nome}.gatilho.passo: id de outro passo desta configuração")
@@ -288,10 +312,11 @@ def carregar_config(bruto) -> tuple[Config | None, list[str]]:
         if p.get("atraso_min") is None:
             erros.append(f"{nome}.atraso_min: obrigatório")
         mensagens = _lista_de_textos(p.get("mensagens"), f"{nome}.mensagens", erros, obrigatoria=True)
-        pular = p.get("pular_se_ja_enviado")
-        if pular is not None and (not isinstance(pular, str) or not pular.strip()):
-            erros.append(f"{nome}.pular_se_ja_enviado: texto")
-            pular = None
+        # Texto ou lista de textos (16/11/2026): basta um deles já dito por nós para o passo não sair.
+        pular_bruto = p.get("pular_se_ja_enviado")
+        if isinstance(pular_bruto, str):
+            pular_bruto = [pular_bruto]
+        pular = _lista_de_textos(pular_bruto, f"{nome}.pular_se_ja_enviado", erros, obrigatoria=pular_bruto is not None)
         # Quem recebe (12/11/2026). Erro aqui derruba o PASSO: na dúvida, não manda.
         so_contato = p.get("so_conversa_iniciada_pelo_contato", tipo != "fala_do_agente")
         if not isinstance(so_contato, bool):
@@ -312,11 +337,15 @@ def carregar_config(bruto) -> tuple[Config | None, list[str]]:
             Passo(
                 id=pid,
                 gatilho=Gatilho(
-                    tipo=tipo, contem=contem, nao_contem=nao_contem, passo=ref if tipo == "depois_do_passo" else None
+                    tipo=tipo,
+                    contem=contem,
+                    nao_contem=nao_contem,
+                    passo=ref if tipo == "depois_do_passo" else None,
+                    primeira_resposta=primeira is True,
                 ),
                 atraso_min=atraso,
                 mensagens=mensagens,
-                pular_se_ja_enviado=(pular or "").strip() or None,
+                pular_se_ja_enviado=pular,
                 so_conversa_iniciada_pelo_contato=so_contato,
                 exige_passo=exige_passo,
                 exige_fala_do_agente=exige_fala,
@@ -423,6 +452,26 @@ def _algum_depois(msgs: list[Msg], i: int, roles: tuple[str, ...]) -> bool:
 
 def _ancora(passo: Passo, msgs: list[Msg], enviados: dict[str, Envio]) -> tuple[datetime | None, str]:
     g = passo.gatilho
+    if g.tipo == "fala_do_agente" and g.primeira_resposta:
+        # «Recebeu a 1ª mensagem e não respondeu mais nada»: tudo o que a IA disse depois da 1ª fala
+        # dela é a mesma resposta (ninguém escreveu no meio), e a frase tem de estar ali.
+        i0 = next((i for i, m in enumerate(msgs) if m.role == "assistant" and not e_callback(m)), None)
+        if i0 is None:
+            return None, "sem_gatilho"
+        if _algum_depois(msgs, i0, _INTERRUPCAO):
+            return None, "respondeu_depois"
+        i = _ultima(
+            msgs,
+            lambda m: (
+                m.role == "assistant"
+                and not e_callback(m)
+                and _tem(normalizar(m.content), g.contem)
+                and not _tem(normalizar(m.content), g.nao_contem)
+            ),
+        )
+        if i is None or i < i0:
+            return None, "sem_gatilho"
+        return msgs[i].em, ""
     if g.tipo == "fala_do_agente":
         i = _ultima(
             msgs,
@@ -510,7 +559,7 @@ def avaliar(
         if agora > vence + timedelta(minutes=cfg.tolerancia_min):
             r.motivos[passo.id] = "atrasado"
             continue
-        if passo.pular_se_ja_enviado and any(normalizar(passo.pular_se_ja_enviado) in t for t in ja_ditas):
+        if passo.pular_se_ja_enviado and any(_tem(t, passo.pular_se_ja_enviado) for t in ja_ditas):
             r.motivos[passo.id] = "ja_enviado"
             continue
         if not dentro_da_janela(cfg.janela, agora):
@@ -789,15 +838,22 @@ async def rodar_ciclo(db, agora: datetime | None = None) -> dict:
     """Um ciclo do job: acha os passos vencidos e manda (no máximo um passo por conversa)."""
     from collections import Counter
 
-    from sqlalchemy import select
+    from sqlalchemy import exists, select
 
     import scheduler as _sched
-    from models import TaConversation
+    from models import TaConversation, TaMessageLog
 
     agora = agora or datetime.utcnow()
     cfgs = await configs_ativas(db)
     if not cfgs:
         return {"conversas": 0, "enviados": 0, "bloqueados": {}}
+    # Todo gatilho precisa de mensagem do CONTATO: conversa de disparo sem resposta não dispara nada e,
+    # sem este filtro, ocupava as vagas do ciclo (16/11/2026: 166 candidatas, pico de 234 em 13/11).
+    falou = exists().where(
+        TaMessageLog.conversation_id == TaConversation.id,
+        TaMessageLog.role == "user",
+        TaMessageLog.created_at >= agora - HORIZONTE,
+    )
     # Só as colunas, não o objeto: o `rollback` da reserva perdida expira tudo o que a sessão
     # carregou, e objeto expirado numa AsyncSession é MissingGreenlet no próximo atributo.
     linhas = (
@@ -815,6 +871,7 @@ async def rodar_ciclo(db, agora: datetime | None = None) -> dict:
                 TaConversation.status == "active",
                 TaConversation.connector_kind.in_(CANAIS),
                 TaConversation.last_message_at >= agora - HORIZONTE,
+                falou,
                 _sched._sem_atendimento_humano(agora),  # contato com conversa assumida: o bot cala
             )
             .order_by(TaConversation.last_message_at.desc())
@@ -822,6 +879,12 @@ async def rodar_ciclo(db, agora: datetime | None = None) -> dict:
         )
     ).all()
     convs = [_Conversa(*linha) for linha in linhas]
+    if len(convs) >= MAX_CONVERSAS_POR_CICLO:
+        # Sem corte calado: as mais antigas (as do passo mais longo) ficam de fora deste ciclo.
+        logger.warning(
+            "callbacks: %s conversas candidatas — o teto do ciclo; as mais antigas ficaram de fora",
+            len(convs),
+        )
     enviados = 0
     bloqueados: Counter = Counter()
     for conv in convs:

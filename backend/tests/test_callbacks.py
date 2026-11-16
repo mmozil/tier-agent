@@ -102,6 +102,32 @@ CCDA = json.loads(
       "mensagens": [
         "Antes de matricular o seu filho(a) em qualquer outro Colégio, venha nos fazer uma visita, sem compromisso, tenho certeza que você irá Amar nossa Infraestrutura, Atendimento, Ensino, Diferenciais e Benefícios, oferecemos um ensino que nenhum outro Colégio da região oferecerá."
       ]
+    },
+    {
+      "id": "saudacao_1",
+      "gatilho": {"tipo": "fala_do_agente", "contem": ["trabalho no relacionamento com os pais"], "primeira_resposta": true},
+      "so_conversa_iniciada_pelo_contato": true,
+      "atraso_min": 60,
+      "mensagens": [
+        "Oi meu nome é Nathalia trabalho no relacionamento com os pais aqui no CCDA. Para qual ano vc gostaria de informações?"
+      ],
+      "pular_se_ja_enviado": ["ccda.com.br/valor-", "não ficam abaixo de R$2.000"]
+    },
+    {
+      "id": "saudacao_2",
+      "gatilho": {"tipo": "depois_do_passo", "passo": "saudacao_1"},
+      "atraso_min": 60,
+      "mensagens": [
+        "Oi meu nome é Nathalia trabalho no relacionamento com os pais aqui no CCDA. Para qual ano vc gostaria de informações?"
+      ]
+    },
+    {
+      "id": "sem_retorno",
+      "gatilho": {"tipo": "depois_do_passo", "passo": "saudacao_2"},
+      "atraso_min": 180,
+      "mensagens": [
+        "Recebemos a mensagem acima enviada do seu telefone, por isso estamos retornando o contato, mas como não tivemos retorno, entendemos que você não tenha mais interesse em nossos serviços, ficamos à disposição."
+      ]
     }
   ]
 }"""
@@ -111,6 +137,7 @@ CCDA = json.loads(
 # de «quem recebe» têm os testes delas, com a configuração do CCDA inteira (seção 6).
 BASE = json.loads(json.dumps(CCDA))
 del BASE["janela"]
+BASE["passos"] = BASE["passos"][:4]  # a saudação repetida (16/11) tem a seção 9, com a configuração inteira
 for _p in BASE["passos"]:
     _p.pop("exige_fala_do_agente", None)
 
@@ -151,12 +178,21 @@ def _vencido(msgs, minutos, enviados=None, cfg=None):
 
 def test_configuracao_do_ccda_valida_sem_erro():
     cfg = _cfg(CCDA)
-    assert [p.id for p in cfg.passos] == ["ensino_medio_video", "proposta", "tour", "fechamento"]
+    assert [p.id for p in cfg.passos] == [
+        "ensino_medio_video",
+        "proposta",
+        "tour",
+        "fechamento",
+        "saudacao_1",
+        "saudacao_2",
+        "sem_retorno",
+    ]
     assert cfg.passos[3].gatilho.passo == "tour"
     # o texto do cliente, literal
     assert cfg.passos[1].mensagens[0].endswith("Conseguiu agendar a sua visita? 🥰")
-    # quem recebe: tour e fechamento só em conversa aberta pelo contato; tour só depois do valor
-    assert [p.so_conversa_iniciada_pelo_contato for p in cfg.passos] == [False, False, True, True]
+    # quem recebe: tour, fechamento e a saudação repetida só em conversa aberta pelo contato; tour só
+    # depois do valor
+    assert [p.so_conversa_iniciada_pelo_contato for p in cfg.passos] == [False, False, True, True, True, True, True]
     assert cfg.passos[2].exige_fala_do_agente == ("ccda.com.br/valor-", "não ficam abaixo de R$2.000")
     assert (str(cfg.janela.inicio), str(cfg.janela.fim), cfg.janela.tz) == ("08:00:00", "21:30:00", "America/Sao_Paulo")
     assert cfg.janela.dias == frozenset({1, 2, 3, 4, 5})  # regra escrita do CCDA: não manda no fim de semana
@@ -164,7 +200,7 @@ def test_configuracao_do_ccda_valida_sem_erro():
 
 def test_configuracao_vem_do_banco_como_texto():
     cfg, erros = C.carregar_config(json.dumps(CCDA, ensure_ascii=False))
-    assert erros == [] and len(cfg.passos) == 4
+    assert erros == [] and len(cfg.passos) == 7
 
 
 @pytest.mark.parametrize(
@@ -855,7 +891,8 @@ def test_aberta_vinda_do_banco_vale_sobre_o_historico_cortado():
 def test_tour_do_ccda_exige_o_link_do_valor():
     sem_valor = [_m("user", "oi", 0), _m("assistant", ABERTURA, 0.1)]
     passo, motivos = _vencido(sem_valor, 61, cfg=_cfg(CCDA))
-    assert passo is None and motivos["tour"] == "sem_fala_exigida"
+    # sem o valor, quem sai é a saudação repetida (16/11), não o tour
+    assert passo == "saudacao_1" and motivos["tour"] == "sem_fala_exigida"
     com_valor = [_m("user", "7", 0), _m("assistant", LINK_7, 0.1), _m("user", "vou ver", 5), _m("assistant", "Ok", 5.1)]
     assert _vencido(com_valor, 65.1, cfg=_cfg(CCDA))[0] == "tour"
 
@@ -1122,3 +1159,236 @@ def test_ciclo_no_sabado_nao_manda_nem_reserva(sessao, envios):
     _semear(sessao, falas=[("user", "7 ano", 31), ("assistant", LINK_7, 30.9)], cfg=CCDA, agora=sabado)
     r = _rodar(C.rodar_ciclo(_Db(sessao), agora=sabado))
     assert r["enviados"] == 0 and envios["textos"] == [] and _linhas(sessao) == []
+
+
+# ─── 9. Quem só recebeu a saudação (16/11/2026) ──────────────────────────────
+# Pedido do CCDA: a família escreveu (provável clique errado no anúncio), recebeu «Oi meu nome é
+# Nathalia… Para qual ano vc gostaria de informações?» e não respondeu mais. Repete a saudação em 1 h,
+# de novo 1 h depois e, 3 h depois, avisa que entendemos que não há interesse.
+
+SAUDACAO = (
+    "Oi meu nome é Nathalia trabalho no relacionamento com os pais aqui no CCDA. "
+    "Para qual ano vc gostaria de informações?"
+)
+SEM_RETORNO = (
+    "Recebemos a mensagem acima enviada do seu telefone, por isso estamos retornando o contato, mas como não "
+    "tivemos retorno, entendemos que você não tenha mais interesse em nossos serviços, ficamos à disposição."
+)
+
+
+# Só os três passos novos e sem a janela: isola a regra da saudação dos passos do valor e deixa o ciclo
+# rodar no relógio de verdade (o envio carimba a hora real, e o passo seguinte conta dela).
+SO_SAUDACAO = {k: v for k, v in CCDA.items() if k != "janela"}
+SO_SAUDACAO["passos"] = CCDA["passos"][4:]
+
+
+def _enviado(minutos):
+    return C.Envio("enviado", T0 + timedelta(minutes=minutos))
+
+
+def test_saudacao_configuracao_com_o_texto_do_cliente():
+    cfg = _cfg(CCDA)
+    s1, s2, fim = cfg.passos[4:]
+    assert s1.gatilho.tipo == "fala_do_agente" and s1.gatilho.primeira_resposta is True
+    assert s1.pular_se_ja_enviado == ("ccda.com.br/valor-", "não ficam abaixo de R$2.000")
+    assert (s2.gatilho.passo, fim.gatilho.passo) == ("saudacao_1", "saudacao_2")
+    assert [p.atraso_min for p in (s1, s2, fim)] == [60, 60, 180]
+    assert s1.mensagens == s2.mensagens == (SAUDACAO,)
+    assert fim.mensagens == (SEM_RETORNO,)
+
+
+def test_saudacao_caminho_inteiro_1h_1h_3h():
+    """T0 = quarta 11/11, 11:00 de Brasília: os três cabem na janela (o último sai às 16:00)."""
+    cfg = _cfg(CCDA)
+    msgs = [_m("user", "Olá! Tenho interesse e queria mais informações, por favor.", 0), _m("assistant", SAUDACAO, 0.1)]
+    assert _vencido(msgs, 60, cfg=cfg)[1]["saudacao_1"] == "aguardando"
+    assert _vencido(msgs, 60.1, cfg=cfg)[0] == "saudacao_1"
+    msgs.append(_cb("saudacao_1", SAUDACAO, 60.1))
+    env = {"saudacao_1": _enviado(60.1)}
+    assert _vencido(msgs, 120, env, cfg=cfg)[1]["saudacao_2"] == "aguardando"
+    assert _vencido(msgs, 120.1, env, cfg=cfg)[0] == "saudacao_2"
+    msgs.append(_cb("saudacao_2", SAUDACAO, 120.1))
+    env["saudacao_2"] = _enviado(120.1)
+    assert _vencido(msgs, 300, env, cfg=cfg)[1]["sem_retorno"] == "aguardando"
+    assert _vencido(msgs, 300.1, env, cfg=cfg)[0] == "sem_retorno"
+    msgs.append(_cb("sem_retorno", SEM_RETORNO, 300.1))
+    env["sem_retorno"] = _enviado(300.1)
+    # depois do aviso, mais nada: nem o tour (não houve valor) nem outra volta da saudação
+    passo, motivos = _vencido(msgs, 400, env, cfg=cfg)
+    assert passo is None and motivos["tour"] == "sem_fala_exigida"
+
+
+def test_saudacao_com_as_palavras_da_outra_frase_da_persona():
+    fala = (
+        "Oi, eu sou a Nathalia, trabalho no relacionamento com os pais no CCDA. Qual é o seu nome? "
+        "E pra qual série você deseja receber informações"
+    )
+    msgs = [_m("user", "oi", 0), _m("assistant", fala, 0.1)]
+    assert _vencido(msgs, 60.1, cfg=_cfg(CCDA))[0] == "saudacao_1"
+
+
+@pytest.mark.parametrize("quem", ["user", "agent"])
+def test_saudacao_nao_repete_se_alguem_escreveu_depois(quem):
+    msgs = [_m("user", "oi", 0), _m("assistant", SAUDACAO, 0.1), _m(quem, "?", 3)]
+    passo, motivos = _vencido(msgs, 61, cfg=_cfg(CCDA))
+    assert passo is None and motivos["saudacao_1"] == "respondeu_depois"
+
+
+def test_resposta_a_primeira_saudacao_para_a_segunda():
+    cfg = _cfg(CCDA)
+    msgs = [
+        _m("user", "oi", 0),
+        _m("assistant", SAUDACAO, 0.1),
+        _cb("saudacao_1", SAUDACAO, 60.1),
+        _m("user", "2 ano", 70),
+        _m("assistant", "Do Fundamental ou do Médio?", 70.1),
+    ]
+    passo, motivos = _vencido(msgs, 121, {"saudacao_1": _enviado(60.1)}, cfg=cfg)
+    assert passo is None and motivos["saudacao_2"] == "respondeu_depois"
+
+
+def test_nathalia_se_apresentando_no_meio_da_conversa_nao_repete_a_saudacao():
+    """Quem já disse o ano não pode receber «Para qual ano…?» porque a IA se apresentou de novo."""
+    msgs = [
+        _m("user", "oi", 0),
+        _m("assistant", SAUDACAO, 0.1),
+        _m("user", "7 ano", 2),
+        _m("assistant", "Perfeito! Vou te passar as informações do 7º ano.", 2.1),
+        _m("user", "quem está falando?", 5),
+        _m("assistant", "Sou a Nathalia, trabalho no relacionamento com os pais aqui no CCDA.", 5.1),
+    ]
+    passo, motivos = _vencido(msgs, 66, cfg=_cfg(CCDA))
+    assert passo is None and motivos["saudacao_1"] == "respondeu_depois"
+
+
+@pytest.mark.parametrize("valor", [LINK_7, "Para o Ensino Médio as mensalidades não ficam abaixo de R$2.000,00."])
+def test_saudacao_nao_repete_se_a_ia_ja_mandou_o_valor_na_primeira_resposta(valor):
+    msgs = [_m("user", "quanto custa o 7 ano?", 0), _m("assistant", SAUDACAO, 0.1), _m("assistant", valor, 0.2)]
+    passo, motivos = _vencido(msgs, 61, cfg=_cfg(SO_SAUDACAO))
+    assert passo is None and motivos["saudacao_1"] == "ja_enviado"
+    # com a configuração inteira, quem segue é o caminho do valor (o tour), nunca a saudação
+    assert _vencido(msgs, 61, cfg=_cfg(CCDA))[0] in ("tour", "ensino_medio_video", "proposta")
+
+
+def test_saudacao_nao_sai_se_a_primeira_resposta_nao_foi_ela():
+    msgs = [_m("user", "oi", 0), _m("assistant", "Oi! Tudo bem? Como posso te ajudar?", 0.1)]
+    assert _vencido(msgs, 61, cfg=_cfg(CCDA))[1]["saudacao_1"] == "sem_gatilho"
+
+
+def test_saudacao_nao_vai_para_quem_respondeu_a_um_modelo_nosso():
+    msgs = [_m("agent", DISPARO, -5, "Disparo · x"), _m("user", "oi", 0), _m("assistant", SAUDACAO, 0.1)]
+    assert _vencido(msgs, 61, cfg=_cfg(CCDA))[1]["saudacao_1"] == "aberta_por_nos"
+
+
+def test_saudacao_que_vence_a_noite_nao_sai_e_o_aviso_final_fica_para_ninguem():
+    """Saudação às 19:00: repete 20:00 e 21:00; o aviso de 00:00 cai fora da janela e não fica guardado."""
+    cfg = _cfg(CCDA)
+    t = _brasilia(12, "19:00")
+    msgs = [C.Msg("user", "oi", None, t), C.Msg("assistant", SAUDACAO, None, t)]
+    env = {}
+    for passo, hhmm in (("saudacao_1", "20:00"), ("saudacao_2", "21:00")):
+        agora = _brasilia(12, hhmm)
+        assert C.avaliar(cfg, msgs, env, agora).vencido.passo.id == passo
+        msgs.append(C.Msg("assistant", SAUDACAO, f"Callback · {passo}", agora))
+        env[passo] = C.Envio("enviado", agora)
+    assert C.avaliar(cfg, msgs, env, _brasilia(13, "00:00")).motivos["sem_retorno"] == "fora_da_janela"
+    assert C.avaliar(cfg, msgs, env, _brasilia(13, "08:00")).motivos["sem_retorno"] == "atrasado"
+
+
+@pytest.mark.parametrize(
+    ("gatilho_extra", "passo_extra", "pedaco"),
+    [
+        ({"primeira_resposta": "sim"}, {}, "primeira_resposta"),
+        ({}, {"pular_se_ja_enviado": []}, "pular_se_ja_enviado"),
+        ({}, {"pular_se_ja_enviado": ["valor-", 2]}, "pular_se_ja_enviado"),
+        ({}, {"pular_se_ja_enviado": 3}, "pular_se_ja_enviado"),
+    ],
+)
+def test_saudacao_configuracao_ilegivel_derruba_o_passo(gatilho_extra, passo_extra, pedaco):
+    passo = {
+        "id": "x",
+        "gatilho": {"tipo": "fala_do_agente", "contem": ["relacionamento"], **gatilho_extra},
+        "atraso_min": 60,
+        "mensagens": ["a"],
+        **passo_extra,
+    }
+    cfg, erros = C.carregar_config({"passos": [passo]})
+    assert cfg is None and any(pedaco in e for e in erros), erros
+
+
+def test_primeira_resposta_so_vale_na_fala_do_agente():
+    passo = {
+        "id": "x",
+        "gatilho": {"tipo": "silencio_do_contato", "primeira_resposta": True},
+        "atraso_min": 60,
+        "mensagens": ["a"],
+    }
+    cfg, erros = C.carregar_config({"passos": [passo]})
+    assert cfg is None and any("só vale no gatilho fala_do_agente" in e for e in erros), erros
+
+
+def test_pular_se_ja_enviado_em_texto_continua_valendo():
+    assert _cfg(CCDA).passos[0].pular_se_ja_enviado == ("youtu.be/7zjVB2Z1Ah4",)
+
+
+def _ciclo_no_relogio(sessao, quando):
+    """Roda o ciclo em `quando` e põe nessa hora o carimbo do que ele mandou: o envio grava a hora REAL
+    (em produção é a mesma), e aqui o relógio só avança no papel — sem isto o passo seguinte contaria
+    da hora real e venceria cedo demais ou passaria da tolerância."""
+    antes = sessao.execute(select(TaMessageLog.id).order_by(TaMessageLog.id.desc())).scalars().first() or 0
+    r = _rodar(C.rodar_ciclo(_Db(sessao), agora=quando))
+    for m in sessao.execute(select(TaMessageLog).where(TaMessageLog.id > antes)).scalars():
+        m.created_at = quando
+    for e in sessao.execute(select(TaCallbackEnvio).where(TaCallbackEnvio.enviado_em.is_not(None))).scalars():
+        if e.enviado_em > quando:
+            e.enviado_em = quando
+    sessao.commit()
+    return r
+
+
+def test_ciclo_saudacao_sai_tres_vezes_e_para(sessao, envios):
+    """Agora, +61 min e +242 min: as duas voltas da saudação e o aviso, nessa ordem, uma vez cada."""
+    _semear(sessao, falas=[("user", "Olá! Quero informações.", 61), ("assistant", SAUDACAO, 60.9)], cfg=SO_SAUDACAO)
+    agora = datetime.utcnow()
+
+    def textos():
+        return [t for _c, _w, t in envios["textos"]]
+
+    r = _ciclo_no_relogio(sessao, agora)
+    assert r["enviados"] == 1 and textos() == [SAUDACAO]
+    assert _ciclo_no_relogio(sessao, agora + timedelta(minutes=30))["enviados"] == 0
+    assert _ciclo_no_relogio(sessao, agora + timedelta(minutes=59))["enviados"] == 0  # 1 h conta da 1ª volta
+    _ciclo_no_relogio(sessao, agora + timedelta(minutes=61))
+    assert textos() == [SAUDACAO, SAUDACAO]
+    assert _ciclo_no_relogio(sessao, agora + timedelta(minutes=61 + 179))["enviados"] == 0  # 3 h da 2ª volta
+    _ciclo_no_relogio(sessao, agora + timedelta(minutes=61 + 181))
+    assert textos() == [SAUDACAO, SAUDACAO, SEM_RETORNO]
+    assert _linhas(sessao) == [
+        ("saudacao_1", "enviado", None),
+        ("saudacao_2", "enviado", None),
+        ("sem_retorno", "enviado", None),
+    ]
+    assert [x[1] for x in _log(sessao)[-3:]] == [
+        "Callback · saudacao_1",
+        "Callback · saudacao_2",
+        "Callback · sem_retorno",
+    ]
+    assert _ciclo_no_relogio(sessao, agora + timedelta(minutes=400))["enviados"] == 0
+
+
+def test_ciclo_contato_respondeu_depois_da_1a_volta_para_tudo(sessao, envios):
+    _semear(sessao, falas=[("user", "oi", 61), ("assistant", SAUDACAO, 60.9)], cfg=SO_SAUDACAO)
+    agora = datetime.utcnow()
+    _rodar(C.rodar_ciclo(_Db(sessao), agora=agora))
+    sessao.add(TaMessageLog(conversation_id=500, role="user", content="2 ano", created_at=agora + timedelta(minutes=5)))
+    sessao.commit()
+    for minutos in (61, 61 + 181):
+        assert _rodar(C.rodar_ciclo(_Db(sessao), agora=agora + timedelta(minutes=minutos)))["enviados"] == 0
+    assert [t for _c, _w, t in envios["textos"]] == [SAUDACAO]
+
+
+def test_ciclo_conversa_de_disparo_sem_resposta_nao_ocupa_vaga(sessao, envios):
+    """Disparo sem resposta não dispara nada: não entra na conta das 200 candidatas do ciclo."""
+    _semear(sessao, falas=[("agent", DISPARO, 30, "Disparo · x")], cfg=CCDA, agora=MEIO_DIA)
+    r = _rodar(C.rodar_ciclo(_Db(sessao), agora=MEIO_DIA))
+    assert r["conversas"] == 0 and r["enviados"] == 0
