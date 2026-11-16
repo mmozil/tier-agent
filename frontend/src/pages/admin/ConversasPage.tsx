@@ -1168,7 +1168,7 @@ export default function ConversasPage() {
     try {
       await api.put(`/conversations/${convId}/assign`, { member_id: memberId });
     } catch {
-      toast.error("Erro ao atribuir");
+      toast.error("Não consegui trocar o responsável");
     }
   }
 
@@ -2482,7 +2482,9 @@ export default function ConversasPage() {
             <AccordionSection title="Ações da conversa">
               <div className="space-y-3.5">
                 <div>
-                  <label className={rotuloCls}>Agente atribuído</label>
+                  {/* 16/11/2026 (CCDA): «Responsável», não «Agente atribuído» — aqui «agente» é a IA, e
+                      quem se escolhe é a PESSOA que responde pela conversa (a mesma de «Não atendidas»). */}
+                  <label className={rotuloCls}>Responsável</label>
                   {activeMembers.length > 0 ? (
                     <Select
                       value={openConv.assigned_member_id ?? 0}
