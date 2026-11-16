@@ -1,7 +1,7 @@
 // Um disparo (11/11/2026): andamento, os números, o modelo enviado e o resultado contato a contato.
 // Entregue e lido vêm do retorno da Meta (webhook), então continuam mudando depois de concluído.
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Megaphone, RefreshCw, Search } from "lucide-react";
 
@@ -22,7 +22,7 @@ import {
   useConfirmar,
 } from "@/components/ds/fc";
 import { BarraDoDisparo, PARTES_DA_BARRA, Pilula, partesDaBarra } from "@/components/disparos/PartesDoDisparo";
-import { useModoEmbutido } from "@/lib/modoEmbutido";
+import { useAvisarRota, useModoEmbutido } from "@/lib/modoEmbutido";
 import {
   type DisparoDetalhe,
   type Envio,
@@ -66,15 +66,31 @@ export default function DisparoDetalhePage() {
   const nav = useNavigate();
   // 16/11/2026 — aberto pelo CRM («Atendimento › Disparos») é só consulta: nenhuma ação.
   const { embed, consulta, sufixo } = useModoEmbutido();
+  useAvisarRota();
   const [confirmar, dialogo] = useConfirmar();
   const [d, setD] = useState<DisparoDetalhe | null>(null);
   const [naoAchou, setNaoAchou] = useState(false);
   const [envios, setEnvios] = useState<Envio[] | null>(null);
   const [totalEnvios, setTotalEnvios] = useState(0);
-  const [filtro, setFiltro] = useState<Filtro | null>(null);
+  // 16/11/2026 — filtro e página moram no ENDEREÇO (`?situacao=falhou&pagina=2`): voltar a esta
+  // tela (pelo «voltar» do navegador ou pelo CRM recriando o quadro) reabre no mesmo ponto.
+  const [qs, setQs] = useSearchParams();
+  const [filtro, setFiltro] = useState<Filtro | null>(() => {
+    const v = qs.get("situacao");
+    return FILTROS.some((f) => f.valor === v) ? (v as Filtro) : null;
+  });
   const [busca, setBusca] = useState("");
   const [buscaAplicada, setBuscaAplicada] = useState("");
-  const [pagina, setPagina] = useState(0);
+  const [pagina, setPagina] = useState(() => Math.max(0, Math.floor(Number(qs.get("pagina")) || 1) - 1));
+  useEffect(() => {
+    const p = new URLSearchParams(qs);
+    if (filtro) p.set("situacao", filtro);
+    else p.delete("situacao");
+    if (pagina > 0) p.set("pagina", String(pagina + 1));
+    else p.delete("pagina");
+    if (p.toString() !== qs.toString()) setQs(p, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtro, pagina]);
   const [agindo, setAgindo] = useState(false);
   // Agendar um rascunho já salvo (15/11/2026): antes ele só podia sair na hora.
   const [agendando, setAgendando] = useState(false);
@@ -110,9 +126,14 @@ export default function DisparoDetalhePage() {
     void carregarEnvios();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, filtro, buscaAplicada, pagina]);
+  // Só busca NOVA volta para a página 1 — ao abrir a tela isto rodava e apagava a página guardada.
+  const buscaAnterior = useRef("");
   useEffect(() => {
     const t = window.setTimeout(() => {
-      setBuscaAplicada(busca.trim());
+      const nova = busca.trim();
+      if (nova === buscaAnterior.current) return;
+      buscaAnterior.current = nova;
+      setBuscaAplicada(nova);
       setPagina(0);
     }, 350);
     return () => window.clearTimeout(t);

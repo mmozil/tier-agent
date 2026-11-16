@@ -9,12 +9,13 @@ import { formatPhone } from "@/lib/phone";
 import { Button, EmptyHint, FC, PageFrame, PageHero, Row, SkeletonBar, iconBtn } from "@/components/ds/fc";
 import { BarraDoDisparo, Pilula } from "@/components/disparos/PartesDoDisparo";
 import { type Disparo, inteiro, mensagemDeErro, quando, statusDoDisparo } from "@/lib/disparos";
-import { useModoEmbutido } from "@/lib/modoEmbutido";
+import { useAvisarRota, useModoEmbutido } from "@/lib/modoEmbutido";
 
 export default function DisparosPage() {
   const nav = useNavigate();
   // 16/11/2026 — aberto pelo CRM («Atendimento › Disparos») é só consulta: sem «Novo disparo».
   const { consulta, sufixo } = useModoEmbutido();
+  useAvisarRota();
   const [disparos, setDisparos] = useState<Disparo[] | null>(null);
   const [podeCriarNoAgent, setPodeCriar] = useState(false);
   const podeCriar = podeCriarNoAgent && !consulta;
