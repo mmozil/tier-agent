@@ -73,6 +73,9 @@ export default function DisparoDetalhePage() {
   const [buscaAplicada, setBuscaAplicada] = useState("");
   const [pagina, setPagina] = useState(0);
   const [agindo, setAgindo] = useState(false);
+  // Agendar um rascunho já salvo (15/11/2026): antes ele só podia sair na hora.
+  const [agendando, setAgendando] = useState(false);
+  const [agendarPara, setAgendarPara] = useState("");
 
   async function carregar() {
     try {
@@ -157,6 +160,55 @@ export default function DisparoDetalhePage() {
       );
     } catch (e) {
       toast.error(mensagemDeErro(e, "Não consegui fazer isso agora"));
+      void carregar();
+    } finally {
+      setAgindo(false);
+    }
+  }
+
+  function abrirAgenda() {
+    if (!agendarPara) {
+      // o horário que veio da criação (se ainda vale) ou, senão, amanhã às 08:00 — no fuso do navegador
+      const salvo = d?.agendado_para ? new Date(d.agendado_para) : null;
+      const t = salvo && salvo.getTime() > Date.now() ? salvo : new Date();
+      if (t !== salvo) {
+        t.setDate(t.getDate() + 1);
+        t.setHours(8, 0, 0, 0);
+      }
+      const p = (n: number) => String(n).padStart(2, "0");
+      setAgendarPara(`${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}T${p(t.getHours())}:${p(t.getMinutes())}`);
+    }
+    setAgendando(true);
+  }
+
+  async function agendar() {
+    if (!d || agindo) return;
+    const quandoComeca = agendarPara ? new Date(agendarPara) : null;
+    if (!quandoComeca || Number.isNaN(quandoComeca.getTime()) || quandoComeca.getTime() <= Date.now()) {
+      toast.error("Escolha um horário no futuro");
+      return;
+    }
+    const preco = precoDaCategoria(d.categoria);
+    const ok = await confirmar({
+      titulo: `Agendar «${d.modelo}» para ${quando(quandoComeca.toISOString())}?`,
+      texto:
+        `Vai para ${inteiro(d.contagens.pendentes)} contato${d.contagens.pendentes === 1 ? "" : "s"} a partir desse horário` +
+        (preco !== null ? `, com custo estimado de até ${brl(d.contagens.pendentes * preco)} cobrado pela Meta` : "") +
+        `, e leva cerca de ${duracao(d.contagens.pendentes * d.intervalo_s)}. Até lá dá para cancelar.`,
+      confirmar: "Agendar disparo",
+    });
+    if (!ok) return;
+    setAgindo(true);
+    try {
+      const { data } = await api.post<DisparoDetalhe>(`/disparos-oficiais/${d.id}/iniciar`, {
+        agendar_para: quandoComeca.toISOString(),
+      });
+      setD(data);
+      setAgendando(false);
+      void carregarEnvios();
+      toast.success(`Disparo agendado para ${quando(quandoComeca.toISOString())}`);
+    } catch (e) {
+      toast.error(mensagemDeErro(e, "Não consegui agendar"));
       void carregar();
     } finally {
       setAgindo(false);
@@ -249,6 +301,9 @@ export default function DisparoDetalhePage() {
                     <Button variant="danger" onClick={() => void apagar()} disabled={agindo}>
                       Apagar rascunho
                     </Button>
+                    <Button variant="secondary" onClick={abrirAgenda} disabled={agindo || agendando}>
+                      Agendar
+                    </Button>
                     <Button onClick={() => void acao("iniciar")} disabled={agindo}>
                       Iniciar disparo
                     </Button>
@@ -281,6 +336,30 @@ export default function DisparoDetalhePage() {
               <p className="text-[12.5px] text-amber-700 dark:text-amber-400">{d.motivo_pausa}</p>
             )}
             {d.comeca_em && <p className={`text-[12.5px] ${FC.sub}`}>Começa {quando(d.comeca_em)}.</p>}
+            {d.status === "rascunho" && !agendando && (
+              <p className={`text-[12.5px] ${FC.sub}`}>
+                Rascunho: não sai sozinho. Use <b className="font-medium">Agendar</b> para escolher o horário ou{" "}
+                <b className="font-medium">Iniciar disparo</b> para enviar agora.
+              </p>
+            )}
+            {d.status === "rascunho" && agendando && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-[12.5px] ${FC.sub}`}>Começar em</span>
+                <Input
+                  type="datetime-local"
+                  value={agendarPara}
+                  onChange={(e) => setAgendarPara(e.target.value)}
+                  className="w-[200px]"
+                  aria-label="Data e hora do disparo"
+                />
+                <Button onClick={() => void agendar()} disabled={agindo || !agendarPara}>
+                  Agendar disparo
+                </Button>
+                <Button variant="secondary" onClick={() => setAgendando(false)} disabled={agindo}>
+                  Voltar
+                </Button>
+              </div>
+            )}
             {d.status === "em_andamento" && !d.comeca_em && c.pendentes > 0 && (
               <p className={`text-[12.5px] ${FC.sub}`}>
                 Faltam {inteiro(c.pendentes)} · ≈ {duracao(c.pendentes * d.intervalo_s)} no ritmo de {d.intervalo_s} s (±

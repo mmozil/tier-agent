@@ -97,6 +97,19 @@ def _agora() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _horario_agendado(agendar_para: datetime | None, agora: datetime) -> datetime | None:
+    """Horário pedido → UTC sem fuso (como o banco guarda), recusando passado e mais de 60 dias."""
+    if agendar_para is None:
+        return None
+    if agendar_para.tzinfo is not None:
+        agendar_para = agendar_para.astimezone(UTC).replace(tzinfo=None)
+    if agendar_para < agora - timedelta(minutes=1):
+        raise ErroDoDisparo("O horário agendado já passou")
+    if agendar_para > agora + AGENDAR_ATE:
+        raise ErroDoDisparo("Agende para no máximo 60 dias à frente")
+    return agendar_para
+
+
 # ───────────────────────── leitura da lista (regra pura) ─────────────────────────
 
 _SEPARADOR = re.compile(r"[	;,|]")
@@ -497,13 +510,7 @@ async def criar(
     except ValueError as e:
         raise ErroDoDisparo(str(e)) from e
     agora = _agora()
-    if agendar_para is not None:
-        if agendar_para.tzinfo is not None:
-            agendar_para = agendar_para.astimezone(UTC).replace(tzinfo=None)
-        if agendar_para < agora - timedelta(minutes=1):
-            raise ErroDoDisparo("O horário agendado já passou")
-        if agendar_para > agora + AGENDAR_ATE:
-            raise ErroDoDisparo("Agende para no máximo 60 dias à frente")
+    agendar_para = _horario_agendado(agendar_para, agora)
     leitura = ler_lista(lista)
     if not leitura.contatos:
         raise ErroDoDisparo("A lista não tem nenhum número válido")
@@ -571,19 +578,24 @@ async def _regua(db, did: int) -> dict:
     return {"taxa_base_enviados": c["enviados"], "taxa_base_falhas": c["falhas"]}
 
 
-async def iniciar(db, did: int) -> None:
+async def iniciar(db, did: int, agendar_para: datetime | None = None) -> None:
+    """`agendar_para` agenda um RASCUNHO já salvo (15/11/2026, CCDA): sem isso o rascunho só podia
+    sair na hora, e quem salvou «para as 08h» achava que estava agendado."""
     agora = _agora()
+    agendar_para = _horario_agendado(agendar_para, agora)
     pendentes = (
         await db.execute(select(func.count()).select_from(E).where(E.disparo_id == did, E.status == PENDENTE))
     ).scalar() or 0
     if not pendentes:
         raise ErroDoDisparo("Nenhum contato para enviar (todos sem nome ou fora da lista)", 409)
     d = await db.get(D, did, populate_existing=True)
-    comeca = d.agendado_para if d and d.agendado_para and d.agendado_para > agora else None
+    agendado = agendar_para if agendar_para is not None else (d.agendado_para if d else None)
+    comeca = agendado if agendado and agendado > agora else None
     r = await db.execute(
         update(D)
         .where(D.id == did, D.status == RASCUNHO)
         .values(
+            agendado_para=agendado,
             status=EM_ANDAMENTO,
             iniciado_em=agora,
             motivo_pausa=None,

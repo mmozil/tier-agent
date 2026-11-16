@@ -772,3 +772,38 @@ def test_previa_da_lista_nao_entra_no_registro_e_iniciar_entra(monkeypatch):
     assert eventos == []
     cli.post("/api/v1/disparos-oficiais/12/iniciar", headers=h)
     assert [(e["acao"], e["alvo"]) for e in eventos] == [("Iniciou disparo (oficial)", "disparo #12 · Visita")]
+
+
+def test_rascunho_salvo_pode_ser_agendado_depois(worker):
+    """15/11/2026, CCDA: o rascunho salvo «para as 08h» não tinha como ser agendado — só iniciado na hora."""
+    d = worker.criar(_lista(1))
+    quando = datetime.utcnow() + timedelta(hours=10)
+    _rodar(disparo_lote.iniciar(worker.db, d.id, agendar_para=quando))
+    salvo = worker.s.get(TaDisparoOficial, d.id, populate_existing=True)
+    assert (salvo.status, salvo.agendado_para, salvo.proximo_envio_em) == ("em_andamento", quando, quando)
+    assert worker.passo(d.id) == "nao_e_a_vez"
+    worker.relogio["t"] = quando
+    assert worker.passo(d.id) == "enviado"
+
+
+def test_agendar_rascunho_no_passado_e_recusado(worker):
+    d = worker.criar(_lista(1))
+    with pytest.raises(disparo_lote.ErroDoDisparo, match="já passou"):
+        _rodar(disparo_lote.iniciar(worker.db, d.id, agendar_para=datetime.utcnow() - timedelta(hours=1)))
+    assert worker.s.get(TaDisparoOficial, d.id, populate_existing=True).status == "rascunho"
+
+
+def test_rota_agenda_rascunho_com_horario_de_brasilia(rotas):
+    from datetime import UTC
+    from zoneinfo import ZoneInfo
+
+    r, db = rotas.r, rotas.db
+    d = rotas.criar(_lista(1))
+    amanha_8h = (datetime.now(ZoneInfo("America/Sao_Paulo")) + timedelta(days=1)).replace(
+        hour=8, minute=0, second=0, microsecond=0
+    )
+    out = _rodar(r.iniciar(d.id, rotas.req, _dono(), db, r.IniciarIn(agendar_para=amanha_8h)))
+    assert out["status"] == "em_andamento" and out["comeca_em"]
+    salvo = rotas.s.get(TaDisparoOficial, d.id, populate_existing=True)
+    assert salvo.agendado_para == amanha_8h.astimezone(UTC).replace(tzinfo=None)  # 08h de Brasília = 11h UTC
+    assert "agendado" in rotas.req.state.atividade["alvo"] and "08:00" in rotas.req.state.atividade["alvo"]

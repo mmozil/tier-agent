@@ -432,15 +432,26 @@ async def _numero_ligado(db: AsyncSession, d: TaDisparoOficial, user: CurrentUse
         raise HTTPException(409, "O número deste disparo está desconectado — reconecte em Canais")
 
 
+class IniciarIn(BaseModel):
+    # Agendar um rascunho já salvo. Sem corpo (ou sem horário) começa na hora, como sempre.
+    agendar_para: datetime | None = None
+
+
 @router.post("/{did}/iniciar")
-async def iniciar(did: int, request: Request, user: Usuario, db: Banco):
+async def iniciar(did: int, request: Request, user: Usuario, db: Banco, body: IniciarIn | None = None):
     d = await _disparo(db, did, user, gestor=True)
     await _numero_ligado(db, d, user)
+    quando = body.agendar_para if body else None
     try:
-        await disparo_lote.iniciar(db, did)
+        await disparo_lote.iniciar(db, did, agendar_para=quando)
     except disparo_lote.ErroDoDisparo as e:
         raise _erro(e) from e
-    request.state.atividade = {"alvo": f"disparo #{did} · {d.nome} · {d.total} contatos"[:255]}
+    if quando and quando.tzinfo is not None:
+        from zoneinfo import ZoneInfo
+
+        quando = quando.astimezone(ZoneInfo("America/Sao_Paulo"))  # o registro de atividade é lido em Brasília
+    agenda = f" · agendado {quando:%d/%m %H:%M}" if quando else ""
+    request.state.atividade = {"alvo": f"disparo #{did} · {d.nome} · {d.total} contatos{agenda}"[:255]}
     return await _detalhe(db, did)
 
 
