@@ -10,7 +10,8 @@ enviar o link»).
 
 Resposta que é SÓ a oferta (a família manda «ok» / «obrigada» e a IA devolve só «se precisar…»): cortar
 deixaria a mensagem vazia. O CCDA mandou seguir a regra 39 — «nunca diga que está à disposição, incentive a
-conversa» —, então quem chama gera a resposta DE NOVO uma vez com `INSTRUCAO_REESCRITA` (sem ferramentas).
+conversa» —, então `aplicar` mostra ao modelo a resposta que não pode sair e pede outra (`CORRECAO`, uma vez,
+sem ferramentas). Se insistir na oferta: família que agradeceu recebe «De nada!»; senão fica a original.
 
 Liga por agente: `ta_runtime_param` (escopo='agent', escopo_id=<id do agente>, key='cortar_fecho_de_ajuda',
 value='1'). Sem a linha = desligado = o comportamento de antes. Lido a cada resposta; nunca levanta.
@@ -27,13 +28,6 @@ logger = logging.getLogger(__name__)
 
 PARAM_KEY = "cortar_fecho_de_ajuda"
 MAX_FRASES = 2
-INSTRUCAO_REESCRITA = (
-    "\n\n# Reescreva a sua resposta\n"
-    "A sua resposta foi só uma oferta genérica de ajuda («se precisar de mais informações, estou aqui para "
-    "ajudar», «estou à disposição»), e isso não pode sair: nunca diga que está à disposição, incentive a conversa. "
-    "Responda de novo à última mensagem do cliente em uma ou duas frases curtas, incentivando a conversa com uma "
-    "pergunta ligada ao que vocês estavam falando. Não ofereça ajuda genérica."
-)
 
 # fronteira de frase: pontuação final seguida de espaço, ou quebra de linha
 _FRONTEIRA = re.compile(r"(?<=[.!?…])[ \t]+|\n+")
@@ -66,6 +60,31 @@ def eh_oferta_generica(frase: str) -> bool:
     if _ESTOU_AQUI.match(f) or _CONTE_COMIGO.match(f):
         return True
     return bool(_SE_OFERTA.match(f) and _ASSUNTO.search(f) and _CONTATO.search(f))
+
+
+_AGRADECEU = re.compile(r"(?i)\b(obrigad|brigad|valeu|agrade[çc])")
+CORRECAO = (
+    "(Instrução interna do sistema, não é mensagem do cliente.) A sua última resposta foi só uma oferta genérica "
+    "de ajuda, e ela não pode ser enviada: nunca diga que está à disposição nem «se precisar de mais informações», "
+    "incentive a conversa. Escreva a resposta que vai para o cliente no lugar dela, em uma ou duas frases curtas, "
+    "respondendo à última mensagem dele. Só o texto da resposta."
+)
+
+
+def historico_da_correcao(history: list[dict] | None, mensagem_do_cliente: str, resposta: str) -> list[dict]:
+    """Histórico para a reescrita: a conversa + a mensagem do cliente + a resposta que não pode sair."""
+    return [
+        *(history or []),
+        {"role": "user", "content": mensagem_do_cliente or ""},
+        {"role": "assistant", "content": resposta or ""},
+    ]
+
+
+def ultimo_recurso(mensagem_do_cliente: str | None, resposta: str) -> str:
+    """A reescrita também veio só oferta: se a família agradeceu, «De nada!»; senão fica a resposta. Pura."""
+    if _AGRADECEU.search(mensagem_do_cliente or ""):
+        return "De nada!"
+    return resposta
 
 
 def so_oferta(texto: str | None) -> bool:
@@ -102,6 +121,28 @@ def cortar(texto: str | None) -> str | None:
         resto = candidato
         cortou = True
     return resto if cortou else texto
+
+
+async def aplicar(texto, *, ferramentas_usadas, mensagem_do_cliente, history, gerar):
+    """Resposta final + a chamada extra (para somar tokens), ou None.
+
+    `gerar(user_content, history)` chama o motor SEM ferramentas. Só reescreve quando a resposta é inteira
+    a oferta e o turno não usou ferramenta (nada roda duas vezes). Nunca levanta."""
+    extra = None
+    if so_oferta(texto) and not ferramentas_usadas:
+        try:
+            from services.tier_engine import eh_silencio
+
+            extra = await gerar(CORRECAO, historico_da_correcao(history, mensagem_do_cliente, texto))
+            novo = getattr(extra, "text", None)
+            if novo and not eh_silencio(novo) and not so_oferta(novo):
+                texto = novo
+            else:
+                texto = ultimo_recurso(mensagem_do_cliente, texto)
+        except Exception:  # noqa: BLE001 — a resposta sai do mesmo jeito
+            logger.warning("fecho_de_ajuda: reescrita falhou", exc_info=True)
+            texto = ultimo_recurso(mensagem_do_cliente, texto)
+    return cortar(texto), extra
 
 
 async def ligado(db, agent_id: int | None) -> bool:

@@ -1648,34 +1648,32 @@ async def handle_inbound_message(
 
     _texto_resposta = reply.text
     if await fecho_de_ajuda.ligado(db, agent.id):
-        # Resposta que é SÓ a oferta: cortar deixaria vazio. Regra 39 do CCDA = incentivar a conversa → gera de
-        # novo UMA vez, sem ferramentas (nada de agendar/consultar duas vezes). Falhou ou repetiu = fica a original.
-        if fecho_de_ajuda.so_oferta(reply.text) and not reply.tool_calls_made:
-            try:
-                _novo = await tier_engine.send_message(
-                    tenant_id=agent.tenant_id,
-                    user_content=text_content,
-                    db=db,
-                    session_id=f"conv-{conv.id}",
-                    system_override=(system_prompt or "") + fecho_de_ajuda.INSTRUCAO_REESCRITA,
-                    attachments=attachments or [],
-                    agent_id=agent.id,
-                    history=history,
-                    use_cache=False,
-                    customer_phone=_phone or None,
-                    tools=[],
-                )
-                if (
-                    _novo.text
-                    and not tier_engine.eh_silencio(_novo.text)
-                    and not fecho_de_ajuda.so_oferta(_novo.text)
-                ):
-                    _texto_resposta = _novo.text
-                reply.tokens_in = (reply.tokens_in or 0) + (_novo.tokens_in or 0)
-                reply.tokens_out = (reply.tokens_out or 0) + (_novo.tokens_out or 0)
-            except Exception:  # noqa: BLE001 — a resposta original sai do mesmo jeito
-                logger.warning("fecho_de_ajuda: reescrita falhou agent=%s conv=%s", agent.id, conv.id, exc_info=True)
-        _texto_resposta = fecho_de_ajuda.cortar(_texto_resposta)
+        # Resposta que é SÓ a oferta: cortar deixaria vazio. Regra 39 do CCDA = incentivar a conversa → o modelo
+        # reescreve UMA vez, sem ferramentas (nada de agendar/consultar duas vezes).
+        async def _gerar_sem_ferramentas(conteudo, hist):
+            return await tier_engine.send_message(
+                tenant_id=agent.tenant_id,
+                user_content=conteudo,
+                db=db,
+                session_id=f"conv-{conv.id}",
+                system_override=system_prompt,
+                agent_id=agent.id,
+                history=hist,
+                use_cache=False,
+                customer_phone=_phone or None,
+                tools=[],
+            )
+
+        _texto_resposta, _extra = await fecho_de_ajuda.aplicar(
+            reply.text,
+            ferramentas_usadas=reply.tool_calls_made,
+            mensagem_do_cliente=text_content,
+            history=history,
+            gerar=_gerar_sem_ferramentas,
+        )
+        if _extra is not None:  # a reescrita também custa: soma no custo do turno
+            reply.tokens_in = (reply.tokens_in or 0) + (_extra.tokens_in or 0)
+            reply.tokens_out = (reply.tokens_out or 0) + (_extra.tokens_out or 0)
 
     # Calcula custo real via TaLlmProvider lookup
     from services import cost_calculator

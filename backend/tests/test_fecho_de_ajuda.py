@@ -64,3 +64,42 @@ def test_so_oferta_separa_resposta_inteira_de_fecho():
     assert not f.so_oferta("O horário é das 13h às 17h50. Ficou tudo claro?")
     assert not f.so_oferta("")
     assert not f.so_oferta(None)
+
+
+def test_aplicar_reescreve_so_quando_a_resposta_inteira_e_a_oferta():
+    from types import SimpleNamespace
+
+    oferta = "Se precisar de mais alguma informação ou tiver dúvidas, estou aqui para ajudar!"
+    chamadas = []
+
+    def gerador(resposta=None, erro=False):
+        async def gerar(conteudo, hist):
+            chamadas.append((conteudo, hist))
+            if erro:
+                raise RuntimeError("motor fora")
+            return SimpleNamespace(text=resposta, tokens_in=10, tokens_out=5)
+
+        return gerar
+
+    def rodar(texto, msg, gerar, ferramentas=None):
+        return asyncio.run(
+            f.aplicar(texto, ferramentas_usadas=ferramentas, mensagem_do_cliente=msg, history=[], gerar=gerar)
+        )
+
+    # reescrita boa: troca, e o modelo viu a resposta que não podia sair
+    texto, extra = rodar(oferta, "Entendi", gerador("Que bom! Qual período vocês estão pensando?"))
+    assert texto == "Que bom! Qual período vocês estão pensando?" and extra.tokens_in == 10
+    assert chamadas[-1][0] == f.CORRECAO and chamadas[-1][1][-1] == {"role": "assistant", "content": oferta}
+    # reescrita insistiu na oferta: família agradeceu → «De nada!»; não agradeceu → fica a original
+    assert rodar(oferta, "Entendi, obrigado", gerador(oferta))[0] == "De nada!"
+    assert rodar(oferta, "Ok", gerador(oferta))[0] == oferta
+    # motor falhou: mesma regra
+    assert rodar(oferta, "Valeu!", gerador(erro=True))[0] == "De nada!"
+    # turno usou ferramenta: não chama de novo
+    n = len(chamadas)
+    assert rodar(oferta, "ok", gerador("x"), ferramentas=[{"name": "agenda"}])[0] == oferta and len(chamadas) == n
+    # resposta normal com fecho: só corta, sem chamar o motor
+    assert (
+        rodar("De nada! Se precisar de mais informações, é só me chamar.", "obrigada", gerador("x"))[0] == ("De nada!")
+        and len(chamadas) == n
+    )
