@@ -566,7 +566,25 @@ async def agent_playground(
     from services import fecho_de_ajuda
 
     texto = reply.text
-    if await fecho_de_ajuda.ligado(db, agent.id):  # mesmo corte da produção (15/11/2026, CCDA)
+    if await fecho_de_ajuda.ligado(db, agent.id):  # mesmo corte e mesma reescrita da produção (15/11/2026, CCDA)
+        if fecho_de_ajuda.so_oferta(texto) and not reply.tool_calls_made:
+            try:
+                novo = await tier_engine.send_message(
+                    tenant_id,
+                    msg,
+                    db,
+                    system_override=(system or "") + fecho_de_ajuda.INSTRUCAO_REESCRITA,
+                    agent_id=agent.id,
+                    history=history or None,
+                    use_cache=False,
+                    session_id=f"playground-{agent.id}",
+                    audiencia="equipe",
+                    tools=[],
+                )
+                if novo.text and not tier_engine.eh_silencio(novo.text) and not fecho_de_ajuda.so_oferta(novo.text):
+                    texto = novo.text
+            except Exception:  # noqa: BLE001 — no teste, fica a resposta original
+                pass
         texto = fecho_de_ajuda.cortar(texto)
     limpo = agent_runtime._sem_travessao(agent_runtime._sanitize_reply(texto))
     if kind in ("whatsapp", "whatsapp_cloud"):

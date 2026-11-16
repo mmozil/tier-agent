@@ -5,8 +5,12 @@ Por quê no código e não só na persona: as regras 34 e 39 do agente 26 já pr
 pondo (31% das respostas numa semana; 6 de 24 no ensaio depois de corrigir a regra que mandava o contrário).
 
 O que é cortado: só frases do FIM, no máximo duas, que sejam inteiras uma oferta genérica — sem pergunta, sem
-link, sem número. O que fica: pergunta que faz a conversa andar («Ficou claro?»), oferta concreta («posso te
-enviar o link»), e a resposta que for SÓ a oferta (não sai mensagem vazia).
+link, sem número. O que fica: pergunta que faz a conversa andar («Ficou claro?») e oferta concreta («posso te
+enviar o link»).
+
+Resposta que é SÓ a oferta (a família manda «ok» / «obrigada» e a IA devolve só «se precisar…»): cortar
+deixaria a mensagem vazia. O CCDA mandou seguir a regra 39 — «nunca diga que está à disposição, incentive a
+conversa» —, então quem chama gera a resposta DE NOVO uma vez com `INSTRUCAO_REESCRITA` (sem ferramentas).
 
 Liga por agente: `ta_runtime_param` (escopo='agent', escopo_id=<id do agente>, key='cortar_fecho_de_ajuda',
 value='1'). Sem a linha = desligado = o comportamento de antes. Lido a cada resposta; nunca levanta.
@@ -23,6 +27,13 @@ logger = logging.getLogger(__name__)
 
 PARAM_KEY = "cortar_fecho_de_ajuda"
 MAX_FRASES = 2
+INSTRUCAO_REESCRITA = (
+    "\n\n# Reescreva a sua resposta\n"
+    "A sua resposta foi só uma oferta genérica de ajuda («se precisar de mais informações, estou aqui para "
+    "ajudar», «estou à disposição»), e isso não pode sair: nunca diga que está à disposição, incentive a conversa. "
+    "Responda de novo à última mensagem do cliente em uma ou duas frases curtas, incentivando a conversa com uma "
+    "pergunta ligada ao que vocês estavam falando. Não ofereça ajuda genérica."
+)
 
 # fronteira de frase: pontuação final seguida de espaço, ou quebra de linha
 _FRONTEIRA = re.compile(r"(?<=[.!?…])[ \t]+|\n+")
@@ -55,6 +66,13 @@ def eh_oferta_generica(frase: str) -> bool:
     if _ESTOU_AQUI.match(f) or _CONTE_COMIGO.match(f):
         return True
     return bool(_SE_OFERTA.match(f) and _ASSUNTO.search(f) and _CONTATO.search(f))
+
+
+def so_oferta(texto: str | None) -> bool:
+    """A resposta INTEIRA é oferta genérica (toda frase com letra é uma)? Pura."""
+    t = (texto or "").strip()
+    frases = [p for p in _FRONTEIRA.split(t) if _LETRA.search(p)]
+    return bool(frases) and all(eh_oferta_generica(p) for p in frases)
 
 
 def _inicio_da_ultima_frase(texto: str) -> int | None:

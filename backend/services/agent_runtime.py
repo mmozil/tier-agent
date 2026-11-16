@@ -1642,6 +1642,41 @@ async def handle_inbound_message(
         )
         return {"status": "silencio", "agent_id": agent.id}
 
+    # 15/11/2026 (CCDA): fecho genérico de ajuda sai do fim da resposta, no envio E no registro — senão o
+    # painel mostraria a frase que a família não recebeu. Só com o parâmetro do agente; sem ele, igual a antes.
+    from services import fecho_de_ajuda
+
+    _texto_resposta = reply.text
+    if await fecho_de_ajuda.ligado(db, agent.id):
+        # Resposta que é SÓ a oferta: cortar deixaria vazio. Regra 39 do CCDA = incentivar a conversa → gera de
+        # novo UMA vez, sem ferramentas (nada de agendar/consultar duas vezes). Falhou ou repetiu = fica a original.
+        if fecho_de_ajuda.so_oferta(reply.text) and not reply.tool_calls_made:
+            try:
+                _novo = await tier_engine.send_message(
+                    tenant_id=agent.tenant_id,
+                    user_content=text_content,
+                    db=db,
+                    session_id=f"conv-{conv.id}",
+                    system_override=(system_prompt or "") + fecho_de_ajuda.INSTRUCAO_REESCRITA,
+                    attachments=attachments or [],
+                    agent_id=agent.id,
+                    history=history,
+                    use_cache=False,
+                    customer_phone=_phone or None,
+                    tools=[],
+                )
+                if (
+                    _novo.text
+                    and not tier_engine.eh_silencio(_novo.text)
+                    and not fecho_de_ajuda.so_oferta(_novo.text)
+                ):
+                    _texto_resposta = _novo.text
+                reply.tokens_in = (reply.tokens_in or 0) + (_novo.tokens_in or 0)
+                reply.tokens_out = (reply.tokens_out or 0) + (_novo.tokens_out or 0)
+            except Exception:  # noqa: BLE001 — a resposta original sai do mesmo jeito
+                logger.warning("fecho_de_ajuda: reescrita falhou agent=%s conv=%s", agent.id, conv.id, exc_info=True)
+        _texto_resposta = fecho_de_ajuda.cortar(_texto_resposta)
+
     # Calcula custo real via TaLlmProvider lookup
     from services import cost_calculator
 
@@ -1658,14 +1693,6 @@ async def handle_inbound_message(
         {"name": c.get("name"), "args": json.dumps(c.get("args"), ensure_ascii=False)[:300]}
         for c in (reply.tool_calls_made or [])
     ] or None
-
-    # 15/11/2026 (CCDA): fecho genérico de ajuda sai do fim da resposta, no envio E no registro — senão o
-    # painel mostraria a frase que a família não recebeu. Só com o parâmetro do agente; sem ele, igual a antes.
-    from services import fecho_de_ajuda
-
-    _texto_resposta = reply.text
-    if await fecho_de_ajuda.ligado(db, agent.id):
-        _texto_resposta = fecho_de_ajuda.cortar(reply.text)
 
     # Log resposta do assistant
     await log_message(

@@ -55,3 +55,12 @@ def test_desligado_sem_parametro_e_em_erro():
     assert asyncio.run(f.ligado(_Db("0"), 26)) is False
     assert asyncio.run(f.ligado(_Db(erro=True), 26)) is False
     assert asyncio.run(f.ligado(_Db("1"), None)) is False
+
+
+def test_so_oferta_separa_resposta_inteira_de_fecho():
+    assert f.so_oferta("Se precisar de mais informações ou quiser agendar uma visita, estou aqui para ajudar.")
+    assert f.so_oferta("Se tiver mais alguma dúvida, é só me chamar. Estou aqui para ajudar! 😊")
+    assert not f.so_oferta("De nada! Se precisar de mais informações, é só me chamar.")
+    assert not f.so_oferta("O horário é das 13h às 17h50. Ficou tudo claro?")
+    assert not f.so_oferta("")
+    assert not f.so_oferta(None)
