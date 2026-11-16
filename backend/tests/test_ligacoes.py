@@ -201,3 +201,54 @@ def test_telefone_com_traco_longo_sai_com_hifen():
     assert _sem_travessao("secretaria: (11) 4043\u20130461. Se preferir") == "secretaria: (11) 4043-0461. Se preferir"
     assert _sem_travessao("das 8 \u2013 17h") == "das 8-17h"
     assert _sem_travessao("Visitas \u2014 de segunda a sexta") == "Visitas, de segunda a sexta"
+
+
+def test_desligar_manda_ao_crm_na_hora(monkeypatch):
+    """16/11/2026 (M7, ligação 16): o navegador sobe a gravação JUNTO com o «desligar». A tarefa da gravação
+    rodava com a ligação ainda em curso e desistia — o CRM só via a ligação 4 min depois. O «desligar» agora
+    agenda o envio, que segue na hora se a gravação já está guardada."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from fastapi import BackgroundTasks
+
+    from routes import ligacoes as rota
+
+    async def _da_conta(db, ligacao_id, tenant_id):
+        return SimpleNamespace(id=ligacao_id, call_id="wacid.x", connector_id=57, estado="em_curso")
+
+    async def _na_meta(db, connector_id, corpo):
+        return {"success": True}
+
+    class _Db:
+        def __init__(self):
+            self.sqls = []
+
+        async def execute(self, sql, params=None):
+            self.sqls.append(str(sql))
+
+        async def commit(self):
+            pass
+
+    monkeypatch.setattr(rota, "_da_conta", _da_conta)
+    monkeypatch.setattr(ligacoes, "acao_na_meta", _na_meta)
+    tarefas = BackgroundTasks()
+    db = _Db()
+    loop = asyncio.new_event_loop()
+    try:
+        r = loop.run_until_complete(rota.encerrar(16, tarefas, SimpleNamespace(tenant_id=18), db))
+    finally:
+        loop.close()
+    assert r == {"ok": True}
+    assert any("estado = 'encerrada'" in s for s in db.sqls)
+    agendadas = [(t.func, t.args) for t in tarefas.tasks]
+    assert agendadas == [(ligacoes.mandar_para_o_crm, (16,))]
+
+
+def test_envio_ao_crm_trava_a_linha():
+    """Dois processos podem mandar a mesma ligação juntos: a leitura trava a linha (FOR UPDATE OF l, porque o
+    LEFT JOIN no membro não aceita trava) para o segundo ver o `crm_ligacao_id` do primeiro e desistir."""
+    import inspect
+
+    fonte = inspect.getsource(ligacoes.mandar_para_o_crm)
+    assert "FOR UPDATE OF l" in fonte

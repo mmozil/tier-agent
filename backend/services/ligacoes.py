@@ -577,6 +577,10 @@ async def mandar_para_o_crm(ligacao_id: int, sem_audio_ok: bool = False, esperar
                         "SELECT l.id, l.tenant_id, l.contato, l.atendida_por, l.duracao_s, l.gravacao_url, l.direcao,"
                         " l.crm_ligacao_id, l.crm_historico_em, l.estado, l.criada_em, m.nome AS membro"
                         " FROM ta_ligacao l LEFT JOIN ta_member m ON m.id = l.member_id WHERE l.id = :i"
+                        # 16/11/2026 — três caminhos podem mandar a mesma ligação quase juntos (a gravação que
+                        # sobe, o «desligar» e o webhook da Meta), em DOIS processos. A trava da linha faz o
+                        # segundo esperar o primeiro gravar o `crm_ligacao_id` — e então desistir.
+                        " FOR UPDATE OF l"
                     ),
                     {"i": ligacao_id},
                 )
@@ -606,6 +610,7 @@ async def mandar_para_o_crm(ligacao_id: int, sem_audio_ok: bool = False, esperar
                 {"c": int(crm_id) if crm_id else None, "i": ligacao_id},
             )
             await db.commit()
+            logger.info("ligação %s → CRM id=%s (gravação=%s)", ligacao_id, crm_id, "sim" if audio else "não")
     except Exception:  # noqa: BLE001
         logger.exception("ligação %s: envio ao CRM falhou", ligacao_id)
 

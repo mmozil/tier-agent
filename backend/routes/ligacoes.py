@@ -295,7 +295,12 @@ async def recusar(ligacao_id: int, user: CurrentUser = Depends(get_current_user)
 
 
 @router.post("/{ligacao_id}/encerrar")
-async def encerrar(ligacao_id: int, user: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def encerrar(
+    ligacao_id: int,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Desligar. Sempre avisa a Meta (é o que fecha a conta da ligação certo), mesmo que a mídia já tenha caído."""
     lig = await _da_conta(db, ligacao_id, _tenant(user))
     if lig.estado not in ligacoes.ESTADOS_ATIVOS:
@@ -318,6 +323,10 @@ async def encerrar(ligacao_id: int, user: CurrentUser = Depends(get_current_user
         {"i": lig.id},
     )
     await db.commit()
+    # 16/11/2026 (M7, ligação 16) — o navegador sobe a gravação JUNTO com este «desligar». A tarefa da gravação
+    # rodava com a ligação ainda «em curso» e desistia; o CRM só recebia 4 min depois, pela reserva do webhook.
+    # Agora, encerrada a ligação, ela segue na hora se a gravação já chegou (sem gravação, não faz nada).
+    background_tasks.add_task(ligacoes.mandar_para_o_crm, lig.id)
     return {"ok": True}
 
 
