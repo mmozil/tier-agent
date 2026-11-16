@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,6 +70,9 @@ class ConversationOut(BaseModel):
     telefone_oculto: str | None = None
     # 13/11/2026 (CCDA): mensagens do contato que ninguém da equipe viu ainda (ver `visto_equipe_em`).
     nao_lidas: int = 0
+    # 16/11/2026 (CCDA): desde quando a família espera resposta — falou por último e ninguém
+    # respondeu depois (nem a IA, nem a equipe). None = não está esperando. Ver `_aguardando_desde`.
+    aguardando_desde: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -237,6 +240,7 @@ async def list_conversations(
         dono_por_conector = {}
 
     nao_lidas = await _nao_lidas(db, [c.id for c in convs])
+    aguardando = await _aguardando_desde(db, [c.id for c in convs])
 
     out: list[ConversationOut] = []
     for c in convs:
@@ -284,6 +288,7 @@ async def list_conversations(
                 responsavel_member_id=resp_id,
                 responsavel_origem=resp_origem,
                 nao_lidas=nao_lidas.get(c.id, 0),
+                aguardando_desde=aguardando.get(c.id),
             )
         )
     nomes = await nome_crm.nomes_do_crm(user.tenant_id, [o.external_id for o in out])
@@ -317,6 +322,40 @@ async def _nao_lidas(db: AsyncSession, ids: list[int]) -> dict[int, int]:
         return {int(cid): int(n) for cid, n in rows}
     except Exception:  # noqa: BLE001
         logger.warning("contagem de não lidas falhou", exc_info=True)
+        await db.rollback()
+        return {}
+
+
+# Quem «responde» à família: a IA (`assistant`) e a equipe (`agent`, inclusive modelo e disparo).
+# Nota interna (`note`) não é resposta — a família não vê.
+PAPEIS_QUE_RESPONDEM = ("assistant", "agent")
+
+_SQL_AGUARDANDO = text(
+    "WITH nosso AS ("
+    "  SELECT conversation_id, MAX(created_at) AS em FROM ta_message_log"
+    "   WHERE conversation_id = ANY(:ids) AND role = ANY(:papeis) GROUP BY conversation_id"
+    ") "
+    "SELECT l.conversation_id, MIN(l.created_at) FROM ta_message_log l"
+    "  LEFT JOIN nosso n ON n.conversation_id = l.conversation_id"
+    " WHERE l.conversation_id = ANY(:ids) AND l.role = 'user' AND (n.em IS NULL OR l.created_at > n.em)"
+    " GROUP BY l.conversation_id"
+)
+
+
+async def _aguardando_desde(db: AsyncSession, ids: list[int]) -> dict[int, datetime]:
+    """Desde quando a família espera resposta (16/11/2026, CCDA): a PRIMEIRA mensagem dela depois da
+    nossa última resposta. É o `waiting_since` do Chatwoot, de onde o CCDA veio — lá, resposta do
+    robô também tira a conversa da espera, e nota interna não tira. Uma consulta para a página
+    inteira; nunca derruba a lista: com erro, ninguém aparece esperando."""
+    if not ids:
+        return {}
+    try:
+        rows = (
+            await db.execute(_SQL_AGUARDANDO, {"ids": list(ids), "papeis": list(PAPEIS_QUE_RESPONDEM)})
+        ).all()
+        return {int(cid): desde for cid, desde in rows if desde}
+    except Exception:  # noqa: BLE001
+        logger.warning("contagem de «aguardando resposta» falhou", exc_info=True)
         await db.rollback()
         return {}
 

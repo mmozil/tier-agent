@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
   Check, CheckCheck, CircleAlert, MessageSquare, MessageSquareDot, MessageSquarePlus, RefreshCw, X, User, Hand, Bot, CheckCircle2, Trash2, Inbox, ArrowUp,
-  AtSign, Users, Clock, Tag, ChevronDown, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Search, Zap,
+  AtSign, Users, Clock, Hourglass, Tag, ChevronDown, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Search, Zap,
   Paperclip, ExternalLink, ArrowUpRight, Copy, GraduationCap, UserPlus, Smartphone, Mic, FileText,
   CalendarDays, Columns2, Layers, Phone,
 } from "lucide-react";
@@ -155,6 +155,8 @@ interface Conversation {
   last_preview: string | null;
   // 13/11/2026 (CCDA): mensagens do contato que ninguém da equipe viu ainda
   nao_lidas?: number;
+  // 16/11/2026 (CCDA): desde quando a família espera resposta (falou por último, ninguém respondeu)
+  aguardando_desde?: string | null;
   tags: string[];
   assigned_to: string | null;
   assigned_member_id: number | null;
@@ -248,10 +250,16 @@ function TiqueDeEntrega({ estado, erro }: { estado?: Message["entrega"]; erro?: 
   );
 }
 
+/** 16/11/2026 (CCDA): a família falou por último e ninguém respondeu — e a conversa não está resolvida. */
+function aguardando(c: { aguardando_desde?: string | null; status: string }): boolean {
+  return !!c.aguardando_desde && c.status !== "closed";
+}
+
 type NavFilter =
   | { type: "all" }
   | { type: "unattended" }
   | { type: "unread" }
+  | { type: "waiting" }
   | { type: "mentions" }
   | { type: "participants" }
   | { type: "channel"; value: string }
@@ -1315,6 +1323,9 @@ export default function ConversasPage() {
     if (navFilter.type === "unattended" && (c.status === "closed" || c.assigned_member_id)) return false;
     // a conversa aberta fica na lista mesmo depois de vista, para não sumir debaixo de quem está lendo
     if (navFilter.type === "unread" && !(c.nao_lidas || 0) && c.id !== openId) return false;
+    // 16/11/2026 (CCDA) — «Aguardando resposta»: a família falou por último e ninguém respondeu (nem a
+    // IA, nem a equipe). É o que pede ação; a aberta fica na lista, como em «Não lidas».
+    if (navFilter.type === "waiting" && !(aguardando(c) || c.id === openId)) return false;
     // menções/participantes já vêm filtradas do backend (view=…); aqui só a busca
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -1327,10 +1338,12 @@ export default function ConversasPage() {
 
   const unattendedCount = convs.filter((c) => c.status !== "closed" && !c.assigned_member_id).length;
   const naoLidasCount = convs.filter((c) => (c.nao_lidas || 0) > 0 && c.id !== openId).length;
+  const aguardandoCount = convs.filter(aguardando).length;
   const navTitle =
     navFilter.type === "all" ? "Todas as conversas"
     : navFilter.type === "unattended" ? "Não atendidas"
     : navFilter.type === "unread" ? "Não lidas"
+    : navFilter.type === "waiting" ? "Aguardando resposta"
     : navFilter.type === "mentions" ? "Menções"
     : navFilter.type === "participants" ? "Participantes"
     : navFilter.type === "channel" ? channelLabel(navFilter.value === "outro" ? null : navFilter.value)
@@ -1429,6 +1442,7 @@ export default function ConversasPage() {
     <div className="space-y-0.5">
       <SubNavItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
       <SubNavItem icon={MessageSquareDot} label="Não lidas" count={naoLidasCount} active={navFilter.type === "unread"} onClick={() => selectNav({ type: "unread" })} />
+      <SubNavItem icon={Hourglass} label="Aguardando resposta" count={aguardandoCount} active={navFilter.type === "waiting"} onClick={() => selectNav({ type: "waiting" })} />
       <SubNavItem icon={Clock} label="Não atendidas" count={unattendedCount} active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
       <SubNavItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
       <SubNavItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => selectNav({ type: "participants" })} />
@@ -1510,6 +1524,7 @@ export default function ConversasPage() {
     <div className="flex flex-col items-center gap-0.5">
       <RailItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
       <RailItem icon={MessageSquareDot} label="Não lidas" count={naoLidasCount} destaque active={navFilter.type === "unread"} onClick={() => selectNav({ type: "unread" })} />
+      <RailItem icon={Hourglass} label="Aguardando resposta" count={aguardandoCount} destaque active={navFilter.type === "waiting"} onClick={() => selectNav({ type: "waiting" })} />
       <RailItem icon={Clock} label="Não atendidas" count={unattendedCount} destaque active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
       <RailItem icon={AtSign} label="Menções" active={navFilter.type === "mentions"} onClick={() => selectNav({ type: "mentions" })} />
       <RailItem icon={Users} label="Participantes" active={navFilter.type === "participants"} onClick={() => selectNav({ type: "participants" })} />
@@ -1765,6 +1780,8 @@ export default function ConversasPage() {
                 <EmptyHint icon={AtSign} text="Nenhuma menção — quando alguém te marcar numa nota interna (@você), a conversa aparece aqui." />
               ) : navFilter.type === "participants" ? (
                 <EmptyHint icon={Users} text="Você ainda não participa de nenhuma conversa (atribuída a você ou onde foi marcado)." />
+              ) : navFilter.type === "waiting" ? (
+                <EmptyHint icon={Hourglass} text="Nenhuma família esperando resposta — toda mensagem que chegou já foi respondida, pela IA ou pela equipe." />
               ) : navFilter.type === "tag" ? (
                 <EmptyHint icon={Tag} text={`Nenhuma conversa com #${navFilter.value}.`} />
               ) : (
