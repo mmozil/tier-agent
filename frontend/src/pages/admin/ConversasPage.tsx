@@ -236,7 +236,7 @@ function TiqueDeEntrega({ estado, erro }: { estado?: Message["entrega"]; erro?: 
   if (estado === "falhou") {
     return (
       <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400" title={erro || "A Meta não entregou"}>
-        <CircleAlert className="w-3 h-3" /> Não entregue{erro ? ` · ${erro}` : ""}
+        <CircleAlert className="w-3 h-3" /> Não entregue
       </span>
     );
   }
@@ -825,8 +825,31 @@ export default function ConversasPage() {
   const viewRef = useRef<"mentions" | "participating" | null>(null);
   const etiquetaRef = useRef<string | null>(null);
 
+  // 16/11/2026 — a conversa descia sozinha até o fim enquanto a pessoa lia lá em cima: a leitura de
+  // 10 s (tiques de entregue/lida, capinha do link) troca a lista inteira, e TODA troca rolava para o
+  // fim — reação e edição também. Agora só rola: ao abrir a conversa; e quando chega mensagem NOVA e a
+  // pessoa já estava no fim (ou foi ela quem mandou). Lendo lá em cima, a tela fica onde está.
+  const rolarAoFim = useRef(true);
+  const noFim = useRef(true);
+  const tamanhoAnterior = useRef(0);
   useEffect(() => {
-    msgsEndRef.current?.scrollIntoView({ block: "end" });
+    const fim = msgsEndRef.current;
+    const cresceu = msgs.length > tamanhoAnterior.current;
+    tamanhoAnterior.current = msgs.length;
+    if (rolarAoFim.current) {
+      if (msgs.length) {
+        rolarAoFim.current = false;
+        fim?.scrollIntoView({ block: "end" });
+        noFim.current = true;
+      }
+      return;
+    }
+    if (!cresceu || !fim) return;
+    const minha = msgs[msgs.length - 1]?.role === "agent";
+    if (noFim.current || minha) {
+      fim.scrollIntoView({ block: "end" });
+      noFim.current = true;
+    }
   }, [msgs]);
 
   useEffect(() => {
@@ -943,6 +966,7 @@ export default function ConversasPage() {
       const { data } = await api.get<{ conversation?: Conversation; messages: Message[] }>(
         `/conversations/${c.id}`,
       );
+      rolarAoFim.current = true; // abriu a conversa: começa na mensagem mais recente
       setMsgs(data.messages || []);
       // Reflete o marcador persistido "já enviado ao CRM" ao reabrir a conversa.
       if (data.conversation) {
@@ -2027,7 +2051,13 @@ export default function ConversasPage() {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto sidebar-scroll px-5 py-5 space-y-3 min-h-0">
+            <div
+              className="flex-1 overflow-y-auto sidebar-scroll px-5 py-5 space-y-3 min-h-0"
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                noFim.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+              }}
+            >
               {loadingMsgs && (
                 <div className="space-y-3">
                   <div className="flex justify-start"><SkeletonBar className="h-9 w-2/5 rounded-2xl" /></div>
@@ -2163,6 +2193,13 @@ export default function ConversasPage() {
                         </>
                       )}
                     </span>
+                    {/* 16/11/2026 (CCDA) — o motivo por extenso, debaixo do balão: no rodapé de 10 px ele
+                        sumia, e «por que não chegou» é o que a equipe precisa ler para agir. */}
+                    {!isUser && m.entrega === "falhou" && (
+                      <p className="mt-1 px-1 max-w-[440px] text-[11.5px] leading-snug text-red-700 dark:text-red-400">
+                        <b className="font-medium">Por que não chegou:</b> {m.entrega_erro || "a Meta não informou o motivo"}
+                      </p>
+                    )}
                   </div>
                 );
               })}

@@ -129,7 +129,28 @@ async def _detalhe(db: AsyncSession, did: int) -> dict:
         raise HTTPException(404, "Disparo não encontrado")
     c = (await disparo_lote.contagens(db, [did]))[did]
     info = (await _numeros(db, {d.connector_id})).get(d.connector_id, {})
-    return {**_saida(d, c, info, _agora()), "modelo_resumo": d.modelo_json, "variaveis": d.variaveis_json or []}
+    return {
+        **_saida(d, c, info, _agora()),
+        "modelo_resumo": d.modelo_json,
+        "variaveis": d.variaveis_json or [],
+        "motivos_falha": await _motivos_falha(db, did),
+    }
+
+
+async def _motivos_falha(db: AsyncSession, did: int) -> list[dict]:
+    """16/11/2026 (CCDA) — «por que não chegaram», agrupado: quantos por motivo da Meta, em português."""
+    from services.entrega_whatsapp import motivo as _motivo_meta
+
+    rows = (
+        await db.execute(
+            select(TaWaEnvioStatus.erro_codigo, func.min(TaWaEnvioStatus.erro), func.count())
+            .join(TaDisparoOficialEnvio, TaDisparoOficialEnvio.wamid == TaWaEnvioStatus.wamid)
+            .where(TaDisparoOficialEnvio.disparo_id == did, TaWaEnvioStatus.status == "failed")
+            .group_by(TaWaEnvioStatus.erro_codigo)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    return [{"codigo": cod, "motivo": _motivo_meta(cod, err), "total": int(n)} for cod, err, n in rows]
 
 
 def _erro(e: disparo_lote.ErroDoDisparo) -> HTTPException:
@@ -382,8 +403,11 @@ async def envios(
         sit = disparo_lote.situacao(e.status, meta)
         motivo = e.erro
         if e.status == disparo_lote.ENVIADO and sit == "falhou":
+            # 16/11/2026 — em português e com o que fazer (antes ia o texto cru da Meta, em inglês)
+            from services.entrega_whatsapp import motivo as _motivo_meta
+
             sufixo = f" (código {meta_codigo})" if meta_codigo else ""
-            motivo = f"{meta_erro or 'A Meta não entregou a mensagem'}{sufixo}"
+            motivo = f"{_motivo_meta(meta_codigo, meta_erro)}{sufixo}"
         elif sit not in ("falhou", "descadastrado", "sem_nome", "cancelado"):
             motivo = None
         out.append(

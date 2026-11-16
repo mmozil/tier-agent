@@ -23,12 +23,26 @@ from sqlalchemy import or_, select
 FOLGA = timedelta(minutes=2)
 ROTULO = {0: "enviada", 1: "enviada", 2: "entregue", 3: "lida", 9: "falhou"}
 
+# 16/11/2026 (CCDA): «deixar bem claro por que não foi entregue» — cada motivo diz o que aconteceu E o que
+# fazer. Os três primeiros são decisão da Meta sobre a PESSOA, não defeito do nosso número.
 MOTIVOS = {
-    131047: "passaram 24 h desde a última mensagem da pessoa — agora só vai modelo aprovado",
-    131049: "a Meta segurou a mensagem de marketing para não cansar a pessoa",
-    130472: "o número está num teste da Meta que não recebe marketing",
-    131026: "o número não recebe mensagens (sem WhatsApp, app antigo ou nos bloqueou)",
-    131050: "a pessoa pediu para não receber marketing",
+    131047: (
+        "passaram mais de 24 h desde a última mensagem da família: texto livre não sai mais — "
+        "use «Enviar modelo» (modelo aprovado) para retomar"
+    ),
+    131049: (
+        "a Meta segurou esta mensagem de MARKETING: a família já recebeu muitas mensagens de marketing de "
+        "empresas nos últimos dias. Não é defeito do número — tente de novo daqui a alguns dias ou ligue"
+    ),
+    130472: (
+        "o número da família está num grupo de teste da Meta que não recebe mensagens de MARKETING. "
+        "Pelo WhatsApp não há o que fazer — fale por ligação"
+    ),
+    131026: (
+        "o número não recebe mensagens: não tem WhatsApp, usa versão muito antiga do app ou bloqueou o "
+        "nosso número — confira o telefone ou ligue"
+    ),
+    131050: "a família pediu para não receber mensagens de marketing desta empresa",
     131051: "tipo de mensagem não aceito",
     131053: "o arquivo não pôde ser enviado",
     131056: "muitas mensagens seguidas para o mesmo número — espere um pouco",

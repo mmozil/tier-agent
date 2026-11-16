@@ -385,6 +385,26 @@ export default function DisparoDetalhePage() {
                   </span>
                 )}
               </div>
+              {/* 16/11/2026 (CCDA) — «por que não chegaram»: quantas por motivo, em português, com o que
+                  fazer. Antes só havia «Falhou» por contato e o texto cru da Meta em inglês. */}
+              {(d.motivos_falha?.length ?? 0) > 0 && (
+                <div className="mt-3 rounded-xl border border-red-200/70 dark:border-red-500/20 bg-red-50/50 dark:bg-red-500/[0.05] px-3.5 py-2.5">
+                  <p className="text-[12.5px] font-medium text-red-800 dark:text-red-300">
+                    Por que {inteiro(d.motivos_falha!.reduce((s, x) => s + x.total, 0))} não chegaram
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {d.motivos_falha!.map((x) => (
+                      <li key={String(x.codigo)} className="flex gap-2 text-[12px] leading-snug text-red-900/80 dark:text-red-200/80">
+                        <span className="tabular-nums font-medium shrink-0 w-7 text-right">{inteiro(x.total)}</span>
+                        <span>
+                          {x.motivo}
+                          {x.codigo ? <span className="text-red-900/45 dark:text-red-200/45"> · código {x.codigo}</span> : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         </Row>

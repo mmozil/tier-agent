@@ -71,6 +71,8 @@ export type Variavel = { fonte: "nome"; valor?: null } | { fonte: "fixo"; valor:
 export interface DisparoDetalhe extends Disparo {
   modelo_resumo: ModeloResumo | null;
   variaveis: Variavel[];
+  /** 16/11/2026 — «por que não chegaram», agrupado por motivo da Meta (em português). */
+  motivos_falha?: { codigo: number | null; motivo: string; total: number }[];
 }
 
 export interface Envio {
