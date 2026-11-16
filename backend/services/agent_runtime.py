@@ -736,7 +736,7 @@ async def log_message(
     memory_block: str | None = None,
     rag_block: str | None = None,
     member_id: int | None = None,
-) -> None:
+) -> int | None:
     from services import wa_chave
 
     chave = wa_chave.consumir(role)  # a chave do WhatsApp, quando o webhook a deixou (reação)
@@ -761,6 +761,10 @@ async def log_message(
         wa_from_me=bool(chave.get("from_me")) if chave else None,
     )
     db.add(log)
+    # 16/11/2026 — o id volta para quem chamou: a rajada (services/rajada.py) compara «a minha mensagem»
+    # com a última do cliente para saber se chegou outra depois.
+    await db.flush()
+    log_id = log.id
 
     # Atualiza usage daily (upsert)
     today = datetime.utcnow().strftime("%Y-%m-%d")
@@ -788,6 +792,7 @@ async def log_message(
             )
         )
     await db.commit()
+    return log_id
 
 
 async def load_history(db: AsyncSession, conversation_id: int, limit: int = 80) -> list[dict]:
@@ -1373,7 +1378,7 @@ async def handle_inbound_message(
 
     # Log mensagem do user (com mídia, se houver — pra aparecer em Anexos/inline)
     _att = anexos_para_log(attachments)
-    await log_message(
+    _minha_msg_id = await log_message(
         db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="user", tokens_in=0,
         content=text_content, attachments_json=_att or None,
     )
@@ -1470,6 +1475,22 @@ async def handle_inbound_message(
     except Exception:
         logger.exception("handoff/escalation check falhou agent=%s — segue fluxo normal", agent.id)
     _cron.marca("handoff")
+
+    # ─── Rajada (16/11/2026): o cliente mandou outra logo em seguida? A mais nova responde ───
+    # Duas mensagens seguidas («Bom dia» + «Reunião») rodavam a IA duas vezes em paralelo e o cliente
+    # recebia a saudação repetida. Fica DEPOIS do pedido de humano (que vale por mensagem) e ANTES do
+    # modelo. A mensagem que cede ainda vai para o CRM — é ela que traz a origem do anúncio.
+    from services import rajada
+
+    if await rajada.ceder_antes_do_modelo(db, agent.id, conv.id, _minha_msg_id):
+        logger.info("conv=%s msg=%s cedeu a vez para a mensagem seguinte do cliente", conv.id, _minha_msg_id)
+        await _espelhar_no_crm(
+            db, agent=agent, conv=conv, connector=connector, connector_kind=connector_kind,
+            external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
+            origem_canal=origem_canal, agente_respondeu=False,
+        )
+        return {"status": "agrupada", "agent_id": agent.id, "conversation_id": conv.id}
+    _cron.marca("rajada")
 
     # ─── Playbook router (Sprint 1) ───
     # Intercepta antes do Engine. Se nenhuma trigger matchou, cai pro fluxo padrão.
@@ -1626,6 +1647,18 @@ async def handle_inbound_message(
         )
         return {"status": "engine_error", "error": str(e)}
     _cron.marca("llm")
+
+    # Rajada, porta 2: o cliente escreveu de novo ENQUANTO o modelo gerava → esta resposta já nasceu velha;
+    # a mais nova responde tudo. Se o modelo agiu (ferramenta), a resposta que explica a ação sai assim mesmo.
+    if await rajada.descartar_depois_do_modelo(db, conv.id, _minha_msg_id, bool(reply.tool_calls_made)):
+        logger.info("conv=%s msg=%s resposta descartada: o cliente escreveu de novo durante a geração",
+                    conv.id, _minha_msg_id)
+        await _espelhar_no_crm(
+            db, agent=agent, conv=conv, connector=connector, connector_kind=connector_kind,
+            external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
+            origem_canal=origem_canal, agente_respondeu=False,
+        )
+        return {"status": "substituida", "agent_id": agent.id, "conversation_id": conv.id}
 
     # Silêncio de propósito (15/11/2026, M7): a persona mandou não responder. Nada vai ao
     # cliente; a mensagem dele segue para o CRM como sem resposta do agente, para a equipe

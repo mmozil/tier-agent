@@ -678,7 +678,9 @@ async def _process_engine_message(
             )
             # A IA acabou não respondendo (fora do horário, guarda, erro…): desliga o «digitando…»
             # na hora, em vez de deixar os 3 pontinhos até o WhatsApp apagar sozinho.
-            if wa and cfg:
+            # 16/11/2026 — exceto quando esta mensagem cedeu a vez para a seguinte do cliente (rajada): a
+            # outra ainda está gerando, e apagar o «digitando…» agora faria os pontinhos sumirem antes da resposta.
+            if wa and cfg and result.get("status") not in ("agrupada", "substituida"):
                 try:
                     await wa.send_typing(cfg, external_chat_id, "paused")
                 except Exception:
