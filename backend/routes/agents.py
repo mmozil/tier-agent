@@ -563,7 +563,12 @@ async def agent_playground(
             "rag_usado": bool(rag_bloco),
         }
 
-    limpo = agent_runtime._sem_travessao(agent_runtime._sanitize_reply(reply.text))
+    from services import fecho_de_ajuda
+
+    texto = reply.text
+    if await fecho_de_ajuda.ligado(db, agent.id):  # mesmo corte da produção (15/11/2026, CCDA)
+        texto = fecho_de_ajuda.cortar(texto)
+    limpo = agent_runtime._sem_travessao(agent_runtime._sanitize_reply(texto))
     if kind in ("whatsapp", "whatsapp_cloud"):
         limpo = agent_runtime._format_for_whatsapp(limpo)
     # Mesma regra de balões da produção — no canal cobrado por mensagem, um só.

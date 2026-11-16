@@ -1659,6 +1659,14 @@ async def handle_inbound_message(
         for c in (reply.tool_calls_made or [])
     ] or None
 
+    # 15/11/2026 (CCDA): fecho genérico de ajuda sai do fim da resposta, no envio E no registro — senão o
+    # painel mostraria a frase que a família não recebeu. Só com o parâmetro do agente; sem ele, igual a antes.
+    from services import fecho_de_ajuda
+
+    _texto_resposta = reply.text
+    if await fecho_de_ajuda.ligado(db, agent.id):
+        _texto_resposta = fecho_de_ajuda.cortar(reply.text)
+
     # Log resposta do assistant
     await log_message(
         db,
@@ -1670,7 +1678,7 @@ async def handle_inbound_message(
         cost_cents=cost_cents,
         latency_ms=reply.latency_ms,
         model_used=reply.model_used,
-        content=reply.text,
+        content=_texto_resposta,
         tool_calls_json=_tool_calls_log,
         brakes_fired=(reply.brakes_fired or None),
         system_prompt_sent=(system_prompt if _LOG_PROMPTS else None),
@@ -1683,7 +1691,7 @@ async def handle_inbound_message(
     try:
         connector_impl = registry.get(connector_kind)
         cfg = ConnectorConfig(data=json.loads(decrypt(connector.config_json_enc)))
-        _clean = _sem_travessao(_sanitize_reply(reply.text))
+        _clean = _sem_travessao(_sanitize_reply(_texto_resposta))
         if connector_kind in ("whatsapp", "whatsapp_cloud"):
             _clean = _format_for_whatsapp(_clean)
         _bubbles = _baloes_do_canal(_clean, connector_kind)
