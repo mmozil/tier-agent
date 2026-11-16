@@ -22,6 +22,7 @@ import {
   useConfirmar,
 } from "@/components/ds/fc";
 import { BarraDoDisparo, PARTES_DA_BARRA, Pilula, partesDaBarra } from "@/components/disparos/PartesDoDisparo";
+import { useModoEmbutido } from "@/lib/modoEmbutido";
 import {
   type DisparoDetalhe,
   type Envio,
@@ -63,6 +64,8 @@ function pct(parte: number, total: number) {
 export default function DisparoDetalhePage() {
   const { id } = useParams();
   const nav = useNavigate();
+  // 16/11/2026 — aberto pelo CRM («Atendimento › Disparos») é só consulta: nenhuma ação.
+  const { embed, consulta, sufixo } = useModoEmbutido();
   const [confirmar, dialogo] = useConfirmar();
   const [d, setD] = useState<DisparoDetalhe | null>(null);
   const [naoAchou, setNaoAchou] = useState(false);
@@ -227,14 +230,14 @@ export default function DisparoDetalhePage() {
     try {
       await api.delete(`/disparos-oficiais/${d.id}`);
       toast.success("Rascunho apagado");
-      nav("/admin/disparos");
+      nav(`/admin/disparos${sufixo}`);
     } catch (e) {
       toast.error(mensagemDeErro(e, "Não consegui apagar"));
     }
   }
 
   const voltar = (
-    <Link to="/admin/disparos" className={`inline-flex items-center gap-1 text-[12.5px] ${FC.sub} hover:text-[#262626] dark:hover:text-white`}>
+    <Link to={`/admin/disparos${sufixo}`} className={`inline-flex items-center gap-1 text-[12.5px] ${FC.sub} hover:text-[#262626] dark:hover:text-white`}>
       <ArrowLeft className="w-3.5 h-3.5" /> Disparos
     </Link>
   );
@@ -245,7 +248,7 @@ export default function DisparoDetalhePage() {
         <PageFrame>
           <PageHero title="Disparo" right={voltar} />
           <Row last>
-            <EmptyHint icon={Megaphone} text="Este disparo não existe ou é de um número que não é seu." ctaLabel="Ver os disparos" ctaTo="/admin/disparos" className="py-12" />
+            <EmptyHint icon={Megaphone} text="Este disparo não existe ou é de um número que não é seu." ctaLabel="Ver os disparos" ctaTo={`/admin/disparos${sufixo}`} className="py-12" />
           </Row>
         </PageFrame>
       </div>
@@ -275,6 +278,7 @@ export default function DisparoDetalhePage() {
   const partes = partesDaBarra(c);
   const paginas = Math.max(1, Math.ceil(totalEnvios / POR_PAGINA));
   const podeMexer = d.status !== "concluido" && d.status !== "cancelado";
+  const agir = !consulta;
 
   return (
     <div className="-mx-8 pb-10">
@@ -296,7 +300,7 @@ export default function DisparoDetalhePage() {
                 <button type="button" onClick={() => { void carregar(); void carregarEnvios(); }} className={iconBtn} title="Atualizar">
                   <RefreshCw className="w-4 h-4" />
                 </button>
-                {d.status === "rascunho" && (
+                {agir && d.status === "rascunho" && (
                   <>
                     <Button variant="danger" onClick={() => void apagar()} disabled={agindo}>
                       Apagar rascunho
@@ -309,17 +313,17 @@ export default function DisparoDetalhePage() {
                     </Button>
                   </>
                 )}
-                {d.status === "em_andamento" && (
+                {agir && d.status === "em_andamento" && (
                   <Button variant="secondary" onClick={() => void acao("pausar")} disabled={agindo}>
                     Pausar
                   </Button>
                 )}
-                {d.status === "pausado" && (
+                {agir && d.status === "pausado" && (
                   <Button onClick={() => void acao("retomar")} disabled={agindo}>
                     Retomar
                   </Button>
                 )}
-                {podeMexer && d.status !== "rascunho" && (
+                {agir && podeMexer && d.status !== "rascunho" && (
                   <Button variant="danger" onClick={() => void acao("cancelar")} disabled={agindo}>
                     Cancelar
                   </Button>
@@ -338,11 +342,17 @@ export default function DisparoDetalhePage() {
             {d.comeca_em && <p className={`text-[12.5px] ${FC.sub}`}>Começa {quando(d.comeca_em)}.</p>}
             {d.status === "rascunho" && !agendando && (
               <p className={`text-[12.5px] ${FC.sub}`}>
-                Rascunho: não sai sozinho. Use <b className="font-medium">Agendar</b> para escolher o horário ou{" "}
-                <b className="font-medium">Iniciar disparo</b> para enviar agora.
+                {agir ? (
+                  <>
+                    Rascunho: não sai sozinho. Use <b className="font-medium">Agendar</b> para escolher o horário ou{" "}
+                    <b className="font-medium">Iniciar disparo</b> para enviar agora.
+                  </>
+                ) : (
+                  "Rascunho: ainda não foi enviado nem agendado."
+                )}
               </p>
             )}
-            {d.status === "rascunho" && agendando && (
+            {agir && d.status === "rascunho" && agendando && (
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-[12.5px] ${FC.sub}`}>Começar em</span>
                 <Input
@@ -512,7 +522,7 @@ export default function DisparoDetalhePage() {
                             <p className="flex items-center justify-end gap-3">
                               {e.conversation_id && (
                                 <a
-                                  href={`/admin/conversas?open=${e.conversation_id}`}
+                                  href={`/admin/conversas?open=${e.conversation_id}${embed ? "&embed=1" : ""}`}
                                   className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#003083] dark:text-[#5b9bff] hover:underline"
                                 >
                                   Conversa <ExternalLink className="w-3 h-3" />

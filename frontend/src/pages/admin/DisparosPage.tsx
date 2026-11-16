@@ -9,11 +9,15 @@ import { formatPhone } from "@/lib/phone";
 import { Button, EmptyHint, FC, PageFrame, PageHero, Row, SkeletonBar, iconBtn } from "@/components/ds/fc";
 import { BarraDoDisparo, Pilula } from "@/components/disparos/PartesDoDisparo";
 import { type Disparo, inteiro, mensagemDeErro, quando, statusDoDisparo } from "@/lib/disparos";
+import { useModoEmbutido } from "@/lib/modoEmbutido";
 
 export default function DisparosPage() {
   const nav = useNavigate();
+  // 16/11/2026 — aberto pelo CRM («Atendimento › Disparos») é só consulta: sem «Novo disparo».
+  const { consulta, sufixo } = useModoEmbutido();
   const [disparos, setDisparos] = useState<Disparo[] | null>(null);
-  const [podeCriar, setPodeCriar] = useState(false);
+  const [podeCriarNoAgent, setPodeCriar] = useState(false);
+  const podeCriar = podeCriarNoAgent && !consulta;
   const [erro, setErro] = useState<string | null>(null);
 
   async function carregar() {
@@ -45,7 +49,11 @@ export default function DisparosPage() {
       <PageFrame>
         <PageHero
           title="Disparos"
-          subtitle="Um modelo aprovado, pelo número oficial, para uma lista de contatos. Cada envio entra na conversa do contato — quem responder é atendido pela IA do número ou pela equipe."
+          subtitle={
+            consulta
+              ? "Consulta dos disparos pelo número oficial: quantos saíram, chegaram, foram lidos e responderam, e por que alguns não chegaram. Clique num disparo para ver contato a contato."
+              : "Um modelo aprovado, pelo número oficial, para uma lista de contatos. Cada envio entra na conversa do contato — quem responder é atendido pela IA do número ou pela equipe."
+          }
           right={
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => void carregar()} className={iconBtn} title="Atualizar">
@@ -73,7 +81,9 @@ export default function DisparosPage() {
               text={
                 podeCriar
                   ? "Nenhum disparo ainda. Escolha o número oficial, um modelo aprovado e cole a lista de contatos."
-                  : "Nenhum disparo pelos seus números. Quem cria disparos é o dono da conta ou um administrador."
+                  : consulta
+                    ? "Nenhum disparo pelos números que você atende."
+                    : "Nenhum disparo pelos seus números. Quem cria disparos é o dono da conta ou um administrador."
               }
               ctaLabel={podeCriar ? "Novo disparo" : undefined}
               ctaTo={podeCriar ? "/admin/disparos/novo" : undefined}
@@ -107,7 +117,7 @@ export default function DisparosPage() {
                     return (
                       <tr
                         key={d.id}
-                        onClick={() => nav(`/admin/disparos/${d.id}`)}
+                        onClick={() => nav(`/admin/disparos/${d.id}${sufixo}`)}
                         className={`cursor-pointer border-b ${FC.hair} last:border-b-0 ${FC.hover} align-top`}
                       >
                         <td className="px-6 py-3.5 max-w-[340px]">
