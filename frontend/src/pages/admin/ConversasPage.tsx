@@ -20,6 +20,7 @@ import NovaConversa from "@/components/inbox/NovaConversa";
 import { EtiquetasDeMencao, ListaDeMencoes, MiniAvatar, useMencoes } from "@/components/inbox/Mencoes";
 import { COR_FORA_DA_LISTA, SeletorDeEtiquetas, type Etiqueta } from "@/components/inbox/Etiquetas";
 import NumeroNaLateral, { tituloComNumero, type InfoNumero } from "@/components/inbox/NumeroNaLateral";
+import { BordaArrastavel, useLarguraArrastavel } from "@/components/inbox/BordaArrastavel";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select, campoCls, rotuloCls } from "@/components/ds/fc";
 
@@ -727,6 +728,10 @@ export default function ConversasPage() {
       /* navegador sem armazenamento: vale só nesta visita */
     }
   }
+  // 16/11/2026 (CCDA): o menu (no CRM) e a lista se alargam e estreitam arrastando a borda, como o
+  // menu lateral do Agent. Padrão = as larguras de antes (208 e 340).
+  const colMenu = useLarguraArrastavel("ta-conversas-menu-w", 208, 180, 360);
+  const colLista = useLarguraArrastavel("ta-conversas-lista-w", 340, 280, 560);
   const [showContact, setShowContact] = useState(() => window.innerWidth >= 1280);
   // 09/11/2026 (M7): a lista também recolhe — com a conversa aberta, o chat fica com a largura toda.
   // Sem conversa aberta a lista aparece sempre (senão não há onde escolher uma).
@@ -1436,7 +1441,7 @@ export default function ConversasPage() {
   // notebook com zoom de 125–150%, chat com ~90 px) continua valendo onde ela era necessária.
   const painelLargura = largura >= 1280 ? 384 : 320;
   const sobraChat =
-    largura - (embed ? (menuRecolhido ? 60 : 208) : 0) - (listaRecolhida && openConv ? 0 : 340) - painelLargura;
+    largura - (embed ? (menuRecolhido ? 60 : colMenu.largura) : 0) - (listaRecolhida && openConv ? 0 : colLista.largura) - painelLargura;
   const contatoPorCima = contatoEscolha ? contatoEscolha === "cima" : sobraChat < 380;
   function alternarContatoModo() {
     const v = contatoPorCima ? "lado" : "cima";
@@ -1591,8 +1596,10 @@ export default function ConversasPage() {
       {/* ═══════════ ZONA 1 — sub-nav (só no modo embed; standalone usa o sidebar) ═══════════ */}
       {embed && (
         <aside
-          className={`${menuRecolhido ? "w-[60px]" : "w-[208px]"} shrink-0 border-r ${FC.hair} flex flex-col min-h-0 ${FC.base} transition-[width] duration-200`}
+          style={{ width: menuRecolhido ? 60 : colMenu.largura }}
+          className={`relative shrink-0 border-r ${FC.hair} flex flex-col min-h-0 ${FC.base} ${colMenu.arrastando ? "" : "transition-[width] duration-200"}`}
         >
+          {!menuRecolhido && <BordaArrastavel iniciar={colMenu.iniciar} resetar={colMenu.resetar} />}
           <div className={`h-14 shrink-0 flex items-center border-b ${FC.hair} ${menuRecolhido ? "justify-center" : "justify-between pl-4 pr-2"}`}>
             {!menuRecolhido && <h1 className="text-[15px] font-[550] text-[#262626] dark:text-[#e6e8eb]">Conversas</h1>}
             <button
@@ -1612,7 +1619,11 @@ export default function ConversasPage() {
         </aside>
       )}
       {/* ═══════════ ZONA 2 — lista ═══════════ */}
-      <section className={`w-[340px] shrink-0 border-r ${FC.hair} flex-col min-h-0 bg-white dark:bg-[#0c0e12] ${listaRecolhida && openConv ? "hidden" : "flex"}`}>
+      <section
+        style={{ width: colLista.largura }}
+        className={`relative shrink-0 border-r ${FC.hair} flex-col min-h-0 bg-white dark:bg-[#0c0e12] ${listaRecolhida && openConv ? "hidden" : "flex"}`}
+      >
+        <BordaArrastavel iniciar={colLista.iniciar} resetar={colLista.resetar} />
         <div className={`shrink-0 px-4 pt-3.5 pb-2.5 border-b ${FC.hair}`}>
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-[15px] font-medium text-[#262626] dark:text-[#e6e8eb] truncate">{navTitle}</h2>
