@@ -1439,10 +1439,16 @@ export default function ConversasPage() {
   // Contato ao lado × por cima (12/11/2026). Painel de 320 px abaixo de 1.280 (384 acima) e ao lado
   // sempre que o chat fica com pelo menos 380 px; menos que isso, por cima — a regra de 09/11 (M7,
   // notebook com zoom de 125–150%, chat com ~90 px) continua valendo onde ela era necessária.
+  // 16/11/2026 (dono): «no Agent o contato fica junto da conversa e o botão esconde; no Atendimento
+  // não». Tela dele: 1.920 a 150% = 1.280 px; no CRM sobram ~1.000 para o Atendimento e o chat ficava
+  // com 280 px — abaixo dos 380, por cima. No Agent a mesma tela abre AO LADO (a conta não desconta a
+  // barra do Agent; o chat real fica com ~300 px). Mesmo padrão nos dois: ao lado, e por cima só quando
+  // o chat ficaria espremido de verdade (< 240 px — o caso da M7 de 09/11 tinha 90).
+  const CHAT_MINIMO = 240;
   const painelLargura = largura >= 1280 ? 384 : 320;
   const sobraChat =
     largura - (embed ? (menuRecolhido ? 60 : colMenu.largura) : 0) - (listaRecolhida && openConv ? 0 : colLista.largura) - painelLargura;
-  const contatoPorCima = contatoEscolha ? contatoEscolha === "cima" : sobraChat < 380;
+  const contatoPorCima = contatoEscolha ? contatoEscolha === "cima" : sobraChat < CHAT_MINIMO;
   function alternarContatoModo() {
     const v = contatoPorCima ? "lado" : "cima";
     setContatoEscolha(v);
