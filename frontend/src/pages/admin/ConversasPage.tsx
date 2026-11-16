@@ -362,6 +362,30 @@ function janelaFechada(msgs: { role: string; created_at: string }[]): boolean {
   return Number.isFinite(t) && Date.now() - t > 24 * 3600 * 1000;
 }
 
+/** Dia da mensagem no fuso de São Paulo, «2026-11-15» — chave para o separador de dia. */
+function diaDaMensagem(iso: string | null): string {
+  if (!iso) return "";
+  const norm = /[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`;
+  const d = new Date(norm);
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+/** «Hoje», «Ontem» ou «Domingo, 15/11» (com o ano quando não é o atual). 16/11/2026. */
+function rotuloDoDia(iso: string | null): string {
+  const dia = diaDaMensagem(iso);
+  if (!dia) return "";
+  const hoje = diaDaMensagem(new Date().toISOString());
+  const ontem = diaDaMensagem(new Date(Date.now() - 86400000).toISOString());
+  if (dia === hoje) return "Hoje";
+  if (dia === ontem) return "Ontem";
+  const [a, mm, dd] = dia.split("-").map(Number);
+  const meio = new Date(Date.UTC(a, mm - 1, dd, 12));
+  const semana = meio.toLocaleDateString("pt-BR", { weekday: "long", timeZone: "UTC" });
+  const doAno = String(a) === hoje.slice(0, 4);
+  return `${semana.charAt(0).toUpperCase()}${semana.slice(1)}, ${String(dd).padStart(2, "0")}/${String(mm).padStart(2, "0")}${doAno ? "" : `/${a}`}`;
+}
+
 function fmtTime(iso: string | null): string {
   if (!iso) return "";
   try {
@@ -2123,7 +2147,19 @@ export default function ConversasPage() {
               {!loadingMsgs && msgs.length === 0 && (
                 <div className={`text-[12px] ${FC.mut} text-center py-8`}>Sem histórico de texto (mensagens antigas não foram gravadas; novas aparecem aqui).</div>
               )}
-              {msgs.map((m) => {
+              {msgs.map((m, i) => {
+                // 16/11/2026 (M7) — o balão só dizia a HORA: «segunda a partir das 8h» dito num domingo às 06:54
+                // pareceu dito na segunda. Separador de dia entre as mensagens, como no WhatsApp.
+                const dia = diaDaMensagem(m.created_at);
+                const separador =
+                  dia && (i === 0 || dia !== diaDaMensagem(msgs[i - 1].created_at)) ? (
+                    <div key={`dia-${m.id}`} className="flex justify-center py-1">
+                      <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${FC.hair} ${FC.sub} bg-white dark:bg-[#16191f]`}>
+                        {rotuloDoDia(m.created_at)}
+                      </span>
+                    </div>
+                  ) : null;
+                const balao = (() => {
                 const isUser = m.role === "user";
                 const isAgent = m.role === "agent";
                 const isNote = m.role === "note";
@@ -2257,6 +2293,8 @@ export default function ConversasPage() {
                     )}
                   </div>
                 );
+                })();
+                return separador ? [separador, balao] : balao;
               })}
               <div ref={msgsEndRef} />
             </div>
