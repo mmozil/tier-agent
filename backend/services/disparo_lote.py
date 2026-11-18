@@ -23,6 +23,9 @@ Regras herdadas do disparo do ERP (tier-finance `services/disparos_service.py` +
 - Entrega/leitura vêm de `ta_wa_envio_status` (o webhook grava sem regredir). Os números do
   disparo são CONTADOS das linhas na hora — não há contador somado em Python para perder soma.
 - A transação é fechada ANTES da chamada à Meta (nada de «idle in transaction» durante o HTTP).
+
+18/11/2026 — o disparo pelo número NÃO oficial (por QR) usa esta mesma fila: `tipo='texto'`, um
+texto com {{nome}} no lugar do modelo, e o envio de cada contato em `services/disparo_qr.py`.
 """
 
 from __future__ import annotations
@@ -46,7 +49,7 @@ from models import (
     TaWaEnvioStatus,
 )
 from routes.whatsapp_oficial import STATUS_PT, numero_do_contato, resumo_do_modelo
-from services import disparo_oficial
+from services import disparo_oficial, disparo_qr
 
 logger = logging.getLogger(__name__)
 
@@ -326,13 +329,14 @@ def componentes(valores: list[str] | None) -> list | None:
     return [{"type": "body", "parameters": [{"type": "text", "text": v} for v in valores]}] if valores else None
 
 
-def intervalo_valido(intervalo_s) -> int:
+def intervalo_valido(intervalo_s, *, minimo: int = INTERVALO_MIN_S, padrao: int = INTERVALO_PADRAO_S) -> int:
+    """`minimo`/`padrao` mudam no número não oficial (10 s / 30 s — services/disparo_qr.py)."""
     try:
         s = int(intervalo_s)
     except (TypeError, ValueError):
-        s = INTERVALO_PADRAO_S
-    if s < INTERVALO_MIN_S:
-        raise ValueError(f"O intervalo mínimo entre envios é de {INTERVALO_MIN_S} segundos")
+        s = padrao
+    if s < minimo:
+        raise ValueError(f"O intervalo mínimo entre envios é de {minimo} segundos")
     if s > INTERVALO_MAX_S:
         raise ValueError(f"O intervalo máximo entre envios é de {INTERVALO_MAX_S} segundos")
     return s
@@ -511,15 +515,7 @@ async def criar(
         raise ErroDoDisparo(str(e)) from e
     agora = _agora()
     agendar_para = _horario_agendado(agendar_para, agora)
-    leitura = ler_lista(lista)
-    if not leitura.contatos:
-        raise ErroDoDisparo("A lista não tem nenhum número válido")
-    if len(leitura.contatos) > LIMITE_CONTATOS:
-        raise ErroDoDisparo(
-            f"A lista tem {len(leitura.contatos):,} contatos; o limite por disparo é {LIMITE_CONTATOS:,}".replace(
-                ",", "."
-            )
-        )
+    leitura = _ler_lista_do_disparo(lista, LIMITE_CONTATOS)
     precisa_nome = usa_nome(vars_ok)
     titulo = (nome or "").strip()[:120] or f"{resumo.get('nome')} · {agora:%d/%m %H:%M}"
     d = TaDisparoOficial(
@@ -540,6 +536,74 @@ async def criar(
         criado_por=(criado_por or "")[:120] or None,
         criado_em=agora,
     )
+    return await _gravar_com_contatos(db, d, leitura, tenant_id=tenant_id, precisa_nome=precisa_nome)
+
+
+def _ler_lista_do_disparo(lista: str, limite: int) -> Leitura:
+    leitura = ler_lista(lista)
+    if not leitura.contatos:
+        raise ErroDoDisparo("A lista não tem nenhum número válido")
+    if len(leitura.contatos) > limite:
+        raise ErroDoDisparo(
+            f"A lista tem {len(leitura.contatos):,} contatos; o limite por disparo é {limite:,}".replace(",", ".")
+        )
+    return leitura
+
+
+async def criar_texto(
+    db,
+    *,
+    tenant_id: int,
+    connector_id: int,
+    texto: str,
+    lista: str,
+    nome: str | None = None,
+    intervalo_s: int | None = None,
+    agendar_para: datetime | None = None,
+    criado_por_member_id: int | None = None,
+    criado_por: str | None = None,
+) -> TaDisparoOficial:
+    """Disparo pelo número NÃO oficial (18/11/2026): um TEXTO, com {{nome}}, em vez do modelo da
+    Meta. Mesmo rascunho, mesma lista, mesma fila — ver services/disparo_qr.py."""
+    try:
+        texto_ok = disparo_qr.validar_texto(texto)
+        intervalo = intervalo_valido(
+            disparo_qr.INTERVALO_PADRAO_S if intervalo_s is None else intervalo_s,
+            minimo=disparo_qr.INTERVALO_MIN_S,
+            padrao=disparo_qr.INTERVALO_PADRAO_S,
+        )
+    except ValueError as e:
+        raise ErroDoDisparo(str(e)) from e
+    agora = _agora()
+    agendar_para = _horario_agendado(agendar_para, agora)
+    leitura = _ler_lista_do_disparo(lista, disparo_qr.LIMITE_CONTATOS)
+    primeira_linha = texto_ok.split("\n", 1)[0].strip()
+    titulo = (nome or "").strip()[:120] or f"{primeira_linha[:60]} · {agora:%d/%m %H:%M}"[:120]
+    d = TaDisparoOficial(
+        tenant_id=tenant_id,
+        connector_id=connector_id,
+        nome=titulo,
+        tipo=disparo_qr.TIPO,
+        texto=texto_ok,
+        modelo="",
+        idioma="pt_BR",
+        categoria=None,
+        modelo_json=None,
+        variaveis_json=[{"fonte": "nome"}] if disparo_qr.usa_nome(texto_ok) else [],
+        intervalo_ms=intervalo * 1000,
+        variacao_ms=int(intervalo * 1000 * disparo_qr.VARIACAO_FRACAO),
+        agendado_para=agendar_para,
+        status=RASCUNHO,
+        total=len(leitura.contatos),
+        criado_por_member_id=criado_por_member_id,
+        criado_por=(criado_por or "")[:120] or None,
+        criado_em=agora,
+    )
+    return await _gravar_com_contatos(db, d, leitura, tenant_id=tenant_id, precisa_nome=disparo_qr.usa_nome(texto_ok))
+
+
+async def _gravar_com_contatos(db, d: TaDisparoOficial, leitura: Leitura, *, tenant_id: int, precisa_nome: bool):
+    """Grava o disparo e um envio por contato, na mesma transação."""
     # Quem já pediu para não receber fica marcado desde já (a conta de custo da tela bate) — e o
     # worker confere de novo na hora de cada envio, para quem pedir depois de criado.
     fora = await descadastrados_da_lista(db, tenant_id, [c.chave for c in leitura.contatos])
@@ -819,17 +883,25 @@ async def _numero_do_disparo(db, d) -> tuple[object | None, dict | None, str | N
     do mesmo tenant — se alguém o desconectou no meio, o disparo pausa em vez de queimar a lista."""
     from core.encryption import decrypt
 
+    texto = e_de_texto(d)
+    qual = "não oficial" if texto else "oficial"
     conn = await db.get(TaConnector, d.connector_id)
     agente = await db.get(TaAgent, conn.agent_id) if conn else None
-    if not conn or not agente or agente.tenant_id != d.tenant_id or conn.kind != "whatsapp_cloud":
-        return None, None, "O número oficial deste disparo não existe mais"
+    kind = disparo_qr.KIND if texto else "whatsapp_cloud"
+    if not conn or not agente or agente.tenant_id != d.tenant_id or conn.kind != kind:
+        return None, None, f"O número {qual} deste disparo não existe mais"
     if not conn.enabled:
-        return None, None, "O número oficial está desconectado — reconecte em Canais e retome o disparo"
+        return None, None, f"O número {qual} está desconectado — reconecte em Canais e retome o disparo"
     try:
         cfg = json.loads(decrypt(conn.config_json_enc))
     except Exception:  # noqa: BLE001
-        return None, None, "Não consegui ler a configuração do número oficial — refaça o cadastro em Canais"
+        return None, None, f"Não consegui ler a configuração do número {qual} — refaça o cadastro em Canais"
     return conn, cfg, None
+
+
+def e_de_texto(d) -> bool:
+    """O disparo sai pelo número NÃO oficial (texto), não pelo modelo da Meta."""
+    return (getattr(d, "tipo", None) or "modelo") == disparo_qr.TIPO
 
 
 async def processar_um(db, did: int, agora: datetime | None = None) -> str:
@@ -870,6 +942,9 @@ async def processar_um(db, did: int, agora: datetime | None = None) -> str:
         await liberar_vez(db, did, None)  # nada saiu: o próximo pode ir já
         await finalizar_se_concluido(db, did)
         return "descadastrado"
+
+    if e_de_texto(d):
+        return await _enviar_texto_um(db, did, d, envio, conn, cfg)
 
     valores = valores_do_contato(d.variaveis_json, envio.nome)
     if valores is None:  # a criação já marca; isto é só a rede de segurança
@@ -926,6 +1001,64 @@ async def processar_um(db, did: int, agora: datetime | None = None) -> str:
     envio.status = ENVIADO
     envio.wamid = str(res["message_id"])[:128] if res.get("message_id") else None
     envio.wa_id = str(res["wa_id"])[:32] if res.get("wa_id") else None
+    envio.conversation_id = res.get("conversation_id")
+    envio.enviado_em = _agora()
+    envio.reservado_em = None
+    envio.erro = None
+    await db.commit()
+    await liberar_vez(db, did, proximo_horario(intervalo_ms, variacao_ms))
+    await pausar_se_taxa(db, did)
+    await finalizar_se_concluido(db, did)
+    return ENVIADO
+
+
+async def _enviar_texto_um(db, did: int, d, envio, conn, cfg: dict) -> str:
+    """Um contato do disparo pelo número NÃO oficial (18/11/2026) — ver services/disparo_qr.py.
+    O descadastro e a vez já foram conferidos em `processar_um`; daqui em diante é o mesmo ciclo
+    do oficial: sem nome → fora, erro do número → pausa e o contato volta, erro do contato → falha."""
+    texto = disparo_qr.texto_do_contato(d.texto or "", primeiro_nome(envio.nome))
+    if texto is None:
+        envio.status, envio.erro, envio.reservado_em = SEM_NOME, MOTIVO_SEM_NOME, None
+        await db.commit()
+        await liberar_vez(db, did, None)
+        await finalizar_se_concluido(db, did)
+        return "sem_nome"
+
+    tenant_id, nome_disparo = d.tenant_id, d.nome
+    intervalo_ms, variacao_ms = d.intervalo_ms, d.variacao_ms
+    numero, nome = envio.numero, envio.nome
+    await db.commit()  # nada de transação aberta durante as chamadas ao motor
+
+    try:
+        res = await disparo_qr.enviar_um(
+            db,
+            tenant_id=tenant_id,
+            conn=conn,
+            cfg=cfg,
+            numero=numero,
+            texto=texto,
+            nome_disparo=nome_disparo,
+            contact_name=nome,
+        )
+    except disparo_qr.ErroDoEnvio as e:
+        if e.conta:
+            envio.erro = e.mensagem[:500]
+            await _devolver_para_fila(db, envio)
+            await pausar_por_motivo(db, did, e.mensagem)
+            await liberar_vez(db, did, None)
+            return "pausou_conta"
+        envio.status, envio.erro, envio.reservado_em = FALHOU, e.mensagem[:500], None
+        await db.commit()
+        # O intervalo vale também para o «sem WhatsApp»: a consulta ao WhatsApp em rajada também
+        # chama atenção num número não oficial.
+        await liberar_vez(db, did, proximo_horario(intervalo_ms, variacao_ms))
+        await pausar_se_taxa(db, did)
+        await finalizar_se_concluido(db, did)
+        return FALHOU
+
+    envio.status = ENVIADO
+    envio.wamid = res.get("message_id")
+    envio.wa_id = res.get("wa_id")
     envio.conversation_id = res.get("conversation_id")
     envio.enviado_em = _agora()
     envio.reservado_em = None

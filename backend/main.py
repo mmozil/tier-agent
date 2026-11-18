@@ -679,6 +679,26 @@ async def _ensure_disparo_lote_tables():
         logger.info("ensure_disparo_lote_tables ok")
     except Exception:
         logger.exception("ensure_disparo_lote_tables falhou (segue mesmo assim)")
+    # 18/11/2026 — disparo pelo número NÃO oficial (services/disparo_qr.py): `tipo` + `texto`.
+    # Transação própria e tranca: os 2 workers (e o contêiner antigo no deploy) não brigam pelo ALTER,
+    # e uma falha aqui não desfaz a criação das tabelas acima. Tabela pequena; default constante =
+    # só metadado no Postgres 11+.
+    try:
+        from sqlalchemy import text as _sql_text
+
+        from core.db import db_context
+
+        async with db_context() as db:
+            await db.execute(_sql_text("SELECT pg_advisory_xact_lock(918112026)"))
+            for ddl in (
+                "ALTER TABLE ta_disparo_oficial ADD COLUMN IF NOT EXISTS tipo VARCHAR(16) NOT NULL DEFAULT 'modelo'",
+                "ALTER TABLE ta_disparo_oficial ADD COLUMN IF NOT EXISTS texto TEXT",
+            ):
+                await db.execute(_sql_text(ddl))
+            await db.commit()
+        logger.info("ensure_disparo_lote_tables: colunas do disparo não oficial ok")
+    except Exception:
+        logger.exception("ensure_disparo_lote_tables: colunas do disparo não oficial falharam")
 
 
 async def _ensure_visto_equipe_column():

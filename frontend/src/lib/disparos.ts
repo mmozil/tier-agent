@@ -32,6 +32,10 @@ export interface Disparo {
   nome: string;
   status: StatusDisparo;
   motivo_pausa: string | null;
+  /** 18/11/2026 — «modelo» (número oficial) ou «texto» (número NÃO oficial, conectado por QR). */
+  tipo?: "modelo" | "texto";
+  /** A pessoa dona do número em modo registro (o celular da consultora). */
+  dono?: string | null;
   modelo: string;
   idioma: string;
   categoria: string | null;
@@ -70,6 +74,8 @@ export type Variavel = { fonte: "nome"; valor?: null } | { fonte: "fixo"; valor:
 
 export interface DisparoDetalhe extends Disparo {
   modelo_resumo: ModeloResumo | null;
+  /** O texto do disparo pelo número não oficial (com {{nome}}). */
+  texto?: string | null;
   variaveis: Variavel[];
   /** 16/11/2026 — «por que não chegaram», agrupado por motivo da Meta (em português). */
   motivos_falha?: { codigo: number | null; motivo: string; total: number }[];
@@ -171,6 +177,22 @@ export const SITUACAO: Record<Situacao, { texto: string; tom: keyof typeof TOM }
   sem_nome: { texto: "Sem nome", tom: "atencao" },
   cancelado: { texto: "Cancelado", tom: "neutro" },
 };
+
+/** O disparo sai pelo número NÃO oficial (texto, sem modelo da Meta). */
+export function ehDeTexto(d: Pick<Disparo, "tipo">): boolean {
+  return d.tipo === "texto";
+}
+
+/** O {{nome}} do texto do disparo não oficial trocado pelo primeiro nome (18/11/2026). */
+export function comNome(texto: string, nome: string): string {
+  return (texto || "").replace(/\{\{\s*nome\s*\}\}/gi, nome);
+}
+
+/** Variável do texto que não é {{nome}} — sairia literal para o contato. */
+export function variavelEstranha(texto: string): string | null {
+  const m = (texto || "").replace(/\{\{\s*nome\s*\}\}/gi, "").match(/\{\{([^{}]*)\}\}/);
+  return m ? `{{${m[1].trim()}}}` : null;
+}
 
 /** Os {{n}} do texto trocados pelos valores (o que falta fica como está). */
 export function preencher(texto: string, valores: (string | null | undefined)[]): string {

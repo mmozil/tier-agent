@@ -29,7 +29,9 @@ import {
   type Situacao,
   SITUACAO,
   brl,
+  comNome,
   duracao,
+  ehDeTexto,
   inteiro,
   mensagemDeErro,
   nomeDaCategoria,
@@ -56,6 +58,10 @@ const FILTROS: { valor: Filtro | null; rotulo: string; conta: (d: DisparoDetalhe
   { valor: "cancelado", rotulo: "Cancelado", conta: (d) => d.contagens.cancelados },
   { valor: "respondeu", rotulo: "Respondeu", conta: (d) => d.contagens.respondidos ?? 0 },
 ];
+
+// 18/11/2026 — disparo pelo número não oficial (QR): sem custo da Meta, com risco de bloqueio.
+const AVISO_NAO_OFICIAL =
+  "Sai pelo número não oficial, sem custo da Meta — mas o WhatsApp pode bloquear número que manda muita mensagem para quem não o tem salvo. ";
 
 function pct(parte: number, total: number) {
   return total > 0 ? `${Math.round((parte / total) * 100)}%` : "—";
@@ -164,10 +170,11 @@ export default function DisparoDetalhePage() {
       if (!ok) return;
     }
     if (nome === "iniciar") {
-      const preco = precoDaCategoria(d.categoria);
+      const preco = ehDeTexto(d) ? null : precoDaCategoria(d.categoria);
       const ok = await confirmar({
-        titulo: `Enviar «${d.modelo}» para ${inteiro(d.contagens.pendentes)} contato${d.contagens.pendentes === 1 ? "" : "s"}?`,
+        titulo: `Enviar «${ehDeTexto(d) ? d.nome : d.modelo}» para ${inteiro(d.contagens.pendentes)} contato${d.contagens.pendentes === 1 ? "" : "s"}?`,
         texto:
+          (ehDeTexto(d) ? AVISO_NAO_OFICIAL : "") +
           (preco !== null ? `Custo estimado de até ${brl(d.contagens.pendentes * preco)}, cobrado pela Meta na conta do número. ` : "") +
           `Leva cerca de ${duracao(d.contagens.pendentes * d.intervalo_s)}.`,
         confirmar: "Iniciar disparo",
@@ -212,10 +219,11 @@ export default function DisparoDetalhePage() {
       toast.error("Escolha um horário no futuro");
       return;
     }
-    const preco = precoDaCategoria(d.categoria);
+    const preco = ehDeTexto(d) ? null : precoDaCategoria(d.categoria);
     const ok = await confirmar({
-      titulo: `Agendar «${d.modelo}» para ${quando(quandoComeca.toISOString())}?`,
+      titulo: `Agendar «${ehDeTexto(d) ? d.nome : d.modelo}» para ${quando(quandoComeca.toISOString())}?`,
       texto:
+        (ehDeTexto(d) ? AVISO_NAO_OFICIAL : "") +
         `Vai para ${inteiro(d.contagens.pendentes)} contato${d.contagens.pendentes === 1 ? "" : "s"} a partir desse horário` +
         (preco !== null ? `, com custo estimado de até ${brl(d.contagens.pendentes * preco)} cobrado pela Meta` : "") +
         `, e leva cerca de ${duracao(d.contagens.pendentes * d.intervalo_s)}. Até lá dá para cancelar.`,
@@ -293,7 +301,9 @@ export default function DisparoDetalhePage() {
 
   const st = statusDoDisparo(d);
   const c = d.contagens;
-  const preco = precoDaCategoria(d.categoria);
+  // 18/11/2026 — número não oficial: texto no lugar do modelo, sem custo e sem entregue/lido.
+  const texto = ehDeTexto(d);
+  const preco = texto ? null : precoDaCategoria(d.categoria);
   const modelo = d.modelo_resumo;
   const valoresDoBalao = d.variaveis.map((v) => (v.fonte === "nome" ? "[primeiro nome]" : v.valor));
   const partes = partesDaBarra(c);
@@ -309,8 +319,17 @@ export default function DisparoDetalhePage() {
           title={d.nome}
           subtitle={
             <>
-              Modelo <span className="font-mono">{d.modelo}</span> ({nomeDaCategoria(d.categoria)}) · {formatPhone(d.telefone)}
-              {d.agente ? ` · agente ${d.agente}` : ""}
+              {texto ? (
+                <>
+                  Texto pelo número não oficial · {formatPhone(d.telefone)}
+                  {d.dono ? ` · celular de ${d.dono}` : d.agente ? ` · agente ${d.agente}` : ""}
+                </>
+              ) : (
+                <>
+                  Modelo <span className="font-mono">{d.modelo}</span> ({nomeDaCategoria(d.categoria)}) · {formatPhone(d.telefone)}
+                  {d.agente ? ` · agente ${d.agente}` : ""}
+                </>
+              )}
               {d.criado_por ? ` · criado por ${d.criado_por} em ${quando(d.criado_em)}` : ` · criado em ${quando(d.criado_em)}`}
             </>
           }
@@ -442,23 +461,37 @@ export default function DisparoDetalhePage() {
 
         <Row>
           <HairCells cols={6}>
-            {[
-              { rotulo: "Enviados", valor: c.enviados, nota: `${pct(c.enviados, d.total)} da lista` },
-              { rotulo: "Entregues", valor: c.entregues, nota: `${pct(c.entregues, c.enviados)} dos enviados` },
-              { rotulo: "Lidos", valor: c.lidos, nota: `${pct(c.lidos, c.entregues)} dos entregues` },
-              {
-                rotulo: "Responderam",
-                valor: c.respondidos ?? 0,
-                nota: `${pct(c.respondidos ?? 0, c.entregues)} dos entregues`,
-              },
-              { rotulo: "Falharam", valor: c.falhas, nota: c.falhas ? "veja o motivo na lista" : "nenhuma falha" },
-              {
-                rotulo: "Custo até agora",
-                valor: null,
-                texto: preco !== null ? brl(c.entregues * preco) : "—",
-                nota: preco !== null ? `${inteiro(c.entregues)} entregues × ${brl(preco)}` : "categoria sem preço conhecido",
-              },
-            ].map((k) => (
+            {(texto
+              ? [
+                  { rotulo: "Enviados", valor: c.enviados, nota: `${pct(c.enviados, d.total)} da lista` },
+                  { rotulo: "Entregues", valor: null, texto: "—", nota: "o número não oficial não confirma" },
+                  { rotulo: "Lidos", valor: null, texto: "—", nota: "o número não oficial não confirma" },
+                  {
+                    rotulo: "Responderam",
+                    valor: c.respondidos ?? 0,
+                    nota: `${pct(c.respondidos ?? 0, c.enviados)} dos enviados`,
+                  },
+                  { rotulo: "Falharam", valor: c.falhas, nota: c.falhas ? "veja o motivo na lista" : "nenhuma falha" },
+                  { rotulo: "Custo", valor: null, texto: "—", nota: "sem custo da Meta" },
+                ]
+              : [
+                  { rotulo: "Enviados", valor: c.enviados, nota: `${pct(c.enviados, d.total)} da lista` },
+                  { rotulo: "Entregues", valor: c.entregues, nota: `${pct(c.entregues, c.enviados)} dos enviados` },
+                  { rotulo: "Lidos", valor: c.lidos, nota: `${pct(c.lidos, c.entregues)} dos entregues` },
+                  {
+                    rotulo: "Responderam",
+                    valor: c.respondidos ?? 0,
+                    nota: `${pct(c.respondidos ?? 0, c.entregues)} dos entregues`,
+                  },
+                  { rotulo: "Falharam", valor: c.falhas, nota: c.falhas ? "veja o motivo na lista" : "nenhuma falha" },
+                  {
+                    rotulo: "Custo até agora",
+                    valor: null,
+                    texto: preco !== null ? brl(c.entregues * preco) : "—",
+                    nota: preco !== null ? `${inteiro(c.entregues)} entregues × ${brl(preco)}` : "categoria sem preço conhecido",
+                  },
+                ]
+            ).map((k: { rotulo: string; valor: number | null; texto?: string; nota: string }) => (
               <div key={k.rotulo} className="px-6 py-5">
                 <p className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${FC.mut}`}>{k.rotulo}</p>
                 <p className={`mt-1.5 text-[24px] font-medium tabular-nums leading-8 ${FC.ink}`}>
@@ -596,7 +629,9 @@ export default function DisparoDetalhePage() {
               <div>
                 <h3 className={`text-[13px] font-medium ${FC.ink}`}>O que foi enviado</h3>
                 <div className={`mt-2 rounded-xl p-3 ${FC.base}`}>
-                  {modelo ? (
+                  {texto ? (
+                    <BalaoDoModelo corpo={comNome(d.texto || "", "[primeiro nome]")} />
+                  ) : modelo ? (
                     <BalaoDoModelo
                       corpo={[modelo.cabecalho, preencher(modelo.corpo, valoresDoBalao)].filter(Boolean).join("\n\n")}
                       rodape={modelo.rodape}
@@ -607,7 +642,7 @@ export default function DisparoDetalhePage() {
                   )}
                 </div>
               </div>
-              {d.variaveis.length > 0 && (
+              {!texto && d.variaveis.length > 0 && (
                 <dl className="space-y-1.5 text-[12px]">
                   {d.variaveis.map((v, i) => (
                     <div key={i} className="flex gap-2">
@@ -645,11 +680,18 @@ export default function DisparoDetalhePage() {
                   </div>
                 )}
               </dl>
-              <p className={`text-[11px] leading-4 ${FC.mut}`}>
-                Entregue e lido chegam pelo retorno da Meta e continuam mudando depois que o disparo termina. Custo = entregues × a
-                tabela da Meta para o Brasil{preco !== null ? ` (${nomeDaCategoria(d.categoria)}, ${brl(preco)})` : ""}; quem paga
-                é a conta da Meta do número.
-              </p>
+              {texto ? (
+                <p className={`text-[11px] leading-4 ${FC.mut}`}>
+                  Pelo número não oficial o WhatsApp não confirma entrega nem leitura para o sistema: conta-se enviado e quem
+                  respondeu. Antes de cada envio o sistema confere se o número tem WhatsApp — quem não tem fica como falha.
+                </p>
+              ) : (
+                <p className={`text-[11px] leading-4 ${FC.mut}`}>
+                  Entregue e lido chegam pelo retorno da Meta e continuam mudando depois que o disparo termina. Custo = entregues ×
+                  a tabela da Meta para o Brasil{preco !== null ? ` (${nomeDaCategoria(d.categoria)}, ${brl(preco)})` : ""}; quem
+                  paga é a conta da Meta do número.
+                </p>
+              )}
             </aside>
           </div>
         </Row>

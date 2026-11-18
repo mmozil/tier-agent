@@ -1112,6 +1112,18 @@ async def handle_inbound_message(
     if not connector:
         return {"status": "no_connector", "instance_id": instance_id}
 
+    # 18/11/2026 — «parar»/«sair» sozinho logo depois de um DISPARO pelo número não oficial: entra na
+    # lista de quem não quer receber (a mesma do oficial). Só consulta o banco quando o texto é uma
+    # dessas palavras. No registro a mensagem segue para o inbox; no número com IA, confirma e para.
+    if connector_kind == "whatsapp":
+        from services import disparo_qr
+
+        _parar = await disparo_qr.descadastro_depois_do_disparo(
+            db, connector, external_chat_id=external_chat_id, sender_name=sender_name, texto=text_content
+        )
+        if _parar is not None:
+            return _parar
+
     # 🚨 Modo REGISTRO (Etapa 1 do caminho A, 09/09/2026): o número não tem IA.
     # Grava a mensagem e para — sem gate de agente ativo (que descartava antes
     # de gravar), sem STT, sem moderação, sem LLM, sem «digitando».

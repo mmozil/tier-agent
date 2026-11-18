@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/phone";
 import { Button, EmptyHint, FC, PageFrame, PageHero, Row, SkeletonBar, iconBtn } from "@/components/ds/fc";
 import { BarraDoDisparo, Pilula } from "@/components/disparos/PartesDoDisparo";
-import { type Disparo, inteiro, mensagemDeErro, quando, statusDoDisparo } from "@/lib/disparos";
+import { type Disparo, ehDeTexto, inteiro, mensagemDeErro, quando, statusDoDisparo } from "@/lib/disparos";
 import { useAvisarRota, useModoEmbutido } from "@/lib/modoEmbutido";
 
 export default function DisparosPage() {
@@ -52,8 +52,8 @@ export default function DisparosPage() {
           title="Disparos"
           subtitle={
             consulta
-              ? "Consulta dos disparos pelo número oficial: quantos saíram, chegaram, foram lidos e responderam, e por que alguns não chegaram. Clique num disparo para ver contato a contato."
-              : "Um modelo aprovado, pelo número oficial, para uma lista de contatos. Cada envio entra na conversa do contato — quem responder é atendido pela IA do número ou pela equipe."
+              ? "Consulta dos disparos: quantos saíram, chegaram, foram lidos e responderam, e por que alguns não chegaram. Clique num disparo para ver contato a contato."
+              : "Uma mensagem para uma lista de contatos — modelo aprovado pelo número oficial, ou texto pelo número não oficial (QR). Cada envio entra na conversa do contato — quem responder é atendido pela IA do número ou pela equipe."
           }
           right={
             <div className="flex items-center gap-2">
@@ -81,7 +81,7 @@ export default function DisparosPage() {
               icon={Megaphone}
               text={
                 podeCriar
-                  ? "Nenhum disparo ainda. Escolha o número oficial, um modelo aprovado e cole a lista de contatos."
+                  ? "Nenhum disparo ainda. Escolha o número, a mensagem e cole a lista de contatos."
                   : consulta
                     ? "Nenhum disparo pelos números que você atende."
                     : "Nenhum disparo pelos seus números. Quem cria disparos é o dono da conta ou um administrador."
@@ -115,6 +115,8 @@ export default function DisparosPage() {
                     const st = statusDoDisparo(d);
                     const c = d.contagens;
                     const feitos = d.total - c.pendentes;
+                    // 18/11/2026 — número não oficial: o motor não confirma entrega nem leitura → «—», não 0.
+                    const texto = ehDeTexto(d);
                     return (
                       <tr
                         key={d.id}
@@ -124,8 +126,8 @@ export default function DisparosPage() {
                         <td className="px-6 py-3.5 max-w-[340px]">
                           <p className={`truncate text-[13px] font-medium ${FC.ink}`}>{d.nome}</p>
                           <p className={`mt-0.5 truncate text-[11.5px] ${FC.mut}`}>
-                            <span className="font-mono">{d.modelo}</span> · {formatPhone(d.telefone)}
-                            {d.agente ? ` · ${d.agente}` : ""}
+                            {texto ? "Texto · não oficial" : <span className="font-mono">{d.modelo}</span>} · {formatPhone(d.telefone)}
+                            {d.dono ? ` · ${d.dono}` : d.agente ? ` · ${d.agente}` : ""}
                           </p>
                         </td>
                         <td className="px-3 py-3.5">
@@ -143,8 +145,20 @@ export default function DisparosPage() {
                             {inteiro(feitos)} de {inteiro(d.total)}
                           </p>
                         </td>
-                        <td className={`px-3 py-3.5 text-right text-[13px] tabular-nums ${FC.ink}`}>{inteiro(c.entregues)}</td>
-                        <td className={`px-3 py-3.5 text-right text-[13px] tabular-nums ${FC.ink}`}>{inteiro(c.lidos)}</td>
+                        {texto ? (
+                          <td
+                            colSpan={2}
+                            className={`px-3 py-3.5 text-right text-[11.5px] ${FC.mut}`}
+                            title="O número não oficial não confirma entrega nem leitura"
+                          >
+                            sem confirmação
+                          </td>
+                        ) : (
+                          <>
+                            <td className={`px-3 py-3.5 text-right text-[13px] tabular-nums ${FC.ink}`}>{inteiro(c.entregues)}</td>
+                            <td className={`px-3 py-3.5 text-right text-[13px] tabular-nums ${FC.ink}`}>{inteiro(c.lidos)}</td>
+                          </>
+                        )}
                         <td className={`px-3 py-3.5 text-right text-[13px] tabular-nums ${FC.ink}`}>
                           {inteiro(c.respondidos ?? 0)}
                         </td>

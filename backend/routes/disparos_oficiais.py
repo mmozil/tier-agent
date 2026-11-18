@@ -15,6 +15,9 @@ mesmo código (`disparo_oficial.enviar_modelo`) e a fila mora em `services/dispa
 
 Quem vê: dono e admin, todos os disparos do tenant; atendente, os disparos dos números DELE
 (`visao_conversas.conectores_do_membro`), só para acompanhar. Criar e mexer no ciclo é de gestor.
+
+18/11/2026 — também pelo número NÃO oficial (por QR): `GET /disparos-oficiais/numeros` lista os dois
+tipos e o `POST` aceita `texto` (com {{nome}}) no lugar do `modelo`. Ver services/disparo_qr.py.
 """
 
 from __future__ import annotations
@@ -33,9 +36,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser, get_current_user
 from core.db import get_db
 from core.encryption import decrypt
-from models import TaAgent, TaConnector, TaDisparoOficial, TaDisparoOficialEnvio, TaWaEnvioStatus
+from models import TaAgent, TaConnector, TaDisparoOficial, TaDisparoOficialEnvio, TaMember, TaWaEnvioStatus
 from routes.whatsapp_oficial import _modelos_da_meta, _numero, resumo_do_modelo
-from services import disparo_lote
+from services import disparo_lote, disparo_qr
 from services import visao_conversas as visao
 
 router = APIRouter(prefix="/disparos-oficiais", tags=["disparos-oficiais"])
@@ -74,23 +77,32 @@ async def _disparo(db: AsyncSession, did: int, user: CurrentUser, *, gestor: boo
 
 
 async def _numeros(db: AsyncSession, ids: set[int]) -> dict[int, dict]:
-    """Telefone e agente de cada número oficial (um decrypt por número, não por disparo)."""
+    """Telefone e agente de cada número (um decrypt por número, não por disparo). 18/11/2026: também
+    o número não oficial — `oficial` diz qual, e `dono` é a pessoa do número em modo registro."""
     if not ids:
         return {}
     out = {}
     rows = (
         await db.execute(
-            select(TaConnector, TaAgent)
+            select(TaConnector, TaAgent, TaMember.nome)
             .join(TaAgent, TaAgent.id == TaConnector.agent_id)
+            .outerjoin(TaMember, TaMember.id == TaConnector.member_id)
             .where(TaConnector.id.in_(ids))
         )
     ).all()
-    for conn, agente in rows:
+    for conn, agente, dono in rows:
         try:
             cfg = json.loads(decrypt(conn.config_json_enc))
         except Exception:  # noqa: BLE001
             cfg = {}
-        out[conn.id] = {"telefone": cfg.get("phone"), "agente": agente.nome, "ativo": bool(conn.enabled)}
+        out[conn.id] = {
+            "telefone": cfg.get("phone") or cfg.get("phone_number"),
+            "agente": agente.nome,
+            "ativo": bool(conn.enabled),
+            "oficial": conn.kind == "whatsapp_cloud",
+            "modo": getattr(conn, "modo", None) or "agente",
+            "dono": dono,
+        }
     return out
 
 
@@ -101,6 +113,9 @@ def _saida(d: TaDisparoOficial, c: dict, info: dict, agora: datetime) -> dict:
         "nome": d.nome,
         "status": d.status,
         "motivo_pausa": d.motivo_pausa,
+        # «modelo» (número oficial) ou «texto» (número não oficial, 18/11/2026)
+        "tipo": d.tipo or "modelo",
+        "dono": info.get("dono"),
         "modelo": d.modelo,
         "idioma": d.idioma,
         "categoria": d.categoria,
@@ -132,6 +147,7 @@ async def _detalhe(db: AsyncSession, did: int) -> dict:
     return {
         **_saida(d, c, info, _agora()),
         "modelo_resumo": d.modelo_json,
+        "texto": d.texto,
         "variaveis": d.variaveis_json or [],
         "motivos_falha": await _motivos_falha(db, did),
     }
@@ -196,8 +212,56 @@ async def modelos(user: Usuario, db: Banco, connector_id: int = Query(...)):
     return {"modelos": out}
 
 
+@router.get("/numeros")
+async def numeros(user: Usuario, db: Banco):
+    """Os números de WhatsApp de onde sai um disparo (18/11/2026): o OFICIAL (modelo da Meta) e o
+    NÃO oficial (por QR, texto). Atendente vê só os dele — e não cria (`pode_criar`)."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    rows = (
+        (
+            await db.execute(
+                select(TaConnector.id)
+                .join(TaAgent, TaAgent.id == TaConnector.agent_id)
+                .where(TaAgent.tenant_id == user.tenant_id, TaConnector.kind.in_(("whatsapp_cloud", disparo_qr.KIND)))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    ids = set(rows)
+    if not visao.ve_tudo(user.role):
+        ids &= set(await visao.conectores_do_membro(db, user.tenant_id, user.member_id))
+    info = await _numeros(db, ids)
+    # Oficial primeiro; depois os números com IA; por último os celulares em modo registro.
+    ordem = sorted(info.items(), key=lambda kv: (not kv[1]["oficial"], kv[1]["modo"] == "registro", kv[0]))
+    return {
+        "numeros": [
+            {
+                "id": cid,
+                "tipo": "oficial" if n["oficial"] else "nao_oficial",
+                "telefone": n["telefone"],
+                "agente": n["agente"],
+                "modo": n["modo"],
+                "dono": n["dono"],
+                "ativo": n["ativo"],
+            }
+            for cid, n in ordem
+        ],
+        "pode_criar": visao.ve_tudo(user.role),
+        "nao_oficial": {
+            "intervalo_padrao_s": disparo_qr.INTERVALO_PADRAO_S,
+            "intervalo_min_s": disparo_qr.INTERVALO_MIN_S,
+            "limite": disparo_qr.LIMITE_CONTATOS,
+            "texto_max": disparo_qr.TEXTO_MAX,
+        },
+    }
+
+
 class LerListaIn(BaseModel):
     texto: str = Field("", max_length=LISTA_MAX_CARACTERES)
+    # «texto» = número não oficial (limite menor da lista — services/disparo_qr.py)
+    tipo: str = "modelo"
 
 
 @router.post("/ler-lista")
@@ -210,9 +274,8 @@ async def ler_lista(body: LerListaIn, user: Usuario, db: Banco):
     visao.exigir_gestor(user, "criar disparos")
     leitura = disparo_lote.ler_lista(body.texto)
     contatos = leitura.contatos
-    desc = await disparo_lote.descadastrados_da_lista(
-        db, user.tenant_id, [c.chave for c in contatos[: disparo_lote.LIMITE_CONTATOS]]
-    )
+    limite = disparo_qr.LIMITE_CONTATOS if body.tipo == disparo_qr.TIPO else disparo_lote.LIMITE_CONTATOS
+    desc = await disparo_lote.descadastrados_da_lista(db, user.tenant_id, [c.chave for c in contatos[:limite]])
     return {
         "validos": len(contatos),
         "duplicados": leitura.duplicados,
@@ -224,8 +287,8 @@ async def ler_lista(body: LerListaIn, user: Usuario, db: Banco):
         "descadastrados_sem_nome": sum(
             1 for c in contatos if c.chave in desc and not disparo_lote.primeiro_nome(c.nome)
         ),
-        "limite": disparo_lote.LIMITE_CONTATOS,
-        "acima_do_limite": len(contatos) > disparo_lote.LIMITE_CONTATOS,
+        "limite": limite,
+        "acima_do_limite": len(contatos) > limite,
         "amostra": [
             {
                 "numero": c.numero,
@@ -293,18 +356,60 @@ class VariavelIn(BaseModel):
 
 class CriarIn(BaseModel):
     connector_id: int
-    modelo: str = Field(..., min_length=1, max_length=512)
+    # Número oficial: o modelo aprovado. Número NÃO oficial (18/11/2026): o `texto`, com {{nome}}.
+    modelo: str | None = Field(None, max_length=512)
+    texto: str | None = Field(None, max_length=disparo_qr.TEXTO_MAX + 200)
     idioma: str = "pt_BR"
     nome: str | None = Field(None, max_length=120)
     variaveis: list[VariavelIn] = []
     lista: str = Field(..., max_length=LISTA_MAX_CARACTERES)
-    intervalo_s: int = disparo_lote.INTERVALO_PADRAO_S
+    intervalo_s: int | None = None  # sem valor: 8 s no oficial, 30 s no não oficial
     agendar_para: datetime | None = None
+
+
+async def _numero_nao_oficial(db: AsyncSession, connector_id: int, user: CurrentUser):
+    """O número por QR do tenant, para criar/mexer em disparo (gestor). None = não é por QR."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    conn = await db.get(TaConnector, connector_id)
+    agente = await db.get(TaAgent, conn.agent_id) if conn else None
+    if not conn or not agente or (agente.tenant_id != user.tenant_id and not user.is_admin):
+        raise HTTPException(404, "Número não encontrado")
+    if conn.kind != disparo_qr.KIND:
+        return None
+    visao.exigir_gestor(user, "criar ou mexer em disparos")
+    return conn, agente
 
 
 @router.post("")
 async def criar(body: CriarIn, request: Request, user: Usuario, db: Banco):
-    """Cria em RASCUNHO (nada sai até `iniciar`). O modelo é conferido na Meta agora."""
+    """Cria em RASCUNHO (nada sai até `iniciar`). Oficial: o modelo é conferido na Meta agora.
+    Não oficial: o texto é conferido aqui ({{nome}} é a única variável)."""
+    qr = await _numero_nao_oficial(db, body.connector_id, user)
+    if qr is not None:
+        conn, agente = qr
+        if not conn.enabled:
+            raise HTTPException(409, "Este número está desconectado")
+        try:
+            d = await disparo_lote.criar_texto(
+                db,
+                tenant_id=agente.tenant_id,
+                connector_id=conn.id,
+                texto=body.texto or "",
+                lista=body.lista,
+                nome=body.nome,
+                intervalo_s=body.intervalo_s,
+                agendar_para=body.agendar_para,
+                criado_por_member_id=user.member_id,
+                criado_por=user.member_name or user.email,
+            )
+        except disparo_lote.ErroDoDisparo as e:
+            raise _erro(e) from e
+        request.state.atividade = {"alvo": f"disparo #{d.id} · texto (não oficial) · {d.total} contatos"[:255]}
+        return await _detalhe(db, d.id)
+
+    if not body.modelo:
+        raise HTTPException(422, "Escolha o modelo aprovado")
     conn, agente, cfg = await _numero(db, body.connector_id, user, gestor=True)
     if not conn.enabled:
         raise HTTPException(409, "Este número está desconectado")
@@ -451,7 +556,8 @@ async def _cards_no_crm(tenant_id: int, envios: list[dict]) -> None:
 
 
 async def _numero_ligado(db: AsyncSession, d: TaDisparoOficial, user: CurrentUser) -> None:
-    conn, _, _ = await _numero(db, d.connector_id, user, gestor=True)
+    qr = await _numero_nao_oficial(db, d.connector_id, user)
+    conn = qr[0] if qr is not None else (await _numero(db, d.connector_id, user, gestor=True))[0]
     if not conn.enabled:
         raise HTTPException(409, "O número deste disparo está desconectado — reconecte em Canais")
 

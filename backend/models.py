@@ -815,6 +815,10 @@ class TaDisparoOficial(Base):
     modelo_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Uma entrada por {{n}}: {"fonte": "nome"} (primeiro nome da lista) ou {"fonte": "fixo", "valor": "…"}.
     variaveis_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 18/11/2026 — `modelo` (número oficial, modelo da Meta) ou `texto` (número NÃO oficial, por QR:
+    # a mensagem é o `texto`, com {{nome}}; `modelo` fica vazio). Ver services/disparo_qr.py. Runtime DDL.
+    tipo: Mapped[str] = mapped_column(String(16), nullable=False, default="modelo", server_default="modelo")
+    texto: Mapped[str | None] = mapped_column(Text, nullable=True)
     intervalo_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=8000)
     variacao_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=2000)
     agendado_para: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # UTC

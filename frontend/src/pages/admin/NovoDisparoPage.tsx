@@ -1,6 +1,8 @@
 // Novo disparo (11/11/2026): número oficial + modelo aprovado + lista colada + de onde vem cada
 // variável. A lista é lida no servidor (a mesma regra que cria o disparo), e a tela mostra o
 // que vai acontecer antes: quantos recebem, quem fica de fora, o balão e o custo.
+// 18/11/2026 — também pelo número NÃO oficial (conectado por QR): no lugar do modelo, um texto
+// escrito aqui com {{nome}}; sem custo da Meta, ritmo mais lento e aviso do risco de bloqueio.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -29,6 +31,7 @@ import {
   type ModeloResumo,
   type Variavel,
   brl,
+  comNome,
   duracao,
   inteiro,
   mensagemDeErro,
@@ -36,14 +39,23 @@ import {
   precoDaCategoria,
   preencher,
   quando,
+  variavelEstranha,
 } from "@/lib/disparos";
 
 interface Numero {
   id: number;
-  agente: string;
+  tipo: "oficial" | "nao_oficial";
   telefone: string | null;
-  nome_verificado: string | null;
+  agente: string | null;
+  modo: "agente" | "registro";
+  dono: string | null;
   ativo: boolean;
+}
+interface ConfigNaoOficial {
+  intervalo_padrao_s: number;
+  intervalo_min_s: number;
+  limite: number;
+  texto_max: number;
 }
 interface ModeloDoDisparo extends ModeloResumo {
   bloqueio: string | null;
@@ -61,8 +73,10 @@ interface Previa {
   amostra: { numero: string; nome: string | null; primeiro_nome: string | null; descadastrado: boolean }[];
 }
 
-const INTERVALO_MIN = 2;
+const INTERVALO_MIN_OFICIAL = 2;
+const INTERVALO_PADRAO_OFICIAL = 8;
 const INTERVALO_MAX = 300;
+const NAO_OFICIAL_PADRAO: ConfigNaoOficial = { intervalo_padrao_s: 30, intervalo_min_s: 10, limite: 1000, texto_max: 4000 };
 const FONTES = [
   { value: "nome" as const, label: "Primeiro nome da lista" },
   { value: "fixo" as const, label: "Texto fixo" },
@@ -71,9 +85,19 @@ const QUANDO = [
   { value: "agora" as const, label: "Assim que iniciar" },
   { value: "agendar" as const, label: "Agendar" },
 ];
+const TEM_NOME = /\{\{\s*nome\s*\}\}/i;
+const ID_TEXTO = "texto-do-disparo";
 
 function chave(m: { nome: string; idioma: string }) {
   return `${m.nome}|${m.idioma}`;
+}
+
+/** «11 95435-9591 · oficial · Agent CCDA» / «11 99876-9480 · não oficial · celular da Débora». */
+function rotuloDoNumero(n: Numero): string {
+  const tel = formatPhone(n.telefone);
+  if (n.tipo === "oficial") return `${tel} · oficial${n.agente ? ` · ${n.agente}` : ""}`;
+  if (n.modo === "registro") return `${tel} · não oficial · ${n.dono ? `celular de ${n.dono}` : "celular (registro)"}`;
+  return `${tel} · não oficial${n.agente ? ` · ${n.agente}` : ""}`;
 }
 
 export default function NovoDisparoPage() {
@@ -81,37 +105,51 @@ export default function NovoDisparoPage() {
   const [confirmar, dialogo] = useConfirmar();
 
   const [numeros, setNumeros] = useState<Numero[] | null>(null);
+  const [cfgNaoOficial, setCfgNaoOficial] = useState<ConfigNaoOficial>(NAO_OFICIAL_PADRAO);
   const [podeCriar, setPodeCriar] = useState(true);
   const [numeroId, setNumeroId] = useState<number | null>(null);
   const [modelos, setModelos] = useState<ModeloDoDisparo[] | null>(null);
   const [erroModelos, setErroModelos] = useState<string | null>(null);
   const [modeloChave, setModeloChave] = useState<string | null>(null);
   const [fontes, setFontes] = useState<Variavel[]>([]);
+  const [texto, setTexto] = useState("");
   const [lista, setLista] = useState("");
   const [previa, setPrevia] = useState<Previa | null>(null);
   const [lendo, setLendo] = useState(false);
-  const [intervalo, setIntervalo] = useState("8");
+  const [intervalo, setIntervalo] = useState(String(INTERVALO_PADRAO_OFICIAL));
   const [modoInicio, setModoInicio] = useState<"agora" | "agendar">("agora");
   const [agendarPara, setAgendarPara] = useState("");
   const [nome, setNome] = useState("");
   const [salvando, setSalvando] = useState(false);
 
-  // números oficiais ligados
+  // números ligados: oficial (modelo da Meta) e não oficial (QR, texto)
   useEffect(() => {
     api
-      .get<{ numeros: Numero[]; pode_criar: boolean }>("/whatsapp-oficial/numeros")
+      .get<{ numeros: Numero[]; pode_criar: boolean; nao_oficial?: ConfigNaoOficial }>("/disparos-oficiais/numeros")
       .then(({ data }) => {
         const ativos = data.numeros.filter((n) => n.ativo);
         setNumeros(ativos);
         setPodeCriar(data.pode_criar);
+        if (data.nao_oficial) setCfgNaoOficial(data.nao_oficial);
         setNumeroId(ativos[0]?.id ?? null);
       })
       .catch(() => setNumeros([]));
   }, []);
 
-  // modelos aprovados do número
+  const numero = useMemo(() => numeros?.find((n) => n.id === numeroId) ?? null, [numeros, numeroId]);
+  const ehTexto = numero?.tipo === "nao_oficial";
+  const intervaloMin = ehTexto ? cfgNaoOficial.intervalo_min_s : INTERVALO_MIN_OFICIAL;
+
+  // Trocou o TIPO do número: o ritmo volta ao padrão dele (8 s no oficial, 30 s no não oficial).
   useEffect(() => {
-    if (!numeroId || !podeCriar) return;
+    if (!numero) return;
+    setIntervalo(String(ehTexto ? cfgNaoOficial.intervalo_padrao_s : INTERVALO_PADRAO_OFICIAL));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ehTexto, cfgNaoOficial.intervalo_padrao_s]);
+
+  // modelos aprovados do número (só no oficial)
+  useEffect(() => {
+    if (!numeroId || !podeCriar || !numero || ehTexto) return;
     setModelos(null);
     setErroModelos(null);
     api
@@ -126,11 +164,14 @@ export default function NovoDisparoPage() {
         setModeloChave(null);
         setErroModelos(mensagemDeErro(e, "Não consegui buscar os modelos na Meta"));
       });
-  }, [numeroId, podeCriar]);
+  }, [numeroId, podeCriar, numero, ehTexto]);
 
   const usaveis = useMemo(() => (modelos || []).filter((m) => !m.bloqueio), [modelos]);
   const bloqueados = useMemo(() => (modelos || []).filter((m) => m.bloqueio), [modelos]);
-  const modelo = useMemo(() => usaveis.find((m) => chave(m) === modeloChave) ?? null, [usaveis, modeloChave]);
+  const modelo = useMemo(
+    () => (ehTexto ? null : usaveis.find((m) => chave(m) === modeloChave) ?? null),
+    [usaveis, modeloChave, ehTexto],
+  );
 
   // {{1}} costuma ser o nome; as outras começam como texto fixo.
   useEffect(() => {
@@ -138,11 +179,11 @@ export default function NovoDisparoPage() {
     setFontes(Array.from({ length: n }, (_, i): Variavel => (i === 0 ? { fonte: "nome" } : { fonte: "fixo", valor: "" })));
   }, [modelo]);
 
-  // prévia da lista (no servidor, a mesma leitura que cria o disparo)
+  // prévia da lista (no servidor, a mesma leitura que cria o disparo; o limite muda com o tipo)
   const pedido = useRef(0);
   useEffect(() => {
-    const texto = lista.trim();
-    if (!texto) {
+    const conteudo = lista.trim();
+    if (!conteudo) {
       setPrevia(null);
       setLendo(false);
       return;
@@ -151,58 +192,89 @@ export default function NovoDisparoPage() {
     const meu = ++pedido.current;
     const t = window.setTimeout(() => {
       api
-        .post<Previa>("/disparos-oficiais/ler-lista", { texto: lista })
+        .post<Previa>("/disparos-oficiais/ler-lista", { texto: lista, tipo: ehTexto ? "texto" : "modelo" })
         .then(({ data }) => meu === pedido.current && setPrevia(data))
         .catch((e) => meu === pedido.current && toast.error(mensagemDeErro(e, "Não consegui ler a lista")))
         .finally(() => meu === pedido.current && setLendo(false));
     }, 400);
     return () => window.clearTimeout(t);
-  }, [lista]);
+  }, [lista, ehTexto]);
+
+  function inserirNome() {
+    // O Textarea do DS não repassa `ref` (React 18): a caixa é achada pelo id.
+    const el = document.getElementById(ID_TEXTO) as HTMLTextAreaElement | null;
+    const ini = el?.selectionStart ?? texto.length;
+    const fim = el?.selectionEnd ?? texto.length;
+    const novo = `${texto.slice(0, ini)}{{nome}}${texto.slice(fim)}`;
+    setTexto(novo);
+    window.requestAnimationFrame(() => {
+      el?.focus();
+      const pos = ini + "{{nome}}".length;
+      el?.setSelectionRange(pos, pos);
+    });
+  }
 
   // ── contas ──
-  const usaNome = fontes.some((f) => f.fonte === "nome");
+  const usaNome = ehTexto ? TEM_NOME.test(texto) : fontes.some((f) => f.fonte === "nome");
   const semNome = previa && usaNome ? Math.max(0, previa.validos - previa.com_nome - previa.descadastrados_sem_nome) : 0;
   const vaoReceber = previa ? Math.max(0, previa.validos - previa.descadastrados - semNome) : 0;
-  const preco = precoDaCategoria(modelo?.categoria);
+  const preco = ehTexto ? null : precoDaCategoria(modelo?.categoria);
   const intervaloN = Number(intervalo);
-  const intervaloOk = Number.isInteger(intervaloN) && intervaloN >= INTERVALO_MIN && intervaloN <= INTERVALO_MAX;
-  const variacao = intervaloOk ? Math.round(intervaloN * 0.25 * 10) / 10 : 0;
+  const intervaloOk = Number.isInteger(intervaloN) && intervaloN >= intervaloMin && intervaloN <= INTERVALO_MAX;
+  const variacao = intervaloOk ? Math.round(intervaloN * (ehTexto ? 0.3 : 0.25) * 10) / 10 : 0;
   const quandoComeca = modoInicio === "agendar" && agendarPara ? new Date(agendarPara) : null;
   const agendaOk = modoInicio === "agora" || (!!quandoComeca && quandoComeca.getTime() > Date.now());
   const fixosOk = fontes.every((f) => f.fonte === "nome" || !!f.valor?.trim());
+  const estranha = ehTexto ? variavelEstranha(texto) : null;
+  const textoGrande = ehTexto && texto.trim().length > cfgNaoOficial.texto_max;
 
   const exemplo =
     previa?.amostra.find((a) => !a.descadastrado && (!usaNome || a.primeiro_nome)) ?? previa?.amostra[0] ?? null;
-  const valoresExemplo = fontes.map((f) =>
-    f.fonte === "nome" ? exemplo?.primeiro_nome || "[primeiro nome]" : f.valor?.trim() || "",
-  );
-  const corpoExemplo = modelo
-    ? [modelo.cabecalho, preencher(modelo.corpo, valoresExemplo)].filter(Boolean).join("\n\n")
-    : "";
+  const nomeExemplo = exemplo?.primeiro_nome || "[primeiro nome]";
+  const valoresExemplo = fontes.map((f) => (f.fonte === "nome" ? nomeExemplo : f.valor?.trim() || ""));
+  const corpoExemplo = ehTexto
+    ? comNome(texto.trim(), nomeExemplo)
+    : modelo
+      ? [modelo.cabecalho, preencher(modelo.corpo, valoresExemplo)].filter(Boolean).join("\n\n")
+      : "";
 
   const pendencias: string[] = [];
   if (!numeroId) pendencias.push("escolha o número");
-  if (!modelo) pendencias.push("escolha um modelo aprovado");
+  if (ehTexto) {
+    if (!texto.trim()) pendencias.push("escreva a mensagem");
+    else if (estranha) pendencias.push(`«${estranha}» não existe — a única variável é {{nome}}`);
+    else if (textoGrande) pendencias.push(`a mensagem passa de ${inteiro(cfgNaoOficial.texto_max)} caracteres`);
+  } else if (!modelo) pendencias.push("escolha um modelo aprovado");
   if (!previa || previa.validos === 0) pendencias.push("cole a lista de contatos");
   else if (previa.acima_do_limite) pendencias.push(`a lista passa de ${inteiro(previa.limite)} contatos`);
   else if (vaoReceber === 0) pendencias.push("ninguém da lista vai receber");
   if (!fixosOk) pendencias.push("escreva o texto fixo de cada variável");
-  if (!intervaloOk) pendencias.push(`intervalo entre ${INTERVALO_MIN} e ${INTERVALO_MAX} segundos`);
+  if (!intervaloOk) pendencias.push(`intervalo entre ${intervaloMin} e ${INTERVALO_MAX} segundos`);
   if (!agendaOk) pendencias.push("escolha um horário futuro");
   const pronto = pendencias.length === 0 && !lendo && !salvando;
 
   async function salvar(iniciar: boolean) {
-    if (!pronto || !modelo || !numeroId) return;
+    if (!pronto || !numeroId || !numero || (!ehTexto && !modelo)) return;
     if (iniciar) {
       const ok = await confirmar({
-        titulo: `Enviar «${modelo.nome}» para ${inteiro(vaoReceber)} contato${vaoReceber === 1 ? "" : "s"}?`,
+        titulo: ehTexto
+          ? `Enviar a mensagem para ${inteiro(vaoReceber)} contato${vaoReceber === 1 ? "" : "s"} pelo ${formatPhone(numero.telefone)}?`
+          : `Enviar «${modelo!.nome}» para ${inteiro(vaoReceber)} contato${vaoReceber === 1 ? "" : "s"}?`,
         texto: (
           <>
-            {preco !== null && (
+            {ehTexto ? (
               <p>
-                Custo estimado de até <b className="tabular-nums">{brl(vaoReceber * preco)}</b>, cobrado pela Meta na conta do
-                número ({nomeDaCategoria(modelo.categoria)}, por mensagem entregue).
+                Sai pelo número <b>não oficial</b>
+                {numero.modo === "registro" && numero.dono ? `, o celular de ${numero.dono}` : ""}. Não tem custo da Meta, mas
+                o WhatsApp pode bloquear número que manda muita mensagem para quem não o tem salvo.
               </p>
+            ) : (
+              preco !== null && (
+                <p>
+                  Custo estimado de até <b className="tabular-nums">{brl(vaoReceber * preco)}</b>, cobrado pela Meta na conta do
+                  número ({nomeDaCategoria(modelo!.categoria)}, por mensagem entregue).
+                </p>
+              )
             )}
             <p className="mt-2">
               {quandoComeca ? `Começa ${quando(quandoComeca.toISOString())}` : "Começa agora"} e leva cerca de{" "}
@@ -217,16 +289,24 @@ export default function NovoDisparoPage() {
     setSalvando(true);
     let id: number | null = null;
     try {
-      const { data } = await api.post<{ id: number }>("/disparos-oficiais", {
+      const comum = {
         connector_id: numeroId,
-        modelo: modelo.nome,
-        idioma: modelo.idioma,
         nome: nome.trim() || null,
-        variaveis: fontes.map((f) => (f.fonte === "nome" ? { fonte: "nome" } : { fonte: "fixo", valor: f.valor.trim() })),
         lista,
         intervalo_s: intervaloN,
         agendar_para: quandoComeca ? quandoComeca.toISOString() : null,
-      });
+      };
+      const { data } = await api.post<{ id: number }>(
+        "/disparos-oficiais",
+        ehTexto
+          ? { ...comum, texto: texto.trim() }
+          : {
+              ...comum,
+              modelo: modelo!.nome,
+              idioma: modelo!.idioma,
+              variaveis: fontes.map((f) => (f.fonte === "nome" ? { fonte: "nome" } : { fonte: "fixo", valor: f.valor.trim() })),
+            },
+      );
       id = data.id;
       if (iniciar) {
         await api.post(`/disparos-oficiais/${id}/iniciar`);
@@ -255,7 +335,7 @@ export default function NovoDisparoPage() {
       <PageFrame>
         <PageHero
           title="Novo disparo"
-          subtitle="Um modelo aprovado pela Meta, pelo número oficial, para a lista que você colar. Antes de começar você vê quem recebe, como chega e quanto custa."
+          subtitle="Uma mensagem para a lista que você colar. Pelo número oficial vai um modelo aprovado pela Meta; pelo número não oficial (conectado por QR), o texto que você escrever. Antes de começar você vê quem recebe e como chega."
           right={voltar}
         />
 
@@ -274,7 +354,7 @@ export default function NovoDisparoPage() {
           <Row last>
             <EmptyHint
               icon={Megaphone}
-              text="Disparo sai pelo WhatsApp oficial (API da Meta), e não há número oficial ligado. Conecte um em Canais › Conectar canal › WhatsApp Oficial."
+              text="Não há número de WhatsApp ligado para disparar. Conecte um em Canais — o oficial (API da Meta) ou um por QR."
               ctaLabel="Ir para Canais"
               ctaTo="/admin/canais"
               className="py-12"
@@ -286,45 +366,57 @@ export default function NovoDisparoPage() {
               {/* ── formulário ── */}
               <div className={`min-w-0 lg:border-r ${FC.hair}`}>
                 <section className={`px-6 py-5 border-b ${FC.hair} grid grid-cols-1 md:grid-cols-2 gap-4`}>
-                  <Field label="Número oficial">
-                    <Select
-                      value={numeroId}
-                      onChange={setNumeroId}
-                      options={numeros.map((n) => ({ value: n.id, label: `${formatPhone(n.telefone)} · ${n.agente}` }))}
-                    />
-                  </Field>
-                  <Field
-                    label="Modelo aprovado"
-                    hint={
-                      modelo ? (
-                        <>
-                          {nomeDaCategoria(modelo.categoria)}
-                          {preco !== null ? ` · cerca de ${brl(preco)} por mensagem entregue` : ""} ·{" "}
-                          <Link to={`/admin/canais/modelos?numero=${numeroId}`} className="text-[#003083] dark:text-[#5b9bff] hover:underline">
-                            criar modelo
-                          </Link>
-                        </>
-                      ) : undefined
-                    }
-                  >
-                    {modelos === null ? (
-                      <SkeletonBar className="h-8 w-full" />
-                    ) : usaveis.length === 0 ? (
-                      <p className={`text-[12.5px] leading-5 ${FC.sub}`}>
-                        {erroModelos || "Este número não tem modelo aprovado que sirva para disparo. "}
-                        <Link to={`/admin/canais/modelos?numero=${numeroId}`} className="text-[#003083] dark:text-[#5b9bff] hover:underline">
-                          Criar um modelo
-                        </Link>
-                      </p>
-                    ) : (
+                  {/* sem o campo do modelo ao lado, o número ocupa a linha (senão o «celular de …» corta) */}
+                  <div className={ehTexto ? "md:col-span-2 md:max-w-[560px]" : ""}>
+                    <Field
+                      label="Número"
+                      hint={
+                        ehTexto
+                          ? "Não oficial: sem modelo e sem custo da Meta. Entregue e lido não aparecem — conta-se enviado e quem respondeu."
+                          : undefined
+                      }
+                    >
                       <Select
-                        value={modeloChave}
-                        onChange={setModeloChave}
-                        options={usaveis.map((m) => ({ value: chave(m), label: m.nome, busca: `${m.nome} ${m.corpo}` }))}
+                        value={numeroId}
+                        onChange={setNumeroId}
+                        options={numeros.map((n) => ({ value: n.id, label: rotuloDoNumero(n) }))}
                       />
-                    )}
-                  </Field>
-                  {bloqueados.length > 0 && (
+                    </Field>
+                  </div>
+                  {!ehTexto && (
+                    <Field
+                      label="Modelo aprovado"
+                      hint={
+                        modelo ? (
+                          <>
+                            {nomeDaCategoria(modelo.categoria)}
+                            {preco !== null ? ` · cerca de ${brl(preco)} por mensagem entregue` : ""} ·{" "}
+                            <Link to={`/admin/canais/modelos?numero=${numeroId}`} className="text-[#003083] dark:text-[#5b9bff] hover:underline">
+                              criar modelo
+                            </Link>
+                          </>
+                        ) : undefined
+                      }
+                    >
+                      {modelos === null ? (
+                        <SkeletonBar className="h-8 w-full" />
+                      ) : usaveis.length === 0 ? (
+                        <p className={`text-[12.5px] leading-5 ${FC.sub}`}>
+                          {erroModelos || "Este número não tem modelo aprovado que sirva para disparo. "}
+                          <Link to={`/admin/canais/modelos?numero=${numeroId}`} className="text-[#003083] dark:text-[#5b9bff] hover:underline">
+                            Criar um modelo
+                          </Link>
+                        </p>
+                      ) : (
+                        <Select
+                          value={modeloChave}
+                          onChange={setModeloChave}
+                          options={usaveis.map((m) => ({ value: chave(m), label: m.nome, busca: `${m.nome} ${m.corpo}` }))}
+                        />
+                      )}
+                    </Field>
+                  )}
+                  {!ehTexto && bloqueados.length > 0 && (
                     <div className="md:col-span-2">
                       <details className={`text-[11.5px] leading-4 ${FC.mut}`}>
                         <summary className="cursor-pointer select-none">
@@ -342,6 +434,39 @@ export default function NovoDisparoPage() {
                     </div>
                   )}
                 </section>
+
+                {ehTexto && (
+                  <section className={`px-6 py-5 border-b ${FC.hair}`}>
+                    <Field
+                      label="Mensagem"
+                      right={`${inteiro(texto.trim().length)}/${inteiro(cfgNaoOficial.texto_max)}`}
+                      hint={
+                        <>
+                          {"{{nome}}"} vira o primeiro nome da lista — quem está sem nome não recebe, nenhum nome é inventado.
+                          Quem responder «parar» ou «sair» sai da lista de envios.
+                        </>
+                      }
+                    >
+                      <Textarea
+                        id={ID_TEXTO}
+                        value={texto}
+                        onChange={(e) => setTexto(e.target.value)}
+                        rows={6}
+                        placeholder={"Olá {{nome}}, tudo bem? …"}
+                      />
+                    </Field>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Button variant="secondary" size="sm" onClick={inserirNome}>
+                        Inserir {"{{nome}}"}
+                      </Button>
+                      {estranha && (
+                        <span className="text-[11.5px] text-red-700 dark:text-red-400">
+                          «{estranha}» não existe — a única variável é {"{{nome}}"}.
+                        </span>
+                      )}
+                    </div>
+                  </section>
+                )}
 
                 <section className={`px-6 py-5 border-b ${FC.hair}`}>
                   <Field
@@ -384,7 +509,8 @@ export default function NovoDisparoPage() {
                           </p>
                           {previa.acima_do_limite && (
                             <p className="text-[12px] text-red-700 dark:text-red-400">
-                              O limite é de {inteiro(previa.limite)} contatos por disparo — divida a lista.
+                              O limite é de {inteiro(previa.limite)} contatos por disparo
+                              {ehTexto ? " no número não oficial" : ""} — divida a lista.
                             </p>
                           )}
                           {previa.invalidas.length > 0 && (
@@ -430,7 +556,7 @@ export default function NovoDisparoPage() {
                   )}
                 </section>
 
-                {fontes.length > 0 && modelo && (
+                {!ehTexto && fontes.length > 0 && modelo && (
                   <section className={`px-6 py-5 border-b ${FC.hair}`}>
                     <h3 className={`text-[13px] font-medium ${FC.ink}`}>Variáveis do modelo</h3>
                     <p className={`mt-1 text-[12px] ${FC.sub}`}>
@@ -472,13 +598,15 @@ export default function NovoDisparoPage() {
                     label="Intervalo entre envios (segundos)"
                     hint={
                       intervaloOk
-                        ? `Varia ±${String(variacao).replace(".", ",")} s de um envio para o outro — ritmo regular demais parece robô.`
-                        : `Entre ${INTERVALO_MIN} e ${INTERVALO_MAX} segundos.`
+                        ? ehTexto
+                          ? `Varia ±${String(variacao).replace(".", ",")} s. No número não oficial o mínimo é ${intervaloMin} s: ritmo rápido é o que mais leva o WhatsApp a bloquear.`
+                          : `Varia ±${String(variacao).replace(".", ",")} s de um envio para o outro — ritmo regular demais parece robô.`
+                        : `Entre ${intervaloMin} e ${INTERVALO_MAX} segundos.`
                     }
                   >
                     <Input
                       type="number"
-                      min={INTERVALO_MIN}
+                      min={intervaloMin}
                       max={INTERVALO_MAX}
                       value={intervalo}
                       onChange={(e) => setIntervalo(e.target.value)}
@@ -498,7 +626,14 @@ export default function NovoDisparoPage() {
                       )}
                     </div>
                   </Field>
-                  <Field label="Nome do disparo (opcional)" hint="Só para achar depois na lista. Sem nome, vira «modelo · data».">
+                  <Field
+                    label="Nome do disparo (opcional)"
+                    hint={
+                      ehTexto
+                        ? "Só para achar depois na lista. Sem nome, vira o começo da mensagem · data."
+                        : "Só para achar depois na lista. Sem nome, vira «modelo · data»."
+                    }
+                  >
                     <Input value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} placeholder="Convite para a visita de sábado" />
                   </Field>
                 </section>
@@ -510,13 +645,15 @@ export default function NovoDisparoPage() {
                   <div>
                     <h3 className={`text-[13px] font-medium ${FC.ink}`}>Como chega</h3>
                     <div className={`mt-2 rounded-xl p-3 ${FC.base}`}>
-                      {modelo ? (
+                      {ehTexto ? (
+                        <BalaoDoModelo corpo={corpoExemplo} />
+                      ) : modelo ? (
                         <BalaoDoModelo corpo={corpoExemplo} rodape={modelo.rodape} botoes={modelo.botoes} />
                       ) : (
                         <p className={`text-[12px] ${FC.mut}`}>Escolha o modelo para ver a mensagem.</p>
                       )}
                     </div>
-                    {modelo && exemplo && (
+                    {(ehTexto ? !!texto.trim() : !!modelo) && exemplo && (
                       <p className={`mt-1.5 text-[11px] ${FC.mut}`}>
                         Com o primeiro contato da lista: {exemplo.nome || formatPhone(exemplo.numero)}.
                       </p>
@@ -535,7 +672,9 @@ export default function NovoDisparoPage() {
                     </div>
                     <div className="flex items-baseline justify-between gap-3 py-2.5">
                       <dt className={FC.sub}>Custo estimado</dt>
-                      <dd className={`tabular-nums font-medium ${FC.ink}`}>{preco !== null ? `até ${brl(vaoReceber * preco)}` : "—"}</dd>
+                      <dd className={`tabular-nums font-medium ${FC.ink}`}>
+                        {ehTexto ? "sem custo da Meta" : preco !== null ? `até ${brl(vaoReceber * preco)}` : "—"}
+                      </dd>
                     </div>
                     <div className="flex items-baseline justify-between gap-3 py-2.5">
                       <dt className={FC.sub}>Duração</dt>
@@ -546,12 +685,21 @@ export default function NovoDisparoPage() {
                       <dd className={`tabular-nums ${FC.ink}`}>{quandoComeca ? quando(quandoComeca.toISOString()) : "ao iniciar"}</dd>
                     </div>
                   </dl>
-                  <p className={`text-[11px] leading-4 ${FC.mut}`}>
-                    A Meta cobra por mensagem <b>entregue</b>, na conta do número
-                    {modelo ? ` (${nomeDaCategoria(modelo.categoria)}${preco !== null ? `, ${brl(preco)} cada` : ""})` : ""} — valor da
-                    tabela da Meta para o Brasil, pode mudar. A Meta também limita quantas pessoas por dia um número pode abordar
-                    primeiro; acima disso os envios falham — e com mais de 30% de falha o disparo pausa sozinho.
-                  </p>
+                  {ehTexto ? (
+                    <p className={`text-[11px] leading-4 ${FC.mut}`}>
+                      Antes de cada envio o sistema confere se o número tem WhatsApp — quem não tem fica como falha, sem mensagem.
+                      O WhatsApp pode <b>bloquear</b> número não oficial que manda muito para quem não o tem salvo
+                      {numero?.modo === "registro" ? " — e aqui é o celular de uma pessoa da equipe" : ""}. Lista pequena e
+                      conhecida, ritmo lento. Com mais de 30% de falha o disparo pausa sozinho.
+                    </p>
+                  ) : (
+                    <p className={`text-[11px] leading-4 ${FC.mut}`}>
+                      A Meta cobra por mensagem <b>entregue</b>, na conta do número
+                      {modelo ? ` (${nomeDaCategoria(modelo.categoria)}${preco !== null ? `, ${brl(preco)} cada` : ""})` : ""} — valor
+                      da tabela da Meta para o Brasil, pode mudar. A Meta também limita quantas pessoas por dia um número pode abordar
+                      primeiro; acima disso os envios falham — e com mais de 30% de falha o disparo pausa sozinho.
+                    </p>
+                  )}
 
                   <div className="space-y-2">
                     <Button onClick={() => void salvar(true)} disabled={!pronto} className="w-full">
