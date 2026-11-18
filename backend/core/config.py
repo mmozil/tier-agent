@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
 
+    # 18/11/2026 — e-mail transacional (código para trocar/redefinir a senha). Mesmo serviço (Resend) e
+    # mesmo remetente do ERP. Sem a chave, as rotas de senha respondem 503 — o login segue igual.
+    resend_api_key: str = ""
+    mail_from_email: str = "nao-responda@tier.finance"
+
     default_llm_provider: str = "minimax"
     default_llm_model: str = "MiniMax-M2"
     default_llm_api_key: str = ""

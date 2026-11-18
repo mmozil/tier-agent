@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Loader2, User, Building2, Mail, Image as ImageIcon, Camera } from "lucide-react";
+import { Loader2, User, Building2, Mail, Image as ImageIcon, Camera, Lock } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -77,7 +77,7 @@ export default function PerfilPage() {
       <PageFrame>
         <PageHero title="Meu perfil" subtitle="Dados básicos da sua conta no Tier Agent." />
 
-        <Row last>
+        <Row>
           <form onSubmit={onSubmit} className="p-6 space-y-6">
             {!membro && (
             <Field label="Foto" icon={<ImageIcon className={`w-4 h-4 ${FC.mut}`} />} hint="Aparece no menu do topo e no rodapé da barra lateral.">
@@ -160,7 +160,165 @@ export default function PerfilPage() {
             </div>
           </form>
         </Row>
+
+        <Row last>
+          <TrocarSenha temSenha={!!user?.tem_senha} inputCls={inputCls} />
+        </Row>
       </PageFrame>
+    </div>
+  );
+}
+
+// 18/11/2026 — trocar a senha com código no e-mail (pedido do dono para o Augusto). A senha nova só
+// vale depois do código: quem está com a sessão aberta sem acesso ao e-mail não troca. Ver services/senha.py.
+function TrocarSenha({ temSenha, inputCls }: { temSenha: boolean; inputCls: string }) {
+  const [atual, setAtual] = useState("");
+  const [nova, setNova] = useState("");
+  const [repetir, setRepetir] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [enviadoPara, setEnviadoPara] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [espera, setEspera] = useState(0);
+
+  useEffect(() => {
+    if (espera <= 0) return;
+    const t = window.setTimeout(() => setEspera((s) => s - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [espera]);
+
+  const falta =
+    temSenha && !atual
+      ? "digite a senha atual"
+      : nova.length < 8
+        ? "a nova senha precisa de 8 caracteres ou mais"
+        : nova !== repetir
+          ? "as duas senhas novas não são iguais"
+          : null;
+
+  async function pedirCodigo(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (falta || ocupado) return;
+    setOcupado(true);
+    try {
+      const { data } = await api.post<{ enviado_para: string }>("/auth/me/senha/codigo", {
+        senha_atual: temSenha ? atual : null,
+        nova_senha: nova,
+      });
+      setEnviadoPara(data.enviado_para);
+      setCodigo("");
+      setEspera(60);
+      toast.success(`Código enviado para ${data.enviado_para}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Não consegui enviar o código");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function confirmar(e: React.FormEvent) {
+    e.preventDefault();
+    if (codigo.replace(/\D/g, "").length !== 6 || ocupado) return;
+    setOcupado(true);
+    try {
+      await api.post("/auth/me/senha/confirmar", { codigo });
+      toast.success("Senha trocada");
+      setAtual("");
+      setNova("");
+      setRepetir("");
+      setCodigo("");
+      setEnviadoPara(null);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      toast.error(err?.response?.data?.detail || "Não consegui confirmar");
+      // código vencido, morto ou de outro pedido: volta para o começo
+      if (status === 410 || status === 429) {
+        setEnviadoPara(null);
+        setCodigo("");
+      }
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <div className="p-6">
+      <Field
+        label="Senha"
+        icon={<Lock className={`w-4 h-4 ${FC.mut}`} />}
+        hint="A senha nova só passa a valer depois do código que mandamos para o seu e-mail."
+      >
+        {!enviadoPara ? (
+          <form onSubmit={pedirCodigo} className="space-y-3">
+            {temSenha && (
+              <input
+                type="password"
+                value={atual}
+                onChange={(e) => setAtual(e.target.value)}
+                placeholder="Senha atual"
+                autoComplete="current-password"
+                className={inputCls}
+              />
+            )}
+            <input
+              type="password"
+              value={nova}
+              onChange={(e) => setNova(e.target.value)}
+              placeholder="Nova senha (8 caracteres ou mais)"
+              autoComplete="new-password"
+              className={inputCls}
+            />
+            <input
+              type="password"
+              value={repetir}
+              onChange={(e) => setRepetir(e.target.value)}
+              placeholder="Repita a nova senha"
+              autoComplete="new-password"
+              className={inputCls}
+            />
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <p className={`text-[12px] ${FC.mut}`}>{(atual || nova || repetir) && falta ? `Falta: ${falta}.` : ""}</p>
+              <Button type="submit" variant="secondary" disabled={!!falta || ocupado}>
+                {ocupado && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Enviar código por e-mail
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={confirmar} className="space-y-3">
+            <p className={`text-[13px] ${FC.sub}`}>
+              Mandamos um código de 6 dígitos para <b className={FC.ink}>{enviadoPara}</b>. Ele vale por 15 minutos.
+            </p>
+            <input
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value.replace(/[^\d ]/g, "").slice(0, 7))}
+              placeholder="Código do e-mail"
+              className={`${inputCls} tracking-[0.3em] placeholder:tracking-normal tabular-nums`}
+              autoFocus
+            />
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <div className={`text-[12px] ${FC.mut} space-x-3`}>
+                <button
+                  type="button"
+                  onClick={() => void pedirCodigo()}
+                  disabled={espera > 0 || ocupado}
+                  className="text-[#003083] dark:text-[#5b9bff] hover:underline disabled:no-underline disabled:opacity-50"
+                >
+                  {espera > 0 ? `Reenviar em ${espera} s` : "Reenviar código"}
+                </button>
+                <button type="button" onClick={() => setEnviadoPara(null)} className="hover:underline">
+                  Voltar
+                </button>
+              </div>
+              <Button type="submit" variant="primary" disabled={codigo.replace(/\D/g, "").length !== 6 || ocupado}>
+                {ocupado && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Trocar senha
+              </Button>
+            </div>
+          </form>
+        )}
+      </Field>
     </div>
   );
 }

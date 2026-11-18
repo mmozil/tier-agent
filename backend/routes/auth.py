@@ -60,6 +60,16 @@ async def _find_member(db: AsyncSession, email: str) -> TaMember | None:
     return result.scalar_one_or_none()
 
 
+async def _conta_do_login(db: AsyncSession, email: str) -> TaTenant | TaMember | None:
+    """A conta que entra com este e-mail na tela de login — a mesma ordem de `/auth/login`: dono
+    primeiro, depois membro ATIVO. É a senha DELA que se troca (18/11/2026)."""
+    tenant = await _find_tenant(db, email)
+    if tenant:
+        return tenant
+    member = await _find_member(db, email)
+    return member if member is not None and member.status == "active" else None
+
+
 def _set_cookie(response: Response, token: str) -> None:
     """Cookie de sessão do Agent — host-only (ta_session), NUNCA o tier_session do ERP."""
     response.set_cookie(
@@ -276,11 +286,14 @@ async def me(db: AsyncSession = Depends(get_db), user=Depends(__import__("core.a
         m = await db.get(TaMember, int(user.member_id))
         if m is not None and m.tenant_id == user.tenant_id:
             membro = {"id": m.id, "nome": m.nome, "email": m.email, "cargo": m.cargo, "role": m.role}
+    # 18/11/2026 — a conta do LOGIN deste e-mail tem senha? A tela de troca pede a atual só se tiver.
+    conta = await _conta_do_login(db, user.email) if user.email else None
     return {
         "user_id": user.user_id,
         "email": user.email,
         "tenant_id": user.tenant_id,
         "is_admin": user.is_admin,
+        "tem_senha": bool(conta is not None and conta.password_hash),
         # Quem é a pessoa nesta sessão (21/10/2026): a tela de números esconde de
         # quem não é dono/admin o que o servidor já recusa (criar, desconectar, apagar).
         "role": user.role,
@@ -511,3 +524,151 @@ async def trocar_conta(
         raise HTTPException(502, "O CRM devolveu a entrada de outra conta.")
     _set_cookie(response, token)
     return {"ok": True, "tenant_id": int(body.agent_tenant_id)}
+
+
+# ───────────────────────── senha com código no e-mail (18/11/2026) ─────────────────────────
+# Ver services/senha.py. Dentro (Meu perfil): senha atual + nova → código → confirma.
+# Fora (login, «Esqueceu a senha?»): e-mail → código → nova senha. A senha é a da conta do LOGIN.
+
+
+class SenhaCodigoIn(BaseModel):
+    senha_atual: str | None = None
+    nova_senha: str
+
+
+class SenhaConfirmarIn(BaseModel):
+    codigo: str
+
+
+class EsqueciIn(BaseModel):
+    email: EmailStr
+
+
+class RedefinirIn(BaseModel):
+    email: EmailStr
+    codigo: str
+    nova_senha: str
+
+
+def _erro_senha(e) -> HTTPException:
+    return HTTPException(e.http, str(e))
+
+
+async def _mandar_codigo(email: str, motivo: str, nova_hash: str | None = None) -> None:
+    """Gera o código e manda por e-mail. Se o e-mail não sai, o código é apagado (e a espera de
+    60 s também — a pessoa pode tentar de novo na hora) e a rota responde 502."""
+    from services import email_transacional, senha
+
+    if not email_transacional.configurado():
+        raise HTTPException(503, "Envio de e-mail desligado no servidor — fale com o suporte da Tier.")
+    try:
+        codigo = await senha.pedir(email, motivo, nova_hash)
+    except senha.ErroDeSenha as e:
+        raise _erro_senha(e) from e
+    assunto, html, texto = senha.email_codigo(codigo, motivo)
+    try:
+        await email_transacional.enviar(email, assunto, html, texto)
+    except email_transacional.ErroDeEmail as e:
+        await senha.esquecer(email)
+        logger.warning("senha: código não saiu motivo=%s erro=%s", motivo, e)
+        raise HTTPException(502, "Não consegui enviar o e-mail agora. Tente de novo em instantes.") from e
+
+
+async def _avisar_trocada(email: str) -> None:
+    """Aviso de que a senha mudou — melhor esforço: a troca já valeu."""
+    from services import email_transacional, senha
+
+    assunto, html, texto = senha.email_trocada()
+    try:
+        await email_transacional.enviar(email, assunto, html, texto)
+    except email_transacional.ErroDeEmail:
+        logger.warning("senha: aviso de troca não saiu")
+
+
+@router.post("/me/senha/codigo")
+async def senha_pedir_codigo(
+    body: SenhaCodigoIn,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
+):
+    """Meu perfil › Senha: confere a atual (se a conta tem senha) e manda o código para o e-mail."""
+    from services import senha
+
+    conta = await _conta_do_login(db, user.email) if user.email else None
+    if conta is None:
+        raise HTTPException(404, "Esta sessão não tem uma conta com login por e-mail e senha.")
+    try:
+        nova = senha.validar_nova(body.nova_senha)
+    except senha.ErroDeSenha as e:
+        raise _erro_senha(e) from e
+    if conta.password_hash:
+        if not body.senha_atual or not pwd_ctx.verify(body.senha_atual, conta.password_hash):
+            # 422, não 401: o front manda para o login em qualquer 401 numa tela logada (lib/api.ts)
+            raise HTTPException(422, "A senha atual não confere.")
+        if pwd_ctx.verify(nova, conta.password_hash):
+            raise HTTPException(422, "A nova senha é igual à atual.")
+    await _mandar_codigo(conta.email, senha.TROCAR, pwd_ctx.hash(nova))
+    return {"ok": True, "enviado_para": senha.mascarar(conta.email), "validade_min": senha.VALIDADE_S // 60}
+
+
+@router.post("/me/senha/confirmar")
+async def senha_confirmar(
+    body: SenhaConfirmarIn,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(__import__("core.auth", fromlist=["get_current_user"]).get_current_user),
+):
+    """Confere o código e grava a senha nova que foi pedida junto com ele."""
+    from services import senha
+
+    conta = await _conta_do_login(db, user.email) if user.email else None
+    if conta is None:
+        raise HTTPException(404, "Esta sessão não tem uma conta com login por e-mail e senha.")
+    try:
+        dado = await senha.conferir(conta.email, body.codigo, senha.TROCAR)
+    except senha.ErroDeSenha as e:
+        raise _erro_senha(e) from e
+    if not dado.get("nova"):
+        raise HTTPException(410, "Pedido sem a senha nova — comece de novo.")
+    conta.password_hash = dado["nova"]
+    await db.commit()
+    logger.info("senha trocada (perfil) conta=%s:%s", type(conta).__name__, conta.id)
+    await _avisar_trocada(conta.email)
+    return {"ok": True}
+
+
+@router.post("/senha/esqueci")
+async def senha_esqueci(body: EsqueciIn, db: AsyncSession = Depends(get_db)):
+    """«Esqueceu a senha?»: manda o código se o e-mail tem conta. A resposta é a MESMA com ou sem
+    conta — a tela não pode servir para descobrir quem tem cadastro."""
+    from services import email_transacional, senha
+
+    if not email_transacional.configurado():
+        raise HTTPException(503, "Envio de e-mail desligado no servidor — fale com o suporte da Tier.")
+    conta = await _conta_do_login(db, str(body.email))
+    if conta is not None:
+        await _mandar_codigo(conta.email, senha.ESQUECI)
+    return {"ok": True, "mensagem": "Se este e-mail tiver conta no Tier Agent, o código chega em instantes."}
+
+
+@router.post("/senha/redefinir")
+async def senha_redefinir(body: RedefinirIn, db: AsyncSession = Depends(get_db)):
+    """Código do «Esqueceu a senha?» + a senha nova."""
+    from services import senha
+
+    try:
+        nova = senha.validar_nova(body.nova_senha)
+    except senha.ErroDeSenha as e:
+        raise _erro_senha(e) from e
+    conta = await _conta_do_login(db, str(body.email))
+    if conta is None:
+        # mesma resposta de código inexistente: não confirma se o e-mail tem conta
+        raise HTTPException(410, "Código vencido ou inexistente — peça um novo")
+    try:
+        await senha.conferir(conta.email, body.codigo, senha.ESQUECI)
+    except senha.ErroDeSenha as e:
+        raise _erro_senha(e) from e
+    conta.password_hash = pwd_ctx.hash(nova)
+    await db.commit()
+    logger.info("senha redefinida (esqueci) conta=%s:%s", type(conta).__name__, conta.id)
+    await _avisar_trocada(conta.email)
+    return {"ok": True}

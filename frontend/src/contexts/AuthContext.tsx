@@ -6,6 +6,8 @@ interface User {
   email: string;
   tenant_id: number | null;
   is_admin: boolean;
+  /** 18/11/2026 — a conta do login deste e-mail tem senha (a troca pede a atual só se tiver). */
+  tem_senha?: boolean;
   /** owner | admin | atendente — o servidor decide; a tela só esconde o que ele recusa. */
   role?: string;
   member_id?: number | null;

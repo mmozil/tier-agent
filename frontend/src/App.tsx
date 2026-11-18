@@ -13,6 +13,7 @@ import Login from "./pages/public/Login";
 import Signup from "./pages/public/Signup";
 import Privacy from "./pages/public/Privacy";
 import AcceptInvitePage from "./pages/public/AcceptInvitePage";
+import EsqueciSenha from "./pages/public/EsqueciSenha";
 import ChatPublico from "./pages/public/ChatPublico";
 import DataDeletion from "./pages/public/DataDeletion";
 import AgentesPage from "./pages/admin/AgentesPage";
@@ -78,6 +79,7 @@ export default function App() {
       <Route path="/ridge-lab" element={<RidgeLab />} />
       <Route path="/preview/metricas" element={<MetricasPreview />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/esqueci-senha" element={<EsqueciSenha />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/convite/:token" element={<AcceptInvitePage />} />
       {/* Chat público / demonstração — sem login, de propósito */}

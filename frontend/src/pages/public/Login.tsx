@@ -108,7 +108,7 @@ export default function Login() {
             </div>
 
             <Link
-              to="#"
+              to="/esqueci-senha"
               className="inline-block text-[13px] text-[#003083] hover:text-[#002266] font-medium transition-colors"
             >
               Esqueceu a senha?
