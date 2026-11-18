@@ -203,6 +203,22 @@ def horas_citadas(texto: str | None) -> set[str]:
     return saida
 
 
+# Faixa de horas («das 07h às 12h30», «8h às 12h») é horário de AULA ou de expediente, não
+# horário de visita oferecido. 18/11/2026 (CCDA): a persona manda dizer o horário da aula em
+# toda resposta sobre série — «as aulas são das 07h às 12h30» + «agendar a sua visita» no mesmo
+# texto disparava o freio de horário inventado, e a resposta certa virava «Peço desculpas pela
+# confusão anterior. Não ofereci horários…» (2 de 2 no simulador; 2 de 148 respostas reais).
+_FAIXA_HORAS_RE = re.compile(
+    r"\b\d{1,2}(?::\d{2}|\s*h(?:\s*\d{2})?)\s*(?:às|as|até|ate)\s*\d{1,2}(?::\d{2}|\s*h(?:\s*\d{2})?)",
+    re.I,
+)
+
+
+def horas_de_oferta(texto: str | None) -> set[str]:
+    """As horas que um texto OFERECE: as citadas, tirando as que formam uma faixa «das X às Y»."""
+    return horas_citadas(_FAIXA_HORAS_RE.sub(" ", texto or ""))
+
+
 @dataclass
 class EngineReply:
     text: str
@@ -1074,7 +1090,7 @@ async def send_message(
         )
     elif active_tools and text and _agenda_ou_pet and _OFFERS_SLOT.search(text) and _SCHED_CTX.search(text) and not _called(
         "horario", "disponiv"
-    ) and not (_has_agenda_tools and not _has_pet_tools and (_BOOKING_OK or not (horas_citadas(text) - _horas_ja_ofertadas))):
+    ) and not (_has_agenda_tools and not _has_pet_tools and (_BOOKING_OK or not (horas_de_oferta(text) - _horas_ja_ofertadas))):
         # 🚨 Agenda de VISITA (11/11/2026, ensaio do CCDA): o freio disparava (1) na
         # confirmação logo depois de agendar_visita dar certo — a hora citada é a da
         # reserva — e (2) quando a família escolhia um horário OFERECIDO no turno

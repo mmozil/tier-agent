@@ -815,7 +815,9 @@ def calcular_serie(data_nascimento: str, ano_letivo: int) -> dict:
                 f"sentir que você entende isso. Depois ofereça continuar o contato "
                 f"seguindo as regras do atendimento para criança abaixo da idade "
                 f"(o que oferecer, que mensagem e que vídeo mandar). "
-                f"Nunca encerre a conversa nem mude de assunto."
+                f"Nunca encerre a conversa nem mude de assunto. "
+                f"O corte de 31/03 NÃO tem exceção: nunca prometa nem sugira exceção, "
+                f"avaliação ou «ver com a coordenação» para entrar antes."
             )
         else:
             out["orientacao"] = (
@@ -832,7 +834,8 @@ def calcular_serie(data_nascimento: str, ano_letivo: int) -> dict:
             f"O aniversário é depois de 31/03, então em {ano_letivo} a idade no corte é "
             f"{idade}. Explique o corte de 31/03 com naturalidade — é a dúvida mais comum "
             f"das famílias, e ela costuma achar que conta. Não soe burocrática: a regra é "
-            f"do calendário escolar, não uma decisão do colégio."
+            f"do calendário escolar, não uma decisão do colégio. E ela NÃO tem exceção: "
+            f"nunca prometa nem sugira exceção."
         )
     return out
 
@@ -851,8 +854,12 @@ def build_serie_tool_schema() -> dict:
             "name": "consultar_serie_por_nascimento",
             "description": (
                 "Calcula em que série a criança se enquadra, pela data de nascimento e pelo "
-                "corte legal de 31 de março. Use SEMPRE que a família der a data de nascimento "
-                "ou perguntar se o filho já pode entrar no 1º ano. "
+                "corte legal de 31 de março. Use quando a família NÃO souber a série e der a "
+                "data de nascimento, quando perguntar se o filho já pode entrar no 1º ano, ou "
+                "quando as regras do atendimento mandarem conferir pela data (ex.: Educação "
+                "Infantil). Se a família já disse a série que quer, vale a série dela: não use "
+                "esta ferramenta para corrigi-la, nem quando a data aparecer depois (ex.: nos "
+                "dados do agendamento). "
                 "NUNCA calcule a série você mesmo — um dia de diferença muda o ano letivo "
                 "inteiro. Responda com a série que a ferramenta devolver. Se a criança "
                 "ainda não tiver idade, a ferramenta diz em que ano ela ENTRA: diga isso, "

@@ -205,3 +205,30 @@ def test_hora_ja_ofertada_nao_e_hora_nova():
     ofertadas = horas_citadas("Para o dia 13/11 tenho de manhã 08:00 ou 10:00 e à tarde 16:30.")
     assert not (horas_citadas("Perfeito, 13/11 às 08:00. Pra agendar me passa os dados") - ofertadas)
     assert horas_citadas("Também tenho 14:00") - ofertadas == {"14:00"}
+
+
+@pytest.mark.parametrize(
+    "texto, esperado",
+    [
+        ("Para o 5º ano as aulas são das 07h às 12h30. No link vc consegue agendar a sua visita", set()),
+        ("As visitas são nos dias úteis das 8h às 12h e das 13h30 às 17h", set()),
+        ("As aulas vão das 07:00 até 12:30", set()),
+        ("As aulas são das 07h às 12h30. Para a visita tenho 08:00 ou 10:00", {"08:00", "10:00"}),
+        ("📅 13/11 às 08:00", {"08:00"}),
+        ("Pode ser às 8h ou 10:30?", {"08:00", "10:30"}),
+    ],
+)
+def test_faixa_de_horas_nao_e_horario_oferecido(texto, esperado):
+    """18/11 (CCDA): horário de AULA dito em faixa não é visita oferecida — o freio de «horário
+    inventado» trocava a resposta da série por um pedido de desculpas."""
+    from services.tier_engine import horas_de_oferta
+
+    assert horas_de_oferta(texto) == esperado
+
+
+def test_freio_de_visita_usa_horas_de_oferta():
+    import inspect
+
+    from services import tier_engine
+
+    assert "horas_de_oferta(text) - _horas_ja_ofertadas" in inspect.getsource(tier_engine)
