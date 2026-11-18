@@ -39,6 +39,21 @@ class WhatsAppConnector:
         # vídeo vai como documento — chega como arquivo, não como vídeo na conversa.
         documento = next((a for a in msg.attachments if a.kind in ("document", "video") and a.url), None)
 
+        # O eco deste envio volta como `fromMe` — anotado ANTES de postar, senão o eco pode chegar
+        # primeiro e ser gravado como fala do celular (ver services/eco_envio.py). O texto é o que o
+        # webhook vai extrair do eco: legenda, ou `[tipo]` quando a mídia vai sem legenda.
+        from services import eco_envio
+
+        if audio and audio.url:
+            _eco = "[audio]"
+        elif image:
+            _eco = msg.content or "[image]"
+        elif documento:
+            _eco = "[document]"
+        else:
+            _eco = msg.content
+        await eco_envio.anotar(instance_id, _eco)
+
         async with httpx.AsyncClient(timeout=60) as cli:
             if audio and audio.url:
                 # Mesmo contrato da imagem: o Engine valida `{to, mediaUrl}` e

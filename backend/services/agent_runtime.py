@@ -627,6 +627,44 @@ async def _atribuir_pelo_numero(db: AsyncSession, conv: TaConversation, connecto
 JANELA_CONVERSA_ASSUMIDA = timedelta(days=7)
 
 
+def _filtros_em_curso(agent_id: int, connector_kind: str, external_id: str, connector_id: int | None) -> list:
+    """Conversa EM CURSO deste contato — a mesma regra para quem abre (`ensure_conversation`) e
+    para quem só procura (`conversa_em_curso`). `connector_id` só nos números em registro."""
+    filtros = [
+        TaConversation.agent_id == agent_id,
+        TaConversation.connector_kind == connector_kind,
+        TaConversation.external_id == external_id,
+        or_(
+            TaConversation.status == "active",
+            and_(
+                TaConversation.status == "handed_off",
+                TaConversation.last_message_at >= datetime.utcnow() - JANELA_CONVERSA_ASSUMIDA,
+            ),
+        ),
+    ]
+    if connector_id:
+        filtros.append(TaConversation.connector_id == connector_id)
+    return filtros
+
+
+async def conversa_em_curso(
+    db: AsyncSession, *, agent_id: int, connector_kind: str, external_id: str
+) -> TaConversation | None:
+    """Acha a conversa em curso SEM abrir uma nova."""
+    return (
+        (
+            await db.execute(
+                select(TaConversation)
+                .where(*_filtros_em_curso(agent_id, connector_kind, external_id, None))
+                .order_by(TaConversation.id.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
 async def ensure_conversation(
     db: AsyncSession,
     agent_id: int,
@@ -647,20 +685,7 @@ async def ensure_conversation(
     por (agente, contato) juntava numa conversa só a família que falou com a Débora
     e com a Karolaine — ficava com a primeira dona e as métricas por número mentiam.
     """
-    filtros = [
-        TaConversation.agent_id == agent_id,
-        TaConversation.connector_kind == connector_kind,
-        TaConversation.external_id == external_id,
-        or_(
-            TaConversation.status == "active",
-            and_(
-                TaConversation.status == "handed_off",
-                TaConversation.last_message_at >= datetime.utcnow() - JANELA_CONVERSA_ASSUMIDA,
-            ),
-        ),
-    ]
-    if por_numero and connector_id:
-        filtros.append(TaConversation.connector_id == connector_id)
+    filtros = _filtros_em_curso(agent_id, connector_kind, external_id, connector_id if por_numero else None)
     # 31/10/2026 — trava por CONTATO antes de procurar/criar. Duas mensagens do mesmo cliente
     # chegando juntas («oi» + «tudo bem?», comum no WhatsApp) rodavam em paralelo, nenhuma achava
     # a conversa e as duas criavam: na simulação da conta fictícia, 900 mensagens deram 226
@@ -993,6 +1018,73 @@ async def registrar_mensagem_sem_ia(
     except Exception:  # noqa: BLE001 — carimbo é luxo
         await db.rollback()
     return {"status": "registro", "agent_id": agent.id, "conversation_id": conv.id, "role": role}
+
+
+async def registrar_fala_do_celular(
+    db: AsyncSession,
+    connector: TaConnector,
+    *,
+    instance_id: str | None,
+    external_chat_id: str,
+    text_content: str,
+    attachments: list | None,
+) -> dict:
+    """`fromMe` num número com IA (18/11/2026): a equipe escreveu pelo celular do número.
+
+    🚨 Antes era tudo descartado como «eco da IA» e a conversa no Agent ficava só com o lado do
+    cliente — na M7, a Isa responde pelo WhatsApp do número principal e 47 mensagens dela em 7 dias
+    não existiam no Agent (card 30963: a Marisa respondendo «Sim, estou precisando muito» a uma
+    pergunta que no Agent não aparecia).
+
+    - Eco do que o sistema mandou (IA, painel, disparo): o adaptador anotou o envio, o eco consome
+      a anotação e nada é gravado (`services/eco_envio.py`).
+    - Só entra em conversa que JÁ existe. Abrir conversa a partir do celular faria a IA atender
+      quem a equipe procurou por fora — inclusive colega (a própria Marisa virou lead assim).
+    - Grava como `agent` com a dona do número: o callback já lê `agent` como «a equipe respondeu».
+    """
+    from services import eco_envio
+
+    eco = await eco_envio.consumir(instance_id, text_content)
+    if eco:
+        return {"status": "eco_do_envio"}
+    conv = await conversa_em_curso(
+        db, agent_id=connector.agent_id, connector_kind="whatsapp", external_id=external_chat_id
+    )
+    if conv is None:
+        return {"status": "sem_conversa"}
+    if eco is None:
+        # Redis fora: sem anotação para consumir. Segunda trava, por conteúdo — a fala da IA é
+        # gravada inteira e sai em balões, então o eco é um PEDAÇO dela; a do painel vai com a
+        # assinatura «*Nome:*», que a gravação não tem.
+        from datetime import timedelta as _td
+
+        from services.assinatura import tirar_assinatura
+
+        alvo = eco_envio.normalizar(tirar_assinatura(text_content or ""))
+        recentes = (
+            await db.execute(
+                select(TaMessageLog.content).where(
+                    TaMessageLog.conversation_id == conv.id,
+                    TaMessageLog.role.in_(("agent", "assistant")),
+                    TaMessageLog.created_at >= datetime.utcnow() - _td(minutes=10),
+                )
+            )
+        ).scalars().all()
+        if alvo and any(alvo in eco_envio.normalizar(c) for c in recentes):
+            return {"status": "eco_por_conteudo"}
+    agent = await db.get(TaAgent, connector.agent_id)
+    if not agent:
+        return {"status": "no_agent"}
+    _att = anexos_para_log(attachments)
+    await log_message(
+        db, conversation_id=conv.id, tenant_id=agent.tenant_id, role="agent", tokens_in=0,
+        content=text_content, attachments_json=_att or None,
+        member_id=getattr(connector, "member_id", None),
+    )
+    conv.last_message_at = datetime.utcnow()
+    conv.msg_count = (conv.msg_count or 0) + 1
+    await db.commit()
+    return {"status": "gravada", "conversation_id": conv.id}
 
 
 async def _espelhar_no_crm(

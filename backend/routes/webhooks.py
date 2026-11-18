@@ -544,9 +544,13 @@ async def _process_engine_from_me(
     chave_wa: dict | None = None,
     perfil: str | None = None,
 ) -> None:
-    """Mensagem que SAIU pelo número (fromMe). Só interessa no modo registro: é a
-    consultora falando pelo celular. Em número com IA é o eco da resposta do
-    agente, já gravada em `ta_message_log` — ignorar, senão duplica."""
+    """Mensagem que SAIU pelo número (fromMe).
+
+    Modo registro: é a consultora falando pelo celular — grava sempre.
+    Modo agente (18/11/2026): pode ser o eco do que o SISTEMA mandou (IA, painel, disparo — já
+    gravado) ou alguém da equipe digitando no celular do número. Antes tudo era descartado e a
+    fala da equipe sumia do Agent (M7, card 30963); agora o eco é separado pela anotação do envio
+    e só a fala do celular entra."""
     from core.db import db_context
     from services import agent_runtime, wa_chave
 
@@ -556,7 +560,15 @@ async def _process_engine_from_me(
         async with db_context() as db:
             conn = await agent_runtime.resolve_connector_by_instance(db, "whatsapp", instance_id)
             numero_do_perfil = conn.id if conn and perfil else None
-            if not conn or (getattr(conn, "modo", None) or "agente") != "registro":
+            if not conn:
+                return
+            if (getattr(conn, "modo", None) or "agente") != "registro":
+                result = await agent_runtime.registrar_fala_do_celular(
+                    db, conn, instance_id=instance_id, external_chat_id=external_chat_id,
+                    text_content=text_content, attachments=attachments,
+                )
+                if result.get("status") == "gravada":
+                    logger.info("fala do celular gravada conv=%s", result.get("conversation_id"))
                 return
             result = await agent_runtime.registrar_mensagem_sem_ia(
                 db, conn, connector_kind="whatsapp", external_chat_id=external_chat_id,
