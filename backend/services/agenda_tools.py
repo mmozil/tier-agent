@@ -739,6 +739,36 @@ SERIE_POR_IDADE = {
 }
 
 
+_RE_DATA_ISO = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+_RE_DATA_BR = re.compile(r"^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4}|\d{2})$")
+
+
+def _ler_data_nascimento(texto: Any):
+    """AAAA-MM-DD ou como a família escreve: dd/mm/aaaa, dd/mm/aa, d/m/aaaa, com / . ou -.
+
+    18/11/2026 (CCDA): a ferramenta só aceitava AAAA-MM-DD, e a conversão do «25/01/22» da família
+    ficava com o modelo — mais uma conta de cabeça, que é justamente o que esta ferramenta existe para
+    tirar dele. Ano com 2 dígitos vira 20xx, a menos que caia no futuro (aí 19xx).
+    """
+    from datetime import date as _date
+
+    s = str(texto or "").strip()
+    m = _RE_DATA_ISO.match(s[:10])
+    if m:
+        ano, mes, dia = (int(x) for x in m.groups())
+    else:
+        m = _RE_DATA_BR.match(s)
+        if not m:
+            return None
+        dia, mes, ano = (int(x) for x in m.groups())
+        if ano < 100:
+            ano += 2000 if 2000 + ano <= _date.today().year else 1900
+    try:
+        return _date(ano, mes, dia)
+    except ValueError:
+        return None
+
+
 def calcular_serie(data_nascimento: str, ano_letivo: int) -> dict:
     """A série da criança no ano letivo pedido, pelo corte de 31/03.
 
@@ -748,11 +778,9 @@ def calcular_serie(data_nascimento: str, ano_letivo: int) -> dict:
     """
     from datetime import date as _date
 
-    try:
-        ano, mes, dia = (int(x) for x in str(data_nascimento)[:10].split("-"))
-        nasc = _date(ano, mes, dia)
-    except Exception:  # noqa: BLE001
-        return {"erro": "data de nascimento inválida — use AAAA-MM-DD"}
+    nasc = _ler_data_nascimento(data_nascimento)
+    if nasc is None:
+        return {"erro": "data de nascimento inválida — peça à família no formato dd/mm/aaaa"}
 
     corte = _date(ano_letivo, CORTE_MES, CORTE_DIA)
     if nasc >= corte:
@@ -785,7 +813,8 @@ def calcular_serie(data_nascimento: str, ano_letivo: int) -> dict:
                 f"corte (31/03) explicando o porquê. Reconheça se ficou perto do "
                 f"corte: para a família dois dias parecem injustos, e ela precisa "
                 f"sentir que você entende isso. Depois ofereça continuar o contato "
-                f"— visita para conhecer, ou avisar quando abrir a matrícula. "
+                f"seguindo as regras do atendimento para criança abaixo da idade "
+                f"(o que oferecer, que mensagem e que vídeo mandar). "
                 f"Nunca encerre a conversa nem mude de assunto."
             )
         else:
@@ -827,14 +856,17 @@ def build_serie_tool_schema() -> dict:
                 "NUNCA calcule a série você mesmo — um dia de diferença muda o ano letivo "
                 "inteiro. Responda com a série que a ferramenta devolver. Se a criança "
                 "ainda não tiver idade, a ferramenta diz em que ano ela ENTRA: diga isso, "
-                "nunca apenas que não é elegível."
+                "nunca apenas que não é elegível. "
+                "Se a família disser só a IDADE (ex.: «tem 3 anos»), NÃO responda se pode ou "
+                "não: peça a data de nascimento (dd/mm/aaaa) e chame esta ferramenta — quem "
+                "tem 3 anos hoje pode ter 4 na data de corte."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "data_nascimento": {
                         "type": "string",
-                        "description": "Data de nascimento no formato AAAA-MM-DD.",
+                        "description": "Data de nascimento como a família escreveu (dd/mm/aaaa) ou AAAA-MM-DD.",
                     },
                     "ano_letivo": {
                         "type": "integer",

@@ -94,7 +94,7 @@ def test_muito_velho_nao_inventa_serie():
     assert "confirma pessoalmente" in r["orientacao"]
 
 
-@pytest.mark.parametrize("ruim", ["31/03/2020", "ontem", "", "2020-13-45", "abc"])
+@pytest.mark.parametrize("ruim", ["31/02/2020", "32/01/2020", "ontem", "", "2020-13-45", "abc", "2020/03/31"])
 def test_data_invalida_devolve_erro_e_nao_estoura(ruim):
     """A ferramenta caindo derrubaria a conversa. Erro é resposta, não exceção."""
     assert "erro" in calcular_serie(ruim, 2027)
@@ -217,3 +217,43 @@ def test_a_regra_e_apresentada_como_do_CALENDARIO_nao_do_colegio():
     """Soar como decisão do colégio faz a família achar que há o que negociar,
     e a conversa vira disputa em vez de agendamento."""
     assert "não uma decisão do colégio" in calcular_serie("2020-06-15", 2027)["observacao"]
+
+
+# ── a data como a família escreve (18/11/2026, CCDA) ─────────────────
+# A ferramenta só aceitava AAAA-MM-DD: converter «25/01/22» ficava com o modelo, que é a conta de
+# cabeça que ela existe para tirar dele. No simulador do agente 26, sem a ferramenta, quem nasceu em
+# 30/04/2020 saiu «não pode», «não pode» e «Jardim II» em 3 rodadas (o certo é 1º ano).
+@pytest.mark.parametrize("escrita", ["30/04/2020", "30/4/2020", "30.04.2020", "30-04-2020", "30/04/20", "2020-04-30"])
+def test_aceita_a_data_como_a_familia_escreve(escrita):
+    assert serie(escrita, 2027) == "1º ano do Ensino Fundamental"
+
+
+@pytest.mark.parametrize("nasc,esperado", [
+    ("31/03/2023", "Jardim I"),            # 4 anos NO dia do corte
+    ("15/08/2021", "Jardim II"),           # aniversário depois do corte
+    ("10/02/2020", "2º ano do Ensino Fundamental"),
+    ("20/03/2012", "1ª série do Ensino Médio"),
+    ("05/05/2016", "5º ano do Ensino Fundamental"),
+    ("25/01/22", "Jardim II"),             # a conversa real 1630 (16/11)
+])
+def test_os_casos_do_simulador_do_ccda(nasc, esperado):
+    assert serie(nasc, 2027) == esperado
+
+
+def test_um_dia_depois_do_corte_em_formato_br_ainda_entra_depois():
+    r = calcular_serie("01/04/2023", 2027)
+    assert r["serie"] is None and r["entra_em"] == 2028 and r["serie_quando_entrar"] == "Jardim I"
+
+
+def test_o_schema_manda_pedir_a_data_quando_so_vem_a_idade():
+    """«Minha filha tem 3 anos» saiu «não pode» 3 vezes de 3 — quem tem 3 hoje pode ter 4 no corte."""
+    d = build_serie_tool_schema()["function"]["description"]
+    assert "só a IDADE" in d and "peça a data de nascimento" in d
+
+
+def test_a_orientacao_nao_promete_visita_por_conta_propria():
+    """A regra 46 do CCDA: criança abaixo da idade não recebe oferta de visita. O que oferecer é do
+    atendimento de cada escola, não da ferramenta."""
+    o = calcular_serie("2025-01-01", 2027)["orientacao"]
+    assert "visita" not in o.lower()
+    assert "regras do atendimento" in o
