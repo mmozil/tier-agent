@@ -5,7 +5,7 @@ import { FileText, Plus, RefreshCw, Trash2, X } from "lucide-react";
 
 import { api } from "@/lib/api";
 import BalaoDoModelo from "@/components/whatsapp/BalaoDoModelo";
-import AnaliseCategoria from "@/components/whatsapp/AnaliseCategoria";
+import { analisarCategoria } from "@/lib/categoriaModelo";
 import { formatPhone } from "@/lib/phone";
 import {
   Button,
@@ -16,7 +16,6 @@ import {
   PageFrame,
   PageHero,
   Row,
-  SegToggle,
   Select,
   SkeletonBar,
   Textarea,
@@ -51,14 +50,6 @@ interface Modelo {
   motivo_recusa: string | null;
 }
 
-const CATEGORIAS = [
-  { value: "MARKETING" as const, label: "Marketing" },
-  { value: "UTILITY" as const, label: "Utilidade" },
-];
-const CUSTO: Record<string, string> = {
-  MARKETING: "Convite, oferta, divulgação. A Meta cobra cerca de R$ 0,32 por mensagem entregue.",
-  UTILITY: "Confirmação, lembrete, aviso de algo que a pessoa já pediu. Cerca de R$ 0,035 por mensagem.",
-};
 const COR_STATUS: Record<string, string> = {
   APPROVED: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
   PENDING: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
@@ -93,12 +84,14 @@ export default function ModelosWhatsAppPage() {
 
   // formulário
   const [titulo, setTitulo] = useState("");
-  const [categoria, setCategoria] = useState<"MARKETING" | "UTILITY">("MARKETING");
   const [corpo, setCorpo] = useState("");
   const [exemplos, setExemplos] = useState<string[]>([]);
   const [rodape, setRodape] = useState("");
   const [botoes, setBotoes] = useState<string[]>([]);
   const [enviando, setEnviando] = useState(false);
+  // Categoria (19/11/2026): quem cria o modelo não escolhe nem vê. Vai a que o texto indica —
+  // a Meta classifica pelo texto de qualquer jeito, e na dúvida o leitor fica com Marketing.
+  const categoria = useMemo(() => analisarCategoria(corpo, rodape, botoes).provavel, [corpo, rodape, botoes]);
 
   useEffect(() => {
     api
@@ -314,19 +307,6 @@ export default function ModelosWhatsAppPage() {
                   <div className="mt-4 space-y-4">
                     <Field label="Nome" hint={slug ? `Na Meta: ${slug}` : "Só para identificar. Ex.: Boas-vindas"}>
                       <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={200} placeholder="Boas-vindas" />
-                    </Field>
-                    <Field
-                      label="Categoria (sugestão)"
-                      hint={`${CUSTO[categoria]} Você sugere; quem decide é a Meta, pelo texto — e categoria de modelo aprovado não muda mais.`}
-                    >
-                      <SegToggle value={categoria} onChange={setCategoria} options={CATEGORIAS} />
-                      <AnaliseCategoria
-                        categoria={categoria}
-                        corpo={corpo}
-                        rodape={rodape}
-                        botoes={botoes}
-                        onTrocar={setCategoria}
-                      />
                     </Field>
                     <Field
                       label="Texto"
