@@ -148,33 +148,107 @@ _RE_HORARIO = _re_horario.compile(
 )
 
 
-def _horario_agora(texto: str, agora) -> tuple[str, str] | None:
-    """(código, próximo atendimento) pela marcação `[horario: seg-sex 08:00-17:00]` da persona.
+def _pascoa(ano: int):
+    """Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher, calendário gregoriano)."""
+    from datetime import date as _date
 
-    Código: «dentro», «fora_dia_util» ou «fim_de_semana» (sábado, domingo e o último dia útil
-    depois do expediente — o domingo à noite também). Sem a marcação, None. Sem feriados."""
+    a, b, c = ano % 19, ano // 100, ano % 100
+    d, e = b // 4, b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    lv = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * lv) // 451
+    mes = (h + lv - 7 * m + 114) // 31
+    dia = ((h + lv - 7 * m + 114) % 31) + 1
+    return _date(ano, mes, dia)
+
+
+def feriados_nacionais(ano: int) -> dict:
+    """Feriados nacionais do Brasil {data: nome} (19/11/2026, M7).
+
+    Lei 662/1949 + 6.802/1980 + 14.759/2023 (Consciência Negra, desde 2024) e a Sexta-feira da
+    Paixão. Carnaval e Corpus Christi são ponto facultativo — não entram; feriado de estado ou
+    de cidade também não."""
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
+    fixos = {
+        (1, 1): "Confraternização Universal",
+        (4, 21): "Tiradentes",
+        (5, 1): "Dia do Trabalho",
+        (9, 7): "Independência do Brasil",
+        (10, 12): "Nossa Senhora Aparecida",
+        (11, 2): "Finados",
+        (11, 15): "Proclamação da República",
+        (12, 25): "Natal",
+    }
+    if ano >= 2024:
+        fixos[(11, 20)] = "Dia da Consciência Negra"
+    out = {_date(ano, m, d): n for (m, d), n in fixos.items()}
+    out[_pascoa(ano) - _td(days=2)] = "Sexta-feira da Paixão"
+    return out
+
+
+def feriado_em(d) -> str | None:
+    return feriados_nacionais(d.year).get(d)
+
+
+def _e_dia_util(d, uteis: list[int]) -> bool:
+    return d.weekday() in uteis and not feriado_em(d)
+
+
+def _proximo_dia_util(hoje, uteis: list[int]):
+    from datetime import timedelta as _td
+
+    return next(hoje + _td(days=k) for k in range(1, 40) if _e_dia_util(hoje + _td(days=k), uteis))
+
+
+def _calculo_horario(texto: str, agora) -> dict | None:
+    """O horário da marcação `[horario: seg-sex 08:00-17:00]` aplicado a AGORA, com feriado."""
     m = _RE_HORARIO.search(texto or "")
     if not m:
         return None
     d0, d1 = _DIAS_CURTOS.index(m.group(1).lower()), _DIAS_CURTOS.index(m.group(2).lower())
     uteis = list(range(d0, d1 + 1)) if d0 <= d1 else list(range(d0, 7)) + list(range(0, d1 + 1))
-    ini = int(m.group(3)) * 60 + int(m.group(4))
-    fim = int(m.group(5)) * 60 + int(m.group(6))
-    dia, minuto = agora.weekday(), agora.hour * 60 + agora.minute
-    hora_ini = f"{int(m.group(3))}h" + (f"{m.group(4)}" if m.group(4) != "00" else "")
-    if dia in uteis and ini <= minuto < fim:
+    hoje = agora.date()
+    prox = _proximo_dia_util(hoje, uteis)
+    return {
+        "ini": int(m.group(3)) * 60 + int(m.group(4)),
+        "fim": int(m.group(5)) * 60 + int(m.group(6)),
+        "minuto": agora.hour * 60 + agora.minute,
+        "hora_ini": f"{int(m.group(3))}h" + (f"{m.group(4)}" if m.group(4) != "00" else ""),
+        "uteis": uteis,
+        "util_hoje": _e_dia_util(hoje, uteis),
+        "prox": prox,
+        "dias_ate": (prox - hoje).days,
+    }
+
+
+def _horario_agora(texto: str, agora) -> tuple[str, str] | None:
+    """(código, próximo atendimento) pela marcação `[horario: seg-sex 08:00-17:00]` da persona.
+
+    Código: «dentro», «fora_dia_util» ou «fim_de_semana» (sábado, domingo e o último dia útil
+    depois do expediente — o domingo à noite também). Sem a marcação, None.
+    19/11/2026: feriado nacional não é dia útil — na véspera do feriado de 20/11 a IA da M7
+    prometia «amanhã a partir das 8h» (a sexta era feriado). Feriado cai em «fim_de_semana»."""
+    c = _calculo_horario(texto, agora)
+    if not c:
+        return None
+    if c["util_hoje"] and c["ini"] <= c["minuto"] < c["fim"]:
         return "dentro", ""
-    if dia in uteis and minuto < ini:
-        return "fora_dia_util", f"hoje, a partir das {hora_ini}"
-    prox = _dias_ate_o_proximo_util(dia, uteis)
-    nome = _DIAS_LONGOS[(dia + prox) % 7]
-    quando = f"amanhã, {nome}, a partir das {hora_ini}" if prox == 1 else f"{nome}, a partir das {hora_ini}"
-    codigo = "fora_dia_util" if (dia in uteis and (dia + 1) % 7 in uteis) else "fim_de_semana"
+    if c["util_hoje"] and c["minuto"] < c["ini"]:
+        return "fora_dia_util", f"hoje, a partir das {c['hora_ini']}"
+    nome = _DIAS_LONGOS[c["prox"].weekday()]
+    if c["dias_ate"] == 1:
+        quando = f"amanhã, {nome}, a partir das {c['hora_ini']}"
+    elif c["dias_ate"] <= 6:
+        quando = f"{nome}, a partir das {c['hora_ini']}"
+    else:  # semana inteira de feriado: o dia da semana sozinho fica ambíguo
+        quando = f"{nome}, {c['prox']:%d/%m}, a partir das {c['hora_ini']}"
+    codigo = "fora_dia_util" if (c["util_hoje"] and c["dias_ate"] == 1) else "fim_de_semana"
     return codigo, quando
-
-
-def _dias_ate_o_proximo_util(dia: int, uteis: list[int]) -> int:
-    return next(d for d in range(1, 8) if (dia + d) % 7 in uteis)
 
 
 _DIA_COM_PREPOSICAO = ["na segunda", "na terça", "na quarta", "na quinta", "na sexta", "no sábado", "no domingo"]
@@ -187,19 +261,19 @@ def quando_retorno(texto: str, agora) -> str:
     abertura). O Marcos escreveu «te ligo {amanhã / na segunda / próximo dia útil}» e deixou a
     escolha com o modelo, que às 18:55 de segunda respondeu como se fosse horário comercial.
     Dentro do horário ou sem a marcação `[horario: …]`: "" (o `{quando}` fica como está)."""
-    m = _RE_HORARIO.search(texto or "")
+    c = _calculo_horario(texto, agora)
     h = _horario_agora(texto, agora)
-    if not m or not h or h[0] == "dentro":
+    if not c or not h or h[0] == "dentro":
         return ""
-    d0, d1 = _DIAS_CURTOS.index(m.group(1).lower()), _DIAS_CURTOS.index(m.group(2).lower())
-    uteis = list(range(d0, d1 + 1)) if d0 <= d1 else list(range(d0, 7)) + list(range(0, d1 + 1))
-    hora_ini = f"{int(m.group(3))}h" + (f"{m.group(4)}" if m.group(4) != "00" else "")
     if h[1].startswith("hoje"):
-        return f"hoje a partir das {hora_ini}"
-    dia = agora.weekday()
-    prox = _dias_ate_o_proximo_util(dia, uteis)
-    quem = "amanhã" if prox == 1 else _DIA_COM_PREPOSICAO[(dia + prox) % 7]
-    return f"{quem} a partir das {hora_ini}"
+        return f"hoje a partir das {c['hora_ini']}"
+    if c["dias_ate"] == 1:
+        quem = "amanhã"
+    elif c["dias_ate"] <= 6:
+        quem = _DIA_COM_PREPOSICAO[c["prox"].weekday()]
+    else:
+        quem = f"{_DIA_COM_PREPOSICAO[c['prox'].weekday()]}, {c['prox']:%d/%m},"
+    return f"{quem} a partir das {c['hora_ini']}"
 
 
 def situacao_do_horario(texto: str, agora) -> str:
@@ -214,8 +288,47 @@ def situacao_do_horario(texto: str, agora) -> str:
     titulo = "# Situação do horário AGORA (calculada pelo sistema — use isto, não calcule)\n"
     if codigo == "dentro":
         return titulo + "- DENTRO do horário comercial.\n\n"
-    tipo = "dia útil" if codigo == "fora_dia_util" else "fim de semana (sexta à noite até domingo)"
+    if codigo == "fora_dia_util":
+        tipo = "dia útil"
+    elif feriado_em(agora.date()) and agora.weekday() in _calculo_horario(texto, agora)["uteis"]:
+        tipo = f"feriado ({feriado_em(agora.date())})"
+    elif _e_vespera_de_feriado(agora.date(), _calculo_horario(texto, agora)["uteis"]):
+        tipo = "véspera de feriado"
+    else:
+        tipo = "fim de semana (sexta à noite até domingo)"
     return titulo + f"- FORA do horário comercial — {tipo}.\n" + f"- Próximo atendimento: {quando}.\n\n"
+
+
+def _e_vespera_de_feriado(hoje, uteis: list[int]) -> bool:
+    from datetime import timedelta as _td
+
+    amanha = hoje + _td(days=1)
+    return amanha.weekday() in uteis and bool(feriado_em(amanha))
+
+
+def bloco_feriados(agora) -> str:
+    """Feriado nacional hoje ou nos próximos 7 dias, com o próximo dia útil já calculado.
+
+    19/11/2026 (M7): a persona manda tratar «feriado ou véspera de feriado» de outro jeito, mas o
+    modelo só recebia a data — e às 18:09 da véspera do 20/11 prometeu «amanhã a partir das 8h»
+    a dois clientes. Sem feriado à vista, devolve "" (o prompt de sempre)."""
+    from datetime import timedelta as _td
+
+    hoje = agora.date()
+    perto = [(hoje + _td(days=k), feriado_em(hoje + _td(days=k))) for k in range(0, 8)]
+    perto = [(d, n) for d, n in perto if n and d.weekday() < 5]  # feriado no fim de semana não muda nada
+    if not perto:
+        return ""
+    linhas = ["# Feriados nacionais (calculado pelo sistema — use isto, não calcule)"]
+    for d, n in perto:
+        k, nome_dia = (d - hoje).days, _DIAS_LONGOS[d.weekday()]
+        quando = f"Hoje ({nome_dia}, {d:%d/%m})" if k == 0 else f"Amanhã ({nome_dia}, {d:%d/%m})" if k == 1 else (
+            f"{nome_dia.capitalize()}, {d:%d/%m},"
+        )
+        linhas.append(f"- {quando} é feriado nacional: {n}.")
+    prox = _proximo_dia_util(hoje, [0, 1, 2, 3, 4])
+    linhas.append(f"- Próximo dia útil (segunda a sexta, sem feriado): {_DIAS_LONGOS[prox.weekday()]}, {prox:%d/%m}.")
+    return "\n".join(linhas) + "\n\n"
 
 
 _RE_BLOCO_HORARIO = _re_horario.compile(
@@ -343,6 +456,7 @@ def build_base_directives(agent, *, connector_kind: str, extra_block: str = "") 
     # 09/11/2026 (M7): a situação do horário vem CALCULADA, não deduzida pelo modelo. A persona da
     # M7 escolhe a 1ª mensagem por horário e o gpt-4o-mini errou 2 de 3 vezes às 18:20 de segunda.
     date_block += situacao_do_horario(agent.persona or agent.system_prompt or "", agora)
+    date_block += bloco_feriados(agora)
     # Diretrizes GENÉRICAS + guidelines do TEMPLATE do agente (definidas em
     # services/templates.py — o runtime não conhece nenhum nicho).
     base = date_block + _templates.GENERIC_GUIDELINES
