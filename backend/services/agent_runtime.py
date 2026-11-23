@@ -1195,6 +1195,12 @@ async def registrar_fala_do_celular(
         content=text_content, attachments_json=_att or None,
         member_id=getattr(connector, "member_id", None),
     )
+    # 23/11/2026 (M7, conversas 2159 e 2155): pausa a IA, como a resposta pelo painel já faz
+    # (`routes/conversations._gravar_resposta`). `load_history` deixa a fala humana comum de fora de
+    # propósito — contava com esta pausa —, então sem ela a regra da persona «já houver mensagem de
+    # uma pessoa da M7» não tinha como ser cumprida: o modelo não via a Camilla e abriu de novo.
+    # Só o status: de quem é a conversa (quem vê) não muda aqui.
+    conv.status = "handed_off"
     conv.last_message_at = datetime.utcnow()
     conv.msg_count = (conv.msg_count or 0) + 1
     await db.commit()

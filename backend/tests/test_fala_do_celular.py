@@ -193,7 +193,7 @@ CONECTOR = SimpleNamespace(id=55, agent_id=25, member_id=18, modo="agente")
 
 @pytest.fixture
 def ambiente(monkeypatch):
-    estado = {"eco": False, "conv": SimpleNamespace(id=1865, msg_count=2, last_message_at=None), "gravadas": []}
+    estado = {"eco": False, "conv": SimpleNamespace(id=1865, msg_count=2, last_message_at=None, status="active", assigned_member_id=18), "gravadas": []}
 
     async def _consumir(inst, texto):
         return estado["eco"]
@@ -306,3 +306,20 @@ def test_webhook_numero_com_ia_vai_para_a_fala_do_celular(monkeypatch):
 
 def test_webhook_numero_em_registro_continua_como_estava(monkeypatch):
     assert _webhook(monkeypatch, "registro") == ["registro"]
+
+
+# ── a fala do celular PAUSA a IA (23/11/2026) ───────────────────────────────
+
+
+def test_fala_do_celular_pausa_a_ia_como_o_painel(ambiente):
+    """M7, conversa 2159: a Camilla escreveu às 11:25 pelo celular e às 13:09 a IA abriu de novo."""
+    _fala(_DbDeMentira(), "Para quando precisa que a entrega aconteça Marcelo?")
+    assert ambiente["conv"].status == "handed_off"
+    assert ambiente["conv"].assigned_member_id == 18  # quem vê a conversa não muda
+
+
+def test_eco_da_propria_ia_nao_pausa_a_ia(ambiente):
+    """Se o eco pausasse, a IA se calaria sozinha depois da 1ª resposta — em todo número."""
+    ambiente["eco"] = True
+    _fala(_DbDeMentira(), "Olá, tudo bem?")
+    assert ambiente["conv"].status == "active"
