@@ -381,6 +381,7 @@ async def whatsapp_engine_webhook(
                 attachments=attachments,
                 chave_wa=chave_wa,
                 perfil=sender_name,
+                enviada_em=_hora_do_whatsapp(payload.get("messageTimestamp")),
             )
         )
         return {"status": "accepted", "from_me": True}
@@ -534,6 +535,17 @@ async def _registrar_edicao(*, instance_id: str | None, alvo_id: str | None, tex
         logger.exception("edição não gravada alvo=%s", alvo_id)
 
 
+def _hora_do_whatsapp(carimbo) -> datetime | None:
+    """`messageTimestamp` do Baileys → UTC sem fuso. Vem como número, texto ou Long `{low, high}`."""
+    if isinstance(carimbo, dict):
+        carimbo = carimbo.get("low")
+    try:
+        segundos = int(float(carimbo))
+        return datetime.utcfromtimestamp(segundos) if segundos > 0 else None
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
 @_com_vaga
 async def _process_engine_from_me(
     *,
@@ -543,6 +555,7 @@ async def _process_engine_from_me(
     attachments: list,
     chave_wa: dict | None = None,
     perfil: str | None = None,
+    enviada_em: datetime | None = None,
 ) -> None:
     """Mensagem que SAIU pelo número (fromMe).
 
@@ -565,10 +578,12 @@ async def _process_engine_from_me(
             if (getattr(conn, "modo", None) or "agente") != "registro":
                 result = await agent_runtime.registrar_fala_do_celular(
                     db, conn, instance_id=instance_id, external_chat_id=external_chat_id,
-                    text_content=text_content, attachments=attachments,
+                    text_content=text_content, attachments=attachments, enviada_em=enviada_em,
                 )
                 if result.get("status") == "gravada":
                     logger.info("fala do celular gravada conv=%s", result.get("conversation_id"))
+                elif result.get("status") == "guardada":
+                    logger.info("fala do celular guardada (ainda sem conversa) connector=%s", conn.id)
                 return
             result = await agent_runtime.registrar_mensagem_sem_ia(
                 db, conn, connector_kind="whatsapp", external_chat_id=external_chat_id,
@@ -597,6 +612,12 @@ async def _ia_vai_responder(db, conn, external_chat_id: str) -> bool:
 
     if not ia_responde_agora(conn):  # botão «IA ligada» desligado ou fora do horário da IA (10/11/2026)
         return False
+    if getattr(conn, "kind", None) == "whatsapp":
+        # A equipe escreveu antes pelo celular: a conversa vai nascer pausada (23/11/2026).
+        from services import fala_pendente, wa_chave
+
+        if await fala_pendente.ha(conn.id, [external_chat_id, wa_chave.remote_jid_atual()]):
+            return False
     try:
         from sqlalchemy import select as _select
 

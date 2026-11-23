@@ -10,6 +10,9 @@ from services import agent_runtime as R
 
 
 class _Db:
+    async def refresh(self, obj, attribute_names=None):
+        pass
+
     def __init__(self, agent):
         self.agent = agent
 

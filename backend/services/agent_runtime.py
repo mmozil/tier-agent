@@ -1142,6 +1142,7 @@ async def registrar_fala_do_celular(
     external_chat_id: str,
     text_content: str,
     attachments: list | None,
+    enviada_em: datetime | None = None,
 ) -> dict:
     """`fromMe` num número com IA (18/11/2026): a equipe escreveu pelo celular do número.
 
@@ -1152,8 +1153,9 @@ async def registrar_fala_do_celular(
 
     - Eco do que o sistema mandou (IA, painel, disparo): o adaptador anotou o envio, o eco consome
       a anotação e nada é gravado (`services/eco_envio.py`).
-    - Só entra em conversa que JÁ existe. Abrir conversa a partir do celular faria a IA atender
-      quem a equipe procurou por fora — inclusive colega (a própria Marisa virou lead assim).
+    - Só entra em conversa que JÁ existe. Sem conversa, a fala fica guardada e entra quando o outro
+      lado responder (`absorver_fala_pendente`) — abrir na hora poria no Atendimento toda pessoa a
+      quem alguém escreveu pelo celular.
     - Grava como `agent` com a dona do número: o callback já lê `agent` como «a equipe respondeu».
     """
     from services import eco_envio
@@ -1165,7 +1167,31 @@ async def registrar_fala_do_celular(
         db, agent_id=connector.agent_id, connector_kind="whatsapp", external_id=external_chat_id
     )
     if conv is None:
-        return {"status": "sem_conversa"}
+        # 23/11/2026 (M7): a equipe escreveu primeiro. Não abre conversa; guarda a fala para quando o
+        # outro lado responder (services/fala_pendente.py). Com o Redis fora não dá para saber se era
+        # eco, e não há onde guardar.
+        if eco is None:
+            return {"status": "sem_conversa"}
+        from datetime import timedelta as _td_guarda
+
+        from services import fala_pendente, wa_chave
+
+        quando = enviada_em or datetime.utcnow()
+        if datetime.utcnow() - quando > _td_guarda(seconds=fala_pendente.TTL_SEGUNDOS):
+            return {"status": "sem_conversa"}  # histórico antigo que o WhatsApp reenvia ao reparear
+        _chave = wa_chave.consumir("agent") or {}
+        guardou = await fala_pendente.guardar(
+            connector.id,
+            [external_chat_id, _chave.get("remote_jid")],
+            {
+                "id": _chave.get("id"),
+                "remote_jid": _chave.get("remote_jid"),
+                "texto": (text_content or "")[:8000],
+                "anexos": anexos_para_log(attachments) or None,
+                "em": quando.isoformat(),
+            },
+        )
+        return {"status": "guardada" if guardou else "sem_conversa"}
     if eco is None:
         # Redis fora: sem anotação para consumir. Segunda trava, por conteúdo — a fala da IA é
         # gravada inteira e sai em balões, então o eco é um PEDAÇO dela; a do painel vai com a
@@ -1205,6 +1231,88 @@ async def registrar_fala_do_celular(
     conv.msg_count = (conv.msg_count or 0) + 1
     await db.commit()
     return {"status": "gravada", "conversation_id": conv.id}
+
+
+async def absorver_fala_pendente(
+    db: AsyncSession, connector: TaConnector, conv: TaConversation, *, connector_kind: str, jids: list[str | None]
+) -> bool:
+    """O cliente respondeu a quem falou primeiro pelo celular: põe essas falas na conversa, na ordem e
+    na hora em que saíram, e pausa a IA (23/11/2026, M7 — conversas 2159 e 2161).
+
+    Chamar ANTES de gravar a mensagem do cliente, para a fala da equipe ficar acima dela. Devolve True
+    só para quem gravou — é quem espelha o card no CRM, já que a conversa pausada sai cedo.
+
+    As mensagens do cliente chegam juntas e rodam em paralelo («ainda não» + «bom dia» + …): a chave só
+    sai do Redis DEPOIS do commit. Quem ainda a vê espera a trava e não duplica (pelo id do WhatsApp);
+    quem já não a vê relê o status, que naquele ponto está gravado."""
+    if connector_kind != "whatsapp" or (getattr(connector, "modo", None) or "agente") != "agente":
+        return False
+    from services import fala_pendente
+
+    gravou = False
+    if await fala_pendente.ha(connector.id, jids):
+        try:
+            gravou = await _gravar_falas_pendentes(
+                connector.id, getattr(connector, "member_id", None), conv.id, jids
+            )
+        except Exception:  # noqa: BLE001 — a mensagem do cliente tem de entrar de qualquer jeito
+            logger.exception("falas do celular anteriores à conversa não entraram conv=%s", conv.id)
+    await db.refresh(conv, ["status", "msg_count"])
+    return gravou
+
+
+async def _gravar_falas_pendentes(
+    connector_id: int, member_id: int | None, conversation_id: int, jids: list[str | None]
+) -> bool:
+    """Sessão PRÓPRIA: um `rollback` na de quem chama expiraria o agente e o conector que ele ainda vai
+    usar, e a mensagem do cliente se perderia por causa de uma fala antiga."""
+    from sqlalchemy import update
+
+    from core.db import db_context
+    from services import fala_pendente
+
+    async with db_context() as s:
+        if s.get_bind().dialect.name == "postgresql":
+            await s.execute(
+                sa_text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"fala_celular:{conversation_id}"}
+            )
+        falas, lidas = await fala_pendente.ler(connector_id, jids)
+        if not falas:
+            return False
+        ja = set(
+            (
+                await s.execute(
+                    select(TaMessageLog.wa_message_id).where(
+                        TaMessageLog.conversation_id == conversation_id,
+                        TaMessageLog.wa_message_id.in_([f["id"] for f in falas]),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        novas = [f for f in falas if f["id"] not in ja]
+        for f in novas:
+            s.add(
+                TaMessageLog(
+                    conversation_id=conversation_id, role="agent", content=(f.get("texto") or "")[:8000] or None,
+                    attachments_json=f.get("anexos") or None, member_id=member_id,
+                    wa_message_id=f["id"], wa_remote_jid=f.get("remote_jid"), wa_from_me=True,
+                    created_at=datetime.fromisoformat(f["em"]),
+                )
+            )
+            await s.flush()  # um a um: a tela ordena pelo id
+        if novas:
+            await s.execute(
+                update(TaConversation)
+                .where(TaConversation.id == conversation_id)
+                .values(status="handed_off", msg_count=TaConversation.msg_count + len(novas))
+            )
+        await s.commit()
+    await fala_pendente.apagar(lidas)
+    if novas:
+        logger.info("conv=%s %s fala(s) do celular anteriores à conversa — IA pausada", conversation_id, len(novas))
+    return bool(novas)
 
 
 async def _espelhar_no_crm(
@@ -1390,6 +1498,12 @@ async def handle_inbound_message(
             external_id=external_chat_id,
             contact_name=sender_name,
             connector_id=connector.id,
+        )
+        from services import wa_chave as _wa_chave_off
+
+        await absorver_fala_pendente(
+            db, connector, conv, connector_kind=connector_kind,
+            jids=[external_chat_id, _wa_chave_off.remote_jid_atual()],
         )
         _att = anexos_para_log(attachments)
         await log_message(
@@ -1600,6 +1714,14 @@ async def handle_inbound_message(
         connector_id=connector.id,
     )
 
+    # A equipe já tinha escrito para esta pessoa pelo celular? Antes do log, que consome a chave do WhatsApp.
+    from services import wa_chave as _wa_chave_in
+
+    _equipe_falou_antes = await absorver_fala_pendente(
+        db, connector, conv, connector_kind=connector_kind,
+        jids=[external_chat_id, _wa_chave_in.remote_jid_atual()],
+    )
+
     # Log mensagem do user (com mídia, se houver — pra aparecer em Anexos/inline)
     _att = anexos_para_log(attachments)
     _minha_msg_id = await log_message(
@@ -1614,6 +1736,13 @@ async def handle_inbound_message(
     # humano conduzir. "Devolver para a IA" (resume) volta o status pra active.
     if conv.status == "handed_off":
         logger.info("conv=%s handed_off — bot em silêncio (humano no controle)", conv.id)
+        if _equipe_falou_antes:
+            # A conversa acabou de nascer pausada: sem isto o card do cliente não nasceria.
+            await _espelhar_no_crm(
+                db, agent=agent, conv=conv, connector=connector, connector_kind=connector_kind,
+                external_chat_id=external_chat_id, sender_name=sender_name, text_content=text_content,
+                origem_canal=origem_canal, agente_respondeu=False,
+            )
         return {"status": "handed_off_paused", "agent_id": agent.id, "conversation_id": conv.id}
 
     _phone_for_summary = _re.sub(r"\D", "", (external_chat_id or "").split("@")[0])

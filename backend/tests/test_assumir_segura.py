@@ -126,8 +126,8 @@ class _DbSqlite:
     async def commit(self):
         self.s.commit()
 
-    async def refresh(self, obj):
-        self.s.refresh(obj)
+    async def refresh(self, obj, attribute_names=None):
+        self.s.refresh(obj, attribute_names)
 
     async def get(self, _model, _id):
         return self.agente
