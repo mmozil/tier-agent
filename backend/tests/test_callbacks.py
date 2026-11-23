@@ -1392,3 +1392,191 @@ def test_ciclo_conversa_de_disparo_sem_resposta_nao_ocupa_vaga(sessao, envios):
     _semear(sessao, falas=[("agent", DISPARO, 30, "Disparo · x")], cfg=CCDA, agora=MEIO_DIA)
     r = _rodar(C.rodar_ciclo(_Db(sessao), agora=MEIO_DIA))
     assert r["conversas"] == 0 and r["enviados"] == 0
+
+
+# ─── 10. Espera a janela abrir + a cadeia de quem só recebeu a saudação (23/11/2026) ─────────────────
+#
+# Lilian, domingo 22/11/2026 12:53: recebeu a saudação e mais nada, porque o passo que vencia fora da
+# janela se perdia. `adiar_para_a_janela` (por passo, padrão desligado) faz ele esperar. E a cadeia do
+# áudio do Augusto tem 6 falas: a da IA + saudação 2× + «Recebemos…» + vídeo + «Antes de matricular…».
+
+_TOUR, _FECHAMENTO = (next(p for p in CCDA["passos"] if p["id"] == i) for i in ("tour", "fechamento"))
+CADEIA = json.loads(json.dumps(CCDA))
+CADEIA["passos"] += [
+    {
+        "id": "sem_retorno_video",
+        "gatilho": {"tipo": "depois_do_passo", "passo": "sem_retorno"},
+        "atraso_min": 60,
+        "mensagens": _TOUR["mensagens"],
+        "pular_se_ja_enviado": ["youtu.be/yJ9lZV-6_P8"],
+    },
+    {
+        "id": "sem_retorno_fechamento",
+        "gatilho": {"tipo": "depois_do_passo", "passo": "sem_retorno_video"},
+        "atraso_min": 30,
+        "mensagens": _FECHAMENTO["mensagens"],
+    },
+]
+for _p in CADEIA["passos"][4:]:
+    _p["adiar_para_a_janela"] = True
+CADEIA_7_DIAS = json.loads(json.dumps(CADEIA))
+del CADEIA_7_DIAS["janela"]["dias"]
+
+_DIA_SEMANA = ("seg", "ter", "qua", "qui", "sex", "sab", "dom")
+
+
+def _brt(dia, hhmm):
+    """Dia de novembro/2026 e hora de Brasília → UTC sem fuso (como o banco guarda)."""
+    h, m = (int(x) for x in hhmm.split(":"))
+    return datetime(2026, 11, dia, h, m) + timedelta(hours=3)
+
+
+def _andar(cfg_bruta, abriu, ate, *, oficial=True, falas_extra=()):
+    """Minuto a minuto, do oi até `ate`: o que sairia e quando (hora de Brasília)."""
+    cfg = _cfg(cfg_bruta)
+    msgs = [
+        C.Msg(role="user", content="3. Ensino Fundamental I", model_used=None, em=abriu),
+        C.Msg(role="assistant", content=SAUDACAO, model_used="x", em=abriu + timedelta(seconds=10)),
+    ]
+    enviados, saiu, barrado = {}, [], set()
+    agora = abriu
+    while agora <= ate:
+        agora += timedelta(minutes=1)
+        for role, texto, em in falas_extra:
+            if agora - timedelta(minutes=1) < em <= agora:
+                msgs.append(C.Msg(role=role, content=texto, model_used=None, em=em))
+        v = C.avaliar(cfg, msgs, enviados, agora).vencido
+        if v is None:
+            continue
+        pid = v.passo.id
+        if oficial and not C.janela_aberta(msgs, agora):
+            barrado.add(pid)
+            continue
+        enviados[pid] = C.Envio("enviado", agora)
+        for t in v.passo.mensagens:
+            msgs.append(C.Msg(role="assistant", content=t, model_used=f"Callback · {pid}", em=agora))
+        local = agora - timedelta(hours=3)
+        saiu.append((pid, f"{_DIA_SEMANA[local.weekday()]} {local:%H:%M}"))
+    return saiu, barrado
+
+
+def test_adiar_e_desligado_por_padrao_e_so_aceita_verdadeiro_ou_falso():
+    assert not any(p.adiar_para_a_janela for p in _cfg(CCDA).passos)
+    assert [p.adiar_para_a_janela for p in _cfg(CADEIA).passos] == [False] * 4 + [True] * 5
+    ruim = json.loads(json.dumps(CADEIA))
+    ruim["passos"][4]["adiar_para_a_janela"] = "sim"
+    cfg, erros = C.carregar_config(ruim)
+    # passo inválido sai, com o erro dito; os outros ficam
+    assert any("adiar_para_a_janela: true ou false" in e for e in erros), erros
+    assert "saudacao_1" not in [p.id for p in cfg.passos] and "proposta" in [p.id for p in cfg.passos]
+
+
+@pytest.mark.parametrize(
+    "dia,hhmm,esperado",
+    [
+        (18, "12:00", (18, "12:00")),  # quarta, dentro: o próprio momento
+        (18, "07:10", (18, "08:00")),  # cedo: hoje às 8
+        (18, "21:30", (19, "08:00")),  # o fim não entra na janela
+        (18, "23:50", (19, "08:00")),
+        (20, "22:00", (23, "08:00")),  # sexta à noite → segunda
+        (21, "09:00", (23, "08:00")),  # sábado
+        (22, "12:53", (23, "08:00")),  # domingo (a Lilian)
+        (22, "23:59", (23, "08:00")),
+    ],
+)
+def test_proxima_abertura(dia, hhmm, esperado):
+    assert C.proxima_abertura(_cfg(CCDA).janela, _brt(dia, hhmm)) == _brt(*esperado)
+
+
+def test_proxima_abertura_sem_janela_e_todos_os_dias():
+    assert C.proxima_abertura(None, _brt(22, "03:00")) == _brt(22, "03:00")
+    assert C.proxima_abertura(_cfg(CADEIA_7_DIAS).janela, _brt(21, "22:00")) == _brt(22, "08:00")
+
+
+def test_proxima_abertura_com_um_dia_so_por_semana_acha_o_da_semana_que_vem():
+    janela = _cfg({**CCDA, "janela": {**CCDA["janela"], "dias": [7]}}).janela
+    assert C.proxima_abertura(janela, _brt(22, "21:40")) == datetime(2026, 11, 29, 11, 0)
+
+
+def test_lilian_sem_a_espera_nao_recebe_nada():
+    saiu, _ = _andar(CCDA, _brt(22, "12:53"), _brt(23, "20:00"))
+    assert saiu == []
+
+
+def test_lilian_com_todos_os_dias_recebe_as_seis():
+    """A fala da IA (12:53) + cinco: a ordem e os intervalos do áudio (1 h, 1 h, 3 h, vídeo, encerramento)."""
+    saiu, barrado = _andar(CADEIA_7_DIAS, _brt(22, "12:53"), _brt(23, "20:00"))
+    assert saiu == [
+        ("saudacao_1", "dom 13:54"),
+        ("saudacao_2", "dom 14:54"),
+        ("sem_retorno", "dom 17:54"),
+        ("sem_retorno_video", "dom 18:54"),
+        ("sem_retorno_fechamento", "dom 19:24"),
+    ]
+    assert not barrado
+
+
+def test_lilian_so_em_dia_util_espera_a_segunda_e_para_nas_24h():
+    saiu, barrado = _andar(CADEIA, _brt(22, "12:53"), _brt(23, "20:00"))
+    assert saiu == [("saudacao_1", "seg 08:00"), ("saudacao_2", "seg 09:00"), ("sem_retorno", "seg 12:00")]
+    assert barrado == {"sem_retorno_video"}  # 13:00 de segunda: passou das 24 h das 12:53 de domingo
+
+
+def test_quem_escreve_a_noite_continua_de_manha():
+    saiu, barrado = _andar(CADEIA, _brt(18, "20:50"), _brt(19, "21:29"))
+    assert [h for _, h in saiu] == ["qui 08:00", "qui 09:00", "qui 12:00", "qui 13:00", "qui 13:30"]
+    assert not barrado
+
+
+def test_sexta_a_noite_so_em_dia_util_as_24h_fecham_antes_da_segunda():
+    saiu, barrado = _andar(CADEIA, _brt(20, "21:00"), _brt(23, "20:00"))
+    assert saiu == [] and barrado == {"saudacao_1"}
+    saiu, barrado = _andar(CADEIA_7_DIAS, _brt(20, "21:00"), _brt(23, "20:00"))
+    assert [h for _, h in saiu] == ["sab 08:00", "sab 09:00", "sab 12:00", "sab 13:00", "sab 13:30"]
+
+
+@pytest.mark.parametrize("quem", ["user", "agent"])
+def test_esperando_a_janela_resposta_de_qualquer_lado_cancela(quem):
+    """Alguém escreveu segunda 07:40, antes das 8: a saudação guardada não sai."""
+    extra = [(quem, "Bom dia!", _brt(23, "07:40"))]
+    saiu, _ = _andar(CADEIA, _brt(22, "12:53"), _brt(23, "20:00"), falas_extra=extra)
+    assert saiu == []
+
+
+def test_resposta_no_meio_da_cadeia_para_o_video_e_o_encerramento():
+    extra = [("user", "boa noite", _brt(22, "18:10"))]
+    saiu, _ = _andar(CADEIA_7_DIAS, _brt(22, "12:53"), _brt(23, "20:00"), falas_extra=extra)
+    assert [p for p, _ in saiu] == ["saudacao_1", "saudacao_2", "sem_retorno"]
+
+
+def test_video_da_cadeia_nao_repete_o_que_a_conversa_ja_tem():
+    cfg = _cfg(CADEIA_7_DIAS)
+    msgs = [
+        _m("user", "oi", 0),
+        _m("assistant", SAUDACAO, 0.1),
+        _cb("tour", "https://youtu.be/yJ9lZV-6_P8", 30),
+        _cb("sem_retorno", SEM_RETORNO, 60),
+    ]
+    _, motivos = _vencido(msgs, 121, {"sem_retorno": _enviado(60)}, cfg=cfg)
+    assert motivos["sem_retorno_video"] == "ja_enviado"
+
+
+def test_adiado_tambem_tem_tolerancia_a_partir_da_abertura():
+    cfg = _cfg(CADEIA)
+    msgs = [
+        C.Msg(role="user", content="oi", model_used=None, em=_brt(18, "21:00")),
+        C.Msg(role="assistant", content=SAUDACAO, model_used="x", em=_brt(18, "21:00")),
+    ]
+    assert C.avaliar(cfg, msgs, {}, _brt(19, "07:59")).motivos["saudacao_1"] == "aguardando"
+    assert C.avaliar(cfg, msgs, {}, _brt(19, "08:00")).vencido.passo.id == "saudacao_1"
+    assert C.avaliar(cfg, msgs, {}, _brt(19, "08:30")).vencido.passo.id == "saudacao_1"
+    assert C.avaliar(cfg, msgs, {}, _brt(19, "08:31")).motivos["saudacao_1"] == "atrasado"
+
+
+def test_ligar_a_cadeia_nova_nao_muda_o_caminho_do_valor():
+    """Quem recebeu o valor segue no tour de antes: a saudação não volta, a cadeia não começa."""
+    for bruta in (CCDA, CADEIA, CADEIA_7_DIAS):
+        msgs = [_m("user", "7 ano", 0), _m("assistant", "https://www.ccda.com.br/valor-7_ano/", 0.1)]
+        passo, motivos = _vencido(msgs, 60.2, cfg=_cfg(bruta))
+        assert passo == "tour", (passo, motivos)
+        assert not any(k.startswith("sem_retorno") and v == "vencido" for k, v in motivos.items())

@@ -52,7 +52,8 @@ do contato arma o passo em qualquer conversa. Quatro travas, todas na configura�
 - `parar_se_agente_disse` ganha as frases de família matriculada e de outra escola (medidas no que o
   agente 26 respondeu de fato, sem as que aparecem em resposta comum de venda).
 - `janela` (por configuração, opcional): `{"inicio": "08:00", "fim": "21:30", "tz": "America/Sao_Paulo",
-  "dias": [1, 2, 3, 4, 5]}` (`dias` ISO, 1 = segunda; ausente = todos). Passo que vence fora dela não sai, como o atrasado: às 08:00 já perdeu o contexto. Necessária porque
+  "dias": [1, 2, 3, 4, 5]}` (`dias` ISO, 1 = segunda; ausente = todos). Passo que vence fora dela não sai, como o atrasado: às 08:00 já perdeu o contexto —
+  salvo com `adiar_para_a_janela: true` no passo (23/11/2026), que faz ele esperar a janela abrir. Necessária porque
   o horário da IA do número pode ser «sempre» (o do CCDA é).
 
 Quem só recebeu a saudação (16/11/2026, pedido do CCDA): família que escreveu, recebeu a 1ª mensagem
@@ -128,6 +129,7 @@ class Passo:
     so_conversa_iniciada_pelo_contato: bool = False
     exige_passo: str | None = None
     exige_fala_do_agente: tuple[str, ...] = ()
+    adiar_para_a_janela: bool = False
 
 
 @dataclass(frozen=True)
@@ -242,6 +244,9 @@ def carregar_config(bruto) -> tuple[Config | None, list[str]]:
       silêncio arma o passo em qualquer conversa); false em `fala_do_agente`.
     - `exige_passo`: id de outro passo que já tem de ter sido enviado.
     - `exige_fala_do_agente`: lista de textos; a IA já tem de ter dito um deles na conversa.
+    - `adiar_para_a_janela` (true/false, padrão false): o passo que vence fora da `janela` espera ela abrir
+      (domingo 12:53 → segunda 08:00) em vez de se perder. No WhatsApp oficial, só dentro das 24 h do
+      contato. Sem `janela`, não faz diferença.
     E por configuração, `janela`: {"inicio": "08:00", "fim": "21:30", "tz": "America/Sao_Paulo",
     "dias": [1, 2, 3, 4, 5]} — `dias` opcional (ISO 1 = segunda … 7 = domingo, no fuso da janela).
     """
@@ -330,6 +335,9 @@ def carregar_config(bruto) -> tuple[Config | None, list[str]]:
         exige_fala = _lista_de_textos(
             bruta_fala, f"{nome}.exige_fala_do_agente", erros, obrigatoria=bruta_fala is not None
         )
+        adiar = p.get("adiar_para_a_janela", False)
+        if not isinstance(adiar, bool):
+            erros.append(f"{nome}.adiar_para_a_janela: true ou false")
         if len(erros) > e0:
             continue
         vistos.add(pid)
@@ -349,6 +357,7 @@ def carregar_config(bruto) -> tuple[Config | None, list[str]]:
                 so_conversa_iniciada_pelo_contato=so_contato,
                 exige_passo=exige_passo,
                 exige_fala_do_agente=exige_fala,
+                adiar_para_a_janela=adiar is True,
             )
         )
     # Passo que depende (gatilho ou exigência) de outro que caiu na validação nunca dispara: avisa.
@@ -438,6 +447,23 @@ def dentro_da_janela(janela: Janela | None, agora: datetime) -> bool:
     if janela.dias is not None and local.isoweekday() not in janela.dias:
         return False
     return janela.inicio <= local.time() < janela.fim
+
+
+def proxima_abertura(janela: Janela | None, momento: datetime) -> datetime:
+    """O 1º instante >= `momento` (UTC sem fuso) em que a janela está aberta. Dentro dela (ou sem
+    janela), é o próprio `momento`. Ex.: domingo 12:53 com a janela 08:00–21:30 em dia útil → segunda 08:00."""
+    if dentro_da_janela(janela, momento):
+        return momento
+    fuso = ZoneInfo(janela.tz)
+    hoje = momento.replace(tzinfo=UTC).astimezone(fuso).date()
+    for i in range(8):  # `dias` nunca é vazio (a validação garante): em 8 dias sempre abre
+        dia = hoje + timedelta(days=i)
+        if janela.dias is not None and dia.isoweekday() not in janela.dias:
+            continue
+        abre = datetime.combine(dia, janela.inicio, tzinfo=fuso).astimezone(UTC).replace(tzinfo=None)
+        if abre >= momento:
+            return abre
+    return momento
 
 
 def _ultima(msgs: list[Msg], cond) -> int | None:
@@ -553,6 +579,10 @@ def avaliar(
             r.motivos[passo.id] = motivo
             continue
         vence = ancora + timedelta(minutes=passo.atraso_min)
+        if passo.adiar_para_a_janela:
+            # Vence fora da janela: espera ela abrir em vez de se perder (23/11/2026, CCDA). As 24 h do
+            # WhatsApp oficial continuam mandando: se elas fecham antes, o passo não sai.
+            vence = proxima_abertura(cfg.janela, vence)
         if agora < vence:
             r.motivos[passo.id] = "aguardando"
             continue
