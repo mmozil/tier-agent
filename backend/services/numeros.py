@@ -6,12 +6,16 @@ O telefone mora no JSON Fernet do conector; aqui é um decrypt por conector, por
 from __future__ import annotations
 
 import json
+import logging
+import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.encryption import decrypt
 from models import TaAgent, TaConnector
+
+logger = logging.getLogger(__name__)
 
 
 def rotulo(cfg: dict, connector_id: int) -> str:
@@ -46,3 +50,49 @@ async def numeros_do_tenant(db: AsyncSession, tenant_id: int) -> list[dict]:
             }
         )
     return out
+
+
+def mesmo_numero_da_casa(external_id: str | None, kind: str | None, configs: list[dict]) -> bool:
+    """O contato é um dos números conectados? Função pura: com e sem o 55, com e sem o 9."""
+    from services.historico_contato import chave_do_contato, variantes_do_numero
+
+    chave = chave_do_contato(external_id, kind)
+    if not chave:
+        return False
+    alvo = set(variantes_do_numero(chave))
+    for cfg in configs:
+        for campo in ("phone", "display_phone", "display_phone_number"):
+            digitos = re.sub(r"\D", "", str(cfg.get(campo) or ""))
+            if len(digitos) >= 10 and alvo & set(variantes_do_numero(digitos)):
+                return True
+    return False
+
+
+async def eh_numero_da_casa(
+    db: AsyncSession, tenant_id: int, external_id: str | None, kind: str | None = "whatsapp"
+) -> bool:
+    """Quem escreveu é um dos números conectados da própria conta (colega)?
+
+    🚨 24/11/2026 (M7, cards 4149 e 4150): o Uelinton e outra pessoa da casa escreveram para o 9150 do
+    próprio WhatsApp da empresa e viraram LEAD na Qualificação. Antes, a 3995 e a 3997, do mesmo jeito.
+    Vale o número mesmo desconectado (o do Uelinton estava esperando o QR).
+    Falha aqui nunca segura o atendimento: na dúvida, é cliente.
+    """
+    try:
+        rows = (
+            await db.execute(
+                select(TaConnector.config_json_enc)
+                .join(TaAgent, TaAgent.id == TaConnector.agent_id)
+                .where(TaAgent.tenant_id == tenant_id, TaConnector.kind.in_(("whatsapp", "whatsapp_cloud")))
+            )
+        ).scalars().all()
+        configs = []
+        for enc in rows:
+            try:
+                configs.append(json.loads(decrypt(enc)))
+            except Exception:  # noqa: BLE001 — um conector ilegível não invalida os outros
+                continue
+        return mesmo_numero_da_casa(external_id, kind, configs)
+    except Exception:
+        logger.exception("conferência de número da casa falhou tenant=%s", tenant_id)
+        return False

@@ -83,6 +83,12 @@ async def maybe_capture_lead(
     if not phone_typed and not intent:
         return False
 
+    # Colega da própria conta não é lead: nem alerta, nem card (24/11/2026).
+    from services import numeros
+
+    if await numeros.eh_numero_da_casa(db, tenant_id, external_chat_id):
+        return False
+
     # Dedup: já existe lead pra esta conversa?
     if conversation_id is not None:
         existing = (

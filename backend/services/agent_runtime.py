@@ -1353,6 +1353,13 @@ async def _espelhar_no_crm(
 
         if not erp_crm_client.integracao_ativa():
             return
+        # Colega da própria conta não é lead (só confere antes do 1º card: o caminho normal não paga).
+        if conv.crm_opportunity_id is None:
+            from services import numeros as _numeros
+
+            if await _numeros.eh_numero_da_casa(db, agent.tenant_id, external_chat_id, connector_kind):
+                logger.info("auto-CRM: conv=%s é de um número da própria conta, sem card", conv.id)
+                return
         import re as _re_crm
 
         # Foto: busca só quando ainda NÃO temos link (1ª vez / recriação). Nas msgs
