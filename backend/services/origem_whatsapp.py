@@ -80,8 +80,10 @@ def sinal_do_referral(mensagem: dict | None) -> dict | None:
         return None
     url = str(ref.get("source_url") or "")
     dominio = url.lower()
+    anuncio = ref.get("source_type") in (None, "ad")
     sinal = {
-        "anuncio_id": str(ref.get("source_id") or "") if ref.get("source_type") in (None, "ad") else "",
+        "anuncio_id": str(ref.get("source_id") or "") if anuncio else "",
+        "publicacao": not anuncio,
         "anuncio_app": "instagram" if "instagram" in dominio else "facebook" if "facebook" in dominio else "",
         "anuncio_url": url,
         "anuncio_texto": str(ref.get("body") or ref.get("headline") or "").strip()[:_TAMANHO_DO_TEXTO],

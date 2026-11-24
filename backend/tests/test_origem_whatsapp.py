@@ -134,7 +134,7 @@ def test_oficial_facebook():
 def test_oficial_publicacao_nao_vira_id_de_anuncio():
     ref = {"source_type": "post", "source_id": "999", "source_url": "https://www.instagram.com/p/x/"}
     s = sinal_do_referral({"referral": ref})
-    assert "anuncio_id" not in s and "ctwa" not in s
+    assert "anuncio_id" not in s and "ctwa" not in s and s["publicacao"] is True
 
 
 def test_oficial_sem_marca_nao_inventa():
