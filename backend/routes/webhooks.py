@@ -877,6 +877,7 @@ async def _process_cloud_message_humanized(
     midia: dict | None = None,
     descadastro: bool = False,
     descadastro_de_botao: bool = False,
+    origem_canal: dict | None = None,
 ) -> None:
     """Processa 1 mensagem inbound do WhatsApp Cloud com timing humano.
 
@@ -986,6 +987,7 @@ async def _process_cloud_message_humanized(
                 text_content=text_content,
                 attachments=attachments,
                 digitando_desde=digitando_desde,
+                origem_canal=origem_canal,
             )
     except Exception:
         logger.exception("processamento humanizado whatsapp-cloud falhou from=%s", from_id)
@@ -1099,6 +1101,7 @@ async def whatsapp_cloud_webhook(
                 # a palavra curta escrita sozinha (esta só vale depois de um modelo — conferido no
                 # processamento, que tem o banco). Frase longa segue para a IA normalmente.
                 from services.disparo_oficial import eh_descadastro
+                from services.origem_whatsapp import sinal_do_referral
 
                 de_botao = mtype in ("button", "interactive")
                 descadastro = eh_descadastro(text_content, de_botao=de_botao)
@@ -1120,6 +1123,8 @@ async def whatsapp_cloud_webhook(
                         midia=midia,
                         descadastro=descadastro,
                         descadastro_de_botao=de_botao,
+                        # de qual anúncio a pessoa veio: vai para o CRM com a mensagem
+                        origem_canal=sinal_do_referral(m),
                     )
                 )
                 _BG_TASKS.add(_task)

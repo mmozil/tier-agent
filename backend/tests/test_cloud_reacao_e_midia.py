@@ -105,6 +105,46 @@ def test_texto_continua_indo_para_a_ia(monkeypatch):
     assert [p["text_content"] for p in pedidos] == ["Obrigada"] and reacoes == []
 
 
+def test_marca_do_anuncio_segue_com_a_mensagem(monkeypatch):
+    """24/11/2026 (M7, card 31447): o número oficial descartava `referral` e o card dizia «direto»."""
+    ref = {"source_url": "https://www.instagram.com/p/x/", "source_id": "1202", "source_type": "ad", "ctwa_clid": "A"}
+    pedidos, _, _ = _webhook(monkeypatch, [
+        {"from": WA, "id": "a1", "type": "text", "text": {"body": "Olá!"}, "referral": ref},
+        {"from": WA, "id": "a2", "type": "audio", "audio": {"id": "MID9"}, "referral": ref},
+        {"from": WA, "id": "a3", "type": "text", "text": {"body": "oi"}},
+    ])
+    assert [(p["origem_canal"] or {}).get("anuncio_id") for p in pedidos] == ["1202", "1202", None]
+
+
+def test_marca_do_anuncio_chega_ao_runtime(monkeypatch):
+    recebido = {}
+
+    @asynccontextmanager
+    async def _banco():
+        yield SimpleNamespace()
+
+    async def _inbound(_db, **kw):
+        recebido.update(kw)
+
+    async def _sem_conector(*_a, **_k):
+        return None
+
+    async def _sem_espera(*_a):
+        return None
+
+    import core.db as core_db
+
+    monkeypatch.setattr(core_db, "db_context", _banco)
+    monkeypatch.setattr(agent_runtime, "handle_inbound_message", _inbound)
+    monkeypatch.setattr(agent_runtime, "resolve_connector_by_instance", _sem_conector)
+    monkeypatch.setattr(asyncio, "sleep", _sem_espera)
+    _rodar(webhooks._process_cloud_message_humanized(
+        phone_number_id="pnid", mid="a1", from_id=WA, sender_name="Maria", text_content="Olá!", attachments=[],
+        origem_canal={"anuncio_id": "1202"},
+    ))
+    assert recebido["origem_canal"] == {"anuncio_id": "1202"}
+
+
 def test_foto_documento_e_figurinha_vao_para_baixar(monkeypatch):
     pedidos, _, _ = _webhook(monkeypatch, [
         {"from": WA, "id": "m3", "type": "image", "image": {"id": "MID1", "mime_type": "image/jpeg", "caption": "boletim"}},
