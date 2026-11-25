@@ -6,7 +6,7 @@ import inspect
 import pytest
 
 from services import continuidade as K
-from services.tier_engine import anuncia_e_para
+from services.tier_engine import anuncia_e_para, visita_ja_marcada
 
 PERSONA = (
     "Você é a Nathalia.\n"
@@ -185,3 +185,35 @@ def test_freio_continua_pegando_o_anuncio(frase):
 
 def test_freio_vazio():
     assert anuncia_e_para(None) is False and anuncia_e_para("") is False
+
+
+# ─── «Confirmado!» respondendo à nossa confirmação ───────────────────────────
+
+
+@pytest.mark.parametrize(
+    "nossa,esperado",
+    [
+        ("Olá, Beatriz! Passando para confirmar que sua visita está agendada para 📅 18/11 às 14:00.", True),
+        ("Passando para lembrar que sua visita ao CCDA está confirmada para hoje às 14:30.", True),
+        ("Por gentileza, confirme sua presença respondendo com SIM.", True),
+        ("Para o dia 19/11 tenho 08:30, 09:30 ou 10:00. Qual horário fica melhor?", False),
+        ("Ainda tenho alguns horários de visita. Qual dia fica melhor?", False),
+        ("Vi que vocês não conseguiram vir na visita que estava agendada.", False),
+    ],
+)
+def test_visita_ja_marcada(nossa, esperado):
+    assert visita_ja_marcada([{"role": "assistant", "content": nossa}]) is esperado
+    assert visita_ja_marcada([{"role": "assistant", "content": nossa}, {"role": "user", "content": "Confirmado"}]) is esperado
+
+
+def test_visita_ja_marcada_olha_so_a_ultima_nossa():
+    h = [{"role": "assistant", "content": "sua visita está agendada para 18/11"}, {"role": "assistant", "content": "Qual dia fica melhor?"}]
+    assert visita_ja_marcada(h) is False
+    assert visita_ja_marcada(None) is False and visita_ja_marcada([]) is False
+
+
+def test_freio_de_confirmacao_usa_a_guarda():
+    from services import tier_engine
+
+    f = inspect.getsource(tier_engine.send_message)
+    assert "visita_ja_marcada(history)" in f

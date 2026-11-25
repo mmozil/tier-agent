@@ -243,6 +243,19 @@ SILENCIO = "[SILENCIO]"
 _SILENCIO_RE = re.compile(r"^\W*\[\s*sil[eê]ncio\s*\]\W*$", re.IGNORECASE)
 
 
+_VISITA_JA_MARCADA_RE = re.compile(
+    r"\bvisita\b[^.!?\n]{0,40}\best[áa] (?:agendada|confirmada|marcada)\b|\bconfirme sua presen[çc]a\b", re.IGNORECASE
+)
+
+
+def visita_ja_marcada(history: list[dict] | None) -> bool:
+    """A nossa última mensagem já dizia que a visita está marcada (confirmação ou lembrete)? Pura."""
+    ultima = next(
+        (m.get("content") for m in reversed(history or []) if m.get("role") == "assistant" and m.get("content")), None
+    )
+    return isinstance(ultima, str) and bool(_VISITA_JA_MARCADA_RE.search(ultima))
+
+
 # «Anuncia e para»: o AGENTE diz que vai ver/verificar. 25/11/2026 (CCDA): o gerúndio solto pegava a vida do
 # cliente («vocês ainda estão procurando escola?») e «um momento» pegava «em algum momento» — a resposta certa era
 # jogada fora e refeita, e duas famílias que se despediram receberam a apresentação de novo (conversas 2295 e 2389).
@@ -1068,6 +1081,9 @@ async def send_message(
         active_tools and text and _agenda_ou_pet and _CONFIRMS_BOOKING.search(user_content or "")
         and not _BOOKING_OK  # nenhum agendamento criado com sucesso (mesmo que tenha tentado e falhado)
         and not _BOOKED_OK.search(text)
+        # 25/11/2026 (CCDA): «Confirmado!» respondendo à NOSSA confirmação/lembrete não é pedido de agendar —
+        # a visita já existe. Os 2 disparos reais deste freio eram isso, e a família teve de repetir os dados.
+        and not (_has_agenda_tools and not _has_pet_tools and visita_ja_marcada(history))
     ):
         # Cliente confirmou e o modelo NÃO agendou (re-perguntando/re-listando). PRIORIDADE alta:
         # vem antes de offers_slot/denies_slots — a intenção de FECHAR domina "ofereceu horário".
