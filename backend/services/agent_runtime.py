@@ -549,7 +549,16 @@ def _format_for_whatsapp(text: str) -> str:
     # Limpa espaço à direita e colapsa 3+ quebras de linha em 2
     t = _re.sub(r"[ \t]+\n", "\n", t)
     t = _re.sub(r"\n{3,}", "\n\n", t)
-    return t.strip()
+    return _valor_inteiro(t).strip()
+
+
+def _valor_inteiro(text: str) -> str:
+    """O preço não quebra no meio: «R$» no fim de uma linha e o número na outra (25/11/2026, CCDA).
+
+    Quem quebra a linha é o WhatsApp, no espaço. Com o espaço que não quebra (U+00A0) o valor desce inteiro.
+    Vale também para o que vem colado («R$1.275,62»), que fica com a mesma cara dos outros.
+    """
+    return _re.sub(r"R\$[ \t\u00a0]*(?=\d)", "R$\u00a0", text)
 
 
 def _sem_travessao(text: str) -> str:
