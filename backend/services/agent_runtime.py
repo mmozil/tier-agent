@@ -1916,6 +1916,14 @@ async def handle_inbound_message(
     _cron.marca("memoria")
 
     system_prompt = persona_efetiva(agent)  # 09/11/2026: blocos por horário (persona_do_horario)
+    # 25/11/2026 (CCDA): blocos [[abertura]]/[[em_andamento]] — a apresentação só existe no prompt de conversa
+    # nova. Persona sem marcação passa igual.
+    from services import continuidade
+
+    _em_andamento = False
+    if continuidade.tem_marcas(system_prompt):
+        _em_andamento = await continuidade.em_andamento(db, conv.id)
+        system_prompt = continuidade.persona_da_conversa(system_prompt, _em_andamento)
     if memory_block:
         system_prompt = f"{system_prompt}\n\n{memory_block}".strip()
 
@@ -1969,6 +1977,9 @@ async def handle_inbound_message(
         history = await load_history(db, conv.id)
     except Exception:
         logger.exception("load_history falhou agent=%s — segue sem histórico", agent.id)
+    if _em_andamento:
+        # No FIM do prompt, de propósito: é o que o modelo lê por último.
+        system_prompt += continuidade.bloco(history, await continuidade.falas_da_equipe(db, conv.id))
     _cron.marca("historico")
 
     # Engine responde (com vision se attachment image presente)

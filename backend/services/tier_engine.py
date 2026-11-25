@@ -243,6 +243,27 @@ SILENCIO = "[SILENCIO]"
 _SILENCIO_RE = re.compile(r"^\W*\[\s*sil[eê]ncio\s*\]\W*$", re.IGNORECASE)
 
 
+# «Anuncia e para»: o AGENTE diz que vai ver/verificar. 25/11/2026 (CCDA): o gerúndio solto pegava a vida do
+# cliente («vocês ainda estão procurando escola?») e «um momento» pegava «em algum momento» — a resposta certa era
+# jogada fora e refeita, e duas famílias que se despediram receberam a apresentação de novo (conversas 2295 e 2389).
+# O gerúndio agora só conta abrindo a frase («Verificando a agenda…») ou na 1ª pessoa («estou consultando»).
+_VERBOS_ANUNCIO = "consultando|verificando|checando|buscando|conferindo|olhando|pesquisando|procurando"
+_ANUNCIA_RE = re.compile(
+    r"\bdeixa eu (?:ver|conferir|verificar|confirmar|olhar|checar|consultar|buscar|pesquisar|procurar|puxar|dar uma olhada)|"
+    r"\bum momento\b|\bs[óo] um (?:instante|momento|minutinho|segundo)|\baguarde\b|\b(?:es)?pera[ií]\b|"
+    r"\bj[áa] (?:te )?(?:falo|retorno|aviso|respondo|digo|trago|passo|mando|verifico|consulto)\b|"
+    r"\bvou (?:ver|verificar|checar|confirmar|conferir|consultar|buscar|olhar|puxar|pesquisar|procurar|dar uma olhada)|"
+    rf"(?:^|[.!?…:,]\s*|\n\s*)(?:j[áa] )?(?:{_VERBOS_ANUNCIO})\b|"
+    rf"\b(?:estou|t[ôo]|estamos|ficarei|vou estar) (?:aqui |j[áa] )?(?:{_VERBOS_ANUNCIO})\b",
+    re.IGNORECASE,
+)
+
+
+def anuncia_e_para(texto: str | None) -> bool:
+    """O agente anunciou que vai consultar/verificar? Pura."""
+    return bool(texto) and bool(_ANUNCIA_RE.search(texto))
+
+
 def eh_silencio(texto: str | None) -> bool:
     """A resposta é o sinal de silêncio (e nada mais)?"""
     return bool(texto) and bool(_SILENCIO_RE.match(texto.strip()))
@@ -873,15 +894,7 @@ async def send_message(
     # Freio anti "anuncia e para": o modelo disse que ia ver/verificar mas NÃO chamou
     # nenhuma ferramenta no turno → força a ação UMA vez (modelo ignora a persona às
     # vezes). Pega "deixa eu ver", "um momento", "já te falo", "vou verificar"...
-    _ANNOUNCE = _re.compile(
-        r"deixa eu (ver|conferir|verificar|confirmar|olhar|checar|consultar|buscar|pesquisar|procurar|puxar|dar uma olhada)|"
-        r"um momento|s[óo] um (instante|momento|minutinho|segundo)|aguarde|pera[ií]|"
-        r"j[áa] (te )?(falo|retorno|aviso|respondo|digo|trago|passo|mando|verifico|consulto)|"
-        r"vou (ver|verificar|checar|confirmar|conferir|consultar|buscar|olhar|puxar|pesquisar|procurar|dar uma olhada)|"
-        r"\b(consultando|verificando|checando|buscando|conferindo|olhando|pesquisando|procurando)\b",
-        _re.I,
-    )
-    if active_tools and not tool_calls_made and text and len(text) < 320 and _ANNOUNCE.search(text):
+    if active_tools and not tool_calls_made and text and len(text) < 320 and anuncia_e_para(text):
         brakes_fired.append("announce_and_stop")
         messages.append({"role": "assistant", "content": text})
         messages.append({

@@ -463,6 +463,13 @@ async def agent_playground(
     # Estava invertida aqui — e como todo agente de template nasce com os DOIS
     # campos preenchidos, o prompt testado nunca era o prompt executado.
     system = agent_runtime.persona_efetiva(agent) or None  # mesmos blocos por horário da produção
+    # …e os mesmos blocos de abertura/em andamento (25/11/2026): aqui a conversa é a do próprio teste.
+    from services import continuidade
+
+    _em_andamento = False
+    if continuidade.tem_marcas(system):
+        _em_andamento = continuidade.ja_falamos(payload.history)
+        system = continuidade.persona_da_conversa(system, _em_andamento)
 
     # RAG: o teste consulta a base de conhecimento pelo MESMO caminho da produção
     # (services.agent_runtime.build_rag_block). Sem isso o cliente subia um
@@ -527,6 +534,8 @@ async def agent_playground(
         for h in (payload.history or [])
         if h.get("role") in ("user", "assistant") and h.get("content")
     ][-20:]
+    if _em_andamento:
+        system += continuidade.bloco(history)
 
     try:
         reply = await tier_engine.send_message(
