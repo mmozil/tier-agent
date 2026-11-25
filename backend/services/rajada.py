@@ -17,7 +17,8 @@ A mensagem que cede continua indo para o CRM (o ERP desduplica pela conversa): a
 vem de anúncio é a que traz a origem, e ela não pode se perder.
 
 Configuração: `ta_runtime_param` (escopo='agent', escopo_id=<agente>, key='agrupar_mensagens_s'), em
-segundos. Sem a linha = 2,5 s; `0` desliga a espera (a porta 2 continua). Teto 8 s. Lida a cada
+segundos. Sem a linha = 2,5 s; `0` desliga a espera (a porta 2 continua). Teto 15 s (era 8; 25/11/2026, CCDA:
+de 46 pares de mensagens com 5 a 12 s entre elas, a IA respondeu no meio em 22). Lida a cada
 mensagem: editar vale na seguinte, sem deploy. Nada aqui levanta erro para quem chama.
 """
 
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 PARAM_KEY = "agrupar_mensagens_s"
 PADRAO_S = 2.5
-MAX_S = 8.0
+MAX_S = 15.0  # com o «digitando» mínimo (5 s do CCDA corre junto) fica abaixo dos 25 s da Meta
 
 _dormir = asyncio.sleep  # trocado nos testes
 

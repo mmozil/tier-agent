@@ -40,7 +40,8 @@ def test_ler_segundos():
     assert rajada.ler_segundos("0") == 0.0          # desliga a espera
     assert rajada.ler_segundos("3,5") == 3.5
     assert rajada.ler_segundos(4) == 4.0
-    assert rajada.ler_segundos("99") == rajada.MAX_S  # teto
+    assert rajada.ler_segundos("99") == rajada.MAX_S == 15.0  # teto
+    assert rajada.ler_segundos("12") == 12.0  # CCDA, 25/11/2026
     assert rajada.ler_segundos("-1") == rajada.PADRAO_S
     assert rajada.ler_segundos("abc") == rajada.PADRAO_S
     assert rajada.ler_segundos(True) == rajada.PADRAO_S
