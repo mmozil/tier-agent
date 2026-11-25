@@ -9,12 +9,15 @@ import logging
 import mimetypes
 import os
 import re
+import unicodedata
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import case, func, or_, select, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -115,6 +118,176 @@ async def _tenant_agent_ids(db: AsyncSession, tenant_id: int) -> list[int]:
     return [r[0] for r in rows]
 
 
+async def _rotulos_dos_numeros(
+    db: AsyncSession, agent_ids: list[int]
+) -> tuple[dict[int, tuple[str | None, str]], dict[int, int | None]]:
+    """({conector: (telefone ou rótulo, modo)}, {conector: pessoa dona}) dos números do tenant.
+    Um decrypt por conector, uma vez por listagem. Rótulo é luxo: com erro, a lista sai sem ele."""
+    canal: dict[int, tuple[str | None, str]] = {}
+    dono: dict[int, int | None] = {}
+    try:
+        for k in (await db.execute(select(TaConnector).where(TaConnector.agent_id.in_(agent_ids)))).scalars().all():
+            try:
+                cfg = json.loads(decrypt(k.config_json_enc))
+            except Exception:  # noqa: BLE001
+                cfg = {}
+            rotulo = cfg.get("phone") or cfg.get("display_phone") or cfg.get("label") or f"#{k.id}"
+            canal[k.id] = (str(rotulo), getattr(k, "modo", None) or "agente")
+            dono[k.id] = getattr(k, "member_id", None)
+    except Exception:  # noqa: BLE001
+        return {}, {}
+    return canal, dono
+
+
+async def _condicoes_da_lista(
+    db: AsyncSession,
+    user: CurrentUser,
+    agent_ids: list[int],
+    *,
+    scope: str | None,
+    de: date | None,
+    ate: date | None,
+    responsavel: int | None,
+) -> list:
+    """O que toda leitura da lista respeita: a conta, quem enxerga o quê, o período, a pessoa e a aba.
+    A lista, a busca e os números da lateral partem daqui, para nunca discordarem."""
+    try:
+        criada_de, criada_ate = filtro_conversas.janela_utc(de, ate)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    # Etapa 2 do caminho A (09/09/2026): atendente só vê as conversas dos SEUS números e
+    # as atribuídas a ela; dono/admin veem todas. O filtro é do servidor, não do cliente.
+    cond = [TaConversation.agent_id.in_(agent_ids), await visao.filtro_para(db, user)]
+    if criada_de is not None:
+        cond.append(TaConversation.started_at >= criada_de)
+    if criada_ate is not None:
+        cond.append(TaConversation.started_at < criada_ate)
+    # O filtro por pessoa só existe para quem vê a conta inteira. O atendente já está preso às
+    # conversas dele pela linha acima; o parâmetro é ignorado em vez de virar outra porta.
+    if responsavel is not None and visao.ve_tudo(user.role):
+        cond.append(filtro_conversas.condicao_responsavel(responsavel, agent_ids))
+    now = datetime.utcnow()
+    if scope == "unassigned":
+        cond.append(TaConversation.assigned_member_id.is_(None))
+    elif scope == "mine" and user.member_id:
+        cond.append(TaConversation.assigned_member_id == user.member_id)
+    if scope == "snoozed":
+        cond += [TaConversation.snoozed_until.isnot(None), TaConversation.snoozed_until > now]
+    else:
+        # esconde adiadas das demais visões até a hora chegar
+        cond.append(or_(TaConversation.snoozed_until.is_(None), TaConversation.snoozed_until <= now))
+    return cond
+
+
+def _sem_acento(s: str | None) -> str:
+    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+
+
+# Teto de conversas em que a busca procura o nome (as mais recentes de quem pergunta).
+_BUSCA_MAX = 6000
+_NOMES_POR_VEZ = 300  # o CRM responde até 300 números por pedido
+
+
+async def _ids_da_busca(db: AsyncSession, user: CurrentUser, cond: list, termo: str) -> list[int]:
+    """Busca por nome ou telefone em TODAS as conversas que a pessoa enxerga (25/11/2026). Antes a tela
+    procurava só nas 200 carregadas. O nome que a tela mostra vem do CRM e da agenda do celular, que não
+    ficam no banco do Agent: por isso compara aqui, com a mesma regra da linha."""
+    linhas = (
+        await db.execute(
+            select(
+                TaConversation.id, TaConversation.connector_id, TaConversation.external_id, TaConversation.contact_name
+            )
+            .where(*cond)
+            .order_by(TaConversation.last_message_at.desc().nulls_last(), TaConversation.id.desc())
+            .limit(_BUSCA_MAX)
+        )
+    ).all()
+    itens = [
+        SimpleNamespace(
+            id=r[0],
+            connector_id=r[1],
+            external_id=r[2] or "",
+            contact_name=r[3],
+            crm_nome=None,
+            agenda_nome=None,
+            telefone_oculto=None,
+        )
+        for r in linhas
+    ]
+    for k in range(0, len(itens), _NOMES_POR_VEZ):
+        lote = itens[k : k + _NOMES_POR_VEZ]
+        nomes = await nome_crm.nomes_do_crm(user.tenant_id, [o.external_id for o in lote])
+        for o in lote:
+            o.crm_nome = nomes.get(o.external_id)
+    await _completar_com_agenda(db, user.tenant_id, itens)
+
+    procura = _sem_acento(termo)
+    digitos = re.sub(r"[^0-9]", "", termo)
+    so_numero = len(digitos) >= 4 and not re.search(r"[A-Za-z]", termo)
+    achadas: list[int] = []
+    for o in itens:
+        nome = _sem_acento(
+            f"{o.crm_nome or ''} {o.agenda_nome or ''} {o.contact_name or ''} {o.telefone_oculto or ''} {o.external_id}"
+        )
+        fone = re.sub(r"[^0-9]", "", f"{o.external_id.split('@')[0]} {o.telefone_oculto or ''}")
+        if (procura and procura in nome) or (so_numero and digitos in fone):
+            achadas.append(o.id)
+    return achadas
+
+
+@router.get("/resumo", response_model=dict)
+async def resumo_da_lista(
+    scope: str | None = None,
+    de: date | None = None,
+    ate: date | None = None,
+    responsavel: int | None = Query(None, ge=0),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Os números e os contadores da lateral (25/11/2026, CCDA), sobre TODAS as conversas que a pessoa
+    enxerga. A tela contava só as 200 carregadas: número sem conversa recente sumia da lateral, e
+    «Aguardando resposta» dizia 7 quando eram 194.
+
+    Declarada ANTES de `/{conversation_id}`: senão «resumo» cairia na rota do id e daria 422."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    agent_ids = await _tenant_agent_ids(db, user.tenant_id)
+    if not agent_ids:
+        return filtro_conversas.agrupar_resumo([], {}, {})
+    cond = await _condicoes_da_lista(db, user, agent_ids, scope=scope, de=de, ate=ate, responsavel=responsavel)
+    m = (
+        select(
+            TaMessageLog.conversation_id.label("cid"),
+            func.max(case((TaMessageLog.role == "user", TaMessageLog.created_at))).label("dele"),
+            func.max(case((TaMessageLog.role.in_(PAPEIS_QUE_RESPONDEM), TaMessageLog.created_at))).label("nossa"),
+        )
+        .where(TaMessageLog.conversation_id.in_(select(TaConversation.id).where(*cond)))
+        .group_by(TaMessageLog.conversation_id)
+        .subquery()
+    )
+    linhas = (
+        await db.execute(
+            select(
+                TaConversation.agent_id,
+                TaConversation.connector_id,
+                TaConversation.connector_kind,
+                TaConversation.team_id,
+                TaConversation.tags,
+                TaConversation.status,
+                TaConversation.assigned_member_id,
+                TaConversation.visto_equipe_em,
+                m.c.dele,
+                m.c.nossa,
+            )
+            .outerjoin(m, m.c.cid == TaConversation.id)
+            .where(*cond)
+        )
+    ).all()
+    canal_por_conector, _ = await _rotulos_dos_numeros(db, agent_ids)
+    nomes = (await db.execute(select(TaAgent.id, TaAgent.nome).where(TaAgent.id.in_(agent_ids)))).all()
+    return filtro_conversas.agrupar_resumo(linhas, canal_por_conector, dict(tuple(n) for n in nomes))
+
+
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
     agent_id: int | None = None,
@@ -127,60 +300,61 @@ async def list_conversations(
     ate: date | None = None,
     # …e quem responde por ela (id da pessoa; 0 = sem responsável). Só vale para quem vê tudo.
     responsavel: int | None = Query(None, ge=0),
+    # 25/11/2026 (CCDA): os filtros da lateral são do SERVIDOR. A tela filtrava só as 200 carregadas.
+    numero: str | None = Query(None, max_length=80),
+    canal: str | None = Query(None, max_length=32),
+    agente: str | None = Query(None, max_length=160),
+    time_id: int | None = Query(None, alias="time"),
+    fila: Literal["nao_lidas", "aguardando", "nao_atendidas"] | None = None,
+    contato: str | None = Query(None, max_length=255),
+    busca: str | None = Query(None, max_length=80),
+    # página seguinte: a última conversa já mostrada
+    antes_de: datetime | None = None,
+    antes_id: int | None = None,
     limit: int = Query(100, ge=1, le=300),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     if not user.tenant_id:
         raise HTTPException(403, "Sem tenant")
-    try:
-        criada_de, criada_ate = filtro_conversas.janela_utc(de, ate)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from None
-
     agent_ids = await _tenant_agent_ids(db, user.tenant_id)
     if not agent_ids:
         return []
 
-    stmt = select(TaConversation).where(TaConversation.agent_id.in_(agent_ids))
-    # Etapa 2 do caminho A (09/09/2026): atendente só vê as conversas dos SEUS números e
-    # as atribuídas a ela; dono/admin veem todas. O filtro é do servidor, não do cliente.
-    stmt = stmt.where(await visao.filtro_para(db, user))
-    if criada_de is not None:
-        stmt = stmt.where(TaConversation.started_at >= criada_de)
-    if criada_ate is not None:
-        stmt = stmt.where(TaConversation.started_at < criada_ate)
-    # O filtro por pessoa só existe para quem vê a conta inteira. O atendente já está preso às
-    # conversas dele pela linha acima; o parâmetro é ignorado em vez de virar outra porta.
-    if responsavel is not None and visao.ve_tudo(user.role):
-        stmt = stmt.where(filtro_conversas.condicao_responsavel(responsavel, agent_ids))
+    cond = await _condicoes_da_lista(db, user, agent_ids, scope=scope, de=de, ate=ate, responsavel=responsavel)
+    # Rótulo do número por conector (telefone ou label), para a linha e para o filtro por número.
+    canal_por_conector, dono_por_conector = await _rotulos_dos_numeros(db, agent_ids)
     if agent_id is not None:
         if agent_id not in agent_ids:
             raise HTTPException(403, "Agente de outro tenant")
-        stmt = stmt.where(TaConversation.agent_id == agent_id)
+        cond.append(TaConversation.agent_id == agent_id)
     if status:
-        stmt = stmt.where(TaConversation.status == status)
+        cond.append(TaConversation.status == status)
+    if numero:
+        # o mesmo rótulo que a linha mostra; um número pode ter mais de um cadastro
+        ids = [k for k, (rotulo, _modo) in canal_por_conector.items() if rotulo == numero]
+        cond.append(TaConversation.connector_id.in_(ids))
+    if canal == "outro":
+        cond.append(or_(TaConversation.connector_kind.is_(None), TaConversation.connector_kind == ""))
+    elif canal:
+        cond.append(TaConversation.connector_kind == canal)
+    if agente:
+        cond.append(
+            TaConversation.agent_id.in_(select(TaAgent.id).where(TaAgent.id.in_(agent_ids), TaAgent.nome == agente))
+        )
+    if time_id is not None:
+        cond.append(TaConversation.team_id == time_id)
+    if fila:
+        cond.append(filtro_conversas.condicao_fila(fila))
+    if contato:
+        cond.append(TaConversation.external_id == contato)
     # 12/11/2026 — etiqueta escolhida na lateral: o filtro é do SERVIDOR. Antes a tela filtrava só
     # as 200 conversas carregadas, e a conversa mais antiga com a etiqueta não aparecia.
     if tag and tag.strip():
-        from sqlalchemy import text as _sql_text
-
-        stmt = stmt.where(
-            _sql_text("ta_conversation.tags @> CAST(:tag_json AS jsonb)").bindparams(
+        cond.append(
+            text("ta_conversation.tags @> CAST(:tag_json AS jsonb)").bindparams(
                 tag_json=json.dumps([tag.strip().lower()])
             )
-        )
-    now = datetime.utcnow()
-    if scope == "unassigned":
-        stmt = stmt.where(TaConversation.assigned_member_id.is_(None))
-    elif scope == "mine" and user.member_id:
-        stmt = stmt.where(TaConversation.assigned_member_id == user.member_id)
-    if scope == "snoozed":
-        stmt = stmt.where(TaConversation.snoozed_until.isnot(None), TaConversation.snoozed_until > now)
-    else:
-        # esconde adiadas das demais visões até a hora chegar
-        stmt = stmt.where(
-            or_(TaConversation.snoozed_until.is_(None), TaConversation.snoozed_until <= now)
         )
 
     # Folders Chatwoot — Menções: conversas em que fui marcado numa nota interna
@@ -196,16 +370,26 @@ async def list_conversations(
         )
         if view == "mentions":
             marcado = marcado.where(TaNotification.category == "mention")
-            stmt = stmt.where(TaConversation.id.in_(marcado))
+            cond.append(TaConversation.id.in_(marcado))
         else:  # participating
-            stmt = stmt.where(
+            cond.append(
                 or_(
                     TaConversation.assigned_member_id == user.member_id,
                     TaConversation.id.in_(marcado),
                 )
             )
+    if busca and len(busca.strip()) >= 2:
+        cond.append(TaConversation.id.in_(await _ids_da_busca(db, user, cond, busca.strip())))
+    pagina = filtro_conversas.condicao_pagina(antes_de, antes_id)
+    if pagina is not None:
+        cond.append(pagina)
 
-    stmt = stmt.order_by(TaConversation.last_message_at.desc().nulls_last()).limit(limit)
+    stmt = (
+        select(TaConversation)
+        .where(*cond)
+        .order_by(TaConversation.last_message_at.desc().nulls_last(), TaConversation.id.desc())
+        .limit(limit)
+    )
 
     convs = (await db.execute(stmt)).scalars().all()
     convs = await visao.conferir_saida(db, user, convs, "lista de conversas")
@@ -217,27 +401,6 @@ async def list_conversations(
         await db.execute(select(_TaAgent.id, _TaAgent.nome).where(_TaAgent.id.in_(agent_ids)))
     ).all()
     agent_names = {aid: nome for aid, nome in _ag_rows}
-
-    # Rótulo do número por conector (telefone ou label) — um decrypt por conector,
-    # uma vez por listagem, só para os conectores do tenant.
-    canal_por_conector: dict[int, tuple[str | None, str]] = {}
-    dono_por_conector: dict[int, int | None] = {}
-    try:
-        from core.encryption import decrypt as _dec
-        from models import TaConnector as _TaConnector
-
-        _cx = (await db.execute(select(_TaConnector).where(_TaConnector.agent_id.in_(agent_ids)))).scalars().all()
-        for _c in _cx:
-            try:
-                _cfg = json.loads(_dec(_c.config_json_enc))
-            except Exception:  # noqa: BLE001
-                _cfg = {}
-            _rot = _cfg.get("phone") or _cfg.get("display_phone") or _cfg.get("label") or f"#{_c.id}"
-            canal_por_conector[_c.id] = (str(_rot), getattr(_c, "modo", None) or "agente")
-            dono_por_conector[_c.id] = getattr(_c, "member_id", None)
-    except Exception:  # noqa: BLE001 — rótulo é luxo; a lista sai sem ele
-        canal_por_conector = {}
-        dono_por_conector = {}
 
     nao_lidas = await _nao_lidas(db, [c.id for c in convs])
     aguardando = await _aguardando_desde(db, [c.id for c in convs])
@@ -326,9 +489,8 @@ async def _nao_lidas(db: AsyncSession, ids: list[int]) -> dict[int, int]:
         return {}
 
 
-# Quem «responde» à família: a IA (`assistant`) e a equipe (`agent`, inclusive modelo e disparo).
-# Nota interna (`note`) não é resposta — a família não vê.
-PAPEIS_QUE_RESPONDEM = ("assistant", "agent")
+# A régua mora em `filtro_conversas`: a fila «Aguardando resposta» e o campo da linha são a mesma.
+PAPEIS_QUE_RESPONDEM = filtro_conversas.PAPEIS_QUE_RESPONDEM
 
 _SQL_AGUARDANDO = text(
     "WITH nosso AS ("

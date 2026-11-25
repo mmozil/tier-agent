@@ -259,6 +259,52 @@ function aguardando(c: { aguardando_desde?: string | null; status: string }): bo
   return !!c.aguardando_desde && c.status !== "closed";
 }
 
+/** Quantas conversas vêm por vez; o resto vem em «Carregar mais». */
+const POR_PAGINA = 200;
+
+/** Os números da lateral, contados no servidor sobre TODAS as conversas que a pessoa enxerga
+ *  (25/11/2026, CCDA). A tela contava só as 200 carregadas: num dia de disparo o número oficial
+ *  ocupava 182 delas, o da Karolaine mostrava 3 de 69 e os outros números sumiam da lateral. */
+interface Resumo {
+  total: number;
+  nao_lidas: number;
+  aguardando: number;
+  nao_atendidas: number;
+  canais: { canal: string; total: number; nao_lidas: number }[];
+  numeros: { rotulo: string; connector_ids: number[]; modo: string; total: number; nao_lidas: number }[];
+  agentes: { id: number; nome: string | null; total: number; nao_lidas: number }[];
+  etiquetas: { nome: string; total: number; nao_lidas: number }[];
+  times: { id: number; total: number; nao_lidas: number }[];
+}
+
+/** Sem repetir: o primeiro vale (a página recarregada é mais nova que a antiga). */
+function semRepetir(lista: Conversation[]): Conversation[] {
+  const vistos = new Set<number>();
+  return lista.filter((c) => (vistos.has(c.id) ? false : (vistos.add(c.id), true)));
+}
+
+/** Última mensagem mais nova primeiro — a ordem do servidor. */
+function porData(lista: Conversation[]): Conversation[] {
+  return [...lista].sort((a, b) => {
+    const x = a.last_message_at || "", y = b.last_message_at || "";
+    return x === y ? b.id - a.id : x < y ? 1 : -1;
+  });
+}
+
+/** A escolha da lateral como filtro do servidor. */
+function paramsDaLateral(nav: NavFilter): Record<string, string | number> {
+  switch (nav.type) {
+    case "numero": return { numero: nav.value };
+    case "channel": return { canal: nav.value };
+    case "agent": return { agente: nav.value };
+    case "team": return { time: nav.value };
+    case "unread": return { fila: "nao_lidas" };
+    case "waiting": return { fila: "aguardando" };
+    case "unattended": return { fila: "nao_atendidas" };
+    default: return {};
+  }
+}
+
 type NavFilter =
   | { type: "all" }
   | { type: "unattended" }
@@ -670,6 +716,27 @@ function Linha({ rotulo, children, titulo }: { rotulo: string; children: ReactNo
 
 export default function ConversasPage() {
   const [convs, setConvs] = useState<Conversation[]>([]);
+  // 25/11/2026 (CCDA) — páginas seguintes, resultado da busca no servidor e os números da lateral.
+  const [maisAntigas, setMaisAntigas] = useState<Conversation[]>([]);
+  const [temMais, setTemMais] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [achadas, setAchadas] = useState<{ termo: string; lista: Conversation[] } | null>(null);
+  const [buscando, setBuscando] = useState(false);
+  const [resumo, setResumo] = useState<Resumo | null>(null);
+  const [doContato, setDoContato] = useState<Conversation[]>([]);
+  // Resposta atrasada de um filtro que já não vale não pode pintar por cima da atual.
+  const pedidoRef = useRef(0);
+  const trocandoRef = useRef(false);
+  const maisRef = useRef(0);
+  maisRef.current = maisAntigas.length;
+  const navRef = useRef<NavFilter>({ type: "all" });
+  const abertaRef = useRef<number | null>(null);
+  /** Mudança numa conversa vale onde ela estiver: na lista, nas páginas antigas e na busca. */
+  function mudarConvs(f: (lista: Conversation[]) => Conversation[]) {
+    setConvs(f);
+    setMaisAntigas(f);
+    setAchadas((a) => (a ? { ...a, lista: f(a.lista) } : a));
+  }
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState<number | null>(null);
   const [macros, setMacros] = useState<{ id: number; name: string }[]>([]);
@@ -787,7 +854,7 @@ export default function ConversasPage() {
     if (!confirm("Excluir esta conversa e todo o histórico? Não dá pra desfazer.")) return;
     try {
       await api.delete(`/conversations/${id}`);
-      setConvs((prev) => prev.filter((c) => c.id !== id));
+      mudarConvs((prev) => prev.filter((c) => c.id !== id));
       setOpenId(null);
       setOpenConv(null);
       toast.success("Conversa excluída");
@@ -818,7 +885,7 @@ export default function ConversasPage() {
     try {
       await api.post(`/conversations/${id}/snooze`, { minutes });
       toast.success(minutes >= 1440 ? "Adiada pra amanhã" : `Adiada por ${minutes >= 60 ? minutes / 60 + "h" : minutes + "min"}`);
-      setConvs((prev) => prev.filter((c) => c.id !== id));
+      mudarConvs((prev) => prev.filter((c) => c.id !== id));
       setOpenId(null);
     } catch {
       toast.error("Erro ao adiar");
@@ -829,37 +896,131 @@ export default function ConversasPage() {
     try {
       await api.post(`/conversations/${id}/unsnooze`);
       setOpenConv((prev) => (prev && prev.id === id ? { ...prev, snoozed_until: null } : prev));
-      setConvs((prev) => prev.map((c) => (c.id === id ? { ...c, snoozed_until: null } : c)));
+      mudarConvs((prev) => prev.map((c) => (c.id === id ? { ...c, snoozed_until: null } : c)));
       toast.success("Reativada");
     } catch {
       toast.error("Erro ao reativar");
     }
   }
 
+  /** Aba, período e pessoa: valem para a lista e para os números da lateral. null = datas trocadas. */
+  function paramsDeBase(sc: string): Record<string, string | number> | null {
+    const params: Record<string, string | number> = {};
+    if (sc !== "todas") params.scope = sc;
+    const f = filtroRef.current;
+    const j = janelaDoPeriodo(f.periodo);
+    // datas trocadas: a tela já avisa embaixo dos campos; não adianta perguntar ao servidor
+    if (j.de && j.ate && j.de > j.ate) return null;
+    if (j.de) params.de = j.de;
+    if (j.ate) params.ate = j.ate;
+    if (f.responsavel !== TODOS_RESPONSAVEIS) params.responsavel = f.responsavel;
+    return params;
+  }
+
+  /** Tudo que escolhe QUAIS conversas: a base, a lateral, a etiqueta e as pastas. O servidor filtra. */
+  function paramsDaLista(sc: string, view: "mentions" | "participating" | null): Record<string, string | number> | null {
+    const params = paramsDeBase(sc);
+    if (!params) return null;
+    if (view) params.view = view;
+    if (etiquetaRef.current) params.tag = etiquetaRef.current;
+    return { ...params, ...paramsDaLateral(navRef.current), limit: POR_PAGINA };
+  }
+
   async function load(sc = scope, silent = false, view: "mentions" | "participating" | null = viewRef.current) {
-    if (!silent) setLoading(true);
+    const params = paramsDaLista(sc, view);
+    // a atualização de 10 em 10 s não atropela uma troca de filtro que ainda está carregando
+    if (!params || (silent && trocandoRef.current)) return;
+    const pedido = ++pedidoRef.current;
+    if (!silent) {
+      trocandoRef.current = true;
+      setLoading(true);
+    }
+    // Os números da lateral vêm à parte: se falharem, a lista sai assim mesmo.
+    const base = paramsDeBase(sc) || {};
+    api.get<Resumo>("/conversations/resumo", { params: base })
+      .then(({ data }) => { if (pedido === pedidoRef.current) setResumo(data); })
+      .catch(() => {});
     try {
-      const params: Record<string, any> = { limit: 200 };
-      if (sc !== "todas") params.scope = sc;
-      if (view) params.view = view;
-      const f = filtroRef.current;
-      const j = janelaDoPeriodo(f.periodo);
-      // datas trocadas: a tela já avisa embaixo dos campos; não adianta perguntar ao servidor
-      if (j.de && j.ate && j.de > j.ate) return;
-      if (j.de) params.de = j.de;
-      if (j.ate) params.ate = j.ate;
-      if (f.responsavel !== TODOS_RESPONSAVEIS) params.responsavel = f.responsavel;
-      // Etiqueta escolhida na lateral: o servidor filtra (antes eram só as 200 carregadas).
-      if (etiquetaRef.current) params.tag = etiquetaRef.current;
       const { data } = await api.get<Conversation[]>("/conversations", { params });
-      setConvs(data);
+      if (pedido !== pedidoRef.current) return;
+      if (!silent) {
+        setMaisAntigas([]);
+        setTemMais(data.length >= POR_PAGINA);
+        setConvs(data);
+        return;
+      }
+      setConvs((antes) => {
+        const ids = new Set(data.map((c) => c.id));
+        const fim = data.length >= POR_PAGINA ? data[data.length - 1].last_message_at || "" : null;
+        // Chegou conversa nova no topo: a última da página desce para as antigas, em vez de sumir.
+        const desceram = fim === null ? [] : antes.filter((c) => !ids.has(c.id) && (c.last_message_at || "") <= fim);
+        if (desceram.length) setMaisAntigas((m) => semRepetir([...desceram, ...m]));
+        // Em «Não lidas» e «Aguardando», a conversa aberta fica na lista mesmo depois de vista,
+        // para não sumir debaixo de quem está lendo.
+        const fila = navRef.current.type === "unread" || navRef.current.type === "waiting";
+        const aberta = fila ? antes.find((c) => c.id === abertaRef.current && !ids.has(c.id)) : undefined;
+        return aberta ? porData([...data, aberta]) : data;
+      });
+      if (data.length >= POR_PAGINA) setTemMais((x) => x || maisRef.current === 0);
     } catch (e) {
       const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-      if (!silent) toast.error(typeof detail === "string" ? detail : "Falha ao carregar conversas");
+      if (!silent && pedido === pedidoRef.current) toast.error(typeof detail === "string" ? detail : "Falha ao carregar conversas");
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && pedido === pedidoRef.current) {
+        trocandoRef.current = false;
+        setLoading(false);
+      }
     }
   }
+
+  async function carregarMais() {
+    const ultima = porData(todas)[todas.length - 1];
+    const params = paramsDaLista(scope, viewRef.current);
+    if (!ultima || !params || carregandoMais) return;
+    const nav = navRef.current;
+    setCarregandoMais(true);
+    try {
+      const { data } = await api.get<Conversation[]>("/conversations", {
+        params: { ...params, antes_id: ultima.id, ...(ultima.last_message_at ? { antes_de: ultima.last_message_at } : {}) },
+      });
+      if (nav !== navRef.current) return; // trocou de filtro no meio
+      setMaisAntigas((m) => semRepetir([...m, ...data]));
+      setTemMais(data.length >= POR_PAGINA);
+    } catch {
+      toast.error("Não consegui carregar mais conversas. Tente de novo.");
+    } finally {
+      setCarregandoMais(false);
+    }
+  }
+
+  // Busca no servidor (25/11/2026): a tela procurava só nas conversas carregadas.
+  useEffect(() => {
+    const termo = search.trim();
+    if (termo.length < 2) {
+      setAchadas(null);
+      setBuscando(false);
+      return;
+    }
+    let vale = true;
+    setBuscando(true);
+    const id = setTimeout(async () => {
+      try {
+        const params = paramsDaLista(scope, viewRef.current);
+        if (!params) return;
+        const { data } = await api.get<Conversation[]>("/conversations", { params: { ...params, busca: termo } });
+        if (vale) setAchadas({ termo, lista: data });
+      } catch {
+        /* fica com o que já está carregado */
+      } finally {
+        if (vale) setBuscando(false);
+      }
+    }, 400);
+    return () => {
+      vale = false;
+      clearTimeout(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, navFilter, scope, periodo, responsavel]);
 
   const msgsEndRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -969,6 +1130,7 @@ export default function ConversasPage() {
   // M7-257 (15/10/2026) — `?telefone=55…`: o WhatsApp do contato no CRM abre aqui a
   // conversa desse número. Busca no servidor (a lista só tem as 200 mais recentes) e
   // respeita quem pode ver: sem conversa visível, avisa em vez de abrir outra coisa.
+  const abriuPeloLink = useRef(false);
   const telefoneAlvo = useRef(new URLSearchParams(window.location.search).get("telefone"));
   useEffect(() => {
     const tel = telefoneAlvo.current;
@@ -992,21 +1154,42 @@ export default function ConversasPage() {
   }, []);
 
   useEffect(() => {
-    const openParam = new URLSearchParams(window.location.search).get("open");
-    if (!openParam || convs.length === 0 || openId) return;
-    const target = convs.find((c) => c.id === Number(openParam));
-    if (target) openConversation(target);
+    const openParam = Number(new URLSearchParams(window.location.search).get("open") || 0);
+    if (!openParam || convs.length === 0 || openId || abriuPeloLink.current) return;
+    abriuPeloLink.current = true;
+    const target = convs.find((c) => c.id === openParam);
+    if (target) {
+      openConversation(target);
+      return;
+    }
+    // conversa antiga: não está na página carregada, busca pelo id
+    api.get<{ conversation?: Conversation }>(`/conversations/${openParam}`)
+      .then(({ data }) => { if (data.conversation) openConversation(data.conversation); })
+      .catch(() => toast.error("Não encontrei essa conversa, ou você não tem acesso a ela."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convs]);
 
   // 13/11/2026 (CCDA, o Marcos): «não lidas», igual ao WhatsApp. Abrir a conversa — ou estar com ela
   // aberta na tela quando chega mensagem — conta como visto para a equipe toda.
   function marcarVisto(id: number) {
-    setConvs((prev) => prev.map((x) => (x.id === id && x.nao_lidas ? { ...x, nao_lidas: 0 } : x)));
+    mudarConvs((prev) => prev.map((x) => (x.id === id && x.nao_lidas ? { ...x, nao_lidas: 0 } : x)));
     api.post(`/conversations/${id}/visto`).catch(() => {});
   }
 
+  // As outras conversas do contato: em qualquer número e de qualquer data, e não só entre as carregadas.
+  const contatoAberto = openConv?.external_id;
+  useEffect(() => {
+    setDoContato([]);
+    if (!contatoAberto) return;
+    let vale = true;
+    api.get<Conversation[]>("/conversations", { params: { contato: contatoAberto, limit: 7 } })
+      .then(({ data }) => { if (vale) setDoContato(data); })
+      .catch(() => {});
+    return () => { vale = false; };
+  }, [contatoAberto]);
+
   async function openConversation(c: Conversation) {
+    abertaRef.current = c.id;
     setOpenId(c.id);
     setOpenConv(c);
     marcarVisto(c.id);
@@ -1067,7 +1250,7 @@ export default function ConversasPage() {
       );
       const opId = data.oportunidade_id ?? null;
       setOpenConv((prev) => (prev && prev.id === c.id ? { ...prev, crm_opportunity_id: opId } : prev));
-      setConvs((prev) => prev.map((x) => (x.id === c.id ? { ...x, crm_opportunity_id: opId } : x)));
+      mudarConvs((prev) => prev.map((x) => (x.id === c.id ? { ...x, crm_opportunity_id: opId } : x)));
       toast.success(data.ja_existia ? "Já estava no CRM ✓" : "Lead enviado ao CRM ✓");
     } catch (e: any) {
       const detail = e?.response?.data?.detail;
@@ -1084,10 +1267,10 @@ export default function ConversasPage() {
       if (tt && !norm.includes(tt)) norm.push(tt);
     }
     const next = norm.slice(0, 8);
-    const antes = convs.find((c) => c.id === convId)?.tags ?? openConv?.tags ?? [];
+    const antes = todas.find((c) => c.id === convId)?.tags ?? openConv?.tags ?? [];
     const aplicar = (lista: string[]) => {
       setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, tags: lista } : prev));
-      setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, tags: lista } : c)));
+      mudarConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, tags: lista } : c)));
     };
     aplicar(next);
     try {
@@ -1120,7 +1303,7 @@ export default function ConversasPage() {
 
   function marcarRespondida(convId: number) {
     setOpenConv((prev) => (prev ? { ...prev, status: "handed_off" } : prev));
-    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, status: "handed_off" } : c)));
+    mudarConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, status: "handed_off" } : c)));
   }
 
   /** A capinha do link é montada no servidor depois do envio — busca de novo para ela aparecer. */
@@ -1208,7 +1391,7 @@ export default function ConversasPage() {
     const m = members.find((x) => x.id === memberId);
     const nome = m?.nome || null;
     setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, assigned_member_id: memberId, assigned_to: nome } : prev));
-    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, assigned_member_id: memberId, assigned_to: nome } : c)));
+    mudarConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, assigned_member_id: memberId, assigned_to: nome } : c)));
     try {
       await api.put(`/conversations/${convId}/assign`, { member_id: memberId });
     } catch {
@@ -1218,7 +1401,7 @@ export default function ConversasPage() {
 
   async function savePriority(convId: number, priority: string) {
     setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, priority } : prev));
-    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, priority } : c)));
+    mudarConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, priority } : c)));
     try {
       await api.put(`/conversations/${convId}/priority`, { priority });
     } catch {
@@ -1228,7 +1411,7 @@ export default function ConversasPage() {
 
   async function saveTeam(convId: number, teamId: number | null) {
     setOpenConv((prev) => (prev && prev.id === convId ? { ...prev, team_id: teamId } : prev));
-    setConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, team_id: teamId } : c)));
+    mudarConvs((prev) => prev.map((c) => (c.id === convId ? { ...c, team_id: teamId } : c)));
     try {
       await api.put(`/conversations/${convId}/team`, { team_id: teamId });
     } catch {
@@ -1241,7 +1424,7 @@ export default function ConversasPage() {
       const { data } = await api.post<{ status: string }>(`/conversations/${id}/${action}`);
       const newStatus = data.status;
       setOpenConv((prev) => (prev && prev.id === id ? { ...prev, status: newStatus } : prev));
-      setConvs((prev) => prev.map((c) => (c.id === id ? { ...c, status: newStatus } : c)));
+      mudarConvs((prev) => prev.map((c) => (c.id === id ? { ...c, status: newStatus } : c)));
       const labels: Record<string, string> = {
         handoff: "Você assumiu — a IA está pausada",
         resume: "Devolvido para a IA",
@@ -1307,11 +1490,11 @@ export default function ConversasPage() {
     }
   }
 
-  // Troca de folder na sub-nav: define o filtro + o view do backend (menções/participação)
-  // e recarrega. Os demais (all/unattended/canal) filtram client-side. A etiqueta, na conta que tem
-  // a lista de etiquetas, é filtrada no SERVIDOR (12/11/2026) — sem lista, segue client-side.
+  // Troca de folder na sub-nav: define o filtro e recarrega. Todos são filtrados no SERVIDOR
+  // (25/11/2026) — a etiqueta sem lista de etiquetas é a única que ainda filtra só as carregadas.
   function selectNav(nav: NavFilter) {
     setNavFilter(nav);
+    navRef.current = nav;
     const v = nav.type === "mentions" ? "mentions" : nav.type === "participants" ? "participating" : null;
     viewRef.current = v;
     etiquetaRef.current = nav.type === "tag" && etiquetas.length > 0 ? nav.value : null;
@@ -1319,23 +1502,30 @@ export default function ConversasPage() {
   }
 
   // ─── Derivados ───
-  const allTags = Array.from(new Set(convs.flatMap((c) => c.tags || []))).sort();
+  // Os nomes da lateral vêm do resumo (todas as conversas); sem ele, das carregadas, como antes.
+  const allTags = Array.from(new Set([...(resumo?.etiquetas.map((e) => e.nome) || []), ...convs.flatMap((c) => c.tags || [])])).sort();
   // Lateral: com lista, as etiquetas da lista (marcadas «na lateral») — sempre as mesmas, como no
   // Chatwoot — mais alguma antiga que apareça nas conversas. Sem lista, as que aparecem nas conversas.
   const tagsDaLateral = etiquetas.length
     ? [...etiquetas.filter((e) => e.na_lateral).map((e) => e.nome), ...allTags.filter((t) => !etiquetaPorNome.has(t))]
     : allTags;
-  const channels = Array.from(new Set(convs.map((c) => c.connector_kind || "outro")));
-  const agentsList = Array.from(new Set(convs.map((c) => c.agent_nome).filter(Boolean) as string[])).sort();
+  const channels = resumo ? resumo.canais.map((c) => c.canal) : Array.from(new Set(convs.map((c) => c.connector_kind || "outro")));
+  const agentsList = Array.from(
+    new Set((resumo ? resumo.agentes.map((a) => a.nome) : convs.map((c) => c.agent_nome)).filter(Boolean) as string[]),
+  ).sort();
   // Números (um por conector): só vale a pena listar quando há mais de um.
-  const numerosList = Array.from(new Set(convs.map((c) => c.canal_rotulo).filter(Boolean) as string[])).sort();
+  const numerosList = resumo
+    ? resumo.numeros.map((n) => n.rotulo)
+    : Array.from(new Set(convs.map((c) => c.canal_rotulo).filter(Boolean) as string[])).sort();
+  const resumoDoNumero = new Map((resumo?.numeros || []).map((n) => [n.rotulo, n]));
   // 09/11/2026 (M7): de quem é cada número, para a linha e o cartão de hover. Um número pode ter
   // mais de um cadastro (o 9150 da M7 foi da Isabella e hoje é do agente).
   const agenteNome = new Map<number, string>();
   for (const c of convs) if (c.agent_nome) agenteNome.set(c.agent_id, c.agent_nome);
+  for (const a of resumo?.agentes || []) if (a.nome) agenteNome.set(a.id, a.nome);
   const infoDoNumero = (rotulo: string): InfoNumero => {
     const digitos = rotulo.replace(/\D/g, "");
-    const ids = new Set<number>();
+    const ids = new Set<number>(resumoDoNumero.get(rotulo)?.connector_ids || []);
     for (const c of convs) if (c.canal_rotulo === rotulo && c.connector_id) ids.add(c.connector_id);
     for (const k of conectores) {
       const fone = (k.config_summary?.phone || "").replace(/\D/g, "");
@@ -1347,7 +1537,7 @@ export default function ConversasPage() {
       const dono = k?.member_id ? members.find((m) => m.id === k.member_id) || null : null;
       return {
         id,
-        modo: k?.modo || viaConversa?.canal_modo || "agente",
+        modo: k?.modo || viaConversa?.canal_modo || resumoDoNumero.get(rotulo)?.modo || "agente",
         ligado: k ? k.enabled : true,
         status: k?.config_summary?.status ?? null,
         dono,
@@ -1358,7 +1548,12 @@ export default function ConversasPage() {
     return { rotulo, cadastros };
   };
 
-  const filteredConvs = convs.filter((c) => {
+  const todas = maisAntigas.length ? semRepetir([...convs, ...maisAntigas]) : convs;
+  const termoDaBusca = search.trim();
+  // Achadas no servidor já casaram com o termo (inclusive sem acento e por telefone formatado).
+  const doServidor = new Set(achadas && achadas.termo === termoDaBusca ? achadas.lista.map((c) => c.id) : []);
+  const candidatas = doServidor.size && achadas ? porData(semRepetir([...todas, ...achadas.lista])) : todas;
+  const filteredConvs = candidatas.filter((c) => {
     if (navFilter.type === "channel" && (c.connector_kind || "outro") !== navFilter.value) return false;
     if (navFilter.type === "numero" && c.canal_rotulo !== navFilter.value) return false;
     if (navFilter.type === "agent" && c.agent_nome !== navFilter.value) return false;
@@ -1371,8 +1566,8 @@ export default function ConversasPage() {
     // IA, nem a equipe). É o que pede ação; a aberta fica na lista, como em «Não lidas».
     if (navFilter.type === "waiting" && !(aguardando(c) || c.id === openId)) return false;
     // menções/participantes já vêm filtradas do backend (view=…); aqui só a busca
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (termoDaBusca && !doServidor.has(c.id)) {
+      const q = termoDaBusca.toLowerCase();
       const name = `${c.crm_nome || ""} ${c.agenda_nome || ""} ${c.contact_name || ""} ${c.telefone_oculto || ""} ${c.external_id || ""}`.toLowerCase();
       const prev = (c.last_preview || "").toLowerCase();
       if (!name.includes(q) && !prev.includes(q)) return false;
@@ -1380,13 +1575,18 @@ export default function ConversasPage() {
     return true;
   });
 
-  const unattendedCount = convs.filter((c) => c.status !== "closed" && !c.assigned_member_id).length;
-  const naoLidasCount = convs.filter((c) => (c.nao_lidas || 0) > 0 && c.id !== openId).length;
-  const aguardandoCount = convs.filter(aguardando).length;
+  const totalCount = resumo?.total ?? convs.length;
+  const unattendedCount = resumo?.nao_atendidas ?? convs.filter((c) => c.status !== "closed" && !c.assigned_member_id).length;
+  const naoLidasCount = resumo?.nao_lidas ?? convs.filter((c) => (c.nao_lidas || 0) > 0 && c.id !== openId).length;
+  const aguardandoCount = resumo?.aguardando ?? convs.filter(aguardando).length;
   // 16/11/2026 (CCDA): na lateral, o número de cada grupo é de conversas NÃO LIDAS (padrão Gmail/Chatwoot).
   // Antes era o total do grupo, e «Débora 10» era lido como «10 não lidas».
   const naoLidasOnde = (f: (c: Conversation) => boolean) =>
     convs.filter((c) => f(c) && (c.nao_lidas || 0) > 0 && c.id !== openId).length;
+  const naoLidasDoAgente = (nome: string) =>
+    resumo
+      ? resumo.agentes.filter((a) => a.nome === nome).reduce((n, a) => n + a.nao_lidas, 0)
+      : naoLidasOnde((c) => c.agent_nome === nome);
   const navTitle =
     navFilter.type === "all" ? "Todas as conversas"
     : navFilter.type === "unattended" ? "Não atendidas"
@@ -1400,9 +1600,7 @@ export default function ConversasPage() {
     : navFilter.type === "agent" ? navFilter.value
     : `#${navFilter.value}`;
 
-  const priorConvs = openConv
-    ? convs.filter((c) => c.external_id === openConv.external_id && c.id !== openConv.id).slice(0, 6)
-    : [];
+  const priorConvs = openConv ? doContato.filter((c) => c.id !== openConv.id).slice(0, 6) : [];
 
   const activeMembers = members.filter((m) => m.status === "active");
   const assignedMember = openConv ? members.find((m) => m.id === openConv.assigned_member_id) : undefined;
@@ -1449,7 +1647,7 @@ export default function ConversasPage() {
     if (periodo.modo !== "todas") partes.push(`${n === 1 ? "criada" : "criadas"} ${rotuloDoPeriodo(periodo)}`);
     if (responsavel === 0) partes.push("sem responsável");
     else if (responsavel !== TODOS_RESPONSAVEIS) partes.push(`de ${nomeDoResponsavel(responsavel) || "—"}`);
-    if (convs.length >= 200) partes.push("mostrando as 200 mais recentes");
+    if (temMais && !termoDaBusca) partes.push("há mais no fim da lista");
     return partes.join(" · ");
   })();
   const campoData = `flex-1 min-w-0 h-8 px-2 text-[13px] rounded-[8px] bg-[#F1F3F5] dark:bg-[#16191f] text-[#262626] dark:text-slate-200 outline-none focus:shadow-[0_0_0_2px_#003083] dark:focus:shadow-[0_0_0_2px_#5b9bff] transition-shadow tabular-nums`;
@@ -1494,7 +1692,7 @@ export default function ConversasPage() {
   }, [embed]);
   const subNav = (
     <div className="space-y-0.5">
-      <SubNavItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
+      <SubNavItem icon={Inbox} label="Todas as conversas" count={totalCount} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
       <SubNavItem icon={MessageSquareDot} label="Não lidas" count={naoLidasCount} naoLidas active={navFilter.type === "unread"} onClick={() => selectNav({ type: "unread" })} />
       <SubNavItem icon={Hourglass} label="Aguardando resposta" count={aguardandoCount} active={navFilter.type === "waiting"} onClick={() => selectNav({ type: "waiting" })} />
       <SubNavItem icon={Clock} label="Não atendidas" count={unattendedCount} active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
@@ -1507,7 +1705,7 @@ export default function ConversasPage() {
               key={ch}
               icon={MessageSquare}
               label={channelLabel(ch === "outro" ? null : ch)}
-              count={naoLidasOnde((c) => (c.connector_kind || "outro") === ch)}
+              count={resumo ? resumo.canais.find((x) => x.canal === ch)?.nao_lidas ?? 0 : naoLidasOnde((c) => (c.connector_kind || "outro") === ch)}
               naoLidas
               active={navFilter.type === "channel" && navFilter.value === ch}
               onClick={() => selectNav({ type: "channel", value: ch })}
@@ -1521,8 +1719,8 @@ export default function ConversasPage() {
             <NumeroNaLateral
               key={n}
               info={infoDoNumero(n)}
-              conversas={convs.filter((c) => c.canal_rotulo === n).length}
-              naoLidas={naoLidasOnde((c) => c.canal_rotulo === n)}
+              conversas={resumoDoNumero.get(n)?.total ?? convs.filter((c) => c.canal_rotulo === n).length}
+              naoLidas={resumoDoNumero.get(n)?.nao_lidas ?? naoLidasOnde((c) => c.canal_rotulo === n)}
               active={navFilter.type === "numero" && navFilter.value === n}
               onClick={() => selectNav({ type: "numero", value: n })}
             />
@@ -1536,7 +1734,7 @@ export default function ConversasPage() {
               key={ag}
               icon={Bot}
               label={ag}
-              count={naoLidasOnde((c) => c.agent_nome === ag)}
+              count={naoLidasDoAgente(ag)}
               naoLidas
               active={navFilter.type === "agent" && navFilter.value === ag}
               onClick={() => selectNav({ type: "agent", value: ag })}
@@ -1551,9 +1749,7 @@ export default function ConversasPage() {
               key={t}
               label={t}
               dotColor={corEtiqueta(t)}
-              // Não lidas entre as carregadas: conversa não lida é recente, então está entre elas
-              // (o TOTAL por etiqueta é que sairia errado com o filtro do servidor — por isso não aparece).
-              count={naoLidasOnde((c) => (c.tags || []).includes(t))}
+              count={resumo ? resumo.etiquetas.find((x) => x.nome === t)?.nao_lidas ?? 0 : naoLidasOnde((c) => (c.tags || []).includes(t))}
               naoLidas
               active={navFilter.type === "tag" && navFilter.value === t}
               onClick={() => selectNav({ type: "tag", value: t })}
@@ -1568,7 +1764,7 @@ export default function ConversasPage() {
               key={tm.id}
               icon={Users}
               label={tm.name}
-              count={naoLidasOnde((c) => c.team_id === tm.id)}
+              count={resumo ? resumo.times.find((x) => x.id === tm.id)?.nao_lidas ?? 0 : naoLidasOnde((c) => c.team_id === tm.id)}
               naoLidas
               active={navFilter.type === "team" && navFilter.value === tm.id}
               onClick={() => selectNav({ type: "team", value: tm.id })}
@@ -1582,7 +1778,7 @@ export default function ConversasPage() {
   // Menu recolhido: os mesmos atalhos, só o ícone (o nome no hover). Números com a foto e o cartão.
   const subNavRecolhido = (
     <div className="flex flex-col items-center gap-0.5">
-      <RailItem icon={Inbox} label="Todas as conversas" count={convs.length} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
+      <RailItem icon={Inbox} label="Todas as conversas" count={totalCount} active={navFilter.type === "all"} onClick={() => selectNav({ type: "all" })} />
       <RailItem icon={MessageSquareDot} label="Não lidas" count={naoLidasCount} destaque active={navFilter.type === "unread"} onClick={() => selectNav({ type: "unread" })} />
       <RailItem icon={Hourglass} label="Aguardando resposta" count={aguardandoCount} destaque active={navFilter.type === "waiting"} onClick={() => selectNav({ type: "waiting" })} />
       <RailItem icon={Clock} label="Não atendidas" count={unattendedCount} destaque active={navFilter.type === "unattended"} onClick={() => selectNav({ type: "unattended" })} />
@@ -1596,8 +1792,8 @@ export default function ConversasPage() {
               key={n}
               compacto
               info={infoDoNumero(n)}
-              conversas={convs.filter((c) => c.canal_rotulo === n).length}
-              naoLidas={naoLidasOnde((c) => c.canal_rotulo === n)}
+              conversas={resumoDoNumero.get(n)?.total ?? convs.filter((c) => c.canal_rotulo === n).length}
+              naoLidas={resumoDoNumero.get(n)?.nao_lidas ?? naoLidasOnde((c) => c.canal_rotulo === n)}
               active={navFilter.type === "numero" && navFilter.value === n}
               onClick={() => selectNav({ type: "numero", value: n })}
             />
@@ -1612,7 +1808,7 @@ export default function ConversasPage() {
               key={ag}
               icon={Bot}
               label={ag}
-              count={naoLidasOnde((c) => c.agent_nome === ag)}
+              count={naoLidasDoAgente(ag)}
               destaque
               active={navFilter.type === "agent" && navFilter.value === ag}
               onClick={() => selectNav({ type: "agent", value: ag })}
@@ -1842,7 +2038,9 @@ export default function ConversasPage() {
 
           {!loading && filteredConvs.length === 0 && (
             <div className="py-14 px-5">
-              {search.trim() ? (
+              {termoDaBusca && buscando ? (
+                <EmptyHint icon={Search} text="Procurando em todas as conversas…" />
+              ) : termoDaBusca ? (
                 <EmptyHint icon={Search} text={`Nenhuma conversa encontrada para "${search}".`} />
               ) : navFilter.type === "mentions" ? (
                 <EmptyHint icon={AtSign} text="Nenhuma menção — quando alguém te marcar numa nota interna (@você), a conversa aparece aqui." />
@@ -1949,6 +2147,18 @@ export default function ConversasPage() {
                   </button>
                 );
               })}
+            </div>
+          )}
+          {!loading && temMais && !termoDaBusca && filteredConvs.length > 0 && (
+            <div className={`px-3 py-3 border-t ${FC.hair} flex justify-center`}>
+              <button
+                type="button"
+                onClick={carregarMais}
+                disabled={carregandoMais}
+                className={`h-8 px-3 text-[12.5px] rounded-[8px] border ${FC.hair} ${FC.hover} text-[#262626]/[0.72] dark:text-[#9aa1ab] transition-colors disabled:opacity-60`}
+              >
+                {carregandoMais ? "Carregando…" : "Carregar mais conversas"}
+              </button>
             </div>
           )}
         </div>
