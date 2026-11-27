@@ -447,6 +447,24 @@ function quandoComoWhats(iso: string | null, onde: "lista" | "separador"): strin
   return `${dd}/${mm}/${a}`;
 }
 
+/** 27/11/2026 — cada dia num bloco próprio, com o separador «grudento» (sticky) no topo do bloco.
+ *  O bloco é o que faz o «Hoje» EMPURRAR o «Ontem» para fora ao rolar, como no WhatsApp: sem ele,
+ *  todos os separadores grudariam no mesmo ponto, um por cima do outro, e o mais largo vazaria
+ *  pelas bordas do mais estreito. */
+function gruposPorDia(itens: { id: string | number; separador: ReactNode; balao: ReactNode }[]): ReactNode[] {
+  const grupos: { id: string | number; separador: ReactNode; baloes: ReactNode[] }[] = [];
+  for (const it of itens) {
+    if (it.separador || grupos.length === 0) grupos.push({ id: it.id, separador: it.separador, baloes: [] });
+    grupos[grupos.length - 1].baloes.push(it.balao);
+  }
+  return grupos.map((g) => (
+    <div key={`dia-grupo-${g.id}`} className="space-y-3">
+      {g.separador}
+      {g.baloes}
+    </div>
+  ));
+}
+
 /** Dica do separador, «Domingo, 08/11/2026»: com 7 dias ou mais o rótulo vira só a data, e o dia
  *  da semana não pode sumir — o separador nasceu dele (16/11, M7: «segunda a partir das 8h» dito
  *  num domingo pareceu dito na segunda). */
@@ -2386,15 +2404,17 @@ export default function ConversasPage() {
               {!loadingMsgs && msgs.length === 0 && (
                 <div className={`text-[12px] ${FC.mut} text-center py-8`}>Sem histórico de texto (mensagens antigas não foram gravadas; novas aparecem aqui).</div>
               )}
-              {msgs.map((m, i) => {
+              {gruposPorDia(msgs.map((m, i) => {
                 // 16/11/2026 (M7) — o balão só dizia a HORA: «segunda a partir das 8h» dito num domingo às 06:54
                 // pareceu dito na segunda. Separador de dia entre as mensagens, como no WhatsApp.
+                // 27/11/2026 — e GRUDA no topo ao rolar (sticky), também como no WhatsApp: subindo a conversa,
+                // o «Ontem» fica lá em cima enquanto as mensagens de ontem passam, e o «Hoje» o empurra.
                 const dia = diaDaMensagem(m.created_at);
                 const separador =
                   dia && (i === 0 || dia !== diaDaMensagem(msgs[i - 1].created_at)) ? (
-                    <div key={`dia-${m.id}`} className="flex justify-center py-1">
+                    <div key={`dia-${m.id}`} className="sticky top-0 z-20 flex justify-center py-1 pointer-events-none">
                       <span
-                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${FC.hair} ${FC.sub} bg-white dark:bg-[#16191f]`}
+                        className={`pointer-events-auto rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${FC.hair} ${FC.sub} bg-white dark:bg-[#16191f] shadow-[0_1px_2px_rgba(0,0,0,0.06)]`}
                         title={diaCompleto(m.created_at)}
                       >
                         {quandoComoWhats(m.created_at, "separador")}
@@ -2536,8 +2556,8 @@ export default function ConversasPage() {
                   </div>
                 );
                 })();
-                return separador ? [separador, balao] : balao;
-              })}
+                return { id: m.id, separador, balao };
+              }))}
               <div ref={msgsEndRef} />
             </div>
             {debugMsg && createPortal(
