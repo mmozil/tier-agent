@@ -465,6 +465,23 @@ function gruposPorDia(itens: { id: string | number; separador: ReactNode; balao:
   ));
 }
 
+/** 27/11/2026 — como no WhatsApp, o rótulo do dia PRESO no topo só aparece enquanto a pessoa rola;
+ *  parou, ele some. O separador no lugar dele (onde o dia começa) continua sempre visível.
+ *  «Preso» = o bloco do dia já passou da linha de cima da área (o começo dele está fora da vista).
+ *  Mexe no DOM direto, sem estado do React: a rolagem dispara dezenas de vezes por segundo. */
+function rotulosDoDiaPresos(area: HTMLElement, rolando: boolean): void {
+  const linha = area.getBoundingClientRect().top + (parseFloat(getComputedStyle(area).paddingTop) || 0);
+  area.querySelectorAll<HTMLElement>("[data-separador-dia]").forEach((sep) => {
+    const bloco = sep.parentElement;
+    if (!bloco) return;
+    const preso = bloco.getBoundingClientRect().top < linha - 1;
+    const esconde = preso && !rolando;
+    sep.style.opacity = esconde ? "0" : "";
+    const pilula = sep.firstElementChild as HTMLElement | null;
+    if (pilula) pilula.style.pointerEvents = esconde ? "none" : "";
+  });
+}
+
 /** Dica do separador, «Domingo, 08/11/2026»: com 7 dias ou mais o rótulo vira só a data, e o dia
  *  da semana não pode sumir — o separador nasceu dele (16/11, M7: «segunda a partir das 8h» dito
  *  num domingo pareceu dito na segunda). */
@@ -1084,6 +1101,14 @@ export default function ConversasPage() {
   // pessoa já estava no fim (ou foi ela quem mandou). Lendo lá em cima, a tela fica onde está.
   const rolarAoFim = useRef(true);
   const noFim = useRef(true);
+  // 27/11/2026 — o rótulo do dia preso no topo só aparece ENQUANTO rola (como no WhatsApp).
+  const areaMsgsRef = useRef<HTMLDivElement | null>(null);
+  const paradaDaRolagem = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    // mensagem nova / conversa trocada: separador recém-montado já nasce escondido se estiver preso
+    if (areaMsgsRef.current) rotulosDoDiaPresos(areaMsgsRef.current, false);
+  }, [msgs]);
+  useEffect(() => () => window.clearTimeout(paradaDaRolagem.current), []);
   const tamanhoAnterior = useRef(0);
   useEffect(() => {
     const fim = msgsEndRef.current;
@@ -2388,10 +2413,15 @@ export default function ConversasPage() {
             )}
 
             <div
+              ref={areaMsgsRef}
               className="flex-1 overflow-y-auto sidebar-scroll px-5 py-5 space-y-3 min-h-0"
               onScroll={(e) => {
                 const el = e.currentTarget;
                 noFim.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+                // rolando: o dia preso no topo aparece; 1,2 s depois de parar, some (como no WhatsApp)
+                rotulosDoDiaPresos(el, true);
+                window.clearTimeout(paradaDaRolagem.current);
+                paradaDaRolagem.current = window.setTimeout(() => rotulosDoDiaPresos(el, false), 1200);
               }}
             >
               {loadingMsgs && (
@@ -2412,7 +2442,11 @@ export default function ConversasPage() {
                 const dia = diaDaMensagem(m.created_at);
                 const separador =
                   dia && (i === 0 || dia !== diaDaMensagem(msgs[i - 1].created_at)) ? (
-                    <div key={`dia-${m.id}`} className="sticky top-0 z-20 flex justify-center py-1 pointer-events-none">
+                    <div
+                      key={`dia-${m.id}`}
+                      data-separador-dia=""
+                      className="sticky top-0 z-20 flex justify-center py-1 pointer-events-none transition-opacity duration-300"
+                    >
                       <span
                         className={`pointer-events-auto rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${FC.hair} ${FC.sub} bg-white dark:bg-[#16191f] shadow-[0_1px_2px_rgba(0,0,0,0.06)]`}
                         title={diaCompleto(m.created_at)}
