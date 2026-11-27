@@ -389,17 +389,15 @@ function fmtCriada(iso: string): { curta: string; longa: string } {
   };
 }
 
-function fmtDate(iso: string | null): string {
+/** Data e hora inteiras, «26/11/2026 às 14:32» — o horário exato (painel lateral e dica ao passar o mouse). */
+function fmtCompleta(iso: string | null): string {
   if (!iso) return "—";
-  try {
-    const norm = /[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`;
-    return new Date(norm).toLocaleString("pt-BR", {
-      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-      timeZone: "America/Sao_Paulo",
-    });
-  } catch {
-    return iso;
-  }
+  const norm = /[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`;
+  const d = new Date(norm);
+  if (!Number.isFinite(d.getTime())) return iso;
+  const tz = { timeZone: "America/Sao_Paulo" } as const;
+  const data = d.toLocaleDateString("pt-BR", { ...tz, day: "2-digit", month: "2-digit", year: "numeric" });
+  return `${data} às ${d.toLocaleTimeString("pt-BR", { ...tz, hour: "2-digit", minute: "2-digit" })}`;
 }
 
 /** 16/11/2026 — a Meta só aceita texto livre até 24 h depois da última mensagem DO CONTATO. */
@@ -420,19 +418,43 @@ function diaDaMensagem(iso: string | null): string {
   return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
-/** «Hoje», «Ontem» ou «Domingo, 15/11» (com o ano quando não é o atual). 16/11/2026. */
-function rotuloDoDia(iso: string | null): string {
+/** Quantos dias de CALENDÁRIO, em Brasília, separam «2026-11-15» de hoje: 0 = hoje, 1 = ontem.
+ *  Dia de calendário, não «24 h atrás»: 23:50 de ontem é «Ontem» às 00:05 de hoje. */
+function diasAtras(dia: string): number {
+  const [a1, m1, d1] = dia.split("-").map(Number);
+  const [a2, m2, d2] = diaDaMensagem(new Date().toISOString()).split("-").map(Number);
+  return Math.round((Date.UTC(a2, m2 - 1, d2) - Date.UTC(a1, m1 - 1, d1)) / 86400000);
+}
+
+/** «2026-11-25» → «Quarta-feira». */
+function diaDaSemana(dia: string): string {
+  const [a, mm, dd] = dia.split("-").map(Number);
+  const semana = new Date(Date.UTC(a, mm - 1, dd, 12)).toLocaleDateString("pt-BR", { weekday: "long", timeZone: "UTC" });
+  return `${semana.charAt(0).toUpperCase()}${semana.slice(1)}`;
+}
+
+/** 27/11/2026 — como o WhatsApp. Hoje: a hora na lista, «Hoje» no separador · ontem: «Ontem» ·
+ *  de 2 a 6 dias: o dia da semana · 7 dias ou mais: «20/11/2026», sempre com o ano (a lista
+ *  mostrava «23/10, 11:33» para uma conversa do ano passado, sem o ano). */
+function quandoComoWhats(iso: string | null, onde: "lista" | "separador"): string {
+  const dia = diaDaMensagem(iso);
+  if (!dia) return onde === "lista" ? "—" : "";
+  const n = diasAtras(dia);
+  if (n <= 0) return onde === "lista" ? fmtTime(iso) : "Hoje";
+  if (n === 1) return "Ontem";
+  if (n <= 6) return diaDaSemana(dia);
+  const [a, mm, dd] = dia.split("-");
+  return `${dd}/${mm}/${a}`;
+}
+
+/** Dica do separador, «Domingo, 08/11/2026»: com 7 dias ou mais o rótulo vira só a data, e o dia
+ *  da semana não pode sumir — o separador nasceu dele (16/11, M7: «segunda a partir das 8h» dito
+ *  num domingo pareceu dito na segunda). */
+function diaCompleto(iso: string | null): string {
   const dia = diaDaMensagem(iso);
   if (!dia) return "";
-  const hoje = diaDaMensagem(new Date().toISOString());
-  const ontem = diaDaMensagem(new Date(Date.now() - 86400000).toISOString());
-  if (dia === hoje) return "Hoje";
-  if (dia === ontem) return "Ontem";
-  const [a, mm, dd] = dia.split("-").map(Number);
-  const meio = new Date(Date.UTC(a, mm - 1, dd, 12));
-  const semana = meio.toLocaleDateString("pt-BR", { weekday: "long", timeZone: "UTC" });
-  const doAno = String(a) === hoje.slice(0, 4);
-  return `${semana.charAt(0).toUpperCase()}${semana.slice(1)}, ${String(dd).padStart(2, "0")}/${String(mm).padStart(2, "0")}${doAno ? "" : `/${a}`}`;
+  const [a, mm, dd] = dia.split("-");
+  return `${diaDaSemana(dia)}, ${dd}/${mm}/${a}`;
 }
 
 function fmtTime(iso: string | null): string {
@@ -2084,8 +2106,9 @@ export default function ConversasPage() {
                           className={`ml-auto shrink-0 text-[11px] tabular-nums ${
                             naoLidas ? "font-medium text-[#003083] dark:text-[#5b9bff]" : FC.sub
                           }`}
+                          title={c.last_message_at ? fmtCompleta(c.last_message_at) : undefined}
                         >
-                          {fmtDate(c.last_message_at)}
+                          {quandoComoWhats(c.last_message_at, "lista")}
                         </span>
                       </div>
                       {/* a data de criação mora na linha da prévia, alinhada com a hora da última mensagem —
@@ -2370,8 +2393,11 @@ export default function ConversasPage() {
                 const separador =
                   dia && (i === 0 || dia !== diaDaMensagem(msgs[i - 1].created_at)) ? (
                     <div key={`dia-${m.id}`} className="flex justify-center py-1">
-                      <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${FC.hair} ${FC.sub} bg-white dark:bg-[#16191f]`}>
-                        {rotuloDoDia(m.created_at)}
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${FC.hair} ${FC.sub} bg-white dark:bg-[#16191f]`}
+                        title={diaCompleto(m.created_at)}
+                      >
+                        {quandoComoWhats(m.created_at, "separador")}
                       </span>
                     </div>
                   ) : null;
@@ -2870,7 +2896,7 @@ export default function ConversasPage() {
               <dl className={`divide-y ${FC.hair} text-[13px]`}>
                 <Linha rotulo="Status"><StatusBadge status={openConv.status} /></Linha>
                 <Linha rotulo="Mensagens"><span className="tabular-nums">{openConv.msg_count}</span></Linha>
-                <Linha rotulo="Última mensagem"><span className="tabular-nums">{fmtDate(openConv.last_message_at)}</span></Linha>
+                <Linha rotulo="Última mensagem"><span className="tabular-nums">{fmtCompleta(openConv.last_message_at)}</span></Linha>
                 <Linha rotulo="Canal">{channelLabel(openConv.connector_kind)}</Linha>
                 {openConv.canal_rotulo && (
                   <Linha rotulo="Número">
@@ -2890,7 +2916,12 @@ export default function ConversasPage() {
                     <button key={c.id} onClick={() => openConversation(c)} className={`w-full text-left px-2 h-8 rounded-[8px] ${FC.hover} transition-colors`}>
                       <div className="flex items-center justify-between gap-2">
                         <span className={`text-[13px] truncate ${FC.ink}`}>{c.last_preview || "Conversa"}</span>
-                        <span className={`text-[12px] ${FC.mut} tabular-nums shrink-0`}>{fmtDate(c.last_message_at)}</span>
+                        <span
+                          className={`text-[12px] ${FC.mut} tabular-nums shrink-0`}
+                          title={c.last_message_at ? fmtCompleta(c.last_message_at) : undefined}
+                        >
+                          {quandoComoWhats(c.last_message_at, "lista")}
+                        </span>
                       </div>
                     </button>
                   ))}
