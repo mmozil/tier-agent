@@ -2418,10 +2418,11 @@ export default function ConversasPage() {
               onScroll={(e) => {
                 const el = e.currentTarget;
                 noFim.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-                // rolando: o dia preso no topo aparece; 1,2 s depois de parar, some (como no WhatsApp)
+                // rolando: o dia preso no topo aparece; 2,5 s depois de parar, some (como no WhatsApp).
+                // Era 1,2 s — o dono pediu um pouco mais de tempo para ler (27/11).
                 rotulosDoDiaPresos(el, true);
                 window.clearTimeout(paradaDaRolagem.current);
-                paradaDaRolagem.current = window.setTimeout(() => rotulosDoDiaPresos(el, false), 1200);
+                paradaDaRolagem.current = window.setTimeout(() => rotulosDoDiaPresos(el, false), 2500);
               }}
             >
               {loadingMsgs && (
