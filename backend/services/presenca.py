@@ -20,6 +20,8 @@ não do gravado — o gravado só mudava quando alguém abria a página de núme
 
 from __future__ import annotations
 
+import time
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +33,23 @@ RESPOSTA_ONLINE_S = 600
 JANELA_VISTO_DIAS = 7
 # Não regrava o sinal do painel se o último tem menos que isto (duas abas abertas).
 PAINEL_REGRAVAR_S = 30
+# Cada aba de Conversas lê a cada minuto; o resultado da conta vale 20 s para todas (28/11/2026).
+CACHE_S = 20
+_CACHE: dict[tuple, tuple[float, object]] = {}
+
+
+def _guardado(chave: tuple):
+    hit = _CACHE.get(chave)
+    if hit and time.monotonic() - hit[0] < CACHE_S:
+        return hit[1]
+    return None
+
+
+def _guardar(chave: tuple, valor):
+    if len(_CACHE) > 2000:  # nunca cresce sem limite
+        _CACHE.clear()
+    _CACHE[chave] = (time.monotonic(), valor)
+    return valor
 
 
 def _iso(dt) -> str | None:
@@ -61,6 +80,9 @@ async def registrar_painel(db: AsyncSession, member_id: int) -> None:
 
 
 async def pessoas_do_tenant(db: AsyncSession, tenant_id: int) -> list[dict]:
+    chave = ("pessoas", tenant_id)
+    if (hit := _guardado(chave)) is not None:
+        return hit
     rows = (
         await db.execute(
             text(
@@ -98,7 +120,7 @@ async def pessoas_do_tenant(db: AsyncSession, tenant_id: int) -> list[dict]:
                 "respondeu_em": _iso(r.respondeu_em),
             }
         )
-    return saida
+    return _guardar(chave, saida)
 
 
 async def ultima_mensagem_por_numero(db: AsyncSession, connector_ids: list[int]) -> dict[int, str]:
@@ -106,6 +128,9 @@ async def ultima_mensagem_por_numero(db: AsyncSession, connector_ids: list[int])
     Número caído não recebe nem manda — a data diz desde quando ele está parado."""
     if not connector_ids:
         return {}
+    chave = ("ultima", tuple(sorted(connector_ids)))
+    if (hit := _guardado(chave)) is not None:
+        return hit
     rows = (
         await db.execute(
             text(
@@ -117,4 +142,4 @@ async def ultima_mensagem_por_numero(db: AsyncSession, connector_ids: list[int])
             {"ids": list(connector_ids)},
         )
     ).all()
-    return {r.connector_id: _iso(r.ult) for r in rows}
+    return _guardar(chave, {r.connector_id: _iso(r.ult) for r in rows})

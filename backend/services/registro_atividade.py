@@ -54,7 +54,9 @@ FORA = (
 ENTRADA = {"/auth/login", "/auth/google", "/auth/signup"}
 # POST que só LÊ (11/11/2026): a prévia da lista do disparo vai no corpo (não cabe na URL) e a
 # tela chama a cada colagem — gravar cada uma enterraria as ações de verdade no registro.
-SO_LEITURA = {"/disparos-oficiais/ler-lista"}
+# 28/11/2026: o sinal «estou com o Agent aberto» (POST /team/presenca) sai a cada minuto por aba
+# — sem isto viraria ~9 mil linhas por dia só na CCDA e soterraria o registro.
+SO_LEITURA = {"/disparos-oficiais/ler-lista", "/team/presenca"}
 
 FILA_MAX = 5000
 LOTE_MAX = 200

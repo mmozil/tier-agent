@@ -1613,7 +1613,6 @@ export default function ConversasPage() {
         modo: k?.modo || viaConversa?.canal_modo || resumoDoNumero.get(rotulo)?.modo || "agente",
         ligado: vivo ? vivo.ligado : k ? k.enabled : true,
         status: vivo?.status ?? k?.config_summary?.status ?? null,
-        status_desde: vivo?.status_desde ?? null,
         ultima_msg_em: vivo?.ultima_msg_em ?? null,
         dono,
         presenca: dono ? presencaDe.get(dono.id) ?? null : null,

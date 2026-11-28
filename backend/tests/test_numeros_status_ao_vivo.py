@@ -15,17 +15,27 @@ from services import engine_client
 
 
 class _Db:
-    def __init__(self):
+    """`trocar` simula outra rota gravando o número enquanto o motor respondia (28/11/2026)."""
+
+    def __init__(self, trocar=None):
         self.commits = 0
+        self.travas = 0
+        self.trocar = trocar or {}
+
+    async def refresh(self, obj, attribute_names=None, with_for_update=None):
+        assert with_for_update, "tem de reler TRAVADO"
+        self.travas += 1
+        if obj.id in self.trocar:
+            obj.config_json_enc = json.dumps(self.trocar[obj.id])
 
     async def commit(self):
         self.commits += 1
 
 
-def _conn(cid, kind="whatsapp", **cfg):
+def _conn(cid, kind="whatsapp", enabled=True, **cfg):
     base = {"instance_id": f"inst-{cid}", "api_key": "k", "status": "connected"}
     base.update(cfg)
-    return SimpleNamespace(id=cid, kind=kind, config_json_enc=json.dumps(base))
+    return SimpleNamespace(id=cid, kind=kind, enabled=enabled, config_json_enc=json.dumps(base))
 
 
 def _motor(monkeypatch, respostas):
@@ -82,6 +92,37 @@ def test_sem_mudanca_nao_grava_e_cloud_nao_consulta(monkeypatch):
     _motor(monkeypatch, {"inst-43": "connected"})  # cloud não está aqui: se consultar, KeyError
     db = _Db()
     asyncio.run(connectors._status_ao_vivo(db, [vivo, cloud]))
+    assert db.commits == 0
+
+
+def test_escanear_qr_no_meio_nao_volta_a_instancia_antiga(monkeypatch):
+    """Revisão do APP-682 (28/11/2026): enquanto o motor respondia, o «Escanear QR» gravou uma
+    instância nova e apagou a antiga (404 → «disconnected»). Gravar o JSON lido antes devolveria
+    a instância antiga ao número, e o QR lido não conectaria nada."""
+    c = _conn(44, status="logged_out")
+    _motor(monkeypatch, {"inst-44": engine_client.EngineError("x", status=404)})
+    nova = {"instance_id": "inst-44-nova", "api_key": "k2", "status": "pending"}
+    db = _Db(trocar={44: nova})
+    asyncio.run(connectors._status_ao_vivo(db, [c]))
+    assert json.loads(c.config_json_enc) == nova  # intacto: nem instância antiga, nem status trocado
+    assert db.travas == 1 and db.commits == 1  # a trava foi solta
+
+
+def test_mudanca_grava_so_o_status_sobre_o_que_esta_no_banco(monkeypatch):
+    c = _conn(45)
+    _motor(monkeypatch, {"inst-45": "qr"})
+    # outra rota gravou o telefone no meio; a leitura não pode apagar isso
+    db = _Db(trocar={45: {"instance_id": "inst-45", "api_key": "k", "status": "connected", "phone": "5511"}})
+    asyncio.run(connectors._status_ao_vivo(db, [c]))
+    assert json.loads(c.config_json_enc) == {"instance_id": "inst-45", "api_key": "k", "status": "qr", "phone": "5511"}
+
+
+def test_numero_desligado_nao_e_perguntado_ao_motor(monkeypatch):
+    connectors._CONSULTADO_EM.clear()
+    desligado = _conn(60, enabled=False)
+    _motor(monkeypatch, {})  # se consultar, KeyError
+    db = _Db()
+    asyncio.run(connectors.status_ao_vivo_recente(db, [desligado]))
     assert db.commits == 0
 
 

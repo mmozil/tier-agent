@@ -6,7 +6,6 @@ import logging
 import re as _re
 import secrets as _secrets
 import time
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -193,15 +192,22 @@ async def _status_ao_vivo(db: AsyncSession, conns: list[TaConnector]) -> None:
             return None
 
     novos = await asyncio.gather(*(_um(cfg) for _, cfg in alvos))
-    mudou = False
     for (c, cfg), st in zip(alvos, novos, strict=True):
-        if st and st != cfg.get("status"):
-            cfg["status"] = st
-            # 27/11/2026: desde quando está assim — o cartão do número diz «desde 12/11».
-            cfg["status_desde"] = datetime.utcnow().isoformat()
-            c.config_json_enc = encrypt(json.dumps(cfg))
-            mudou = True
-    if mudou:
+        if not st or st == cfg.get("status"):
+            continue
+        # 28/11/2026 (revisão do APP-682): relê a linha TRAVADA antes de gravar. Enquanto o motor
+        # respondia (até 4 s), o «Escanear QR» pode ter trocado a instância; gravar o JSON lido
+        # antes devolveria a instância antiga, já apagada, e o QR lido não conectaria nada.
+        # Uma trava por vez, solta no commit de cada número — duas leituras simultâneas não se
+        # travam em ordens diferentes (sem deadlock).
+        await db.refresh(c, attribute_names=["config_json_enc"], with_for_update=True)
+        try:
+            atual = json.loads(decrypt(c.config_json_enc))
+        except Exception:
+            atual = None
+        if atual and atual.get("instance_id") == cfg.get("instance_id") and atual.get("status") != st:
+            atual["status"] = st
+            c.config_json_enc = encrypt(json.dumps(atual))
         await db.commit()
 
 
@@ -211,9 +217,14 @@ _CONSULTADO_EM: dict[int, float] = {}
 
 
 async def status_ao_vivo_recente(db: AsyncSession, conns: list[TaConnector], intervalo: float = 60) -> None:
-    """`_status_ao_vivo` só para os números não perguntados no último `intervalo` (27/11/2026)."""
+    """`_status_ao_vivo` só para os números não perguntados no último `intervalo` (27/11/2026).
+    Número desligado («Desconectar») não é perguntado: não há o que conferir."""
     agora = time.monotonic()
-    alvos = [c for c in conns if c.kind == "whatsapp" and agora - _CONSULTADO_EM.get(c.id, -1e9) >= intervalo]
+    alvos = [
+        c
+        for c in conns
+        if c.kind == "whatsapp" and c.enabled and agora - _CONSULTADO_EM.get(c.id, -1e9) >= intervalo
+    ]
     for c in alvos:
         _CONSULTADO_EM[c.id] = agora
     if alvos:
@@ -638,8 +649,6 @@ async def status(
     new_status = result.get("status") or "unknown"
     new_phone = result.get("phoneNumber") or result.get("phone") or cfg.get("phone")
     if new_status != cfg.get("status") or new_phone != cfg.get("phone"):
-        if new_status != cfg.get("status"):
-            cfg["status_desde"] = datetime.utcnow().isoformat()
         cfg["status"] = new_status
         cfg["phone"] = new_phone
         conn.config_json_enc = encrypt(json.dumps(cfg))
@@ -685,7 +694,6 @@ async def disconnect(
             except engine_client.EngineError as e:
                 raise HTTPException(502, f"Tier Engine: {e}") from e
     cfg["status"] = "disconnected"
-    cfg["status_desde"] = datetime.utcnow().isoformat()
     conn.config_json_enc = encrypt(json.dumps(cfg))
     conn.enabled = False
     await db.commit()

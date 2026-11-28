@@ -322,7 +322,6 @@ async def presenca_da_equipe(
                 "connector_id": c.id,
                 "ligado": bool(c.enabled),
                 "status": status,
-                "status_desde": cfg.get("status_desde"),
                 "ultima_msg_em": ultima.get(c.id),
             }
         )

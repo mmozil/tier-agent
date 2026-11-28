@@ -177,3 +177,28 @@ def test_hora_e_da_acao(monkeypatch):
     ev = ra._fila.get_nowait()
     assert ev["quando"] is not None and ev["quando"].tzinfo is None
     ra._fila = None
+
+
+def test_sinal_de_presenca_nao_grava_mas_o_rodizio_grava(monkeypatch):
+    """28/11/2026 (revisão do APP-682): o «estou com o Agent aberto» sai a cada minuto por aba —
+    gravado, viraria milhares de linhas por dia e enterraria as ações de verdade. O botão do
+    rodízio é ação de verdade e continua gravando (é o controle de que o teste enxerga)."""
+    eventos: list[dict] = []
+    monkeypatch.setattr(ra, "registrar", lambda ev: eventos.append(ev))
+    app = FastAPI()
+    app.add_middleware(ra.RegistroDeAtividade)
+
+    @app.post("/api/v1/team/presenca")
+    async def sinal():
+        return {"ok": True}
+
+    @app.post("/api/v1/team/online")
+    async def rodizio():
+        return {"online": True}
+
+    cli = TestClient(app)
+    auth = {"Authorization": f"Bearer {_token_membro()}"}
+    for _ in range(3):
+        cli.post("/api/v1/team/presenca", headers=auth)
+    cli.post("/api/v1/team/online", headers=auth, json={"online": True})
+    assert len(eventos) == 1 and "/team/online" in str(eventos[0])

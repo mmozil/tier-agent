@@ -24,7 +24,6 @@ export type PresencaNumero = {
   connector_id: number;
   ligado: boolean;
   status: string | null;
-  status_desde: string | null;
   ultima_msg_em: string | null;
 };
 

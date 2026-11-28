@@ -29,8 +29,6 @@ export type CadastroDoNumero = {
   modo: string; // agente | registro
   ligado: boolean;
   status?: string | null; // connected | logged_out | …
-  /** Desde quando o número está nesse estado (o servidor só registra a partir de 27/11/2026). */
-  status_desde?: string | null;
   /** A última mensagem (de qualquer lado) que passou pelo número, nos últimos 30 dias. */
   ultima_msg_em?: string | null;
   dono?: Pessoa | null;
@@ -137,17 +135,6 @@ function conexao(c: CadastroDoNumero): { rotulo: string; cor: string } {
   return CONEXAO[c.status || ""] || { rotulo: c.status ? c.status : "Sem informação", cor: "#9ca3af" };
 }
 
-/** Fora do ar, desde quando — só quando o servidor viu a mudança (registra desde 27/11/2026). */
-function foraDesde(c: CadastroDoNumero): string | null {
-  if (c.ligado && c.status === "connected") return null;
-  return quandoFoi(c.status_desde);
-}
-
-/** «Aguardando o QR · desde 12/11 às 15:02» — para a dica do ícone da linha. */
-function conexaoComDesde(c: CadastroDoNumero): string {
-  const desde = foraDesde(c);
-  return desde ? `${conexao(c).rotulo} · desde ${desde}` : conexao(c).rotulo;
-}
 
 function uso(c: CadastroDoNumero): string {
   return c.modo === "agente" ? `Agente com IA${c.agente ? ` · ${c.agente}` : ""}` : "Registro, sem IA";
@@ -211,7 +198,6 @@ function Cartao({ info, conversas, naoLidas, rect }: { info: InfoNumero; convers
             </span>
           </Linha>
         )}
-        {p && foraDesde(p) && <Linha rotulo="Desde">{foraDesde(p)}</Linha>}
         {p?.ultima_msg_em && <Linha rotulo="Última mensagem">{quandoFoi(p.ultima_msg_em)}</Linha>}
         {p?.tambem && p.tambem.length > 0 && (
           <Linha rotulo="Também veem">{p.tambem.map((x) => x.nome.split(" ")[0]).join(", ")}</Linha>
@@ -336,7 +322,7 @@ export default function NumeroNaLateral({
         <span className="relative z-10 flex-1 break-words text-left">{tituloDoNumero(info)}</span>
         {/* Só quando o NÚMERO não está bem: caiu (vermelho), aguardando o QR (âmbar), desligado (cinza). */}
         {alerta && p && (
-          <span className="relative z-10 inline-flex shrink-0" title={`Número: ${conexaoComDesde(p)}`}>
+          <span className="relative z-10 inline-flex shrink-0" title={`Número: ${conexao(p).rotulo}`}>
             <Unplug className="h-3.5 w-3.5" style={{ color: alerta }} aria-label={`Número: ${conexao(p).rotulo}`} />
           </span>
         )}
