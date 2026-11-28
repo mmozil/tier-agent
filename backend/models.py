@@ -678,6 +678,10 @@ class TaMember(Base):
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
     # status: active | disabled
     online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # ↑ é o botão manual do RODÍZIO, não presença. Quem está online agora sai de
+    # services/presenca.py (27/11/2026): a coluna `visto_painel_em` (runtime DDL) + a última
+    # resposta. A coluna fica FORA deste modelo de propósito — só SQL cru a lê, então se o DDL
+    # falhar cai a presença, não o login (todo SELECT de TaMember passaria a pedir a coluna).
     max_conversas: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # 0 = ilimitado
     invite_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # token de convite (status='invited'); o atendente define a senha via link público

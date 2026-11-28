@@ -5,6 +5,8 @@ import json
 import logging
 import re as _re
 import secrets as _secrets
+import time
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -195,10 +197,27 @@ async def _status_ao_vivo(db: AsyncSession, conns: list[TaConnector]) -> None:
     for (c, cfg), st in zip(alvos, novos, strict=True):
         if st and st != cfg.get("status"):
             cfg["status"] = st
+            # 27/11/2026: desde quando está assim — o cartão do número diz «desde 12/11».
+            cfg["status_desde"] = datetime.utcnow().isoformat()
             c.config_json_enc = encrypt(json.dumps(cfg))
             mudou = True
     if mudou:
         await db.commit()
+
+
+# Última vez que cada número foi perguntado ao motor, neste processo. A lateral das Conversas
+# pede o estado a cada minuto por pessoa com a tela aberta; sem isto, cada uma bateria no motor.
+_CONSULTADO_EM: dict[int, float] = {}
+
+
+async def status_ao_vivo_recente(db: AsyncSession, conns: list[TaConnector], intervalo: float = 60) -> None:
+    """`_status_ao_vivo` só para os números não perguntados no último `intervalo` (27/11/2026)."""
+    agora = time.monotonic()
+    alvos = [c for c in conns if c.kind == "whatsapp" and agora - _CONSULTADO_EM.get(c.id, -1e9) >= intervalo]
+    for c in alvos:
+        _CONSULTADO_EM[c.id] = agora
+    if alvos:
+        await _status_ao_vivo(db, alvos)
 
 
 @router.get("")
@@ -619,6 +638,8 @@ async def status(
     new_status = result.get("status") or "unknown"
     new_phone = result.get("phoneNumber") or result.get("phone") or cfg.get("phone")
     if new_status != cfg.get("status") or new_phone != cfg.get("phone"):
+        if new_status != cfg.get("status"):
+            cfg["status_desde"] = datetime.utcnow().isoformat()
         cfg["status"] = new_status
         cfg["phone"] = new_phone
         conn.config_json_enc = encrypt(json.dumps(cfg))
@@ -664,6 +685,7 @@ async def disconnect(
             except engine_client.EngineError as e:
                 raise HTTPException(502, f"Tier Engine: {e}") from e
     cfg["status"] = "disconnected"
+    cfg["status_desde"] = datetime.utcnow().isoformat()
     conn.config_json_enc = encrypt(json.dumps(cfg))
     conn.enabled = False
     await db.commit()

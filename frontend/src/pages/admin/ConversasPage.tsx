@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
@@ -20,6 +20,7 @@ import NovaConversa from "@/components/inbox/NovaConversa";
 import { EtiquetasDeMencao, ListaDeMencoes, MiniAvatar, useMencoes } from "@/components/inbox/Mencoes";
 import { COR_FORA_DA_LISTA, SeletorDeEtiquetas, type Etiqueta } from "@/components/inbox/Etiquetas";
 import NumeroNaLateral, { tituloComNumero, type InfoNumero } from "@/components/inbox/NumeroNaLateral";
+import { usePresenca } from "@/lib/presenca";
 import { BordaArrastavel, useLarguraArrastavel } from "@/components/inbox/BordaArrastavel";
 import { BOTAO_COMPOSITOR, EmojiBotao, tempo, useGravadorVoz } from "@/components/inbox/Compositor";
 import { Button, btnPrimary, iconBtn, EmptyHint, SkeletonBar, FC, Select, campoCls, rotuloCls } from "@/components/ds/fc";
@@ -824,6 +825,11 @@ export default function ConversasPage() {
   const anexoInputRef = useRef<HTMLInputElement | null>(null);
   const gravador = useGravadorVoz();
   const [members, setMembers] = useState<Member[]>([]);
+  // 27/11/2026: quem está online agora e o estado REAL de cada número (lê a cada minuto).
+  // `members[].online` é o botão do rodízio — não serve para mostrar presença.
+  const presenca = usePresenca();
+  const presencaDe = useMemo(() => new Map((presenca?.pessoas || []).map((p) => [p.member_id, p])), [presenca]);
+  const numeroAoVivo = useMemo(() => new Map((presenca?.numeros || []).map((n) => [n.connector_id, n])), [presenca]);
   const [conectores, setConectores] = useState<ConectorDaLateral[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [me, setMe] = useState<{ role: string; member_id: number | null; ve_tudo?: boolean; pode_atribuir?: boolean } | null>(null);
@@ -1089,7 +1095,7 @@ export default function ConversasPage() {
     taRef,
     pessoas: members
       .filter((m) => m.status === "active")
-      .map((m) => ({ id: m.id, nome: m.nome, cargo: m.cargo, avatar_url: m.avatar_url, online: m.online })),
+      .map((m) => ({ id: m.id, nome: m.nome, cargo: m.cargo, avatar_url: m.avatar_url, online: !!presencaDe.get(m.id)?.online })),
     setMarcadas: setMentions,
   });
   const viewRef = useRef<"mentions" | "participating" | null>(null);
@@ -1600,12 +1606,17 @@ export default function ConversasPage() {
       const k = conectores.find((x) => x.id === id);
       const viaConversa = convs.find((c) => c.connector_id === id);
       const dono = k?.member_id ? members.find((m) => m.id === k.member_id) || null : null;
+      // 27/11/2026: o estado do número vem do motor (`/team/presenca`); o gravado só se ainda não leu.
+      const vivo = numeroAoVivo.get(id);
       return {
         id,
         modo: k?.modo || viaConversa?.canal_modo || resumoDoNumero.get(rotulo)?.modo || "agente",
-        ligado: k ? k.enabled : true,
-        status: k?.config_summary?.status ?? null,
+        ligado: vivo ? vivo.ligado : k ? k.enabled : true,
+        status: vivo?.status ?? k?.config_summary?.status ?? null,
+        status_desde: vivo?.status_desde ?? null,
+        ultima_msg_em: vivo?.ultima_msg_em ?? null,
         dono,
+        presenca: dono ? presencaDe.get(dono.id) ?? null : null,
         agente: agenteNome.get(k?.agent_id ?? viaConversa?.agent_id ?? -1) ?? viaConversa?.agent_nome ?? null,
         tambem: members.filter((m) => (m.numeros || []).some((n) => n.id === id && n.compartilhado)),
       };
@@ -2871,7 +2882,7 @@ export default function ConversasPage() {
                         },
                         ...activeMembers.map((m) => ({
                           value: m.id,
-                          icon: <MiniAvatar nome={m.nome} url={m.avatar_url} online={m.online} />,
+                          icon: <MiniAvatar nome={m.nome} url={m.avatar_url} online={!!presencaDe.get(m.id)?.online} />,
                           label: (
                             <span className="flex min-w-0 items-baseline gap-1.5">
                               <span className="truncate">{m.nome}</span>
@@ -3035,7 +3046,7 @@ export default function ConversasPage() {
             <AccordionSection title="Participantes da conversa" defaultOpen={false}>
               {assignedMember && (
                 <div className="flex items-center gap-2 mb-3">
-                  <MiniAvatar nome={assignedMember.nome} url={assignedMember.avatar_url} online={assignedMember.online} />
+                  <MiniAvatar nome={assignedMember.nome} url={assignedMember.avatar_url} online={!!presencaDe.get(assignedMember.id)?.online} />
                   <span className={`text-[13px] truncate ${FC.ink}`}>{assignedMember.nome}</span>
                   <span className={`ml-auto text-[11px] px-2 h-5 inline-flex items-center rounded-full bg-black/[0.04] dark:bg-white/[0.06] ${FC.sub} shrink-0`}>Atribuído</span>
                 </div>

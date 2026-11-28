@@ -8,12 +8,19 @@
  *
  * Um mesmo número pode ter mais de um cadastro (o 3132‑9150 da M7 foi da Isabella e hoje é
  * do agente): o cartão lista os dois, e a linha fala pelo cadastro ligado.
+ *
+ * 27/11/2026 (pedido do dono): online da pessoa e do número. Dois sinais, dois lugares:
+ * - o ponto VERDE fica NA FOTO — a pessoa está online agora (`lib/presenca.ts`);
+ * - o ícone de TOMADA à direita aparece só quando o NÚMERO está sem conexão (vermelho = caiu,
+ *   âmbar = aguardando o QR, cinza = desligado). Antes era um ponto também, e dois pontos de
+ *   cores diferentes na mesma linha não diriam qual é de quem.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
-import { Bot } from "lucide-react";
+import { Bot, Unplug } from "lucide-react";
 import { formatPhone } from "@/lib/phone";
+import { quandoFoi, textoPresenca, type PresencaPessoa } from "@/lib/presenca";
 
 export type Pessoa = { id: number; nome: string; cargo?: string | null; role?: string; avatar_url?: string | null };
 
@@ -22,7 +29,13 @@ export type CadastroDoNumero = {
   modo: string; // agente | registro
   ligado: boolean;
   status?: string | null; // connected | logged_out | …
+  /** Desde quando o número está nesse estado (o servidor só registra a partir de 27/11/2026). */
+  status_desde?: string | null;
+  /** A última mensagem (de qualquer lado) que passou pelo número, nos últimos 30 dias. */
+  ultima_msg_em?: string | null;
   dono?: Pessoa | null;
+  /** Se a pessoa dona está online agora — `lib/presenca.ts`. */
+  presenca?: PresencaPessoa | null;
   agente?: string | null;
   tambem?: Pessoa[];
 };
@@ -63,7 +76,31 @@ function iniciais(nome: string): string {
   return ((partes[0]?.[0] || "") + (partes.length > 1 ? partes[partes.length - 1][0] : "")).toUpperCase() || "?";
 }
 
-function Avatar({ c, tam }: { c: CadastroDoNumero | null; tam: number }) {
+/** O ponto verde de «online agora» vai na foto da pessoa — é dela, não do número. */
+function PontoOnline({ tam }: { tam: number }) {
+  const d = Math.max(7, Math.round(tam * 0.38));
+  return (
+    <span
+      aria-hidden
+      style={{ width: d, height: d }}
+      className="absolute -bottom-px -right-px z-20 rounded-full bg-[#16a34a] ring-[1.5px] ring-white dark:ring-[#0c0e12]"
+    />
+  );
+}
+
+function Avatar({ c, tam, ponto = true }: { c: CadastroDoNumero | null; tam: number; ponto?: boolean }) {
+  if (ponto && c?.dono && c.presenca?.online) {
+    return (
+      <span className="relative z-10 inline-flex shrink-0" style={{ width: tam, height: tam }}>
+        <Rosto c={c} tam={tam} />
+        <PontoOnline tam={tam} />
+      </span>
+    );
+  }
+  return <Rosto c={c} tam={tam} />;
+}
+
+function Rosto({ c, tam }: { c: CadastroDoNumero | null; tam: number }) {
   const estilo = { width: tam, height: tam };
   if (c?.modo === "agente" && !c.dono) {
     return (
@@ -100,6 +137,18 @@ function conexao(c: CadastroDoNumero): { rotulo: string; cor: string } {
   return CONEXAO[c.status || ""] || { rotulo: c.status ? c.status : "Sem informação", cor: "#9ca3af" };
 }
 
+/** Fora do ar, desde quando — só quando o servidor viu a mudança (registra desde 27/11/2026). */
+function foraDesde(c: CadastroDoNumero): string | null {
+  if (c.ligado && c.status === "connected") return null;
+  return quandoFoi(c.status_desde);
+}
+
+/** «Aguardando o QR · desde 12/11 às 15:02» — para a dica do ícone da linha. */
+function conexaoComDesde(c: CadastroDoNumero): string {
+  const desde = foraDesde(c);
+  return desde ? `${conexao(c).rotulo} · desde ${desde}` : conexao(c).rotulo;
+}
+
 function uso(c: CadastroDoNumero): string {
   return c.modo === "agente" ? `Agente com IA${c.agente ? ` · ${c.agente}` : ""}` : "Registro, sem IA";
 }
@@ -122,7 +171,7 @@ function Linha({ rotulo, children }: { rotulo: string; children: ReactNode }) {
 function Cartao({ info, conversas, naoLidas, rect }: { info: InfoNumero; conversas: number; naoLidas: number; rect: DOMRect }) {
   const p = principal(info);
   const outros = info.cadastros.filter((c) => c !== p);
-  const ALT = 300;
+  const ALT = 340;
   const top = Math.max(8, Math.min(rect.top - 10, window.innerHeight - ALT - 8));
   const left = Math.min(rect.right + 8, window.innerWidth - 276);
   const nome = p?.modo === "agente" && !p.dono ? p.agente || "Agente" : p?.dono?.nome || telefone(info.rotulo);
@@ -137,10 +186,18 @@ function Cartao({ info, conversas, naoLidas, rect }: { info: InfoNumero; convers
       className="pointer-events-none fixed z-[80] w-[268px] rounded-[12px] border border-[#EDEDED] bg-white p-3.5 shadow-[0_10px_32px_rgba(0,0,0,0.12)] dark:border-[#23272e] dark:bg-[#14171c]"
     >
       <div className="flex items-center gap-3">
-        <Avatar c={p} tam={40} />
+        <Avatar c={p} tam={40} ponto={false} />
         <div className="min-w-0">
           <p className="truncate text-[14px] font-medium leading-tight text-[#262626] dark:text-[#e6e8eb]">{nome}</p>
           {sub && <p className="mt-0.5 truncate text-[12px] text-[#262626]/55 dark:text-[#8b93a0]">{sub}</p>}
+          {p?.dono && (
+            <p className="mt-1 flex items-center gap-1.5 text-[12px] text-[#262626]/75 dark:text-[#b6bcc6]">
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.presenca?.online ? "bg-[#16a34a]" : "bg-[#262626]/25 dark:bg-white/25"}`}
+              />
+              <span className="truncate">{textoPresenca(p.presenca)}</span>
+            </p>
+          )}
         </div>
       </div>
       <dl className="mt-3 space-y-1.5 border-t border-[#EDEDED] pt-3 text-[12.5px] dark:border-[#23272e]">
@@ -149,11 +206,13 @@ function Cartao({ info, conversas, naoLidas, rect }: { info: InfoNumero; convers
         {p && (
           <Linha rotulo="Conexão">
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: conexao(p).cor }} />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: conexao(p).cor }} />
               {conexao(p).rotulo}
             </span>
           </Linha>
         )}
+        {p && foraDesde(p) && <Linha rotulo="Desde">{foraDesde(p)}</Linha>}
+        {p?.ultima_msg_em && <Linha rotulo="Última mensagem">{quandoFoi(p.ultima_msg_em)}</Linha>}
         {p?.tambem && p.tambem.length > 0 && (
           <Linha rotulo="Também veem">{p.tambem.map((x) => x.nome.split(" ")[0]).join(", ")}</Linha>
         )}
@@ -167,7 +226,7 @@ function Cartao({ info, conversas, naoLidas, rect }: { info: InfoNumero; convers
           </p>
           {outros.map((c) => (
             <div key={c.id} className="flex items-center gap-2 py-0.5 text-[12px] text-[#262626]/75 dark:text-[#b6bcc6]">
-              <Avatar c={c} tam={18} />
+              <Avatar c={c} tam={18} ponto={false} />
               <span className="min-w-0 flex-1 truncate">{c.dono?.nome || c.agente || "Sem responsável"}</span>
               <span className="shrink-0 text-[#262626]/50 dark:text-[#8b93a0]">
                 {c.modo === "agente" ? "IA" : "Registro"} · {conexao(c).rotulo}
@@ -230,9 +289,14 @@ export default function NumeroNaLateral({
               transition={{ type: "spring", stiffness: 350, damping: 35 }}
             />
           )}
-          <Avatar c={p} tam={24} />
-          {alerta && (
-            <span className="absolute bottom-1 right-1 z-10 h-2 w-2 rounded-full ring-2 ring-white dark:ring-[#0c0e12]" style={{ background: alerta }} />
+          {/* Menu recolhido: não cabem dois sinais. O problema do número ganha (vermelho/âmbar);
+              sem problema, o verde diz que a pessoa está online. O cartão do hover explica. */}
+          <Avatar c={p} tam={24} ponto={false} />
+          {(alerta || (p?.dono && p.presenca?.online)) && (
+            <span
+              className="absolute bottom-1 right-1 z-10 h-2 w-2 rounded-full ring-2 ring-white dark:ring-[#0c0e12]"
+              style={{ background: alerta || "#16a34a" }}
+            />
           )}
           {naoLidas > 0 && (
             <span className="absolute -right-0.5 -top-0.5 z-10 min-w-[16px] rounded-full bg-[#003083] px-1 text-center text-[9.5px] font-semibold leading-[16px] tabular-nums text-white dark:bg-[#5b9bff] dark:text-[#0c0e12]">
@@ -270,8 +334,12 @@ export default function NumeroNaLateral({
         )}
         <Avatar c={p} tam={18} />
         <span className="relative z-10 flex-1 break-words text-left">{tituloDoNumero(info)}</span>
-        {/* Ponto só quando algo não está bem: desconectado (vermelho), aguardando (âmbar), desligado (cinza). */}
-        {alerta && <span className="relative z-10 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: alerta }} />}
+        {/* Só quando o NÚMERO não está bem: caiu (vermelho), aguardando o QR (âmbar), desligado (cinza). */}
+        {alerta && p && (
+          <span className="relative z-10 inline-flex shrink-0" title={`Número: ${conexaoComDesde(p)}`}>
+            <Unplug className="h-3.5 w-3.5" style={{ color: alerta }} aria-label={`Número: ${conexao(p).rotulo}`} />
+          </span>
+        )}
         {naoLidas > 0 && (
           <span
             title={`${naoLidas} ${naoLidas === 1 ? "conversa não lida" : "conversas não lidas"}`}

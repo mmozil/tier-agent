@@ -6,6 +6,7 @@ import { ArrowUpRight, BookOpen, ChevronDown, HelpCircle, PanelLeftClose, PanelL
 import UserMenu from "./UserMenu";
 import NotificationBell from "./NotificationBell";
 import OnlineToggle from "./OnlineToggle";
+import { usePresencaPing } from "@/lib/presenca";
 import ThemeToggle from "./ThemeToggle";
 import ErrorBoundary from "./ErrorBoundary";
 import CommandPalette from "./CommandPalette";
@@ -103,6 +104,8 @@ function TierLogoMark({ className }: { className?: string }) {
 
 export default function AdminLayout() {
   const location = useLocation();
+  // 27/11/2026: «estou com o Agent aberto» a cada minuto — base do online da lateral das Conversas.
+  usePresencaPing();
   // Modo embed (?embed=1): o Tier Empresas embute o inbox num iframe — esconde
   // a casca do Agent (sidebar + topbar) e mostra só o conteúdo. "Um vidro só".
   const embed = new URLSearchParams(location.search).get("embed") === "1";

@@ -11,8 +11,12 @@ export default function OnlineToggle() {
 
   useEffect(() => {
     api
-      .get<{ member_id: number | null }>("/team/me")
-      .then(({ data }) => setIsMember(!!data.member_id))
+      .get<{ member_id: number | null; online?: boolean | null }>("/team/me")
+      .then(({ data }) => {
+        setIsMember(!!data.member_id);
+        // 27/11/2026: nascia sempre «Offline» porque não lia o valor salvo.
+        setOnline(!!data.online);
+      })
       .catch(() => {});
   }, []);
 

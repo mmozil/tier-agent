@@ -19,6 +19,7 @@ from core.db import get_db
 from models import TaMember, TaTeam, TaTenant
 from services import nome_crm
 from services import numeros as numeros_svc
+from services import presenca as presenca_svc
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/team", tags=["team"])
@@ -75,12 +76,13 @@ async def whoami(
     db: AsyncSession = Depends(get_db),
 ):
     """Quem sou eu — usado pelo frontend pra saber papel/permissões."""
-    cargo, pode_atribuir = None, True
+    cargo, pode_atribuir, no_rodizio = None, True, None
     if user.member_id:
         m = await db.get(TaMember, user.member_id)
         if m is not None:
             cargo = m.cargo
             pode_atribuir = m.pode_atribuir is not False
+            no_rodizio = bool(m.online)
     return {
         "tenant_id": user.tenant_id,
         "email": user.email,
@@ -94,6 +96,8 @@ async def whoami(
         # «Ações da conversa» quando não; a rota recusa do mesmo jeito).
         "cargo": cargo,
         "pode_atribuir": pode_atribuir,
+        # 27/11/2026: o botão do rodízio nascia sempre «Offline» porque não lia o valor salvo.
+        "online": no_rodizio,
     }
 
 
@@ -256,6 +260,81 @@ async def set_online(
     m.online = bool(body.online)
     await db.commit()
     return {"online": m.online}
+
+
+@router.post("/presenca", response_model=dict)
+async def sinal_do_painel(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sinal de «estou com o Agent aberto» — o navegador manda a cada minuto (27/11/2026).
+    Não mexe no rodízio (`online`): é só presença, ver services/presenca.py."""
+    if user.is_owner or not user.member_id:
+        return {"ok": True, "owner": True}  # o dono não é pessoa da equipe na lateral
+    await presenca_svc.registrar_painel(db, user.member_id)
+    return {"ok": True}
+
+
+@router.get("/presenca", response_model=dict)
+async def presenca_da_equipe(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Quem está online agora e como estão os números (27/11/2026). A lateral das Conversas
+    pede a cada minuto. O estado do número vem do motor (no máximo uma pergunta por minuto
+    por número); motor lento ou fora do ar = fica o último estado conhecido."""
+    if not user.tenant_id:
+        raise HTTPException(403, "Sem tenant")
+    import json
+
+    from core.encryption import decrypt
+    from models import TaAgent, TaConnector
+    from routes.connectors import status_ao_vivo_recente
+    from services import visao_conversas as visao
+
+    stmt = (
+        select(TaConnector)
+        .join(TaAgent, TaAgent.id == TaConnector.agent_id)
+        .where(TaAgent.tenant_id == user.tenant_id)
+    )
+    if not visao.ve_tudo(user.role):
+        stmt = stmt.where(TaConnector.id.in_(await visao.conectores_do_membro(db, user.tenant_id, user.member_id)))
+    conns = list((await db.execute(stmt)).scalars().all())
+    try:
+        await status_ao_vivo_recente(db, conns)
+    except Exception:  # noqa: BLE001 — presença nunca derruba a tela
+        logger.exception("presenca: estado ao vivo dos números falhou (segue com o gravado)")
+        await db.rollback()
+        # o rollback expira os objetos; ler `config_json_enc` deles viraria IO implícito (erro no async)
+        conns = list((await db.execute(stmt)).scalars().all())
+    ultima = await presenca_svc.ultima_mensagem_por_numero(db, [c.id for c in conns])
+    numeros = []
+    for c in conns:
+        try:
+            cfg = json.loads(decrypt(c.config_json_enc))
+        except Exception:  # noqa: BLE001
+            cfg = {}
+        status = cfg.get("status")
+        if not status and c.kind == "whatsapp_cloud":
+            status = "connected" if cfg.get("token") else "pending"
+        numeros.append(
+            {
+                "connector_id": c.id,
+                "ligado": bool(c.enabled),
+                "status": status,
+                "status_desde": cfg.get("status_desde"),
+                "ultima_msg_em": ultima.get(c.id),
+            }
+        )
+    return {
+        "pessoas": await presenca_svc.pessoas_do_tenant(db, user.tenant_id),
+        "numeros": numeros,
+        "regra": {
+            "painel_s": presenca_svc.PAINEL_ONLINE_S,
+            "resposta_s": presenca_svc.RESPOSTA_ONLINE_S,
+            "janela_dias": presenca_svc.JANELA_VISTO_DIAS,
+        },
+    }
 
 
 # ─────────────────────────────────────────────────────────────

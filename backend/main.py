@@ -349,6 +349,8 @@ async def _ensure_member_table():
             await db.execute(
                 _sql_text("ALTER TABLE ta_member ADD COLUMN IF NOT EXISTS invite_token VARCHAR(64)")
             )
+            # 27/11/2026: último sinal do painel aberto — quem está online (services/presenca.py)
+            await db.execute(_sql_text("ALTER TABLE ta_member ADD COLUMN IF NOT EXISTS visto_painel_em TIMESTAMP"))
             await db.commit()
         logger.info("ensure_member_table ok")
     except Exception:
